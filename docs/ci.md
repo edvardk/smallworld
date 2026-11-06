@@ -64,7 +64,7 @@ required check would wait forever. Neither workflow therefore has a path filter:
   reusable-workflow call would report under another name if it were skipped);
 - `actionlint` is skipped by its `if:` when no workflow changed (a skipped job reports success); `e2e` runs on
   every pull request. It is an aggregator (`needs: [changes, e2e-shard]`, no checkout): its one step fails
-  unless `needs.e2e-shard.result` is `success` or `skipped`, so the required name stays `e2e` however the shards
+  unless `needs.e2e-shard.result` is `success` (the shards share its `if:`, so none is skipped while it runs), so the required name stays `e2e` however the shards
   are cut, and one failed shard fails it. It has the shards' own `if:` (`!cancelled()` plus
   `needs.changes.outputs.e2e != 'false'`), so it waits for all of them and is skipped only with them (scope
   `none`, the monthly benches);

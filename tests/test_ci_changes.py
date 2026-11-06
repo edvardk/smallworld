@@ -189,7 +189,7 @@ def test_e2e_triggers_and_benches() -> None:
     assert agg["runs-on"] == "ubuntu-24.04" and agg["timeout-minutes"] == 5
     (check,) = agg["steps"]
     assert check["env"]["RESULT"] == "${{ needs.e2e-shard.result }}"
-    assert '[ "$RESULT" = success ] || [ "$RESULT" = skipped ]' in check["run"]
+    assert check["run"].rstrip().endswith('[ "$RESULT" = success ]')  # a skipped shard fails it too
 
 
 def test_update_lock_dispatches_the_full_e2e() -> None:

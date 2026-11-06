@@ -522,7 +522,8 @@ jobs:
           RESULT: ${{ needs.e2e-shard.result }}
         run: |
           echo "e2e-shard: $RESULT"
-          [ "$RESULT" = success ] || [ "$RESULT" = skipped ]
+          # Only success: the shards share this job's if:, so a skipped shard here means something went wrong.
+          [ "$RESULT" = success ]
 
   # The benches (report-only or with wide noise bands, ~2 h of runner time together) run only on
   # workflow_dispatch with `bench: true` and monthly (when the month's commits touched what they measure),
