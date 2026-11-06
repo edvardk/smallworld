@@ -240,7 +240,7 @@ jobs:
           git -C "$copy" show --name-only --format= HEAD | grep -qx client.lock.yml
           test -z "$(git -C "$copy" status --porcelain)"
           python -m mcctl validate -C "$copy"
-          # ... and a workflow that doesn't pass ARTIFACT_PUBLISH_TOKEN (mc-config before its PR #2) fails the
+          # ... and a workflow that doesn't pass ARTIFACT_PUBLISH_TOKEN (a config repo made before v1.1) fails the
           # deploy's client-publish instead of warning; the target release's schema-migrate adds the line.
           sed -i '/ARTIFACT_PUBLISH_TOKEN:/d' "$copy/.github/workflows/server.yml"
           if ARTIFACT_PUBLISH_TOKEN="" python -m mcctl client-publish -C "$copy"; then
