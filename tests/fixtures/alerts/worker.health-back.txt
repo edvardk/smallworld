@@ -1,0 +1,4 @@
+✅ **The health check works again**
+**Impact:** Self-heal and the server's own alerts run again; players were not affected by the check itself.
+**What to do:** No action needed - informational.
+**Details:** health; last OK before this 22 min ago

@@ -1,0 +1,8 @@
+profile: production
+exclude_paths:
+  - collections/
+mock_modules:
+  - mc_config
+skip_list:
+  # Shared `mc_*` variables are a deliberate cross-role convention (defined in group_vars).
+  - var-naming[no-role-prefix]

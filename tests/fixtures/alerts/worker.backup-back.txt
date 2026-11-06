@@ -1,0 +1,4 @@
+✅ **The backup works again**
+**Impact:** Backups run again: players' progress is protected again.
+**What to do:** No action needed - informational.
+**Details:** backup; last OK before this 2 h ago

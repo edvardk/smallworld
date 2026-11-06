@@ -1,0 +1,5 @@
+⚠️ **Short freezes: Java memory management paused the server**
+**Impact:** Players would notice freezes of up to 240 ms (~5 ticks). 2 player(s) online right now.
+**Likely cause:** Java garbage collection (G1) stopped the server for up to 240 ms.
+**What to do:** If it keeps happening: switch to ZGC (`mcctl config set jvm.gc zgc`, push: sub-millisecond pauses).
+**Details:** 2 pause(s) this check, longest freeze 240 ms (alert above 50 ms); collector g1

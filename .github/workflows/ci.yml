@@ -1,0 +1,351 @@
+name: ci
+
+# The product's own CI (it deploys nothing; deployments live in config repos). docs/ci.md: what runs when. The
+# product repo is public, so GitHub's standard runners cost no Actions minutes: this workflow is thorough, and only
+# a config repo's workflow (the reusable server.yml) is tuned for minutes.
+#
+# Required checks (main's ruleset, mcctl/productsetup.py REQUIRED_CHECKS): lint, gitleaks, actionlint,
+# config-repo / validate (and e2e-mock.yml's e2e). They are never filtered out at the workflow level (a workflow
+# that never starts leaves its required checks pending forever); the `changes` job decides what is heavy work:
+#   - lint always runs; a docs-only change (scripts/ci_changes.py) runs ruff, yamllint and the tests that read
+#     the docs, and skips the rest of the job's steps;
+#   - actionlint runs when a workflow changed, else it is skipped (a skipped job reports success);
+#   - gitleaks and config-repo / validate always run (both cheap; a skipped reusable-workflow call would report
+#     under another check name);
+#   - if `changes` itself fails, its outputs are empty and every `!= 'false'` test below runs everything.
+#
+# When: every pull request (plus the controller matrix when code changed); nightly on main (everything: catches
+# two pull requests that only break together); release.yml (everything); workflow_dispatch (everything). Not on
+# pushes to main: a pull request's run already tested its merge commit.
+on:
+  pull_request:
+  schedule:
+    - cron: "7 22 * * *" # nightly: everything
+  workflow_call: # release.yml
+  # PRs opened with GITHUB_TOKEN (update-lock) don't trigger pull_request; update-lock dispatches this.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to a pull request cancels the run it makes obsolete (release.yml's tag pushes never collide).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Which heavy work this change needs: a pull request's merge commit vs its base; anything else (the nightly run,
+  # release.yml's tag push, workflow_dispatch) runs everything.
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.changes.outputs.code }}
+      workflows: ${{ steps.changes.outputs.workflows }}
+      plugin: ${{ steps.changes.outputs.plugin }}
+      seeds: ${{ steps.changes.outputs.seeds }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # a pull request's merge commit and its base; the weekly run's last 7 days
+          persist-credentials: false
+
+      - name: What changed
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: python3 scripts/ci_changes.py --event "$EVENT" --before "$BEFORE"
+
+  lint:
+    needs: changes
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CODE: ${{ needs.changes.outputs.code != 'false' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # MIN_PYTHON (the controller's floor): the controller job adds 3.13, 3.14, macOS and Windows.
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/dev.txt
+
+      # Node for the Worker tests (node:sqlite gives the panel tests real SQL: Node >= 22.13; no npm packages).
+      - if: env.CODE == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22.22.0"
+
+      - name: Install tooling
+        run: pip install --require-hashes --no-deps -r requirements/dev.txt
+
+      - if: env.CODE == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.ansible/collections
+          key: galaxy-${{ runner.os }}-${{ hashFiles('ansible/requirements.yml') }}
+
+      - name: Install the Ansible collections
+        if: env.CODE == 'true'
+        run: ansible-galaxy collection install -r ansible/requirements.yml
+
+      - name: ruff
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: yamllint
+        run: yamllint --strict .
+
+      # A docs-only change: the tests that read the docs (links, anchors, pins quoted in them, the changelog,
+      # the repo-wide scans for removed words). Seconds, instead of the full suite's minutes.
+      - name: pytest (docs-only change)
+        if: env.CODE != 'true'
+        run: |
+          pytest -q tests/test_docs.py tests/test_release.py tests/test_dashlane.py tests/test_consistency.py tests/test_ci_changes.py
+          pytest -q tests/test_watchdog.py -k no_health
+
+      # Before pytest: the terraform-console tests (tests/test_tf_drift.py, the migration locals) need it. No
+      # wrapper: they pipe stdin into `terraform console` and parse its stdout.
+      - if: env.CODE == 'true'
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.17.1
+          terraform_wrapper: false
+
+      # Provider downloads, keyed by the committed lock file (terraform still checks every provider's hash
+      # against .terraform.lock.hcl when it links one from the cache).
+      - name: Terraform plugin cache directory
+        if: env.CODE == 'true'
+        run: |
+          mkdir -p "$HOME/.terraform.d/plugin-cache"
+          echo "TF_PLUGIN_CACHE_DIR=$HOME/.terraform.d/plugin-cache" >> "$GITHUB_ENV"
+
+      - if: env.CODE == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-providers-${{ runner.os }}-${{ hashFiles('terraform/.terraform.lock.hcl') }}
+
+      - name: pytest
+        if: env.CODE == 'true'
+        run: pytest -q
+
+      # The watchdog Worker's unit tests (node's built-in runner; no npm packages, no network).
+      - name: Worker tests
+        if: env.CODE == 'true'
+        run: >-
+          node --import ./watchdog/test/register.mjs --test watchdog/test/worker.test.mjs
+          watchdog/test/monitoring.test.mjs watchdog/test/panel.test.mjs watchdog/test/actions.test.mjs
+          watchdog/test/experience.test.mjs
+          watchdog/test/discord.test.mjs watchdog/test/client.test.mjs
+
+      - name: ansible-lint
+        if: env.CODE == 'true'
+        working-directory: ansible
+        run: ansible-lint
+
+      - name: terraform fmt
+        if: env.CODE == 'true'
+        run: terraform -chdir=terraform fmt -check -recursive
+
+      - name: terraform validate
+        if: env.CODE == 'true'
+        run: |
+          terraform -chdir=terraform init -backend=false -input=false
+          terraform -chdir=terraform validate
+
+  # The controller (mcctl) on every OS and Python it may meet: Linux, macOS and Windows x 3.12 (MIN_PYTHON), 3.13 (what
+  # the workflows use) and 3.14. Linux runs the whole suite (as lint does on 3.12); macOS and Windows run the
+  # controller's own tests (the `controller` marker: tests/conftest.py CONTROLLER_TESTS) minus the ones that need
+  # POSIX (`posix_only`: fcntl, file modes, executable fake binaries, a shell). mcctl itself refuses native Windows
+  # (its preflight says to use WSL2), so Windows proves the pure logic (schema, render, gate, update PRs...) and
+  # that the CLI starts there. Not a required check. PYTHONUTF8: Windows' Python reads text files as cp1252.
+  controller:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+        python: ["3.12", "3.13", "3.14"]
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements/dev.txt
+
+      - if: runner.os == 'Linux'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22.22.0"
+
+      - name: Install tooling
+        run: pip install --require-hashes --no-deps -r requirements/dev.txt
+
+      # The pinned collections, cached by the file that pins them (ansible-galaxy checks the installed versions).
+      - if: runner.os == 'Linux'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.ansible/collections
+          key: galaxy-${{ runner.os }}-${{ hashFiles('ansible/requirements.yml') }}
+
+      - name: Install the Ansible collections
+        if: runner.os == 'Linux'
+        run: ansible-galaxy collection install -r ansible/requirements.yml
+
+      - name: pytest (everything)
+        if: runner.os == 'Linux'
+        run: pytest -q
+
+      - name: pytest (the controller's tests that make sense here)
+        if: runner.os != 'Linux'
+        run: pytest -q -m "controller and not posix_only"
+
+      - name: mcctl --help
+        run: python -m mcctl --help
+
+  # Secret scan of the whole history (design §7): the pinned gitleaks release, sha256-checked before use.
+  # --redact keeps any finding's value out of the log; the file, line and rule are enough to act on.
+  gitleaks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: gitleaks (git history)
+        env:
+          GITLEAKS_VERSION: 8.30.1 # same pin in ci.yml and server.yml (tests/test_consistency.py)
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb # linux_x64
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/gitleaks.tgz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/gitleaks.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tgz" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" git --redact --no-banner --verbose .
+
+  # P13/P17: the in-house plugins (mc-telemetry, mc-brand) are reproducible: rebuilt from source with the pinned JDK
+  # against the API bundled in the pinned server jar (all downloads sha256-checked), each must equal the committed
+  # jar and its group_vars pin; the branding art (icon, resource pack) too, and the pack's format is the jar's.
+  # Runs when its inputs changed (scripts/ci_changes.py group `plugin`), and always on releases and dispatches.
+  plugin:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.plugin != 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements/validate.txt
+
+      # Only the downloads build_plugin.py re-verifies on every use (the server jar against server.lock.yml,
+      # the compile-only jars by their file name = sha256); the JDK is downloaded and sha256-checked each run.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/build-plugin/*.jar
+            ${{ runner.temp }}/build-plugin/compile-only
+            ${{ runner.temp }}/build-client-mod/client-mod
+          key: build-plugin-${{ hashFiles('template/server.lock.yml', 'plugin/*/build.yml', 'client/mod/build.yml') }}
+
+      - name: Install the build script's dependency (PyYAML)
+        run: pip install --require-hashes --no-deps -r requirements/validate.txt
+
+      - name: Rebuild the in-house plugins and compare
+        run: python scripts/build_plugin.py check --cache "$RUNNER_TEMP/build-plugin"
+
+      - name: Rebuild the branding art and compare
+        run: python scripts/brand_art.py check
+
+      # v1.2: the Smallworld client mod (client/mod/build.yml; every input sha256-checked on each use)
+      - name: Rebuild the client mod and compare
+        run: python scripts/build_client_mod.py check --cache "$RUNNER_TEMP/build-client-mod"
+
+  # v1.2: the world library's seed catalogue (worlds/seeds.yml). Boots the pinned server jar once per seed
+  # (throwaway world, RCON on 127.0.0.1 with a random password), runs each claim's /locate and fails when a claim
+  # no longer holds or the committed watchdog/panel/seeds.json (the panel's "verified on <version>" badge)
+  # differs from this run. Runs when the catalogue, the checker or the server lock changed (scripts/ci_changes.py
+  # group `seeds`), and always nightly, on releases and dispatches. update-lock.yml regenerates the file.
+  seeds:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.seeds != 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements/validate.txt
+
+      # The server jar is re-verified against template/server.lock.yml on every use; the JDK (the one pinned in
+      # plugin/mc-telemetry/build.yml) is downloaded and sha256-checked each run.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/build-plugin/*.jar
+          key: seeds-${{ hashFiles('template/server.lock.yml') }}
+
+      - name: Install the checker's dependency (PyYAML)
+        run: pip install --require-hashes --no-deps -r requirements/validate.txt
+
+      - name: Re-verify the seed catalogue and compare
+        run: python scripts/seed_check.py verify --compare --cache "$RUNNER_TEMP/build-plugin"
+
+  # Lints every workflow (product + the config-repo template's materialized example). Built from source
+  # with `go install`: the module is checked against the Go checksum database, no downloaded binary.
+  actionlint:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.workflows != 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: actionlint
+        env:
+          ACTIONLINT_VERSION: v1.7.7
+        run: |
+          go install "github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION}"
+          "$(go env GOPATH)/bin/actionlint"
+          "$(go env GOPATH)/bin/actionlint" examples/config-repo/.github/workflows/server.yml
+
+  # P3 acceptance: a config repo (the example fixture) passes the reusable workflow's validate job against
+  # THIS product commit, exactly as a real config repo's pinned call would run it. Always runs (a required
+  # check; its jobs carry their own timeout-minutes).
+  config-repo:
+    uses: ./.github/workflows/server.yml
+    with:
+      config-path: examples/config-repo
+    # The reusable workflow's deploy job asks for id-token and its panel-merge job (P10) for contents +
+    # pull-requests write (neither runs here: config-path != "."), and a called workflow can't be granted less
+    # than its jobs request. The validate job that does run asks for contents: read only.
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write

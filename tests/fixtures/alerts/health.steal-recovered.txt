@@ -1,0 +1,4 @@
+✅ **The host's CPU is ours again**
+**Impact:** Other customers on the same machine no longer take our CPU time.
+**What to do:** No action needed - informational.
+**Details:** it lasted 1 min; worst 20% steal

@@ -1,0 +1,13 @@
+# Findings gitleaks reports in the product's history that are test fixtures, not secrets (one fingerprint per
+# line: commit:file:rule:line). Each entry is a made-up value a test feeds the log scrubber (P8 review).
+f917aae5e63b8f974c3f835d067cee76cd0bb3ed:tests/test_agent.py:generic-api-key:439
+f917aae5e63b8f974c3f835d067cee76cd0bb3ed:tests/test_agent.py:generic-api-key:440
+f917aae5e63b8f974c3f835d067cee76cd0bb3ed:tests/test_agent.py:generic-api-key:467
+# P10 review: a made-up installation token the Worker test's fake GitHub API returns (watchdog/test/actions.test.mjs).
+0e0c3e16fa8c8de8804641f840c6725dc627c2c0:watchdog/test/actions.test.mjs:generic-api-key:263
+0e0c3e16fa8c8de8804641f840c6725dc627c2c0:watchdog/test/actions.test.mjs:generic-api-key:276
+# P14: the RFC 8032 test-vector public key (TEST 1), standing in for a Discord application's public key (public by
+# design: it only verifies Discord's signatures) in a recorded API answer and the test that replays it.
+249fc10a74221618a484bfec7671b29aad60a488:tests/fixtures/http/discord_app_ok.json:generic-api-key:16
+249fc10a74221618a484bfec7671b29aad60a488:tests/fixtures/http/discord_app_ok.json:generic-api-key:98
+249fc10a74221618a484bfec7671b29aad60a488:tests/test_discord.py:generic-api-key:23

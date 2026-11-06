@@ -1,0 +1,5 @@
+- name: Restart mc-agent
+  ansible.builtin.systemd_service:
+    name: mc-agent.service
+    state: restarted
+    daemon_reload: true

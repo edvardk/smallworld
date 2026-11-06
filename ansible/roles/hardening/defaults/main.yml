@@ -1,0 +1,47 @@
+# Kernel and network hardening (design §7). Each key exists on Debian 12/13 and Ubuntu 24.04 kernels; the
+# e2e-mock run applies them and reads every value back.
+hardening_sysctls:
+  # SYN floods
+  net.ipv4.tcp_syncookies: 1
+  # No ICMP redirects or source routing (IPv4 and IPv6), no redirects sent (we are not a router)
+  net.ipv4.conf.all.accept_redirects: 0
+  net.ipv4.conf.default.accept_redirects: 0
+  net.ipv4.conf.all.secure_redirects: 0
+  net.ipv4.conf.default.secure_redirects: 0
+  net.ipv4.conf.all.send_redirects: 0
+  net.ipv4.conf.default.send_redirects: 0
+  net.ipv4.conf.all.accept_source_route: 0
+  net.ipv4.conf.default.accept_source_route: 0
+  net.ipv6.conf.all.accept_redirects: 0
+  net.ipv6.conf.default.accept_redirects: 0
+  net.ipv6.conf.all.accept_source_route: 0
+  net.ipv6.conf.default.accept_source_route: 0
+  # Log impossible source addresses; loose reverse-path filtering (strict mode breaks Tailscale's routing)
+  net.ipv4.conf.all.log_martians: 1
+  net.ipv4.conf.default.log_martians: 1
+  net.ipv4.conf.all.rp_filter: 2
+  net.ipv4.conf.default.rp_filter: 2
+  net.ipv4.icmp_echo_ignore_broadcasts: 1
+  net.ipv4.icmp_ignore_bogus_error_responses: 1
+  # Kernel information and attack surface for local code (e.g. a malicious plugin)
+  kernel.kptr_restrict: 2
+  kernel.dmesg_restrict: 1
+  kernel.unprivileged_bpf_disabled: 1
+  net.core.bpf_jit_harden: 2
+  kernel.yama.ptrace_scope: 1
+  fs.protected_hardlinks: 1
+  fs.protected_symlinks: 1
+  fs.protected_fifos: 2
+  fs.protected_regular: 2
+  fs.suid_dumpable: 0
+
+# Persistent journal with a cap (design §7 "Logs"); keys from journald.conf(5).
+hardening_journal_max_use: 1G
+
+# OpenSSH after bootstrap (design §7, Q7 approved): Tailscale SSH (tailscaled, not sshd) is the only way in;
+# break-glass is the provider's console. bootstrap.yml still needs sshd (it runs before this role ever does).
+hardening_disable_sshd: true
+
+# Security review M1: after bootstrap, lock root's password and remove /root/.ssh/authorized_keys (only in a play
+# that came in through Tailscale SSH as the deploy user; break-glass: the provider's console + rescue system).
+hardening_lock_root: true

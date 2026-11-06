@@ -1,0 +1,4 @@
+✅ **Memory pressure is over**
+**Impact:** After garbage collection the heap is below 85% again.
+**What to do:** No action needed - informational.
+**Details:** it was high for 60 min; worst 93%

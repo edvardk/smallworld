@@ -1,0 +1,97 @@
+# Full server configuration over the tailnet. Run by the config repo's workflow (the product's reusable
+# .github/workflows/server.yml, deploy job), or locally from a product checkout:
+#   python -m mcctl deploy -C <config repo>   # renders, then secrets from `terraform output -json`
+# Deployment values come from the rendered inventory and its group_vars (server.yml + the lock files);
+# secrets only through MC_SECRET_* environment variables (group_vars/all/secrets.yml).
+# Must be idempotent: a second run reports zero changes.
+- name: Configure the Minecraft server
+  hosts: all
+  become: true
+  pre_tasks:
+    - name: Check the rendered config repo is loaded
+      ansible.builtin.assert:
+        that:
+          - server_lock is defined
+          - plugins_lock is defined
+          - mc_level_name is defined
+        fail_msg: >-
+          No deployment values: run with the inventory `mcctl render` writes
+          (-i <config>/.mcctl/rendered/ansible/inventory.yml), or use `python -m mcctl deploy -C <config repo>`.
+        quiet: true
+      tags: [always]
+
+    - name: Check secrets are present
+      ansible.builtin.assert:
+        that:
+          - mc_secret_rcon_password | length > 0
+          - mc_secret_restic_password | length > 0
+          - mc_secret_restic_repository | length > 0
+          - mc_secret_r2_access_key_id | length > 0
+          - mc_secret_r2_secret_access_key | length > 0
+          - mc_secret_heartbeat_token | length > 0
+          - mc_secret_agent_token | length > 0
+          - mc_secret_command_hmac_key | length > 0
+        fail_msg: >-
+          Required MC_SECRET_* environment variables are empty. Locally run `python -m mcctl deploy`
+          (reads them from `terraform output -json`); in CI they come from Actions secrets set by Terraform.
+        quiet: true
+      tags: [always]
+
+    # P12 review: `mcctl migrate` fenced this box (another box owns the world now). A deploy would re-enable the
+    # timers, the agent and the server, so it refuses before changing anything; only mcctl's unfence (`mcctl
+    # migrate --rollback`) removes the marker.
+    - name: Is this box fenced?
+      ansible.builtin.stat:
+        path: "{{ mc_state_dir }}/fenced"
+      register: mc_fenced_marker
+      tags: [always]
+
+    - name: Refuse to deploy to a fenced box
+      ansible.builtin.fail:
+        msg: >-
+          FENCED: {{ mc_state_dir }}/fenced exists on {{ inventory_hostname }}: `mcctl migrate` moved the world to
+          another box, and deploying here would start this stale copy (timers, agent, server). Nothing was changed.
+          `mcctl migrate --rollback` unfences it if you are moving back; otherwise retire it (`mcctl retire-old`).
+      when: mc_fenced_marker.stat.exists
+      tags: [always]
+
+    # P16: server.yml performance.cpu_affinity split gives the JVM CPUs 1..n-1 and the helpers CPU 0 (mc_jvm_cpus,
+    # mc_helper_cpus). With fewer than 3 CPUs the JVM would be left one core for its main thread, GC and chunk
+    # workers together: refused here, before any role (base and backups already apply mc_helper_cpus and THP).
+    - name: CPU affinity split needs at least 3 CPUs
+      ansible.builtin.assert:
+        that: (ansible_facts['processor_vcpus'] | int) >= 3
+        fail_msg: >-
+          performance.cpu_affinity split needs at least 3 CPUs (this host has {{ ansible_facts['processor_vcpus'] }});
+          set it to off in server.yml. Nothing was changed.
+        quiet: true
+      when: mc_cpu_affinity == 'split'
+      tags: [always]
+
+  roles:
+    - role: access
+      tags: [access]
+    - role: base
+      tags: [base]
+    - role: hardening      # sysctls, persistent journal, OpenSSH off (Tailscale SSH only), design §7
+      tags: [hardening]
+    - role: firewall
+      tags: [firewall]
+    - role: tailscale
+      tags: [tailscale]
+    - role: java
+      tags: [java]
+    - role: backups        # installs restic and restores the world on a fresh box BEFORE first start
+      tags: [backups]
+    - role: plugins
+      tags: [plugins]
+    - role: minecraft
+      tags: [minecraft]
+    - role: players        # players.yml + the panel's pending whitelist changes -> whitelist/ops (P10)
+      tags: [players]
+    - role: monitoring
+      tags: [monitoring]
+    - role: agent          # mc-agent: metrics/logs/commands to the Worker (panel.mode cloudflare), design §5a
+      tags: [agent]
+    - role: autoreboot     # mc-reboot-gate: reboots for updates in the window when nobody is online (P11)
+      tags: [autoreboot]

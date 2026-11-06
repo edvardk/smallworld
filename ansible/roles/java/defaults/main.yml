@@ -1,0 +1,2 @@
+java_deb_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts['architecture']] }}"
+java_home: "/usr/lib/jvm/temurin-{{ server_lock.java_major }}-jre-{{ java_deb_arch }}"

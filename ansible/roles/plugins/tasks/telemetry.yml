@@ -1,0 +1,85 @@
+# P13: the in-house plugin mc-telemetry (plugin/mc-telemetry: built reproducibly by scripts/build_plugin.py, the
+# jar committed and its sha256 pinned in group_vars mc_telemetry_jar_sha256) and the tmpfs directories it shares
+# with mc-agent. server.yml experience.enabled: false removes the jar (its data folder, the tips opt-outs, stays).
+- name: Install the mc-telemetry plugin
+  when: mc_experience_enabled | bool
+  block:
+    - name: Copy the mc-telemetry jar
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../plugin/mc-telemetry/dist/mc-telemetry.jar"
+        dest: "{{ mc_server_dir }}/plugins/mc-telemetry.jar"
+        owner: minecraft
+        group: minecraft
+        mode: "0640"
+      notify: restart minecraft
+
+    - name: Read the installed jar's sha256
+      ansible.builtin.stat:
+        path: "{{ mc_server_dir }}/plugins/mc-telemetry.jar"
+        checksum_algorithm: sha256
+      register: telemetry_jar
+
+    - name: The jar is the pinned build (a mismatch fails the deploy)
+      ansible.builtin.assert:
+        that: telemetry_jar.stat.checksum == mc_telemetry_jar_sha256
+        fail_msg: >-
+          plugins/mc-telemetry.jar has sha256 {{ telemetry_jar.stat.checksum }}, the product pins
+          {{ mc_telemetry_jar_sha256 }} (run scripts/build_plugin.py check in the product checkout).
+        quiet: true
+
+    - name: Create the plugin's data folder (it writes only its tips opt-out list there)
+      ansible.builtin.file:
+        path: "{{ mc_server_dir }}/plugins/mc-telemetry"
+        state: directory
+        owner: minecraft
+        group: minecraft
+        mode: "0750"
+
+    - name: Write the plugin's settings (read-only for the plugin)
+      ansible.builtin.template:
+        src: mc-telemetry.yml.j2
+        dest: "{{ mc_server_dir }}/plugins/mc-telemetry/config.yml"
+        owner: root
+        group: minecraft
+        mode: "0640"
+      notify: restart minecraft
+
+
+- name: Remove the mc-telemetry plugin (experience.enabled is false)
+  when: not (mc_experience_enabled | bool)
+  block:
+    - name: Remove the mc-telemetry jar
+      ansible.builtin.file:
+        path: "{{ mc_server_dir }}/plugins/mc-telemetry.jar"
+        state: absent
+      notify: restart minecraft
+
+# mc-agent (the ops user) writes P13's verdicts and in-game messages, and v1.1's /modpack codes, here; setgid
+# minecraft + mode 0640 files: the plugins may read them, nothing running as minecraft may write them. /run is
+# tmpfs: created again at boot.
+- name: Create the verdict directory (experience telemetry or the client modpack)
+  when: mc_experience_enabled | bool or mc_client_enabled | bool
+  block:
+    - name: Create the verdict directory at boot (tmpfiles.d)
+      ansible.builtin.copy:
+        dest: /etc/tmpfiles.d/mc-verdicts.conf
+        content: |
+          # Managed by Ansible (plugins role, P13)
+          d {{ mc_verdict_dir }} 2750 {{ mc_ops_user }} minecraft -
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Create the verdict directory now
+      ansible.builtin.file:
+        path: "{{ mc_verdict_dir }}"
+        state: directory
+        owner: "{{ mc_ops_user }}"
+        group: minecraft
+        mode: "2750"
+
+- name: Remove the verdict directory's tmpfiles rule (neither is on)
+  when: not (mc_experience_enabled | bool or mc_client_enabled | bool)
+  ansible.builtin.file:
+    path: /etc/tmpfiles.d/mc-verdicts.conf
+    state: absent

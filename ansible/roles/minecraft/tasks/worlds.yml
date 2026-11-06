@@ -1,0 +1,60 @@
+# v1.2 world library (scripts/worlds.py, docs/operations.md "World library"). A deploy never switches worlds: the
+# panel does (mc-world.service). What a deploy does: write worlds-library.json (server.yml world.active/library, or
+# the panel's pending change while its pull request isn't merged, so a deploy racing the PR can't undo a switch),
+# warn when Git names another world than the one the server runs, and use the running world's border and pregen
+# setting (world.library entry) instead of the server-wide world.border_radius.
+- name: Read the panel's pending world change
+  ansible.builtin.slurp:
+    src: "{{ mc_panel_pending_file }}"
+  register: mc_world_pending_raw
+  failed_when: false
+
+- name: Read which world the server runs (worlds.py's state)
+  ansible.builtin.slurp:
+    src: "{{ mc_worlds_state_file }}"
+  register: mc_world_state_raw
+  failed_when: false
+
+- name: Work out the world library this deploy honours (the panel's pending change wins over Git)
+  ansible.builtin.set_fact:
+    mc_world_pending: >-
+      {{ (mc_world_pending_raw.content | b64decode | from_json).world | default(none)
+         if mc_world_pending_raw.content is defined else none }}
+    mc_world_live: >-
+      {{ (mc_world_state_raw.content | b64decode | from_json).active | default(none)
+         if mc_world_state_raw.content is defined else none }}
+
+- name: Pick the active world and its library entry
+  ansible.builtin.set_fact:
+    mc_world_effective:
+      active: "{{ mc_world_pending.active if mc_world_pending else mc_world_active }}"
+      library: "{{ mc_world_pending.library if mc_world_pending else mc_world_library }}"
+    mc_world_running: "{{ mc_world_live or (mc_world_pending.active if mc_world_pending else mc_world_active) }}"
+
+- name: Find the running world's entry
+  ansible.builtin.set_fact:
+    mc_world_entry: >-
+      {{ mc_world_effective.library | selectattr('name', 'equalto', mc_world_running) | first | default(none) }}
+
+- name: Write worlds-library.json (mc-agent and worlds.py read it)
+  ansible.builtin.copy:
+    dest: "{{ mc_worlds_library_file }}"
+    content: "{{ mc_world_effective | to_nice_json }}\n"
+    owner: root
+    group: minecraft
+    mode: "0644"
+
+- name: Warn when server.yml names another world than the server runs
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: server.yml world.active is {{ mc_world_effective.active }}, but the server runs the world
+      {{ mc_world_running }}. A deploy never switches worlds: use the panel's Worlds tab, or set world.active
+      back to {{ mc_world_running }}. This deploy keeps {{ mc_world_running }} and its settings.
+  when: mc_world_effective.active != mc_world_running
+
+- name: Use the running world's border and pre-generation setting
+  ansible.builtin.set_fact:
+    mc_world_border_radius: >-
+      {{ (mc_world_entry.border_radius | dict2items | rejectattr('value', 'none') | items2dict)
+         if mc_world_entry and mc_world_entry.border_radius else mc_world_border_radius }}
+    mc_world_pregen: "{{ mc_world_entry.pregen if mc_world_entry and mc_world_entry.pregen is not none else true }}"

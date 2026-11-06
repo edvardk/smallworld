@@ -1,0 +1,5 @@
+ℹ️ **A panel whitelist change was turned down (pull request #8 closed)**
+**Impact:** Couldn't run whitelist add Player_Two: live until the next deploy. The whitelist follows players.yml in Git again.
+**Likely cause:** Pull request #8 was closed without merging.
+**What to do:** Nothing if that was intended. To undo it now: deploy (`mcctl deploy`, or push to main). To make the change after all: the panel again, or players.yml in the config repo.
+**Details:** reverted: nothing; failed: add Player_Two

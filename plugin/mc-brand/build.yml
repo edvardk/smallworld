@@ -1,0 +1,31 @@
+# Reproducible build of the in-house plugin mc-brand (design §8 P17; scripts/build_plugin.py, same rules as
+# plugin/mc-telemetry/build.yml: javac only against the API bundled in the pinned server jar, the pinned JDK,
+# a stored jar with sorted entries and fixed dates). Its sha256 must equal ansible/group_vars/all/main.yml
+# mc_brand_jar_sha256 (tests/test_consistency.py); CI rebuilds it byte for byte (ci.yml job plugin).
+name: mc-brand
+version: 1.0.0
+release: 25   # javac --release; = java_major in template/server.lock.yml
+pin: mc_brand_jar_sha256
+jdk:
+  version: 25.0.5+8
+  x64:
+    url: https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/OpenJDK25U-jdk_x64_linux_hotspot_25.0.5_8.tar.gz
+    sha256: 68982529869257d0ee6b824ec5aa270ff8b118bb438670da0b97ebdab178d7fb
+# Compile classpath: jars inside the server jar's META-INF/libraries/ (path prefixes).
+classpath:
+  - org/purpurmc/purpur/purpur-api/
+  - net/kyori/adventure-api/
+  - net/kyori/adventure-key/
+  - net/kyori/option/
+  - net/md-5/bungeecord-chat/   # Player.sendMessage overloads mention its types
+# Compile-only jars (never in the plugin jar, never copied to the server): javac needs their class files once a
+# plugin touches ItemStack/Material, whose members carry type annotations (@NotNull/@Nullable, CLASS retention)
+# on types like Multimap; without them javac 25 crashes (CompletionFailure). The annotations from Maven Central;
+# guava is the exact jar the server runs (sha256 = the pinned server jar's META-INF/libraries.list, from
+# Mojang's library CDN as the server's own launcher fetches it).
+compile_only:
+  - url: https://repo1.maven.org/maven2/org/jetbrains/annotations/26.1.0/annotations-26.1.0.jar
+    sha256: ebc7aec252ed0c7d2d04c039d7f00e69f7b86b1f493c741d67b3ef31b986b054
+  - url: https://libraries.minecraft.net/com/google/guava/guava/33.6.0-jre/guava-33.6.0-jre.jar
+    sha256: dc573e1fca4fd5454f4a5fd3d7da2df03002876a4175bafc14a95980dd7713b3
+jar: plugin/mc-brand/dist/mc-brand.jar

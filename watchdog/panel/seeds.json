@@ -1,0 +1,921 @@
+{
+ "generated_by": "scripts/seed_check.py verify (from worlds/seeds.yml): do not hand-edit",
+ "minecraft_version": "26.3",
+ "server": {
+  "project": "purpur",
+  "build": 2655,
+  "sha256": "1feff23a8c060b51d8732814a429d0eb1d0cecd4dc8f934cb2b139dfc4e69e57"
+ },
+ "seeds": [
+  {
+   "id": "forest-village",
+   "name": "Forest village crossroads",
+   "seed": "-6924395187383011929",
+   "description": "Forest spawn with a village, a meadow, a cherry grove, a dappled forest, ice spikes and an abandoned camp all within about 350 blocks.",
+   "source": "https://www.mc-mod.net/?p=804721",
+   "spawn": [
+    0,
+    0
+   ],
+   "verified": true,
+   "claims": [
+    {
+     "kind": "structure",
+     "id": "#minecraft:village",
+     "label": "village",
+     "dimension": "overworld",
+     "within": 250,
+     "distance": 217,
+     "at": [
+      128,
+      176
+     ],
+     "verified": true
+    },
+    {
+     "kind": "biome",
+     "id": "minecraft:meadow",
+     "label": "meadow",
+     "dimension": "overworld",
+     "within": 150,
+     "distance": 101,
+     "at": [
+      32,
+      96
+     ],
+     "verified": true
+    },
+    {
+     "kind": "biome",
+     "id": "minecraft:dappled_forest",
+     "label": "dappled forest",
+     "dimension": "overworld",
+     "within": 250,
+     "distance": 226,
+     "at": [
+      -160,
+      160
+     ],
+     "verified": true
+    },
+    {
+     "kind": "biome",
+     "id": "minecraft:cherry_grove",
+     "label": "cherry grove",
+     "dimension": "overworld",
+     "within": 300,
+     "distance": 275,
+     "at": [
+      -160,
+      224
+     ],
+     "verified": true
+    },
+    {
+     "kind": "biome",
+     "id": "minecraft:ice_spikes",
+     "label": "ice spikes",
+     "dimension": "overworld",
+     "within": 350,
+     "distance": 321,
+     "at": [
+      32,
+      320
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "#minecraft:abandoned_camp",
+     "label": "abandoned camp",
+     "dimension": "overworld",
+     "within": 350,
+     "distance": 316,
+     "at": [
+      224,
+      -224
+     ],
+     "verified": true
+    }
+   ]
+  },
+  {
+   "id": "cherry-lake",
+   "name": "Cherry lake",
+   "seed": "2419633",
+   "description": "Spawn in a cherry grove by a lake, a deep dark about 200 blocks off; a village and an abandoned camp are a longer walk away.",
+   "source": "https://www.craftmc.net/minecraft-seeds/26.3/binocular-cherry-lake-village-camp-26-3",
+   "spawn": [
+    0,
+    0
+   ],
+   "verified": true,
+   "claims": [
+    {
+     "kind": "biome",
+     "id": "minecraft:cherry_grove",
+     "label": "cherry grove",
+     "dimension": "overworld",
+     "within": 50,
+     "distance": 0,
+     "at": [
+      0,
+      0
+     ],
+     "verified": true
+    },
+    {
+     "kind": "biome",
+     "id": "minecraft:deep_dark",
+     "label": "deep dark",
+     "dimension": "overworld",
+     "within": 250,
+     "distance": 204,
+     "at": [
+      128,
+      160
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "#minecraft:abandoned_camp",
+     "label": "abandoned camp",
+     "dimension": "overworld",
+     "within": 600,
+     "distance": 536,
+     "at": [
+      -160,
+      -512
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "#minecraft:village",
+     "label": "village",
+     "dimension": "overworld",
+     "within": 650,
+     "distance": 599,
+     "at": [
+      -432,
+      -416
+     ],
+     "verified": true
+    }
+   ]
+  },
+  {
+   "id": "mansion-village-island",
+   "name": "Mansion on a village island",
+   "seed": "4358921489363102297",
+   "description": "A woodland mansion crushes a village on the spawn island, in a dark forest; trial chambers close by.",
+   "source": "https://www.craftmc.net/minecraft-seeds/26.3/mansion-crushes-village-spawn-island-java-26-3",
+   "spawn": [
+    16,
+    80
+   ],
+   "verified": true,
+   "claims": [
+    {
+     "kind": "structure",
+     "id": "#minecraft:village",
+     "label": "village",
+     "dimension": "overworld",
+     "within": 100,
+     "distance": 35,
+     "at": [
+      48,
+      96
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "minecraft:mansion",
+     "label": "woodland mansion",
+     "dimension": "overworld",
+     "within": 100,
+     "distance": 50,
+     "at": [
+      64,
+      96
+     ],
+     "verified": true
+    },
+    {
+     "kind": "biome",
+     "id": "minecraft:dark_forest",
+     "label": "dark forest",
+     "dimension": "overworld",
+     "within": 100,
+     "distance": 64,
+     "at": [
+      80,
+      80
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "minecraft:trial_chambers",
+     "label": "trial chambers",
+     "dimension": "overworld",
+     "within": 350,
+     "distance": 321,
+     "at": [
+      336,
+      112
+     ],
+     "verified": true
+    }
+   ]
+  },
+  {
+   "id": "mansion-lush-cave",
+   "name": "Mansion over lush caves",
+   "seed": "6726509936435638690",
+   "description": "Lush caves right under spawn, a dark forest with a woodland mansion, trail ruins near spawn and a bastion close in the Nether.",
+   "source": "https://www.craftmc.net/minecraft-seeds/26.3/woodland-mansion-lush-cave-java-26-3",
+   "spawn": [
+    0,
+    4
+   ],
+   "verified": true,
+   "claims": [
+    {
+     "kind": "biome",
+     "id": "minecraft:lush_caves",
+     "label": "lush caves",
+     "dimension": "overworld",
+     "within": 100,
+     "distance": 45,
+     "at": [
+      32,
+      36
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "minecraft:trail_ruins",
+     "label": "trail ruins",
+     "dimension": "overworld",
+     "within": 300,
+     "distance": 269,
+     "at": [
+      32,
+      272
+     ],
+     "verified": true
+    },
+    {
+     "kind": "biome",
+     "id": "minecraft:dark_forest",
+     "label": "dark forest",
+     "dimension": "overworld",
+     "within": 400,
+     "distance": 344,
+     "at": [
+      -128,
+      324
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "minecraft:mansion",
+     "label": "woodland mansion",
+     "dimension": "overworld",
+     "within": 700,
+     "distance": 647,
+     "at": [
+      304,
+      576
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "minecraft:bastion_remnant",
+     "label": "bastion",
+     "dimension": "nether",
+     "within": 150,
+     "distance": 113,
+     "at": [
+      -112,
+      16
+     ],
+     "verified": true
+    }
+   ]
+  },
+  {
+   "id": "dappled-double-village",
+   "name": "Dappled forest double village",
+   "seed": "-2071092601429184301",
+   "description": "Spawn between a cherry grove and a huge dappled forest, with villages, trial chambers and an ancient city nearby.",
+   "source": "https://www.craftmc.net/minecraft-seeds/26.3/massive-dappled-forest-double-village-26-3",
+   "spawn": [
+    0,
+    0
+   ],
+   "verified": true,
+   "claims": [
+    {
+     "kind": "biome",
+     "id": "minecraft:cherry_grove",
+     "label": "cherry grove",
+     "dimension": "overworld",
+     "within": 50,
+     "distance": 0,
+     "at": [
+      0,
+      0
+     ],
+     "verified": true
+    },
+    {
+     "kind": "biome",
+     "id": "minecraft:dappled_forest",
+     "label": "dappled forest",
+     "dimension": "overworld",
+     "within": 100,
+     "distance": 45,
+     "at": [
+      -32,
+      32
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "minecraft:trial_chambers",
+     "label": "trial chambers",
+     "dimension": "overworld",
+     "within": 250,
+     "distance": 186,
+     "at": [
+      160,
+      96
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "minecraft:ancient_city",
+     "label": "ancient city",
+     "dimension": "overworld",
+     "within": 300,
+     "distance": 240,
+     "at": [
+      -192,
+      144
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "#minecraft:village",
+     "label": "village",
+     "dimension": "overworld",
+     "within": 400,
+     "distance": 346,
+     "at": [
+      -288,
+      -192
+     ],
+     "verified": true
+    }
+   ]
+  },
+  {
+   "id": "dappled-ice-spikes",
+   "name": "Dappled forest and ice spikes",
+   "seed": "6306952185402203104",
+   "description": "A dappled forest, ice spikes and a cherry grove around spawn, with an ancient city and a pillager outpost within about 600 blocks.",
+   "source": "https://www.craftmc.net/minecraft-seeds/26.3/dappled-forest-ice-spikes-ancient-city-starter-26-3",
+   "spawn": [
+    -32,
+    32
+   ],
+   "verified": true,
+   "claims": [
+    {
+     "kind": "biome",
+     "id": "minecraft:dappled_forest",
+     "label": "dappled forest",
+     "dimension": "overworld",
+     "within": 400,
+     "distance": 362,
+     "at": [
+      -288,
+      -224
+     ],
+     "verified": true
+    },
+    {
+     "kind": "biome",
+     "id": "minecraft:ice_spikes",
+     "label": "ice spikes",
+     "dimension": "overworld",
+     "within": 550,
+     "distance": 480,
+     "at": [
+      -416,
+      -256
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "minecraft:ancient_city",
+     "label": "ancient city",
+     "dimension": "overworld",
+     "within": 550,
+     "distance": 512,
+     "at": [
+      -544,
+      32
+     ],
+     "verified": true
+    },
+    {
+     "kind": "biome",
+     "id": "minecraft:cherry_grove",
+     "label": "cherry grove",
+     "dimension": "overworld",
+     "within": 650,
+     "distance": 615,
+     "at": [
+      64,
+      -576
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "#minecraft:village",
+     "label": "village",
+     "dimension": "overworld",
+     "within": 600,
+     "distance": 546,
+     "at": [
+      -544,
+      224
+     ],
+     "verified": true
+    }
+   ]
+  },
+  {
+   "id": "pale-garden-camp",
+   "name": "Pale garden campsite",
+   "seed": "-4696916708035556965",
+   "description": "Spawn at a pale garden next to a dark forest, with a village and an abandoned camp for a day-one base.",
+   "source": "https://www.craftmc.net/minecraft-seeds/26.3/pale-garden-campsite-dappled-forest-showcase-26-3",
+   "spawn": [
+    -64,
+    48
+   ],
+   "verified": true,
+   "claims": [
+    {
+     "kind": "biome",
+     "id": "minecraft:pale_garden",
+     "label": "pale garden",
+     "dimension": "overworld",
+     "within": 100,
+     "distance": 45,
+     "at": [
+      -32,
+      16
+     ],
+     "verified": true
+    },
+    {
+     "kind": "biome",
+     "id": "minecraft:dark_forest",
+     "label": "dark forest",
+     "dimension": "overworld",
+     "within": 250,
+     "distance": 192,
+     "at": [
+      128,
+      48
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "#minecraft:village",
+     "label": "village",
+     "dimension": "overworld",
+     "within": 350,
+     "distance": 289,
+     "at": [
+      -352,
+      80
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "#minecraft:abandoned_camp",
+     "label": "abandoned camp",
+     "dimension": "overworld",
+     "within": 450,
+     "distance": 423,
+     "at": [
+      -480,
+      128
+     ],
+     "verified": true
+    }
+   ]
+  },
+  {
+   "id": "dark-forest-mansion",
+   "name": "Dark forest mansion and campsite",
+   "seed": "4374896627388464667",
+   "description": "Spawn in a dark forest: an abandoned camp, an ancient city, a village and a woodland mansion all within about 600 blocks.",
+   "source": "https://www.craftmc.net/minecraft-seeds/26.3/dark-forest-mansion-campsite-thumbnail-26-3",
+   "spawn": [
+    0,
+    0
+   ],
+   "verified": true,
+   "claims": [
+    {
+     "kind": "biome",
+     "id": "minecraft:dark_forest",
+     "label": "dark forest",
+     "dimension": "overworld",
+     "within": 50,
+     "distance": 0,
+     "at": [
+      0,
+      0
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "#minecraft:abandoned_camp",
+     "label": "abandoned camp",
+     "dimension": "overworld",
+     "within": 350,
+     "distance": 329,
+     "at": [
+      80,
+      320
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "minecraft:ancient_city",
+     "label": "ancient city",
+     "dimension": "overworld",
+     "within": 350,
+     "distance": 315,
+     "at": [
+      -288,
+      128
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "#minecraft:village",
+     "label": "village",
+     "dimension": "overworld",
+     "within": 400,
+     "distance": 369,
+     "at": [
+      32,
+      368
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "minecraft:mansion",
+     "label": "woodland mansion",
+     "dimension": "overworld",
+     "within": 600,
+     "distance": 577,
+     "at": [
+      384,
+      -432
+     ],
+     "verified": true
+    }
+   ]
+  },
+  {
+   "id": "triple-dappled",
+   "name": "Dappled forest coast",
+   "seed": "-4227634870293935746",
+   "description": "Spawn in a dappled forest on the coast, a shipwreck and trial chambers close by and a cherry grove further on.",
+   "source": "https://www.craftmc.net/minecraft-seeds/26.3/triple-dappled-forest-trial-ancient-city-26-3",
+   "spawn": [
+    -288,
+    0
+   ],
+   "verified": true,
+   "claims": [
+    {
+     "kind": "biome",
+     "id": "minecraft:dappled_forest",
+     "label": "dappled forest",
+     "dimension": "overworld",
+     "within": 50,
+     "distance": 0,
+     "at": [
+      -288,
+      0
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "#minecraft:shipwreck",
+     "label": "shipwreck",
+     "dimension": "overworld",
+     "within": 300,
+     "distance": 288,
+     "at": [
+      -128,
+      240
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "minecraft:trial_chambers",
+     "label": "trial chambers",
+     "dimension": "overworld",
+     "within": 350,
+     "distance": 329,
+     "at": [
+      -416,
+      304
+     ],
+     "verified": true
+    },
+    {
+     "kind": "biome",
+     "id": "minecraft:cherry_grove",
+     "label": "cherry grove",
+     "dimension": "overworld",
+     "within": 700,
+     "distance": 672,
+     "at": [
+      -960,
+      -32
+     ],
+     "verified": true
+    }
+   ]
+  },
+  {
+   "id": "floating-village",
+   "name": "Floating village island",
+   "seed": "-2524830541087318325",
+   "description": "Spawn on a village island next to a dappled forest, a shipwreck offshore and a Nether fortress right by the spawn portal.",
+   "source": "https://www.craftmc.net/minecraft-seeds/26.3/floating-village-well-island-dappled-26-3",
+   "spawn": [
+    0,
+    0
+   ],
+   "verified": true,
+   "claims": [
+    {
+     "kind": "structure",
+     "id": "#minecraft:village",
+     "label": "village",
+     "dimension": "overworld",
+     "within": 50,
+     "distance": 0,
+     "at": [
+      0,
+      0
+     ],
+     "verified": true
+    },
+    {
+     "kind": "biome",
+     "id": "minecraft:dappled_forest",
+     "label": "dappled forest",
+     "dimension": "overworld",
+     "within": 100,
+     "distance": 32,
+     "at": [
+      32,
+      0
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "#minecraft:shipwreck",
+     "label": "shipwreck",
+     "dimension": "overworld",
+     "within": 300,
+     "distance": 244,
+     "at": [
+      128,
+      208
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "minecraft:fortress",
+     "label": "nether fortress",
+     "dimension": "nether",
+     "within": 100,
+     "distance": 32,
+     "at": [
+      0,
+      32
+     ],
+     "verified": true
+    }
+   ]
+  },
+  {
+   "id": "nether-fortress-start",
+   "name": "Nether fortress start",
+   "seed": "396009952850625630",
+   "description": "A Nether fortress within 100 blocks of the spawn portal, with trial chambers and a shipwreck near the Overworld spawn.",
+   "source": "https://www.craftmc.net/minecraft-seeds/26.3/quadruple-nether-fortress-java-26-3",
+   "spawn": [
+    0,
+    0
+   ],
+   "verified": true,
+   "claims": [
+    {
+     "kind": "structure",
+     "id": "minecraft:fortress",
+     "label": "nether fortress",
+     "dimension": "nether",
+     "within": 150,
+     "distance": 97,
+     "at": [
+      16,
+      96
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "minecraft:trial_chambers",
+     "label": "trial chambers",
+     "dimension": "overworld",
+     "within": 300,
+     "distance": 244,
+     "at": [
+      128,
+      208
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "#minecraft:shipwreck",
+     "label": "shipwreck",
+     "dimension": "overworld",
+     "within": 300,
+     "distance": 250,
+     "at": [
+      224,
+      112
+     ],
+     "verified": true
+    }
+   ]
+  },
+  {
+   "id": "stony-shore-island",
+   "name": "Stony shore island",
+   "seed": "7630080007485637379",
+   "description": "Spawn on a stony shore by a dappled forest, trial chambers just inland and an ocean monument offshore.",
+   "source": "https://www.mc-mod.net/?p=802676",
+   "spawn": [
+    416,
+    644
+   ],
+   "verified": true,
+   "claims": [
+    {
+     "kind": "biome",
+     "id": "minecraft:dappled_forest",
+     "label": "dappled forest",
+     "dimension": "overworld",
+     "within": 100,
+     "distance": 71,
+     "at": [
+      352,
+      676
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "minecraft:trial_chambers",
+     "label": "trial chambers",
+     "dimension": "overworld",
+     "within": 150,
+     "distance": 102,
+     "at": [
+      320,
+      608
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "minecraft:monument",
+     "label": "ocean monument",
+     "dimension": "overworld",
+     "within": 450,
+     "distance": 388,
+     "at": [
+      32,
+      704
+     ],
+     "verified": true
+    }
+   ]
+  },
+  {
+   "id": "plains-ice-spikes",
+   "name": "Plains with ice spikes",
+   "seed": "5111262115741632263",
+   "description": "Plains spawn near a dappled forest and ice spikes, with trial chambers and a village a short walk away.",
+   "source": "https://www.mc-mod.net/?p=805321",
+   "spawn": [
+    0,
+    -32
+   ],
+   "verified": true,
+   "claims": [
+    {
+     "kind": "biome",
+     "id": "minecraft:dappled_forest",
+     "label": "dappled forest",
+     "dimension": "overworld",
+     "within": 150,
+     "distance": 115,
+     "at": [
+      96,
+      32
+     ],
+     "verified": true
+    },
+    {
+     "kind": "biome",
+     "id": "minecraft:ice_spikes",
+     "label": "ice spikes",
+     "dimension": "overworld",
+     "within": 300,
+     "distance": 230,
+     "at": [
+      -128,
+      -224
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "minecraft:trial_chambers",
+     "label": "trial chambers",
+     "dimension": "overworld",
+     "within": 250,
+     "distance": 222,
+     "at": [
+      80,
+      -240
+     ],
+     "verified": true
+    },
+    {
+     "kind": "structure",
+     "id": "#minecraft:village",
+     "label": "village",
+     "dimension": "overworld",
+     "within": 400,
+     "distance": 336,
+     "at": [
+      144,
+      -336
+     ],
+     "verified": true
+    }
+   ]
+  }
+ ]
+}

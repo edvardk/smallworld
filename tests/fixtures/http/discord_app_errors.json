@@ -1,0 +1,63 @@
+{
+  "_source": "Shaped from Discord's API docs: a reset bot token (401), an app not in the guild (403 code 50001), an endpoint that failed Discord's PING (400 code 50035).",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://discord.com/api/v10/applications/@me"
+      },
+      "response": {
+        "body": {
+          "code": 0,
+          "message": "401: Unauthorized"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "request": {
+        "method": "PUT",
+        "url": "https://discord.com/api/v10/applications/1300000000000000001/guilds/1300000000000000002/commands"
+      },
+      "response": {
+        "body": {
+          "code": 50001,
+          "message": "Missing Access"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "request": {
+        "method": "PATCH",
+        "url": "https://discord.com/api/v10/applications/@me"
+      },
+      "response": {
+        "body": {
+          "code": 50035,
+          "errors": {
+            "interactions_endpoint_url": {
+              "_errors": [
+                {
+                  "code": "APPLICATION_INTERACTIONS_ENDPOINT_URL_INVALID",
+                  "message": "The specified interactions endpoint url could not be verified."
+                }
+              ]
+            }
+          },
+          "message": "Invalid Form Body"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    }
+  ]
+}

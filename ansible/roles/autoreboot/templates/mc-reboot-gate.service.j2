@@ -1,0 +1,30 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Reboot for pending updates when nobody is online (design §6 "Reboots", P11)
+After=minecraft.service
+# Never on a box `mcctl migrate` fenced: another box owns the world (removed only by mcctl's unfence).
+ConditionPathExists=!{{ mc_state_dir }}/fenced
+
+[Service]
+Type=oneshot
+# The ops user, not minecraft: it holds the Discord webhook and the watchdog token (notify.env).
+User={{ mc_ops_user }}
+Group={{ mc_ops_user }}
+SupplementaryGroups=minecraft
+EnvironmentFile={{ mc_etc_dir }}/notify.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment="REBOOT_WINDOW={{ mc_reboot_window }}"
+Environment="REBOOT_TZ={{ timezone }}"
+Environment="REBOOT_TARGET={{ mc_reboot_target }}"
+StateDirectory=mc-reboot-gate
+# The markers directory (maintenance windows), nothing else outside its state.
+ReadWritePaths={{ mc_state_dir }}
+ExecStart={{ mc_bin_dir }}/reboot_gate.py
+# P13: idle priority (never competes with the tick), see mc_helper_priority.
+{{ mc_helper_priority | join('\n') }}
+{% if mc_helper_cpus %}
+AllowedCPUs={{ mc_helper_cpus }}
+{% endif %}
+# Sandbox (design §7): the shared set, see ansible/group_vars/all/main.yml.
+{{ mc_systemd_sandbox | join('\n') }}
+MemoryDenyWriteExecute=true

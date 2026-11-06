@@ -1,0 +1,75 @@
+{
+  "_source": "Shaped from RFC 9224 (IANA bootstrap dns.json) and RFC 9083 (domain object events).",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://data.iana.org/rdap/dns.json"
+      },
+      "response": {
+        "body": {
+          "publication": "2026-10-01T00:00:00Z",
+          "services": [
+            [
+              [
+                "com",
+                "net"
+              ],
+              [
+                "https://rdap.verisign.com/com/v1/"
+              ]
+            ],
+            [
+              [
+                "dev",
+                "app"
+              ],
+              [
+                "https://pubapi.registry.google/rdap/"
+              ]
+            ]
+          ],
+          "version": "1.0"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://rdap.verisign.com/com/v1/domain/example.com"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "location": "https://rdap.registrar.example.net/domain/example.com"
+        },
+        "status": 302
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://rdap.registrar.example.net/domain/example.com"
+      },
+      "response": {
+        "body": {
+          "events": [
+            {
+              "eventAction": "expiration",
+              "eventDate": "2026-11-15T10:00:00Z"
+            }
+          ],
+          "objectClassName": "domain"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ]
+}

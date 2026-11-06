@@ -1,0 +1,5 @@
+🔴 **The Minecraft server is down**
+**Impact:** Nobody can join or play.
+**Likely cause:** It doesn't answer on its console port (RCON); the server log last said: java.lang.OutOfMemoryError: Java heap space.
+**What to do:** Usually nothing: self-heal restarts it within a few minutes. If it doesn't come back: `mcctl doctor`, then `journalctl -u minecraft -n 100` on the box.
+**Details:** RCON unreachable

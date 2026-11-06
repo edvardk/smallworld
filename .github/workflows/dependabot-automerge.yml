@@ -1,0 +1,43 @@
+name: dependabot-automerge
+
+# P11 (design §6 "Dependabot"): Dependabot's version updates (GitHub Actions pins by SHA, the hash-pinned Python
+# requirements) merge by themselves once CI is green, for semver minor and patch updates; majors wait for a
+# human. GitHub's documented pattern (Dependabot docs, "Automating Dependabot with GitHub Actions"):
+# dependabot/fetch-metadata reads the update type, `gh pr merge --auto` enables auto-merge, and the merge happens
+# only when the branch rules are met. Needs, in the product repo (the admin, once): Settings > General > "Allow
+# auto-merge", and a ruleset on main requiring the `ci` checks (lint, gitleaks, actionlint, config-repo /
+# validate); without a required check, auto-merge would merge at once. The config repo has no Dependabot: its
+# only `uses:` is the product pin, which the weekly update task bumps (P3 deviation).
+# Dependabot opens one grouped PR per ecosystem and week (.github/dependabot.yml), so this costs one short job
+# per week and ecosystem; for everyone else's PRs the job is skipped (no runner, no minutes). `--auto` merges only
+# once every required check (lint, gitleaks, actionlint, config-repo / validate, e2e) has passed.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  automerge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'edvardk/smallworld'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write # enabling auto-merge (the merge itself runs when the required checks pass)
+      pull-requests: write
+    steps:
+      # v3 (supersedes Dependabot's PR #2; release notes checked 2026-11-03): runs on the Node 24 Actions runtime
+      # (ubuntu-24.04 has it); inputs and outputs unchanged (update-type is still version-update:semver-*), 3.1.0
+      # also fills update-type for pip/terraform PRs that 2.x left empty (fetch-metadata#704).
+      - name: Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          github-token: ${{ github.token }}
+
+      - name: Auto-merge minor and patch updates once CI passes
+        if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr merge --auto --squash "$PR_URL"

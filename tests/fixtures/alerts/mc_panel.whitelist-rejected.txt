@@ -1,0 +1,5 @@
+ℹ️ **A panel whitelist change was turned down (pull request #7 closed)**
+**Impact:** Undone on the live server with: whitelist remove Player_One. The whitelist follows players.yml in Git again.
+**Likely cause:** Pull request #7 was closed without merging.
+**What to do:** Nothing if that was intended. To make the change after all: the panel again, or players.yml in the config repo.
+**Details:** reverted: remove Player_One; failed: nothing

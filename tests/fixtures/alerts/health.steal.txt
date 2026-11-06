@@ -1,0 +1,5 @@
+⚠️ **The hosting provider is short on CPU for this server**
+**Impact:** Ticks may get slower (lag) while it lasts. 4 player(s) online right now.
+**Likely cause:** Other virtual machines on the same physical host are using the shared CPUs ('steal').
+**What to do:** Usually nothing: it passes. The panel's CPU chart shows the steal over time; if it keeps happening and players notice lag, move to a host with dedicated cores or more RAM.
+**Details:** CPU steal 20% (alert above 10%) for 3 checks

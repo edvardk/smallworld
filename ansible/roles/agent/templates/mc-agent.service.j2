@@ -1,0 +1,49 @@
+# {{ ansible_managed }}
+# mc-agent (scripts/mc_agent.py, design §5a): metrics, logs and signed commands between this server and the
+# Cloudflare Worker. Outbound HTTPS only. Runs as {{ mc_ops_user }}, never as minecraft (it holds the agent token
+# and the command key); systemd-journal lets it read the journal it ships.
+[Unit]
+Description=Minecraft agent (metrics, logs, panel commands -> Cloudflare Worker)
+Wants=network-online.target
+After=network-online.target minecraft.service
+# Never on a box `mcctl migrate` fenced: another box owns the world (removed only by mcctl's unfence).
+ConditionPathExists=!{{ mc_state_dir }}/fenced
+
+[Service]
+Type=simple
+User={{ mc_ops_user }}
+Group={{ mc_ops_user }}
+SupplementaryGroups=minecraft systemd-journal
+EnvironmentFile={{ mc_etc_dir }}/agent.env
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+# P13: mc-telemetry/segments = the box's own copy of the experience data (gzip segments, 30 days, disk-capped)
+StateDirectory=mc-agent mc-telemetry
+StateDirectoryMode=0700
+UMask=0077
+ExecStart={{ mc_bin_dir }}/mc_agent.py
+Restart=always
+RestartSec=10
+# Design §5a: ~25 MB; never at the server's expense.
+MemoryHigh=48M
+MemoryMax=64M
+CPUQuota=20%
+OOMScoreAdjust=500
+# P13: timely priority (has a deadline; the JVM still wins 10:1), see mc_timely_priority.
+{{ mc_timely_priority | join('\n') }}
+{% if mc_helper_cpus %}
+AllowedCPUs={{ mc_helper_cpus }}
+{% endif %}
+# Sandbox (design §7): the shared set, see ansible/group_vars/all/main.yml.
+{{ mc_systemd_sandbox | join('\n') }}
+MemoryDenyWriteExecute=true
+# The panel's stop/start write and remove the admin-stopped marker, restart its maintenance window: both live in
+# the markers directory (ProtectSystem=strict makes everything else read-only; StateDirectory= is writable).
+ReadWritePaths={{ mc_state_dir }}
+{% if mc_experience_enabled or mc_client_enabled %}
+# P13: verdicts and in-game messages for the mc-telemetry plugin; v1.1: /modpack's codes for mc-brand (tmpfs,
+# setgid minecraft; the plugins read them, never write)
+ReadWritePaths={{ mc_verdict_dir }}
+{% endif %}
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,122 @@
+# The provider's image names the box after itself (often a provider-generated name, with that name on 127.0.1.1 in
+# /etc/hosts). Remember it before renaming, so its stale /etc/hosts lines can go.
+- name: Remember the image's hostname
+  ansible.builtin.set_fact:
+    access_previous_hostname: "{{ ansible_facts['hostname'] | default('') }}"
+
+- name: Set hostname
+  ansible.builtin.hostname:
+    name: "{{ mc_hostname }}"
+
+# Debian convention: the hostname resolves through 127.0.1.1, otherwise every sudo prints "unable to resolve host"
+# (and anything else that resolves its own name waits for DNS). One line, ours; the localhost and ::1 lines are
+# left as they are. unsafe_writes: a container bind-mounts /etc/hosts (rename fails with EBUSY); a VPS never
+# needs the fallback.
+- name: Map the hostname to 127.0.1.1 in /etc/hosts
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1\s'
+    line: "127.0.1.1\t{{ mc_hostname }}"
+    insertafter: '^127\.0\.0\.1\s'
+    owner: root
+    group: root
+    mode: "0644"
+    unsafe_writes: true
+
+- name: Drop /etc/hosts lines naming the image's old hostname
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^(?!.*\blocalhost\b)\s*[0-9a-fA-F:.]+\s(.*\s)?{{ access_previous_hostname | regex_escape }}([.\s].*)?$'
+    state: absent
+    unsafe_writes: true
+  when: access_previous_hostname not in ['', 'localhost', mc_hostname]
+
+# cloud-init (where the image uses it) would put its own hostname back and regenerate /etc/hosts on boot.
+- name: Is cloud-init installed?
+  ansible.builtin.stat:
+    path: /etc/cloud/cloud.cfg.d
+  register: access_cloud_init
+
+- name: Keep cloud-init off the hostname and /etc/hosts
+  ansible.builtin.copy:
+    dest: /etc/cloud/cloud.cfg.d/99-mc-hostname.cfg
+    content: |
+      # Managed by Ansible (access role): the hostname and /etc/hosts are set by the deploy.
+      preserve_hostname: true
+      manage_etc_hosts: false
+    owner: root
+    group: root
+    mode: "0644"
+  when: access_cloud_init.stat.exists
+
+- name: Install sudo
+  ansible.builtin.apt:
+    name: sudo
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create deploy user
+  ansible.builtin.user:
+    name: "{{ deploy_user }}"
+    shell: /bin/bash
+    groups: [sudo]
+    append: true
+    password: "!"            # locked: key-only (public) or Tailscale SSH
+    update_password: on_create
+
+- name: Authorise deploy SSH keys
+  ansible.posix.authorized_key:
+    user: "{{ deploy_user }}"
+    key: "{{ deploy_authorized_keys | join('\n') }}"
+    exclusive: true
+  when: deploy_authorized_keys | length > 0
+
+- name: Passwordless sudo for deploy (CI runs non-interactively)
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/90-deploy
+    content: "{{ deploy_user }} ALL=(ALL:ALL) NOPASSWD: ALL\n"
+    owner: root
+    group: root
+    mode: "0440"
+    validate: visudo -cf %s
+
+- name: Harden sshd (no root, no passwords, deploy only)
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/10-hardening.conf
+    content: |
+      # Managed by Ansible. First match wins in sshd, so this beats later drop-ins (e.g. cloud-init).
+      PermitRootLogin no
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      AllowUsers {{ deploy_user }}
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
+  notify: Reload sshd
+
+# The drop-in only works if sshd_config includes sshd_config.d/ (Debian 12+/Ubuntu 22.04+ images do,
+# but some provider images ship their own sshd_config without it).
+- name: Make sure sshd_config includes the drop-in directory
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^\s*Include\s+(/etc/ssh/)?sshd_config\.d/\*\.conf'
+    line: Include /etc/ssh/sshd_config.d/*.conf
+    insertbefore: BOF
+    firstmatch: true
+    validate: /usr/sbin/sshd -t -f %s
+  notify: Reload sshd
+
+- name: Read the effective sshd config
+  ansible.builtin.command: /usr/sbin/sshd -T -C user=root,host=localhost,addr=127.0.0.1
+  register: access_sshd_effective
+  changed_when: false
+
+- name: Root login and passwords are really off
+  ansible.builtin.assert:
+    that:
+      - "'permitrootlogin no' in access_sshd_effective.stdout_lines"
+      - "'passwordauthentication no' in access_sshd_effective.stdout_lines"
+    fail_msg: sshd's effective config still allows root or password logins; check /etc/ssh/sshd_config.
+    quiet: true

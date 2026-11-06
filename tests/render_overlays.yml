@@ -1,0 +1,26 @@
+# Test helper (used by test_overlays.py): render every config overlay (and P17's mc-brand settings) with the
+# product constants and the group_vars `mcctl render` produced from a config repo (-e rendered_vars=<file>).
+- name: Render config overlays
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../ansible/group_vars/all/main.yml
+    - "{{ rendered_vars }}"
+    - ../ansible/roles/minecraft/defaults/main.yml
+  vars:
+    mc_secret_rcon_password: test-password
+    mc_config_dir: "{{ playbook_dir }}/../server-config"
+  tasks:
+    - name: Render
+      ansible.builtin.copy:
+        content: "{{ lookup('ansible.builtin.template', mc_config_dir ~ '/' ~ item.template) | from_yaml | to_nice_json }}"
+        dest: "{{ out_dir }}/{{ item.template | replace('/', '__') }}.json"
+        mode: "0644"
+      loop: "{{ mc_overlays_core + mc_overlays_plugins }}"
+
+    - name: Render the mc-brand plugin's settings (P17)
+      ansible.builtin.copy:
+        content: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../ansible/roles/plugins/templates/mc-brand.yml.j2') }}"
+        dest: "{{ out_dir }}/mc-brand.yml"
+        mode: "0644"

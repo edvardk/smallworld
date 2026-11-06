@@ -1,0 +1,5 @@
+🔴 **The Minecraft server is down; automatic restarts stopped**
+**Impact:** Nobody can join or play until someone fixes it.
+**Likely cause:** Self-heal gave up after 3 restarts in 24 h (unit failed).
+**What to do:** Find the reason in `journalctl -u minecraft -n 200` on the box (or `mcctl doctor`), fix it, then start the server from the panel.
+**Details:** 3 restarts in 24 h; unit failed

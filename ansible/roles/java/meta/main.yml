@@ -1,0 +1,12 @@
+galaxy_info:
+  role_name: java
+  author: the Smallworld contributors
+  description: java role for the Minecraft server
+  license: MIT
+  min_ansible_version: "2.17"
+  platforms:
+    - name: Debian
+      versions: [bookworm, trixie]
+    - name: Ubuntu
+      versions: [noble]
+dependencies: []

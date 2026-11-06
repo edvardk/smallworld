@@ -1,0 +1,36 @@
+{
+  "_source": "Shaped from the GitHub REST API (repos, actions secrets public-key, commits) and the GitHub-Authentication-Token-Expiration header (changelog 2021-07-26), 2026-10-31.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/mcctl-tests/tests-mc-config"
+      },
+      "response": {
+        "body": {
+          "message": "Bad credentials"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/mcctl-tests/tests-mc-config/branches/main/protection"
+      },
+      "response": {
+        "body": {
+          "message": "Bad credentials",
+          "status": "401"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    }
+  ]
+}

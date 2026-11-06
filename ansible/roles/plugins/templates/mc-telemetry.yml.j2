@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+# The in-house plugin mc-telemetry (design §8 P13). Owned by root: the plugin only reads it.
+snapshot-dir: {{ mc_telemetry_dir }}
+verdict-dir: {{ mc_verdict_dir }}
+interval-seconds: {{ mc_experience_snapshot_seconds }}
+keep-snapshots: 60
+budget-micros: {{ mc_experience_budget_us }}
+spike-ms: 100
+near-radius: 48
+collect-players: true
+# The busiest loaded chunks (entities, tile entities), one chunk per step inside the per-tick budget.
+chunk-scan: true
+player-messages: {{ mc_experience_messages | bool | lower }}

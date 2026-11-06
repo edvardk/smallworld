@@ -1,0 +1,77 @@
+{
+  "_source": "Shaped from the GitHub REST API (repos, actions secrets public-key, commits) and the GitHub-Authentication-Token-Expiration header (changelog 2021-07-26), 2026-10-31; OIDC customization/sub (REST \"GitHub Actions OIDC\"), 2026-11-02; ids fake.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/mcctl-tests/tests-mc-config"
+      },
+      "response": {
+        "body": {
+          "full_name": "mcctl-tests/tests-mc-config",
+          "id": 1,
+          "name": "tests-mc-config",
+          "owner": {
+            "login": "mcctl-tests",
+            "id": 2,
+            "type": "User"
+          },
+          "created_at": "2026-11-01T09:00:00Z",
+          "private": true
+        },
+        "headers": {
+          "content-type": "application/json",
+          "github-authentication-token-expiration": "2026-11-20 12:00:00 UTC"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/mcctl-tests/tests-mc-config/actions/secrets/public-key"
+      },
+      "response": {
+        "body": {
+          "key": "base64-public-key",
+          "key_id": "568250167242549743"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/mcctl-tests/tests-mc-config/actions/oidc/customization/sub"
+      },
+      "response": {
+        "body": {
+          "use_default": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/mcctl-tests/tests-mc-config/branches/main/protection"
+      },
+      "response": {
+        "body": {
+          "message": "Branch not protected",
+          "status": "404"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+# P11 (design §6 "Reboots"): mc-reboot-gate reboots for pending updates inside automation.reboot_window when nobody
+# is online, never forced (Discord after 3 days). It runs as the ops user; the polkit rule that lets it start
+# exactly mc_reboot_target is in the base role. Its secrets (Discord webhook, watchdog token) come from
+# notify.env, which systemd reads as root.
+- name: Install the reboot gate's units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: [mc-reboot-gate.service, mc-reboot-gate.timer]
+
+- name: Enable the reboot gate's timer
+  ansible.builtin.systemd_service:
+    name: mc-reboot-gate.timer
+    enabled: true
+    state: started
+    daemon_reload: true

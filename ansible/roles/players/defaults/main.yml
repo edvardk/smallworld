@@ -1,0 +1,3 @@
+# The panel's pending whitelist changes (mc-agent's state dir, P10): honoured by every deploy until they are in Git.
+players_pending_file: "{{ mc_panel_pending_file }}"
+players_desired_file: "{{ mc_root }}/players-desired.json"

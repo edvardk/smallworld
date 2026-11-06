@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="referrer" content="no-referrer">
+<title>Server console</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/ibm-plex-sans.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/chakra-petch-700.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/chakra-petch-600.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/pixelify-sans.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/jetbrains-mono.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/panel.css">
+<script type="module" src="/panel.js"></script>
+</head>
+<body>
+<div class="bgfx" aria-hidden="true"></div>
+<a class="sr" href="#main">Skip to content</a>
+<header class="top">
+  <div class="wrap hrow">
+    <div class="ident">
+      <div class="blockicon" aria-hidden="true"></div>
+      <div class="ident-text">
+        <h1 id="title">Server console</h1>
+        <div class="sub"><span class="sub-host" id="host">…</span><span aria-hidden="true">·</span><span id="version">…</span></div>
+      </div>
+      <span class="pill off" id="statePill" role="status">Loading</span>
+    </div>
+    <div class="hvitals" aria-label="Live status">
+      <div class="hv"><span class="label">Uptime</span><b id="uptime" class="uptime">–</b></div>
+      <div class="hv"><span class="label">Players</span><b><span id="pcount">–</span><small id="pmax"></small></b></div>
+      <div class="hv"><span class="label" title="TPS (ticks per second): how many game updates the server manages each second. 20 is full speed; below 20 the world slows down.">TPS</span><b id="hdrTps">–</b></div>
+      <div class="hv"><span class="label" title="Tick time (MSPT): milliseconds each update takes. Must stay under 50 ms for full speed; lower is better.">MSPT</span><b id="hdrMspt">–</b></div>
+      <div class="hv"><span class="label">CPU</span><b id="hdrCpu">–</b><span class="mini"><i id="hdrCpuBar"></i></span></div>
+      <div class="hv"><span class="label">RAM</span><b id="hdrRam">–</b><span class="mini"><i id="hdrRamBar"></i></span></div>
+    </div>
+    <div class="actions">
+      <button class="btn primary" type="button" id="btnRestart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Restart</button>
+      <button class="btn danger" type="button" id="btnStop"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1"/></svg><span>Stop</span></button>
+      <button class="btn" type="button" id="btnBackup"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>Back up now</button>
+      <button class="iconbtn" type="button" id="themeBtn" aria-label="Switch colour theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
+    </div>
+  </div>
+  <div class="wrap mebar"><span class="me" id="me" title="Signed in through Cloudflare Access"></span><span class="soon">every action is signed and audit-logged</span><button class="fxbtn" type="button" id="fxBtn" aria-label="Effects: auto (switch)" title="Effects: auto, full or light (lighter effects for slow machines)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg><span class="fxt">Effects: <span id="fxLabel">auto</span></span></button></div>
+  <div class="grassline" aria-hidden="true"></div>
+  <div class="countdown" id="countdown" role="status" aria-live="polite"><div class="wrap"><strong id="cdText"></strong><span id="cdSub"></span><button class="btn sm" id="cdCancel" type="button">Cancel</button></div></div>
+  <nav class="tabs" aria-label="Sections"><div class="wrap"><div class="tablist" role="tablist" id="tablist"></div></div></nav>
+</header>
+<main class="wrap" id="main" tabindex="-1"></main>
+<dialog id="dlg" aria-labelledby="dlgTitle"><form method="dialog" id="dlgForm">
+  <div class="dh"><h2 id="dlgTitle"></h2></div>
+  <div class="db" id="dlgBody"></div>
+  <div class="df"><button class="btn" value="cancel" type="submit" id="dlgCancel">Cancel</button><button class="btn primary" value="ok" type="submit" id="dlgOk">Confirm</button></div>
+</form></dialog>
+<div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
+</body>
+</html>

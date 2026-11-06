@@ -1,0 +1,294 @@
+{
+ "group_vars": {
+  "firewall_mc_max_concurrent": 10,
+  "health_alert_repeat_hours": 6,
+  "health_disk_alert_pct": 85,
+  "health_gc_pause_alert_ms": 50,
+  "health_heap_alert_checks": 6,
+  "health_heap_alert_pct": 85,
+  "health_mspt_alert": 45,
+  "health_mspt_alert_checks": 3,
+  "health_steal_alert_checks": 3,
+  "health_steal_alert_pct": 10,
+  "mc_accept_eula": true,
+  "mc_activation_range": {
+   "animals": 0,
+   "flying_monsters": 0,
+   "misc": 0,
+   "monsters": 0,
+   "raiders": 0,
+   "villagers": 0,
+   "water": 0
+  },
+  "mc_alt_item_despawn_ticks": {},
+  "mc_backup_keep_within_days": 8,
+  "mc_backup_schedule": "hourly",
+  "mc_brand": {
+   "client": {
+    "enabled": true,
+    "fps_hud": true,
+    "fps_interval_seconds": 5,
+    "prompt": true,
+    "url": "https://play.lighthouse.internal/"
+   },
+   "colors": {
+    "accent": "#E4572E",
+    "secondary": "#1D3557",
+    "subtle": "#A8DADC",
+    "text": "#F4F1EA"
+   },
+   "discord_invite": "https://discord.gg/lighthouse",
+   "drink": {
+    "color": "#6F4E37",
+    "command": "cocoa",
+    "cooldown_seconds": 30,
+    "enabled": true,
+    "give_on_first_join": true,
+    "lore": [
+     "Always warm.",
+     "A hint of cinnamon."
+    ],
+    "name": "Cocoa Mug",
+    "nausea_seconds": 10
+   },
+   "holograms": [
+    {
+     "health": true,
+     "lines": [
+      "Welcome to {server} {glyph}",
+      "{players} online"
+     ],
+     "world": "minecraft:overworld",
+     "x": 0,
+     "y": 72,
+     "z": 0
+    }
+   ],
+   "hud": {
+    "default_mode": "top",
+    "default_on": false,
+    "enabled": true,
+    "interval_seconds": 5,
+    "max_players": 8,
+    "settle_seconds": 10,
+    "tab_header": "Lighthouse",
+    "tab_list": true
+   },
+   "join": {
+    "first_join": "Welcome to {server}, {player}! {glyph} Warm up by the lamp and stay a while",
+    "sound": "minecraft:entity.player.levelup",
+    "subtitle_back": "Welcome back, {player}!",
+    "subtitle_first": "Welcome, {player}!",
+    "title": true,
+    "welcome_back": "Welcome back, {player} \u2014 last seen {ago} ago"
+   },
+   "map": {
+    "fair_play": true,
+    "players": true
+   },
+   "name": "Lighthouse",
+   "rules": [
+    "Be kind.",
+    "Don't grief or steal.",
+    "No cheats or hacked clients (visual mods are fine).",
+    "Have fun {glyph}"
+   ],
+   "rules_url": "",
+   "view": {
+    "check_seconds": 5,
+    "enabled": true,
+    "max": 16
+   },
+   "website": "https://www.lighthouse.internal/"
+  },
+  "mc_brand_enabled": true,
+  "mc_brand_pack": {
+   "enabled": true,
+   "prompt": "{\"text\": \"Lighthouse textures: the cocoa mug\", \"color\": \"#E4572E\"}"
+  },
+  "mc_chunk_worker_threads": -1,
+  "mc_client_enabled": true,
+  "mc_config_repo": "lighthouse-admin/lighthouse-mc-config",
+  "mc_cpu_affinity": "split",
+  "mc_despawn_range": {
+   "hard": 128,
+   "soft": 32
+  },
+  "mc_expect_ipv6": false,
+  "mc_experience_backfill_window": "",
+  "mc_experience_broadcast_s": 1800,
+  "mc_experience_budget_us": 100,
+  "mc_experience_enabled": true,
+  "mc_experience_message_per_player_s": 1800,
+  "mc_experience_messages": true,
+  "mc_experience_messages_per_hour": 20,
+  "mc_experience_segment_cap_mb": 200,
+  "mc_experience_segment_days": 30,
+  "mc_experience_snapshot_seconds": 10,
+  "mc_gamerules": {
+   "locator_bar": "true",
+   "players_sleeping_percentage": "50"
+  },
+  "mc_heap_mb": 6144,
+  "mc_helper_cpus": "0",
+  "mc_hostname": "lighthouse-mc",
+  "mc_jvm_gc": "zgc",
+  "mc_level_name": "world",
+  "mc_logs_max_rows_per_day": 30000,
+  "mc_max_players": 20,
+  "mc_metrics_interval_s": 60,
+  "mc_motd": "\u00a7f\u00a7lLight\u00a7c\u00a7lhouse \u00a78| \u00a77Keep the lamp lit\n\u00a77A small survival world by the sea",
+  "mc_nerf_spawner_mobs": false,
+  "mc_network_compression_threshold": 256,
+  "mc_noatime": true,
+  "mc_online_mode": true,
+  "mc_panel_mode": "cloudflare",
+  "mc_performance_profile": "vanilla",
+  "mc_prune_schedule": "Sun 03:30",
+  "mc_reboot_window": "04:30-06:00",
+  "mc_redstone_implementation": "VANILLA",
+  "mc_resize_hint": "a host with dedicated cores or more RAM",
+  "mc_simulation_distance": 8,
+  "mc_spawn_limits": {
+   "ambient": 15,
+   "animals": 10,
+   "monsters": 70,
+   "water_ambient": 20,
+   "water_animals": 5
+  },
+  "mc_tracking_range": {
+   "animals": 48,
+   "display": 128,
+   "misc": 48,
+   "monsters": 64,
+   "other": 64,
+   "players": 128
+  },
+  "mc_tuning": {
+   "armor_stands_tick": true,
+   "disable_chest_cat_detection": false,
+   "dolphin_disable_treasure_searching": false,
+   "entity_per_chunk_save_limit": {
+    "arrow": -1,
+    "ender_pearl": -1,
+    "experience_orb": -1,
+    "fireball": -1,
+    "small_fireball": -1,
+    "snowball": -1
+   },
+   "fix_climbing_bypassing_cramming_rule": false,
+   "hopper_ignore_occluding_blocks": false,
+   "max_entity_collisions": 8,
+   "max_tnt_per_tick": 0,
+   "merge_radius": {
+    "exp": -1.0,
+    "item": 0.5
+   },
+   "optimize_explosions": false,
+   "prevent_moving_into_unloaded_chunks": false,
+   "tick_inactive_villagers": true,
+   "tick_rates": {
+    "container_update": 1,
+    "grass_spread": 1,
+    "mob_spawner": 1
+   },
+   "ticks_per": {
+    "ambient": 1,
+    "animal": 400,
+    "monster": 1,
+    "water": 1,
+    "water_ambient": 1
+   },
+   "treasure_maps_loot_tables": "default",
+   "treasure_maps_villager_trade": false,
+   "villager_lobotomize": false,
+   "zombie_aggressive_when_lagging": true
+  },
+  "mc_view_distance": 12,
+  "mc_villager_search_radius": 48,
+  "mc_watchdog_url": "https://hb.mc.lighthouse.internal",
+  "mc_whitelist": true,
+  "mc_world_active": "world",
+  "mc_world_border_radius": {
+   "minecraft:overworld": 5000,
+   "minecraft:the_end": 3000,
+   "minecraft:the_nether": 1250
+  },
+  "mc_world_expected": false,
+  "mc_world_library": [],
+  "timezone": "UTC"
+ },
+ "tfvars": {
+  "client_colors": {
+   "accent": "#E4572E",
+   "secondary": "#1D3557",
+   "subtle": "#A8DADC",
+   "text": "#F4F1EA"
+  },
+  "client_enabled": true,
+  "client_hostname": "play",
+  "client_title": "Lighthouse",
+  "cloudflare_token_owner": "account",
+  "deployment_name": "lighthouse",
+  "discord_commands": {
+   "application_id": "100000000000000001",
+   "channel_ids": [
+    "100000000000000003"
+   ],
+   "enabled": true,
+   "ephemeral": true,
+   "guild_id": "100000000000000002",
+   "helper_role_id": "",
+   "helper_user_ids": [
+    "100000000000000005"
+   ],
+   "public_key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+   "user_ids": [
+    "100000000000000004"
+   ]
+  },
+  "dns_mail_hardening": true,
+  "dns_ttl": 300,
+  "experience_broadcast_minutes": 30,
+  "experience_chunk_entities_alert": 300,
+  "experience_enabled": true,
+  "experience_hour_days": 730,
+  "experience_join_summary": true,
+  "experience_message_per_player_minutes": 30,
+  "experience_messages_enabled": true,
+  "experience_minute_days": 180,
+  "experience_raw_days": 14,
+  "github_environments": true,
+  "github_oidc_immutable_subject": true,
+  "github_owner": "lighthouse-admin",
+  "github_protect_main": true,
+  "github_repository": "lighthouse-mc-config",
+  "hostname": "mc",
+  "monitoring_logs_d1_days": 14,
+  "monitoring_logs_max_rows_per_day": 30000,
+  "monitoring_logs_r2_days": 30,
+  "monitoring_metrics_interval_s": 60,
+  "monitoring_retention_days": 90,
+  "panel_access_emails": [
+   "keeper@lighthouse.internal"
+  ],
+  "panel_access_idp": "otp",
+  "panel_backup_schedule": "hourly",
+  "panel_flavour": "purpur",
+  "panel_github_client_id": "",
+  "panel_hostname": "panel",
+  "panel_max_players": 20,
+  "panel_minecraft_version": "26.3",
+  "panel_mode": "cloudflare",
+  "panel_reauth_minutes": 10,
+  "panel_title": "Lighthouse",
+  "product_repository": "owner/product",
+  "r2_backup_bucket": "lighthouse-backups",
+  "r2_location": "weur",
+  "r2_lock_days": 7,
+  "tailscale_admin_login": "keeper@github",
+  "watchdog_backup_period_minutes": 60,
+  "watchdog_discord": true,
+  "zone_name": "lighthouse.internal"
+ }
+}

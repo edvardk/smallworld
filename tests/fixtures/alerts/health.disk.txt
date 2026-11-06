@@ -1,0 +1,5 @@
+🔴 **The server's disk is filling up**
+**Impact:** Nothing yet; a full disk stops saving the world and backups (risk of losing progress).
+**Likely cause:** World growth (new chunks), logs or crash reports.
+**What to do:** See what is big: `du -sh /opt/minecraft/server/*` on the box; delete old logs/crash reports, keep the world border (`world.border_radius`), or grow the disk.
+**Details:** 91% used (alert at 85%)

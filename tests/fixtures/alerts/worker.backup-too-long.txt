@@ -1,0 +1,5 @@
+⚠️ **The backup is taking much longer than usual**
+**Impact:** Players are not affected, but recent progress is not backed up: a crash or mistake now could lose it.
+**Likely cause:** It is stuck or unusually slow (a slow network to the backup storage, a very large change, a hung process).
+**What to do:** `mcctl backup now` to retry; on the box: `journalctl -u mc-backup -n 100`; check the R2 bucket and its credentials (`mcctl doctor`).
+**Details:** the backup run started 65 min ago hasn't finished (limit 60 min)

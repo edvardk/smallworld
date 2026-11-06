@@ -1,0 +1,57 @@
+{
+  "_source": "Shaped from the GitHub REST API reference (apps: Get the authenticated app, Get a repository installation for the authenticated app; JWT authentication), 2026-11-01; ids fake.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/app"
+      },
+      "response": {
+        "body": {
+          "id": 123456,
+          "slug": "tests-panel",
+          "name": "tests-panel",
+          "owner": {
+            "login": "tests"
+          },
+          "permissions": {
+            "contents": "write",
+            "metadata": "read",
+            "pull_requests": "write"
+          },
+          "events": []
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/tests/tests-mc-config/installation"
+      },
+      "response": {
+        "body": {
+          "id": 4321,
+          "app_id": 123456,
+          "app_slug": "tests-panel",
+          "account": {
+            "login": "tests"
+          },
+          "repository_selection": "selected",
+          "permissions": {
+            "contents": "write",
+            "metadata": "read",
+            "pull_requests": "write"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+🔴 **The Minecraft server is down and a restart didn't help**
+**Impact:** Nobody can join or play.
+**Likely cause:** Self-heal restarted it (unit failed), and it is still not answering.
+**What to do:** Self-heal tries once more. Look at `journalctl -u minecraft -n 200` on the box or run `mcctl doctor`.
+**Details:** unit failed

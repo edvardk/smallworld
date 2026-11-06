@@ -1,0 +1,31 @@
+{
+  "_source": "Shaped from the GitHub REST API reference (apps, app-manifests, branches/protection), 2026-11-01; ids fake.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/apps/tests-panel"
+      },
+      "response": {
+        "body": {
+          "events": [
+            "push"
+          ],
+          "id": 123456,
+          "permissions": {
+            "administration": "write",
+            "contents": "write",
+            "metadata": "read",
+            "pull_requests": "write",
+            "workflows": "write"
+          },
+          "slug": "tests-panel"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ]
+}

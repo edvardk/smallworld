@@ -1,0 +1,21 @@
+{
+  "_source": "Shaped from the Discord API (unknown webhook).",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://discord.com/api/webhooks/123456789012345678/abcDEF_ghi-JKL"
+      },
+      "response": {
+        "body": {
+          "code": 10015,
+          "message": "Unknown Webhook"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    }
+  ]
+}

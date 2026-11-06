@@ -1,0 +1,5 @@
+⚠️ **The panel's experience housekeeping failed**
+**Impact:** Players are not affected and the outside checks ran normally; panel history may lag behind.
+**Likely cause:** D1_ERROR: too many statements.
+**What to do:** Usually nothing: it retries on the next run. If it repeats: the Worker's logs (https://dash.cloudflare.com: Workers & Pages, the watchdog Worker, Logs).
+**Details:** experience maintenance failed

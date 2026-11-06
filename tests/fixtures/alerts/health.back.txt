@@ -1,0 +1,4 @@
+✅ **The Minecraft server is back after 10 min**
+**Impact:** Players can join again. Nobody is online right now.
+**What to do:** No action needed - informational.
+**Details:** RCON answers; MSPT 20.0, TPS 20.0

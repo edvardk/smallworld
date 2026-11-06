@@ -1,0 +1,255 @@
+{
+  "_source": "Shaped from the Cloudflare API v4 reference (2026-11-01); ids fake. An account-owned token that /user/tokens/verify accepts, whose user permission-group listing fails with 9109 while /accounts/{id}/tokens/verify accepts it.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/user/tokens/verify"
+      },
+      "response": {
+        "body": {
+          "errors": [],
+          "messages": [],
+          "result": {
+            "expires_on": "2027-11-01T12:00:00Z",
+            "id": "ad00c0ffee0000000000000000000002",
+            "status": "active"
+          },
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/zones?name=tests.mcctl.internal"
+      },
+      "response": {
+        "body": {
+          "errors": [],
+          "messages": [],
+          "result": [
+            {
+              "account": {
+                "id": "0123456789abcdef0123456789abcdef",
+                "name": "Alex"
+              },
+              "id": "023e105f4ecef8ad9ca31a8372d0c353",
+              "name": "tests.mcctl.internal",
+              "status": "active"
+            }
+          ],
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/r2/buckets"
+      },
+      "response": {
+        "body": {
+          "errors": [],
+          "messages": [],
+          "result": {
+            "buckets": []
+          },
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/workers/scripts"
+      },
+      "response": {
+        "body": {
+          "errors": [],
+          "messages": [],
+          "result": [],
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/d1/database"
+      },
+      "response": {
+        "body": {
+          "errors": [],
+          "messages": [],
+          "result": [],
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/user/tokens/permission_groups"
+      },
+      "response": {
+        "body": {
+          "errors": [
+            {
+              "code": 9109,
+              "message": "Unauthorized to access requested resource"
+            }
+          ],
+          "messages": [],
+          "result": null,
+          "success": false
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/tokens/verify"
+      },
+      "response": {
+        "body": {
+          "errors": [],
+          "messages": [],
+          "result": {
+            "expires_on": "2027-11-01T12:00:00Z",
+            "id": "ad00c0ffee0000000000000000000002",
+            "status": "active"
+          },
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/tokens/permission_groups"
+      },
+      "response": {
+        "body": {
+          "errors": [],
+          "messages": [],
+          "result": [
+            {
+              "description": "Zone Read",
+              "id": "c8fed203ed3043cba015a93ad1616f1f",
+              "name": "Zone Read",
+              "scopes": [
+                "com.cloudflare.api.account.zone"
+              ]
+            },
+            {
+              "description": "DNS Write",
+              "id": "4755a26eedb94da69e1066d98aa820be",
+              "name": "DNS Write",
+              "scopes": [
+                "com.cloudflare.api.account.zone"
+              ]
+            },
+            {
+              "description": "Workers R2 Storage Write",
+              "id": "bf7481a1826f439697cb59a20b22293e",
+              "name": "Workers R2 Storage Write",
+              "scopes": [
+                "com.cloudflare.api.account"
+              ]
+            },
+            {
+              "description": "Workers Scripts Write",
+              "id": "e086da7e2179491d91ee5f35b3ca210a",
+              "name": "Workers Scripts Write",
+              "scopes": [
+                "com.cloudflare.api.account"
+              ]
+            },
+            {
+              "description": "D1 Write",
+              "id": "09b2857d1c31407795e75e3fed8617a1",
+              "name": "D1 Write",
+              "scopes": [
+                "com.cloudflare.api.account"
+              ]
+            },
+            {
+              "description": "Account API Tokens Write",
+              "id": "5bc3f8b21c554832afc660159ab75fa4",
+              "name": "Account API Tokens Write",
+              "scopes": [
+                "com.cloudflare.api.account"
+              ]
+            },
+            {
+              "description": "Account API Tokens Read",
+              "id": "0cc3a61731504c89b99ec1be78b77aa0",
+              "name": "Account API Tokens Read",
+              "scopes": [
+                "com.cloudflare.api.account"
+              ]
+            },
+            {
+              "description": "Access: Apps and Policies Write",
+              "id": "959972745952452f8be2452be8cbb9f2",
+              "name": "Access: Apps and Policies Write",
+              "scopes": [
+                "com.cloudflare.api.account"
+              ]
+            },
+            {
+              "description": "Access: Organizations, Identity Providers, and Groups Write",
+              "id": "26bc23f853634eb4bff59983b9064fde",
+              "name": "Access: Organizations, Identity Providers, and Groups Write",
+              "scopes": [
+                "com.cloudflare.api.account"
+              ]
+            },
+            {
+              "description": "DNS Read",
+              "id": "82e64a83756745bbbb1c9c2701bf816b",
+              "name": "DNS Read",
+              "scopes": [
+                "com.cloudflare.api.account.zone"
+              ]
+            }
+          ],
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ]
+}

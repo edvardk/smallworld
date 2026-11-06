@@ -1,0 +1,4 @@
+✅ **The server runs at full speed again**
+**Impact:** Ticks are back under 45 ms.
+**What to do:** No action needed - informational.
+**Details:** it lagged for 2 h; worst 80.0 ms per tick; now 30.0 ms, TPS 20.0

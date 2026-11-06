@@ -1,0 +1,5 @@
+⚠️ **Whitelist changes made in the panel were dropped**
+**Impact:** Live on the server for now (add Player_One, remove Player_Two), but the next deploy follows players.yml in Git, so they will be undone then.
+**Likely cause:** They never reached the config repo within 24 h (no pull request could be opened or merged: the panel's GitHub App, CONFIG_REPO, or GitHub itself).
+**What to do:** Re-do them in the panel, or edit players.yml in the config repo and push; `mcctl doctor` checks the panel's GitHub App.
+**Details:** pending panel whitelist change(s) older than 24 h: add Player_One, remove Player_Two

@@ -1,0 +1,4 @@
+✅ **The server can be reached over IPv4 again**
+**Impact:** Players can connect over IPv4 again.
+**What to do:** No action needed - informational.
+**Details:** Paper 1.21.10; unreachable for 25 min; 2 online

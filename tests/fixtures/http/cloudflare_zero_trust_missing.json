@@ -1,0 +1,23 @@
+{
+  "_source": "Shaped from the Cloudflare API reference (4xx envelope); the exact error code for an account without Zero Trust is unverified.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/access/organizations"
+      },
+      "response": {
+        "body": {
+          "errors": [{"code": 12130, "message": "access.api.error.not_found"}],
+          "messages": [],
+          "result": null,
+          "success": false
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    }
+  ]
+}

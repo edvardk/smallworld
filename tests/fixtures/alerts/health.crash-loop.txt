@@ -1,0 +1,5 @@
+🔴 **The Minecraft server keeps crashing**
+**Impact:** Nobody can play; it dies again right after each start.
+**Likely cause:** It crashes on start-up (systemd's start limit was hit): often a broken plugin, a bad config or a damaged world file.
+**What to do:** Read the reason: `journalctl -u minecraft -n 200` on the box (or `mcctl doctor`). After fixing it: `sudo systemctl reset-failed minecraft`, then start it from the panel.
+**Details:** systemd's start limit was hit

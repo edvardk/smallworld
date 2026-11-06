@@ -1,0 +1,116 @@
+# Plugins from plugins.lock.yml (sha256-verified). The panel can switch a locked plugin off (P10, design §5
+# "Plugin disable"): its jar then lives in plugins/disabled/, and this role keeps it there across deploys and
+# version bumps (the newer locked jar goes to disabled/ too) until the panel switches it on again.
+- name: Read the plugins the panel switched off
+  ansible.builtin.slurp:
+    src: "{{ plugins_disabled_file }}"
+  register: plugins_disabled_raw
+  failed_when: false
+
+- name: Remember the disabled plugin names (only names in the lock count)
+  ansible.builtin.set_fact:
+    plugins_disabled: >-
+      {{ ((plugins_disabled_raw.content | b64decode | from_json).disabled | default([]))
+         | intersect(plugins_lock.plugins | map(attribute='name') | list)
+         if plugins_disabled_raw.content is defined else [] }}
+
+- name: Create plugins/disabled (Paper doesn't load subdirectories)
+  ansible.builtin.file:
+    path: "{{ mc_server_dir }}/plugins/disabled"
+    state: directory
+    owner: minecraft
+    group: minecraft
+    mode: "0750"
+
+# v1.1: the mirror first (no_log: the request carries the agent token); a failure there just falls through.
+- name: Download pinned plugins from the artifact mirror (sha256-verified)
+  ansible.builtin.get_url:
+    url: "{{ mc_mirror_url }}/{{ item.sha256 }}/{{ item.filename }}"
+    headers:
+      Authorization: "Bearer {{ mc_secret_agent_token }}"
+    timeout: "{{ mc_mirror_timeout }}"
+    dest: "{{ mc_server_dir }}/plugins/{{ 'disabled/' if item.name in plugins_disabled else '' }}{{ item.filename }}"
+    checksum: "sha256:{{ item.sha256 }}"
+    owner: minecraft
+    group: minecraft
+    mode: "0640"
+  loop: "{{ plugins_lock.plugins }}"
+  when: mc_mirror_url | length > 0
+  failed_when: false
+  no_log: true
+  notify: restart minecraft
+
+- name: Download pinned plugins (sha256-verified; a mismatch fails the deploy)
+  ansible.builtin.get_url:
+    url: "{{ item.url }}"
+    dest: "{{ mc_server_dir }}/plugins/{{ 'disabled/' if item.name in plugins_disabled else '' }}{{ item.filename }}"
+    checksum: "sha256:{{ item.sha256 }}"
+    owner: minecraft
+    group: minecraft
+    mode: "0640"
+  loop: "{{ plugins_lock.plugins }}"
+  loop_control:
+    label: "{{ item.name }} {{ item.version }}{{ ' (disabled)' if item.name in plugins_disabled else '' }}"
+  notify: restart minecraft
+
+- name: Find installed plugin jars
+  ansible.builtin.find:
+    paths:
+      - "{{ mc_server_dir }}/plugins"
+      - "{{ mc_server_dir }}/plugins/disabled"
+    patterns: "*.jar"
+  register: plugins_installed
+
+# A jar belongs in plugins/ if it is locked and enabled, in plugins/disabled/ if it is locked and disabled;
+# anything else (not in the lock, an old version, a copy left in the wrong place) goes. The product's own
+# mc-telemetry.jar (telemetry.yml, P13) and mc-brand.jar (brand.yml, P17) are managed separately and stay.
+- name: Remove plugin jars that are not in plugins.lock.yml or in the wrong place
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ plugins_installed.files }}"
+  loop_control:
+    label: "{{ item.path | relpath(mc_server_dir) }}"
+  when: >-
+    item.path | basename not in (
+      plugins_lock.plugins | selectattr('name', 'in', plugins_disabled) | map(attribute='filename') | list
+      if (item.path | dirname | basename) == 'disabled' else
+      plugins_lock.plugins | rejectattr('name', 'in', plugins_disabled) | map(attribute='filename') | list
+      + (['mc-telemetry.jar'] if mc_experience_enabled | bool else [])
+      + (['mc-brand.jar'] if mc_brand_enabled | bool else []))
+  notify: restart minecraft
+
+- name: The product's own plugin (mc-telemetry, P13)
+  ansible.builtin.import_tasks: telemetry.yml
+
+- name: The product's branding plugin and the server icon (mc-brand, P17)
+  ansible.builtin.import_tasks: brand.yml
+
+- name: Write the lock for the panel and mc-plugins-apply (name, jar, version)
+  ansible.builtin.template:
+    src: plugins-lock.json.j2
+    dest: "{{ plugins_lock_json }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install mc-plugins-apply.service (the panel's plugin switch)
+  ansible.builtin.template:
+    src: mc-plugins-apply.service.j2
+    dest: /etc/systemd/system/mc-plugins-apply.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: plugins_unit
+
+- name: Reload systemd after the unit changed
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: plugins_unit.changed  # noqa: no-handler
+
+- name: Warn that the server differs from plugins.lock.yml
+  ansible.builtin.debug:
+    msg: >-
+      DRIFT: switched off in the panel, kept in plugins/disabled/: {{ plugins_disabled | join(', ') }}. Switch them
+      on in the panel, or remove them from plugins.lock.yml in a PR to make it permanent.
+  when: plugins_disabled | length > 0

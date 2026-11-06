@@ -1,0 +1,29 @@
+# Version-bump PRs. Actions stay pinned by commit SHA (Dependabot updates the SHA and the version
+# comment). Python: requirements/*.in hold the direct pins, requirements/*.txt are fully resolved with
+# hashes by pip-compile (Dependabot recompiles them). P11: minor and patch updates merge by themselves once CI
+# is green (.github/workflows/dependabot-automerge.yml); majors wait for a human.
+# Actions minutes (docs/ci.md): the minor and patch updates come as one monthly PR per ecosystem (groups), so CI
+# and e2e run once per ecosystem and month instead of once per dependency (the server's own weekly update job
+# keeps Minecraft builds and plugins current; this is only the product's tooling).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+      time: "05:17" # UTC
+    open-pull-requests-limit: 2
+    groups:
+      github-actions:
+        patterns: ["*"]
+        update-types: [minor, patch] # a major gets its own PR (it waits for a human)
+  - package-ecosystem: pip
+    directory: /requirements
+    schedule:
+      interval: monthly
+      time: "05:17" # UTC
+    open-pull-requests-limit: 2
+    groups:
+      python:
+        patterns: ["*"]
+        update-types: [minor, patch]

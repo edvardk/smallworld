@@ -1,0 +1,87 @@
+# Run ONCE against a fresh host. Use `mcctl bootstrap -C <config repo>` (design §4): it renders the inputs,
+# mints a fresh 24 h Tailscale key (`terraform apply -replace=tailscale_tailnet_key.server`, typed confirmation),
+# runs this playbook with TS_AUTHKEY in its environment, then checks Tailscale SSH and that public 22 is closed.
+# By hand, from this directory (C=<config repo>, credentials from $C/.env loaded into the shell):
+#
+#   R=$C/.mcctl/rendered; export TF_DATA_DIR=$C/.mcctl/terraform   # `python -m mcctl render -C $C` first
+#   terraform -chdir=../terraform init -backend-config=$R/terraform/state.tfbackend
+#   terraform -chdir=../terraform apply -var-file=$R/terraform/terraform.tfvars.json \
+#     -replace=tailscale_tailnet_key.server                                   # fresh 24 h key first
+#   export TS_AUTHKEY="$(terraform -chdir=../terraform output -raw server_tailscale_auth_key)"
+#   ansible-playbook bootstrap.yml -i $R/ansible/inventory.yml -e ansible_host=<vps-ipv4> -e ansible_user=root
+#
+# The rendered inventory supplies the host name and settings; the two -e override where and as whom to connect.
+# No other secret is needed here (the MC_SECRET_* variables are only read by site.yml's roles).
+#
+# Creates the deploy user, joins the tailnet (Tailscale SSH on), then closes port 22 on every
+# interface except tailscale0. The play's open SSH connection (ControlPersist) survives the
+# firewall via `ct state established`; sshd hardening is applied by a handler at the very end.
+# The firewall goes last: if anything earlier fails, SSH still works and you can re-run.
+# Before it, the play checks from this machine that `ssh deploy@<the node's 100.x address> true` works over
+# the tailnet (retries for 2 minutes; nothing is closed if it fails). The address comes from the node's own
+# `tailscale status`, never from DNS: a short name could resolve through a DNS search domain to the public IP,
+# where port 22 is still open, and "prove" the wrong path.
+- name: Bootstrap a fresh VPS
+  hosts: all
+  become: true
+  vars:
+    tailscale_auth_key: "{{ lookup('ansible.builtin.env', 'TS_AUTHKEY') }}"
+  tasks:
+    - name: Join the tailnet (first, so Tailscale SSH is a second way in; asserts SSH + MagicDNS name)
+      ansible.builtin.import_role:
+        name: tailscale
+
+    - name: Deploy user, sudo, then sshd hardening (root login off)
+      ansible.builtin.import_role:
+        name: access
+
+    - name: The node's tailnet IPv4 (100.64.0.0/10), from the status the tailscale role just read
+      ansible.builtin.set_fact:
+        mc_tailnet_ipv4: >-
+          {{ (tailscale_final.results[1].stdout | from_json).Self.TailscaleIPs
+             | select('match', '^100[.]') | first | default('') }}
+
+    - name: The node has a tailnet IPv4 address
+      ansible.builtin.assert:
+        that: mc_tailnet_ipv4 is match('^100[.][0-9]+[.][0-9]+[.][0-9]+$')
+        fail_msg: The node reports no 100.x tailnet address; public 22 stays open.
+        quiet: true
+
+    # Replaces the old manual pause (design §4 step 10): from the machine running this playbook (the admin's
+    # laptop, which is on the tailnet), Tailscale SSH as the deploy user must work before public 22 closes.
+    # Nothing is closed if it never does; fix it and re-run. The admin's Tailscale SSH rule is `check` (a tailnet
+    # login at most 12 h old): Tailscale then holds the session and prints a login URL into it, which this task
+    # can't show, so each try gives up after 30 s; meanwhile `ssh deploy@<100.x> true` in another terminal shows
+    # the URL (mcctl bootstrap says so before it starts the playbook).
+    - name: Check Tailscale SSH from this machine before public 22 closes (if it keeps retrying, see above)
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}" # a 30 s limit per try (no coreutils `timeout` on macOS)
+          - -c
+          - import subprocess, sys; sys.exit(subprocess.run(sys.argv[1:], timeout=30).returncode)
+          - ssh
+          - -o
+          - BatchMode=yes
+          - -o
+          - ConnectTimeout=10
+          - -o
+          - StrictHostKeyChecking=accept-new
+          - "{{ deploy_user }}@{{ mc_tailnet_ipv4 }}"
+          - "true"
+      delegate_to: localhost
+      become: false
+      run_once: true
+      changed_when: false
+      register: mc_tailscale_ssh_check
+      retries: 12
+      delay: 10
+      until: mc_tailscale_ssh_check.rc == 0
+
+    - name: Firewall (last; closes 22 outside the tailnet)
+      ansible.builtin.import_role:
+        name: firewall
+
+    - name: Next steps
+      ansible.builtin.debug:
+        msg: >-
+          Bootstrap done. SSH outside the tailnet is now closed. Run site.yml (or push to main) to deploy everything else.

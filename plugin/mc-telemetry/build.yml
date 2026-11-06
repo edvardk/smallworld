@@ -1,0 +1,22 @@
+# Reproducible build of the in-house plugin (scripts/build_plugin.py; CI rebuilds it and compares the bytes).
+# javac only, no build tool: the compile classpath is the Paper/Purpur API and its libraries exactly as bundled in
+# the pinned server jar (template/server.lock.yml, sha256-checked), and the JDK is pinned here. The jar is written
+# with fixed timestamps and sorted entries; its sha256 must equal ansible/group_vars/all/main.yml
+# mc_telemetry_jar_sha256 (tests/test_consistency.py).
+name: mc-telemetry
+version: 1.0.0
+release: 25   # javac --release; = java_major in template/server.lock.yml
+pin: mc_telemetry_jar_sha256
+jdk:
+  version: 25.0.5+8
+  x64:
+    url: https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/OpenJDK25U-jdk_x64_linux_hotspot_25.0.5_8.tar.gz
+    sha256: 68982529869257d0ee6b824ec5aa270ff8b118bb438670da0b97ebdab178d7fb
+# Compile classpath: jars inside the server jar's META-INF/libraries/ (path prefixes).
+classpath:
+  - org/purpurmc/purpur/purpur-api/
+  - net/kyori/adventure-api/
+  - net/kyori/adventure-key/
+  - net/kyori/option/
+  - net/md-5/bungeecord-chat/   # Player.sendMessage overloads mention its types
+jar: plugin/mc-telemetry/dist/mc-telemetry.jar

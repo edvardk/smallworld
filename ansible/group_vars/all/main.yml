@@ -1,0 +1,134 @@
+# Product constants: pins, paths and fixed names. Everything deployment-specific (host name, time zone,
+# gameplay, performance, backups, alert thresholds, the lock files) comes from the config repo's server.yml:
+# `mcctl render` writes it to <config>/.mcctl/rendered/ansible/group_vars/all.yml next to the rendered
+# inventory, and Ansible loads it from there. tests/test_mcctl_render.py keeps the two sets disjoint.
+# Secrets come from the environment (secrets.yml next to this file).
+
+# --- Access --------------------------------------------------------------------------------------
+deploy_user: deploy   # = mcctl.render.DEPLOY_USER (the rendered inventory's ansible_user)
+# Public keys allowed to SSH as deploy over the public address during bootstrap only (port 22 is
+# closed afterwards; day-to-day access is Tailscale SSH). The provider-installed root key is used instead.
+deploy_authorized_keys: []
+
+# --- Pinned system packages (bump deliberately; see README "Bumping versions") -----------------
+tailscale_version: "1.104.4"
+# The server node's tag: = terraform/tailscale.tf tailscale_tailnet_key.server (tests/test_consistency.py)
+mc_tailscale_server_tag: "tag:mc-server"
+temurin_version: "25.0.5.0.0+8-1"   # must match java_major in template/server.lock.yml
+restic_version: "0.19.1"
+# P13: the in-house plugin (plugin/mc-telemetry, committed jar rebuilt byte for byte by scripts/build_plugin.py check)
+mc_telemetry_jar_sha256: "da8a6cfc8ec299bc158a25f18ee472c5bea4d51025fdeab64bf027173725ca4c"
+# P17: the branding plugin (plugin/mc-brand, same reproducible build) and its default server-list icon
+# (scripts/brand_art.py check). v1.2: the optional resource pack's sha1 (mc_brand_pack_sha1: the Worker's
+# /pack/<sha1>.zip and server.properties resource-pack-sha1) is rendered: mcctl render builds the pack from the
+# config repo's art (mcctl/brandpack.py).
+mc_brand_jar_sha256: "1a05d546b68b4d816ec51de73f40d4bf8b3438a4db5e75e4940ba00013a5b140"
+mc_brand_icon_sha256: "939ecfd72097963dd7f221bf7df9972cf6d8f4a58ef9f0cdd7fd546edff52372"
+restic_sha256:
+  amd64: f415415624dcc452f2a02b8c33641791a8c6d6d3b65bbb3543fcf9a25151585c
+  arm64: a5f64aaab53d51e311fa3829124c5b703f2d14cf187d8640b6be3b2b49376465
+
+# --- OS tuning -----------------------------------------------------------------------------------
+base_zram_enabled: true
+base_zram_fraction: "ram / 4"
+base_swappiness: 10
+
+# --- Paths ---------------------------------------------------------------------------------------
+mc_root: /opt/minecraft
+mc_bin_dir: "{{ mc_root }}/bin"
+mc_jar_dir: "{{ mc_root }}/jars"
+mc_server_dir: "{{ mc_root }}/server"
+mc_etc_dir: /etc/minecraft
+mc_state_dir: /var/lib/minecraft   # = scripts/notify.py MAINTENANCE_FILE's dir, health.py ADMIN_STOPPED's
+mc_restore_dir: /var/lib/mc-restore   # = scripts/restore.py STAGING_ROOT (fetched snapshot before it is applied)
+mc_worlds_library_file: "{{ mc_root }}/worlds-library.json"   # = scripts/worlds.py LIBRARY_FILE (v1.2)
+mc_worlds_state_file: /var/lib/mc-snapshots/worlds.json   # = scripts/worlds.py WORLDS_FILE (archives, active)
+mc_panel_pending_file: /var/lib/mc-agent/pending.json   # mc-agent's pending whitelist/world changes (P10, v1.2)
+mc_rcon_port: 25575
+
+# --- Users (SECURITY.md "Privilege separation") ------------------------------------------------------
+# The JVM (and every plugin) runs as `minecraft`. The helpers that hold credentials (backup, prune, health,
+# notify, restore's fetch, mc-run) run as this separate user: in group `minecraft` (read-only access to the
+# server dir, RCON password from server.properties), never the other way round, so code running as
+# `minecraft` can't read their environment (/proc/<pid>/environ) or their files.
+mc_ops_user: mcops
+# P11: what mc-reboot-gate starts to reboot (polkit allows the ops user exactly this unit + verb `start`). The e2e run
+# points it at a harmless target instead.
+mc_reboot_target: reboot.target
+
+# --- Restarts ------------------------------------------------------------------------------------
+mc_restart_countdown_seconds: 60
+# A deploy's restart opens a maintenance window this long (closed again once RCON answers).
+mc_deploy_maintenance_minutes: 20
+
+# --- Tail latency (P13, design §8 "TAIL-LATENCY RULE") -----------------------------------------------------
+# The JVM's tick comes first: the minecraft unit gets CPUWeight/IOWeight 1000, every helper of the product less.
+# Two classes (P13 review M1):
+#  - mc_helper_priority (idle: mc-prune, mc-reboot-gate): work that can wait indefinitely. Nice 19, batch
+#    scheduling, idle IO class, weight 10: under a saturated box (Chunky pre-generation) it gets ~1 % and nothing
+#    breaks.
+#  - mc_timely_priority (mc-backup, mc-agent, mc-health): work with a deadline. mc-backup holds `save-off` for the
+#    whole restic run (no autosave meanwhile: more loss on a crash), mc-agent's metrics sample is the Worker's
+#    "host alive" signal (stale after 3 minutes) and mc-health heartbeats the watchdog. Starved at weight 10 they
+#    raise false alerts and widen the save-off window, so: weight 100 (minecraft still wins 10:1 under
+#    contention), Nice 10, default scheduling, best-effort IO at the lowest priority (7) instead of idle (idle IO
+#    gets nothing while the JVM's IO keeps the disk busy).
+# IOAccounting feeds the panel's "product overhead" card (CPU/memory accounting are on by default on cgroup v2).
+# server.yml performance.helper_cpus adds AllowedCPUs= to all of these units.
+mc_helper_priority:
+  - Nice=19
+  - CPUSchedulingPolicy=batch
+  - IOSchedulingClass=idle
+  - CPUWeight=10
+  - IOWeight=10
+  - IOAccounting=yes
+mc_timely_priority:
+  - Nice=10
+  - IOSchedulingClass=best-effort
+  - IOSchedulingPriority=7
+  - CPUWeight=100
+  - IOWeight=100
+  - IOAccounting=yes
+# P13: the plugin's snapshot hand-off (tmpfs, written by minecraft) and the verdicts/messages mc-agent writes back
+# (tmpfs, setgid minecraft: the plugin may read them, never write).
+mc_telemetry_dir: /run/mc-telemetry
+mc_verdict_dir: /run/mc-verdicts
+# v1.1: /modpack's one-time codes. mc-brand (minecraft) writes a request per player into the hand-off directory;
+# mc-agent (the ops user, the only holder of the agent token) asks the Worker for a code and writes it back into
+# the verdict directory, which minecraft may only read. The minecraft process never holds a credential.
+mc_client_request_dir: "{{ mc_telemetry_dir }}/client"
+mc_client_code_file: "{{ mc_verdict_dir }}/client-codes.tsv"
+# v1.1: the pinned artifact mirror (the watchdog Worker's R2 bucket, filled by the deploy job's `mcctl client-publish`
+# under <sha256>/<filename>). The server jar, the plugins and restic are fetched from it first (bearer agent token),
+# then from upstream; the sha256 is checked either way, so a missing or wrong mirror copy only costs the fallback.
+mc_mirror_url: "{{ (mc_watchdog_url ~ '/artifacts') if mc_panel_mode == 'cloudflare' else '' }}"
+mc_mirror_timeout: 30
+
+# --- systemd sandbox (design §7) ---------------------------------------------------------------------
+# Every unit the product installs gets these (minecraft, mc-backup, mc-prune, mc-health, mc-restore-apply). The units that
+# don't run a JIT add MemoryDenyWriteExecute=true; the JVM can't have it (its JIT writes code at runtime).
+# Each directive is in systemd.exec(5)/systemd.resource-control(5) for systemd 252+ (Debian 12). The
+# e2e-mock run gates `systemd-analyze security` (<= 2.5; minecraft <= 4.5) and boots the real server.
+mc_systemd_sandbox:
+  - NoNewPrivileges=true
+  - ProtectSystem=strict
+  - ProtectHome=true
+  - PrivateTmp=true
+  - PrivateDevices=true
+  - ProtectKernelTunables=true
+  - ProtectKernelModules=true
+  - ProtectKernelLogs=true
+  - ProtectControlGroups=true
+  - ProtectClock=true
+  - ProtectHostname=true
+  - ProtectProc=invisible
+  - RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+  - RestrictNamespaces=true
+  - RestrictRealtime=true
+  - RestrictSUIDSGID=true
+  - LockPersonality=true
+  - SystemCallArchitectures=native
+  - SystemCallFilter=@system-service
+  - SystemCallErrorNumber=EPERM
+  - CapabilityBoundingSet=
+  - AmbientCapabilities=

@@ -1,0 +1,22 @@
+{
+  "_source": "Shaped from the GitHub REST API reference (apps, app-manifests, branches/protection), 2026-11-01; ids fake.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/mcctl-tests/tests-mc-config/branches/main/protection"
+      },
+      "response": {
+        "body": {
+          "documentation_url": "https://docs.github.com/rest/branches/branch-protection#get-branch-protection",
+          "message": "Branch not protected",
+          "status": "404"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    }
+  ]
+}

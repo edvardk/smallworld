@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "smallworld",
+  "version": "1.0.0",
+  "name": "Smallworld",
+  "description": "Tells a Smallworld server which client pack you run and your frames per second, and shows your FPS next to the top HUD bar. Sends nothing to other servers.",
+  "license": "MIT",
+  "contact": {
+    "sources": "https://github.com/edvardk/smallworld"
+  },
+  "environment": "client",
+  "entrypoints": {
+    "client": ["io.github.edvardk.smallworld.client.SmallworldClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.20.1",
+    "minecraft": "~26.3",
+    "java": ">=25",
+    "fabric-networking-api-v1": "*",
+    "fabric-rendering-v1": "*",
+    "fabric-lifecycle-events-v1": "*"
+  }
+}

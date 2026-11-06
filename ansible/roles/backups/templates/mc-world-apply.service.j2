@@ -1,0 +1,23 @@
+# {{ ansible_managed }}
+# v1.2 world library, the second half of a world switch (scripts/worlds.py): mc-world.service (as {{ mc_ops_user }},
+# with the restic credentials) archived the active world and fetched the target into {{ mc_restore_dir }}/world-staging;
+# this unit replaces the world folders with it (or removes them for a new world, which the server then generates)
+# and writes the world's server.properties keys (seed, type, preset), as minecraft, so the world stays owned by the
+# user that runs the server. No credentials here. Only root and {{ mc_ops_user }} (polkit, base role) may start it;
+# it refuses unless the server is stopped, a switch holds restore.lock and the manifest names a world.
+[Unit]
+Description=Swap the Minecraft world folders for a world switch (started by worlds.py)
+After=minecraft.service
+
+[Service]
+Type=oneshot
+User=minecraft
+Group=minecraft
+UMask=0027
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart={{ mc_bin_dir }}/worlds.py --apply
+ReadWritePaths={{ mc_server_dir }}
+PrivateNetwork=true
+# Sandbox (design §7): the shared set, see ansible/group_vars/all/main.yml.
+{{ mc_systemd_sandbox | join('\n') }}
+MemoryDenyWriteExecute=true

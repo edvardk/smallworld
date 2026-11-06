@@ -1,0 +1,166 @@
+# The optional client modpack (v1.1, design docs/design/client-v1.1.md): one definition, four tiers.
+#
+# Read by mcctl/clientpack.py (the packs, offline) and scripts/client_pack.py (the lock: newest Modrinth builds for
+# the pinned Minecraft version + Fabric, sha512/sha1/sha256, licences, fabric.mod.json dependencies). A config
+# repo's client.lock.yml pins what this lists; the weekly update job re-resolves it (a mod without a build for
+# the pinned version is "pending" in the lock and joins the packs once one appears).
+#
+# Every key of `options` is verified against the 26.3 client jar (net.minecraft.client.Options: options.txt keys
+# and their Gson-encoded values; GraphicsPreset/CloudStatus serialized names, ParticleStatus ids), DH's and Iris's
+# config keys against their pinned jars. The tier defaults are written ONCE, when a player imports the pack
+# (client-overrides: the Modrinth App applies overrides only when it creates the instance); a player's own changes
+# are never overwritten (a new tier = another instance).
+format: 1
+loader: fabric
+# options.txt `version:` = the client's data version (without it the client runs every options datafix from 0).
+# Verified: version.json world_version of the pinned server jar (scripts/build_plugin.py check) and of the 26.3
+# client jar. A new Minecraft version needs its entry here (scripts/client_pack.py refuses to lock without it).
+data_versions: {"26.3": 5023}
+
+# Licences whose terms allow us to mirror (R2 artifacts/<sha256>/<filename>) and serve the file ourselves. Anything
+# else is referenced by its official URL only (or left out). Checked per artifact at lock time.
+redistributable:
+  - Apache-2.0
+  - MIT
+  - LGPL-3.0-only
+  - LGPL-3.0-or-later
+  - LicenseRef-Polyform-Shield-1.0.0   # Sodium: PolyForm Shield 1.0.0 grants distribution; we pass its terms on
+  # v1.2, Chat Heads: MPL-2.0 s3.2 lets anyone distribute the unmodified Executable Form under the MPL if the Source
+  # Code Form is available (the project's public repository) and recipients are told where (CREDITS.txt names the
+  # source link; licenses/MPL-2.0.txt is the licence). Not GPL-3.0: s6 makes the distributor provide the
+  # Corresponding Source itself, so GPL files (Emotecraft) are referenced by their official URL only.
+  - MPL-2.0
+
+mods:
+  # core: in every tier
+  - {slug: fabric-api, name: Fabric API, licence_file: Apache-2.0.txt}
+  - {slug: sodium, name: Sodium, licence_file: PolyForm-Shield-1.0.0.md}
+  - {slug: lithium, name: Lithium, licence_file: LGPL-3.0.txt}
+  - {slug: ferrite-core, name: FerriteCore, licence_file: MIT.txt}
+  - {slug: modernfix, name: ModernFix, licence_file: LGPL-3.0.txt}
+  - {slug: modmenu, name: Mod Menu, licence_file: MIT.txt}
+  - {slug: placeholder-api, name: Placeholder API, licence_file: LGPL-3.0.txt}   # Mod Menu requires it
+  # optional: only the tiers listed
+  - {slug: iris, name: Iris, licence_file: LGPL-3.0.txt, tiers: [high, maximum]}
+  - {slug: distanthorizons, name: Distant Horizons, licence_file: LGPL-3.0.txt, tiers: [high, maximum]}
+  # v1.2 social mods, every tier (docs/design/client-v1.2.md).
+  # Xaero's Minimap + World Map: All Rights Reserved on Modrinth; Xaero's terms allow modpacks that credit them and
+  # download from the official source, never a rehosted copy: `mirror: false` (the .mrpack names cdn.modrinth.com,
+  # the official-launcher zip lists them in MISSING-MODS.txt). `optional`: the .mrpack marks them client
+  # "optional" (a player may leave the map out).
+  - {slug: xaeros-minimap, name: "Xaero's Minimap", mirror: false, optional: true}
+  - {slug: xaeros-world-map, name: "Xaero's World Map", mirror: false, optional: true}
+  - {slug: chat-heads, name: Chat Heads, licence_file: MPL-2.0.txt}
+  # Emotecraft (GPL-3.0-or-later; official URL only, see `redistributable`) needs Player Animation Library (MIT).
+  # Both have only beta/alpha Fabric builds for 26.3 so far: pending until a release exists (releases only).
+  - {slug: emotecraft, name: Emotecraft, licence_file: GPL-3.0.txt}
+  - {slug: player-animation-library, name: Player Animation Library, licence_file: MIT.txt}
+  # In-house (no Modrinth project): the Smallworld client mod, the committed reproducible jar (client/mod/build.yml).
+  # The lock pins its hashes; it is mirrored (MIT) and the mirror is its only download.
+  - slug: smallworld
+    name: Smallworld
+    licence_file: MIT.txt
+    inhouse: {jar: client/mod/dist/smallworld.jar, build: client/mod/build.yml}
+
+# The Maximum tier's shader pack: ONE entry, easy to swap (decision 2026-11-03: Complementary Unbound). Its licence
+# (Complementary License Agreement 1.7, inside the pinned zip) allows adding it to a modpack only through Modrinth's
+# own systems (s1.2d: no direct file upload), unmodified (s1.2c: no settings file), visibly credited (s1.2a) and at
+# the modpack author's responsibility (s1.2b): so `mirror: false` (the launcher downloads it from cdn.modrinth.com)
+# and `credit` is shown on the setup page. The alternative that we may mirror: makeup-ultra-fast-shaders
+# (LGPL-3.0-or-later; set mirror: true and licence_file: LGPL-3.0.txt).
+shader:
+  slug: complementary-unbound
+  name: Complementary Shaders - Unbound
+  tiers: [maximum]
+  mirror: false
+  licence_url: https://github.com/ComplementaryDevelopment/ComplementaryShadersV4/blob/main/License.txt
+  credit: >-
+    Shaders: Complementary Shaders - Unbound by EminGT (complementary.dev), downloaded from Modrinth, unmodified.
+    Any problem it causes in this pack is ours, not Complementary Development's.
+  # optional extra shader packs players may add themselves (a link on the setup page, never in a pack)
+  links:
+    - {name: Complementary Shaders - Reimagined, url: "https://modrinth.com/shader/complementary-reimagined"}
+
+# The launcher the setup page sends players to (decision 2026-11-03: the Modrinth App only).
+modrinth_app_url: https://modrinth.com/app
+
+# v1.2: key bindings every tier writes into options.txt as `key_<name>:<key>` (raw, not Gson: Options'
+# FieldAccess.process(String, String)). Verified in the 26.3 client jar: KeyMapping "key.smoothCamera" ("Toggle
+# Cinematic Camera"), InputConstants.UNKNOWN is named "key.keyboard.unknown" (InputConstants$Type). 26.3's own
+# default for it is already UNKNOWN; we write it anyway, so the cinematic camera can't be toggled by accident.
+keys:
+  key.smoothCamera: key.keyboard.unknown
+
+tiers:
+  low:
+    title: Low
+    description: Older laptops and computers without a gaming graphics card.
+    example: e.g. a 2018 laptop with Intel graphics
+    # v1.2: the memory to give the game (the official launcher's JVM arguments -Xmx, the Modrinth App's memory
+    # slider); shown on the setup page, which says where to set it. Neither launcher reads it from a pack.
+    memory_gb: 4
+    # Frame rate (v1.2 review after tearing / input lag reports): VSync off everywhere but Maximum, each tier with
+    # a frame-rate cap near common screens (60/120/144) so the GPU doesn't run flat out; the setup page's
+    # troubleshooting says to turn VSync on against tearing and off (with a cap) against input lag.
+    options:   # options.txt (vanilla keys, 26.3)
+      renderDistance: 8
+      simulationDistance: 8
+      graphicsPreset: fast
+      ao: false
+      renderClouds: "false"
+      particles: 1          # ParticleStatus: 0 all, 1 decreased, 2 minimal
+      entityDistanceScaling: 0.75
+      maxFps: 60
+      enableVsync: false
+      entityShadows: false
+      biomeBlendRadius: 1
+  medium:
+    title: Medium
+    description: A typical laptop or desktop. Pick this if you're not sure.
+    example: e.g. a recent laptop, or a desktop with any graphics card
+    recommended: true
+    memory_gb: 6
+    options:
+      renderDistance: server   # = the server's view distance (server.yml performance.view_distance)
+      simulationDistance: 8
+      graphicsPreset: fancy
+      ao: true
+      renderClouds: fast
+      particles: 0
+      entityDistanceScaling: 1.0
+      maxFps: 120
+      enableVsync: false
+  high:
+    title: High
+    description: A gaming PC. Adds Distant Horizons (far-away terrain) and Iris (shaders, off until you pick one).
+    example: e.g. a desktop with an RTX 3060 / RX 6600 or better
+    memory_gb: 6
+    options:
+      renderDistance: server
+      simulationDistance: 8
+      graphicsPreset: fancy
+      ao: true
+      renderClouds: "true"
+      particles: 0
+      entityDistanceScaling: 1.0
+      maxFps: 144
+      enableVsync: false
+    distant_horizons: {lod_chunks: 128}
+    iris: {shaders: false}
+  maximum:
+    title: Maximum
+    description: A powerful graphics card. Far terrain, shaders on, frame rate up to your screen's refresh rate.
+    example: e.g. a desktop with an RTX 4070 / RX 7800 XT or better
+    memory_gb: 8   # Distant Horizons at 256 LOD chunks + shaders
+    options:
+      renderDistance: server
+      simulationDistance: 8
+      graphicsPreset: fancy
+      ao: true
+      renderClouds: "true"
+      particles: 0
+      entityDistanceScaling: 1.25
+      maxFps: 260           # 260 = Unlimited in vanilla; vsync caps it at the screen's refresh rate
+      enableVsync: true
+    distant_horizons: {lod_chunks: 256}
+    iris: {shaders: true}

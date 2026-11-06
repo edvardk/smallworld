@@ -1,0 +1,5 @@
+**What changed:** the product v1.2.1 -> v1.3.0 (example-owner/example-product@bbbbbbbbbbbb). A minor/major release (new features, possibly new server.yml fields).
+
+**What it means for players:** usually nothing they notice; if the deploy changes a setting that needs a restart, the server restarts once with an in-game countdown.
+
+**What to do:** Read the release notes (https://github.com/example-owner/example-product/releases/tag/v1.3.0), then run `mcctl upgrade -C <config> --to v1.3.0` (its own pull request, with the schema migrations), or merge this one as admin if the notes list none.

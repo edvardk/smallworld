@@ -1,0 +1,30 @@
+{
+  "tagOwners": {
+    "tag:mc-terraform": [${admin}],
+    "tag:mc-server": [${admin}, "tag:mc-terraform"],
+    "tag:ci": [${admin}, "tag:mc-terraform"]
+  },
+  "grants": [
+    {"src": [${admin}], "dst": ["*"], "ip": ["*"]},
+    {"src": ["tag:ci"], "dst": ["tag:mc-server"], "ip": ["tcp:22"]}
+  ],
+  "ssh": [
+    {"action": "accept", "src": ["tag:ci"], "dst": ["tag:mc-server"], "users": ["deploy"]},
+    {"action": "check", "checkPeriod": "12h", "src": [${admin}], "dst": ["tag:mc-server"], "users": ["deploy"]}
+  ],
+  "tests": [
+    {
+      "src": "tag:ci",
+      "accept": ["tag:mc-server:22"],
+      "deny": ["tag:mc-server:25565", "tag:mc-server:25575", "tag:mc-server:443", "tag:mc-server:8443"]
+    },
+    {
+      "src": ${admin},
+      "accept": ["tag:mc-server:22", "tag:mc-server:25575", "tag:mc-server:443", "tag:mc-server:8443"]
+    }
+  ],
+  "sshTests": [
+    {"src": "tag:ci", "dst": ["tag:mc-server"], "accept": ["deploy"], "deny": ["root"]},
+    {"src": ${admin}, "dst": ["tag:mc-server"], "check": ["deploy"], "deny": ["root"]}
+  ]
+}

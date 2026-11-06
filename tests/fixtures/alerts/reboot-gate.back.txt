@@ -1,0 +1,4 @@
+✅ **The server host is back after its reboot for security updates**
+**Impact:** Players can join again.
+**What to do:** No action needed - informational.
+**Details:** boot 01234567

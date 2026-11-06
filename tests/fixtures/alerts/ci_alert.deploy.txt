@@ -1,0 +1,5 @@
+🔴 **A deploy failed**
+**Impact:** This push is not (fully) applied. The server usually keeps running with what it had; if the deploy failed while restarting it or in the smoke test, players may not be able to join.
+**Likely cause:** A step of the deploy job failed (the run says which: the client pack mirror, the tailnet, Ansible, or the smoke test from the internet).
+**What to do:** Open the run: https://github.com/example-owner/example-config/actions/runs/123 . Fix the cause, then push again or re-run the deploy (Actions, server, Run workflow, deploy); `mcctl doctor` checks credentials and reachability.
+**Details:** deploy job failed

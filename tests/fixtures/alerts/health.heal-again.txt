@@ -1,0 +1,5 @@
+⚠️ **The Minecraft server had to be restarted again**
+**Impact:** Players were kicked for a minute or two; it is starting again now.
+**Likely cause:** It stopped answering (unit failed); 3 automatic restarts in 24 h is unusual.
+**What to do:** Check `journalctl -u minecraft -n 200` for a crash reason (or `mcctl doctor`). Self-heal stops after 3 restarts a day.
+**Details:** 3 restarts in 24 h; unit failed

@@ -1,0 +1,5 @@
+⚠️ **The outside watchdog has stopped checking**
+**Impact:** Players are not affected. But outages, late backups and lag would go unreported.
+**Likely cause:** The watchdog Worker's scheduled run hasn't happened for 30 min.
+**What to do:** Cloudflare dashboard: Workers & Pages, the watchdog Worker, Settings > Triggers (cron) and its logs; https://www.cloudflarestatus.com.
+**Details:** last cron run 30 min ago

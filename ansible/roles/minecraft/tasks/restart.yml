@@ -1,0 +1,50 @@
+# The Discord URL and the watchdog token come from notify.env (base role) via mc-run, so they never land on a
+# command line. The maintenance window keeps health.py's self-heal and the watchdog's alerts out of the way
+# while the server is deliberately stopped (overlays are applied in between).
+- name: Open a maintenance window (self-heal and watchdog stand down)
+  ansible.builtin.command: >-
+    /usr/local/bin/mc-run -{{ mc_etc_dir }}/notify.env
+    {{ mc_bin_dir }}/notify.py maintenance {{ mc_deploy_maintenance_minutes }} deploy
+  changed_when: false
+
+# P10 review: a restore that started after the role's own check must finish first (and leaves the marker as
+# it should be: gone, or the admin's / a failed restore's).
+- name: Wait for a running restore, then read the admin-stopped marker again
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/restore_guard.yml"
+
+- name: Announce restart in game (skipped if nobody is online)
+  ansible.builtin.command: >-
+    /usr/local/bin/mc-run -{{ mc_etc_dir }}/notify.env
+    {{ mc_bin_dir }}/mc_rcon.py countdown {{ mc_restart_countdown_seconds }}
+  changed_when: false
+  failed_when: false
+
+- name: Stop the server (ExecStop saves and stops via RCON)
+  ansible.builtin.systemd_service:
+    name: minecraft.service
+    state: stopped
+    daemon_reload: true
+
+- name: Apply config overlays while stopped
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/overlays.yml"
+  vars:
+    mc_overlay_check: false
+
+# Admin-stopped: the changes are applied and the server stays down (stopping it above was a no-op).
+- name: Start the server
+  ansible.builtin.systemd_service:
+    name: minecraft.service
+    state: started
+  when: not (mc_admin_stopped | default(false) | bool)
+
+- name: Wait for RCON
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ mc_rcon_port }}"
+    timeout: 900
+  when: not (mc_admin_stopped | default(false) | bool)
+
+- name: Close the maintenance window
+  ansible.builtin.command: >-
+    /usr/local/bin/mc-run -{{ mc_etc_dir }}/notify.env {{ mc_bin_dir }}/notify.py maintenance 0 deploy
+  changed_when: false

@@ -1,0 +1,155 @@
+{
+  "_source": "Shaped from the Cloudflare API v4 reference (verify token, list zones, list R2 buckets, list Workers scripts), 2026-10-31; ids are fake; D1 list and token permission groups (Cloudflare API reference, 2026-10-31).",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/user/tokens/verify"
+      },
+      "response": {
+        "body": {
+          "errors": [],
+          "messages": [],
+          "result": {
+            "expires_on": "2027-03-01T00:00:00Z",
+            "id": "ed17574386854bf78a67040be0a770b0",
+            "not_before": "2026-10-01T00:00:00Z",
+            "status": "active"
+          },
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/zones?name=tests.mcctl.internal"
+      },
+      "response": {
+        "body": {
+          "errors": [],
+          "messages": [],
+          "result": [
+            {
+              "account": {
+                "id": "0123456789abcdef0123456789abcdef",
+                "name": "Alex"
+              },
+              "id": "023e105f4ecef8ad9ca31a8372d0c353",
+              "name": "tests.mcctl.internal",
+              "status": "active"
+            }
+          ],
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/r2/buckets"
+      },
+      "response": {
+        "body": {
+          "errors": [
+            {
+              "code": 10000,
+              "message": "Authentication error"
+            }
+          ],
+          "messages": [],
+          "result": null,
+          "success": false
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/workers/scripts"
+      },
+      "response": {
+        "body": {
+          "errors": [],
+          "messages": [],
+          "result": [],
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/d1/database"
+      },
+      "response": {
+        "body": {
+          "errors": [],
+          "messages": [],
+          "result": [
+            {
+              "uuid": "00000000-0000-4000-8000-000000000001",
+              "name": "other-db",
+              "created_at": "2026-10-01T00:00:00.000Z",
+              "version": "production"
+            }
+          ],
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/user/tokens/permission_groups"
+      },
+      "response": {
+        "body": {
+          "errors": [],
+          "messages": [],
+          "result": [
+            {
+              "id": "bf7481a1826f439697cb59a20b22293e",
+              "name": "Workers R2 Storage Bucket Item Write",
+              "scopes": [
+                "com.cloudflare.edge.r2.bucket"
+              ]
+            },
+            {
+              "id": "c8fed203ed3043cba015a93ad1616f1f",
+              "name": "Zone Read",
+              "scopes": [
+                "com.cloudflare.api.account.zone"
+              ]
+            }
+          ],
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ]
+}

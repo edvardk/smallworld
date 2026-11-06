@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Weekly backup test ({{ backups_check_schedule }})
+
+[Timer]
+OnCalendar={{ backups_check_schedule }}
+# No catch-up run at boot: after downtime the newest snapshot is old until the next hourly backup, and the test
+# would report that instead of a real problem. A missed week is caught by the next one.
+Persistent=false
+
+[Install]
+WantedBy=timers.target

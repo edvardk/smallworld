@@ -1,0 +1,54 @@
+[build-system]
+# Pinned like everything else; only `pip install`/`pipx install` of mcctl uses it.
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smallworld-mc"
+version = "1.2.0"
+requires-python = ">=3.12"  # = mcctl.MIN_PYTHON; server-side scripts: 3.11 stdlib
+license = "MIT"  # PEP 639 (setuptools >= 77)
+license-files = ["LICENSE"]
+dependencies = ["PyYAML==6.0.3", "rich==15.0.0", "tzdata==2026.6"]
+
+[project.scripts]
+mcctl = "mcctl.cli:main"
+
+[tool.setuptools]
+packages = ["mcctl", "mcctl.providers"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "ANN", "S", "RUF"]
+# Ops scripts call fixed argv lists of known tools (restic, systemctl, terraform); asserts guard invariants.
+ignore = ["S603", "S607", "S101"]
+
+[tool.ruff.lint.per-file-ignores]
+# Ansible modules follow Ansible's conventions (runs on the target's python3, no type hints required).
+"ansible/library/*.py" = ["ANN", "UP", "S", "E402", "E501"]  # DOCUMENTATION block precedes imports
+"tests/*.py" = ["ANN", "S105", "S106", "S107", "E501"]
+# The schema engine walks arbitrary parsed YAML and type hints: Any is its domain, not a shortcut.
+"mcctl/schema.py" = ["ANN401"]
+# The wizard is mostly user-facing prompt text: long string literals stay whole so they read (and grep) as shown.
+"mcctl/init.py" = ["E501"]
+"mcctl/mock.py" = ["E501"]
+
+[tool.ruff.lint.isort]
+# scripts/worlds.py is a server-side script like its neighbours; the worlds/ data folder at the root made ruff
+# take it for a first-party package.
+known-third-party = ["worlds"]
+
+[tool.ruff.lint.flake8-bugbear]
+# Schema fields are dataclasses.field() wrappers, not shared mutable defaults.
+extend-immutable-calls = ["mcctl.schema.opt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# ci.yml job `controller` on macOS and Windows runs -m "controller and not posix_only" (tests/conftest.py).
+markers = [
+    "controller: the controller's cross-platform tests (tests/conftest.py CONTROLLER_TESTS; set automatically)",
+    "posix_only: needs POSIX (fcntl, file modes, an executable fake binary, a shell, Ansible); skipped on Windows",
+]

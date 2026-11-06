@@ -1,0 +1,53 @@
+# Overlay for config/paper-world-defaults.yml. Keys verified in keys/<minecraft_version>/paper-world-defaults.txt.
+# server.yml performance.profile (mcctl/render.py TUNING). Overlays only add keys, so values a profile no longer
+# changes are set explicitly to the pinned jar's default (e.g. entity-per-chunk-save-limit -1), never dropped.
+# Kept in both profiles (invisible to gameplay): per-player-mob-spawns (the mob cap split per player: vanilla's own
+# algorithm since 1.18), max-auto-save-chunks-per-tick (spreads autosave I/O), hopper.disable-move-event (only
+# skips a plugin event no installed plugin listens to).
+entities:
+  spawning:
+    per-player-mob-spawns: true
+    despawn-ranges:
+      monster:
+        soft: {{ mc_despawn_range.soft }}
+        hard: {{ mc_despawn_range.hard }}
+    alt-item-despawn-rate:
+      enabled: {{ (mc_alt_item_despawn_ticks | length > 0) | lower }}
+{% if mc_alt_item_despawn_ticks %}
+      items:
+{% for item, ticks in mc_alt_item_despawn_ticks.items() %}
+        {{ item }}: {{ ticks }}
+{% endfor %}
+{% endif %}
+  armor-stands:
+    tick: {{ mc_tuning.armor_stands_tick | bool | lower }}
+    do-collision-entity-lookups: {{ mc_tuning.armor_stands_tick | bool | lower }}
+  behavior:
+    disable-chest-cat-detection: {{ mc_tuning.disable_chest_cat_detection | bool | lower }}
+collisions:
+  max-entity-collisions: {{ mc_tuning.max_entity_collisions }}
+  fix-climbing-bypassing-cramming-rule: {{ mc_tuning.fix_climbing_bypassing_cramming_rule | bool | lower }}
+chunks:
+  entity-per-chunk-save-limit:
+{% for kind, limit in mc_tuning.entity_per_chunk_save_limit.items() %}
+    {{ kind }}: {{ limit }}
+{% endfor %}
+  max-auto-save-chunks-per-tick: 8
+  prevent-moving-into-unloaded-chunks: {{ mc_tuning.prevent_moving_into_unloaded_chunks | bool | lower }}
+misc:
+  redstone-implementation: {{ mc_redstone_implementation }}
+environment:
+  optimize-explosions: {{ mc_tuning.optimize_explosions | bool | lower }}
+  treasure-maps:
+    find-already-discovered:
+      # A tri-state (default/true/false) Paper writes back as a string ('default', 'true'): quoted so it compares
+      # equal and a deploy doesn't rewrite the file and restart the server.
+      loot-tables: {{ mc_tuning.treasure_maps_loot_tables | string | to_json }}
+      villager-trade: {{ mc_tuning.treasure_maps_villager_trade | bool | lower }}
+tick-rates:
+  grass-spread: {{ mc_tuning.tick_rates.grass_spread }}
+  container-update: {{ mc_tuning.tick_rates.container_update }}
+  mob-spawner: {{ mc_tuning.tick_rates.mob_spawner }}
+hopper:
+  disable-move-event: true
+  ignore-occluding-blocks: {{ mc_tuning.hopper_ignore_occluding_blocks | bool | lower }}

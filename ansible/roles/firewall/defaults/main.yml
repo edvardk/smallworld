@@ -1,0 +1,10 @@
+# New Minecraft connections per source (design §7): an IPv4 /32 or an IPv6 /64 (one customer's prefix).
+# Above the rate (after the burst) or the concurrency, new connections are dropped; drops are logged at
+# most firewall_log_per_minute times a minute (journal: "mc-ratelimit: " / "mc-connlimit: ").
+firewall_mc_new_per_minute: 20
+firewall_mc_new_burst: 30
+firewall_mc_max_concurrent: 10   # rendered from server.yml firewall.max_connections_per_source
+firewall_log_per_minute: 10
+# Entries per per-source set (rate and connection count, IPv4 and IPv6 each). When one is full, NEW sources are
+# dropped (fail closed, "mc-setfull: ") until entries expire (rate: 10 min idle; count: no open connection).
+firewall_set_size: 65535

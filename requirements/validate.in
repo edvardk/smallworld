@@ -1,0 +1,7 @@
+# mcctl's runtime dependencies (the reusable workflow's validate job; rich: the terminal UI, mcctl/ui.py).
+# After editing any *.in, recompile all three (README "Python dependencies"):
+#   cd requirements && for f in validate deploy dev; do
+#     pip-compile --generate-hashes --allow-unsafe --strip-extras --no-emit-index-url -o $f.txt $f.in; done
+PyYAML==6.0.3
+rich==15.0.0
+tzdata==2026.6  # zoneinfo's database where the OS has none (Windows): host.timezone validation

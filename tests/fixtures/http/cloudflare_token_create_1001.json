@@ -1,0 +1,52 @@
+{
+  "_source": "The error Cloudflare returned in a live init run (2026-11-01) for POST /accounts/{id}/tokens from an API-made context asking for Account API Tokens Edit (code and message verbatim; HTTP status as for other 4xx validation errors, not recorded). The permission group listing is shaped from the API reference (GET /accounts/{id}/tokens/permission_groups). Ids and values are fake.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/tokens/permission_groups"
+      },
+      "response": {
+        "body": {
+          "errors": [],
+          "messages": [],
+          "result": [
+            {
+              "id": "2efd5506f9c8494dacb1fa10a3e7d5b6",
+              "name": "Workers R2 Storage Bucket Item Write",
+              "scopes": ["com.cloudflare.edge.r2.bucket"]
+            }
+          ],
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/tokens"
+      },
+      "response": {
+        "body": {
+          "errors": [
+            {
+              "code": 1001,
+              "message": "sub-token is not allowed to have permissions to manage other tokens"
+            }
+          ],
+          "messages": [],
+          "result": null,
+          "success": false
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    }
+  ]
+}

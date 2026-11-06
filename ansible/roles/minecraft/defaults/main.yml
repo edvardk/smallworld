@@ -1,0 +1,73 @@
+mc_java_bin: "/usr/lib/jvm/temurin-{{ server_lock.java_major }}-jre-{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts['architecture']] }}/bin/java"
+# jvm.heap_mb auto (mcctl/render.py HEAP_RESERVE_MB / HEAP_RESERVE_PCT): RAM - max(reserve, pct % of RAM).
+mc_heap_mb: >-
+  {{ ((ansible_facts['memtotal_mb'] | int) - ([mc_heap_reserve_mb | int,
+  (ansible_facts['memtotal_mb'] | int) * (mc_heap_reserve_pct | default(0) | int) // 100] | max)) // 256 * 256 }}
+mc_config_dir: "{{ playbook_dir }}/../server-config"
+# P16: systemd AllowedCPUs of the JVM with performance.cpu_affinity split: every CPU but 0 (the helpers' CPU,
+# mc_helper_cpus "0" from mcctl render), from the host's CPU count at deploy; "" = every CPU (off).
+mc_jvm_cpus: "{{ ('1-' ~ ((ansible_facts['processor_vcpus'] | int) - 1)) if mc_cpu_affinity == 'split' else '' }}"
+
+# P16: server.yml jvm.gc picks one of the two flag sets below (default zgc; g1 = the flags before P16).
+mc_jvm_flags: "{{ mc_jvm_flags_zgc if mc_jvm_gc == 'zgc' else mc_jvm_flags_g1 }}"
+
+# Aikar's flags, as currently published at https://docs.papermc.io/paper/aikars-flags (heap < 12 GB),
+# plus THP opt-in and a rotated GC log that health.py reads. All verified on Temurin 25.
+mc_jvm_flags_g1:
+  - -XX:+UseG1GC
+  - -XX:+ParallelRefProcEnabled
+  - -XX:MaxGCPauseMillis=200
+  - -XX:+UnlockExperimentalVMOptions
+  - -XX:+DisableExplicitGC
+  - -XX:+AlwaysPreTouch
+  - -XX:G1NewSizePercent=30
+  - -XX:G1MaxNewSizePercent=40
+  - -XX:G1HeapRegionSize=8M
+  - -XX:G1ReservePercent=20
+  - -XX:G1HeapWastePercent=5
+  - -XX:G1MixedGCCountTarget=4
+  - -XX:InitiatingHeapOccupancyPercent=15
+  - -XX:G1MixedGCLiveThresholdPercent=90
+  - -XX:G1RSetUpdatingPauseTimePercent=5
+  - -XX:SurvivorRatio=32
+  - -XX:+PerfDisableSharedMem
+  - -XX:MaxTenuringThreshold=1
+  - -XX:+UseTransparentHugePages
+  # P13: on tmpfs (minecraft.service RuntimeDirectory): no disk writes for the GC log; 3 x 5 MB of RAM at most.
+  - -Xlog:gc:file=/run/mc-telemetry/gc.log:time,uptime,level,tags:filecount=3,filesize=5M
+  - -Dusing.aikars.flags=https://mcflags.emc.gs
+  - -Daikars.new.flags=true
+
+# P16: Generational ZGC on Temurin 25 (verified with -XX:+PrintFlagsFinal / -Xlog:gc+init on 25.0.5+8):
+# -XX:+UseZGC alone is generational (JEP 474; -XX:+ZGenerational was removed in 24 and only prints a warning:
+# never pass it). The G1 tuning (region/new sizes, IHOP, MaxGCPauseMillis, survivor/tenuring, RefProc) means
+# nothing to ZGC and is dropped, as is the Aikar marker property. Kept: Xms = Xmx (set by the unit: ZGC then
+# never uncommits), AlwaysPreTouch (the heap is touched at start, no page faults mid-game), THP (ZGC's heap is
+# a memfd on shmem: the base role sets shmem_enabled=advise for it, else the JVM warns and uses 4 KB pages),
+# no explicit GC, no hsperfdata. No SoftMaxHeapSize (= Xmx): with the heap committed and pre-touched, a lower
+# soft limit only makes ZGC collect earlier (more CPU) for no memory gain. GC threads stay ergonomic
+# (dynamic; 1 concurrent thread on 3-4 CPUs). The GC log adds gc+phases: ZGC logs its pauses (Pause Mark
+# Start/End, Relocate Start) there, and allocation stalls under `gc`; health.py parses both formats.
+mc_jvm_flags_zgc:
+  - -XX:+UseZGC
+  - -XX:+DisableExplicitGC
+  - -XX:+AlwaysPreTouch
+  - -XX:+PerfDisableSharedMem
+  - -XX:+UseTransparentHugePages
+  - -Xlog:gc,gc+phases:file=/run/mc-telemetry/gc.log:time,uptime,level,tags:filecount=3,filesize=5M
+
+# Config overlays: file (relative to the server dir) -> template in server-config/.
+mc_overlays_core:
+  - {path: server.properties, format: properties, template: server.properties.yml.j2, create: true}
+  - {path: bukkit.yml, format: yaml, template: bukkit.yml.j2}
+  - {path: spigot.yml, format: yaml, template: spigot.yml.j2}
+  - {path: purpur.yml, format: yaml, template: purpur.yml.j2}
+  - {path: config/paper-global.yml, format: yaml, template: paper-global.yml.j2}
+  - {path: config/paper-world-defaults.yml, format: yaml, template: paper-world-defaults.yml.j2}
+mc_overlays_plugins:
+  - {plugin: Chunky, path: plugins/Chunky/config.yml, format: yaml, template: plugins/Chunky.yml.j2}
+  - {plugin: AxGraves, path: plugins/AxGraves/config.yml, format: yaml, template: plugins/AxGraves.yml.j2}
+
+# P10 review: how long a deploy waits for a running restore (restore.lock held) before it fails; the e2e run
+# shortens it.
+mc_restore_wait_s: 1800

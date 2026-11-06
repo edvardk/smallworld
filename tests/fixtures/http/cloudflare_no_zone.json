@@ -1,0 +1,46 @@
+{
+  "_source": "Shaped from the Cloudflare API v4 reference (verify token, list zones, list R2 buckets, list Workers scripts), 2026-10-31; ids are fake.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/user/tokens/verify"
+      },
+      "response": {
+        "body": {
+          "errors": [],
+          "messages": [],
+          "result": {
+            "expires_on": "2027-03-01T00:00:00Z",
+            "id": "ed17574386854bf78a67040be0a770b0",
+            "not_before": "2026-10-01T00:00:00Z",
+            "status": "active"
+          },
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/zones?name=tests.mcctl.internal"
+      },
+      "response": {
+        "body": {
+          "errors": [],
+          "messages": [],
+          "result": [],
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ]
+}

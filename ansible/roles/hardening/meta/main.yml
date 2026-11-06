@@ -1,0 +1,12 @@
+galaxy_info:
+  role_name: hardening
+  author: the Smallworld contributors
+  description: Kernel and network sysctls, persistent journal, OpenSSH off (design §7)
+  license: MIT
+  min_ansible_version: "2.17"
+  platforms:
+    - name: Debian
+      versions: [bookworm, trixie]
+    - name: Ubuntu
+      versions: [noble]
+dependencies: []

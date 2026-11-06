@@ -1,0 +1,53 @@
+{
+  "_source": "Shaped from the GitHub REST API reference (apps: Create an installation access token for an app; installations: List repositories accessible to the app installation), 2026-11-02; ids and token fake. Installed on another repository too.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://api.github.com/app/installations/4321/access_tokens"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "token": "ghs_fixture_installation_token",
+          "expires_at": "2026-11-02T13:00:00Z",
+          "permissions": {
+            "metadata": "read"
+          },
+          "repository_selection": "selected"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/installation/repositories?per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "total_count": 2,
+          "repository_selection": "selected",
+          "repositories": [
+            {
+              "id": 1000,
+              "full_name": "tests/tests-mc-config",
+              "private": true
+            },
+            {
+              "id": 1001,
+              "full_name": "tests/dotfiles",
+              "private": true
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

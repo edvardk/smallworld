@@ -1,0 +1,5 @@
+🔴 **Players can't reach the server over IPv4**
+**Impact:** Nobody can connect to the server from outside.
+**Likely cause:** No health heartbeat either: the host itself may be down.
+**What to do:** Check the box in the hosting provider's console (is it running?); `mcctl doctor`.
+**Details:** no Minecraft status reply over IPv4 for 2 runs (connection refused)

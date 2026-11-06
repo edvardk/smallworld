@@ -1,0 +1,199 @@
+- name: Install apt repo prerequisites
+  ansible.builtin.apt:
+    name: [python3-debian, ca-certificates]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Add Tailscale apt repository
+  ansible.builtin.deb822_repository:
+    name: tailscale
+    types: [deb]
+    uris: "https://pkgs.tailscale.com/stable/{{ ansible_facts['distribution'] | lower }}"
+    suites: ["{{ ansible_facts['distribution_release'] }}"]
+    components: [main]
+    signed_by: "https://pkgs.tailscale.com/stable/{{ ansible_facts['distribution'] | lower }}/{{ ansible_facts['distribution_release'] }}.noarmor.gpg"
+  register: tailscale_repo
+
+- name: Refresh apt cache after adding the repo
+  ansible.builtin.apt:
+    update_cache: true
+  when: tailscale_repo.changed  # noqa: no-handler
+
+- name: Read the installed Tailscale version
+  ansible.builtin.command: dpkg-query -W -f=${Version} tailscale
+  register: tailscale_installed
+  changed_when: false
+  failed_when: false
+
+- name: Check whether we are connected over the tailnet already
+  ansible.builtin.command: tailscale status --json
+  register: tailscale_pre_status
+  changed_when: false
+  failed_when: false
+  when: tailscale_installed.stdout != tailscale_version
+
+# Fresh box (bootstrap, over public SSH): a plain install is safe.
+- name: Install pinned Tailscale
+  ansible.builtin.apt:
+    name: "tailscale={{ tailscale_version }}"
+    state: present
+    allow_change_held_packages: true
+  when:
+    - tailscale_installed.stdout != tailscale_version
+    - tailscale_pre_status.rc != 0 or (tailscale_pre_status.stdout | from_json).BackendState != 'Running'
+
+# Already on the tailnet: this very connection may run over Tailscale SSH, and upgrading restarts
+# tailscaled. Run the upgrade detached, reconnect, then check it landed.
+- name: Upgrade Tailscale without depending on this connection
+  when:
+    - tailscale_installed.stdout != tailscale_version
+    - tailscale_pre_status.rc == 0 and (tailscale_pre_status.stdout | from_json).BackendState == 'Running'
+  block:
+    - name: Start the upgrade in the background
+      ansible.builtin.apt:
+        name: "tailscale={{ tailscale_version }}"
+        state: present
+        allow_change_held_packages: true
+      async: 600
+      poll: 0
+      register: tailscale_upgrade
+
+    - name: Reconnect after tailscaled restarts
+      ansible.builtin.wait_for_connection:
+        delay: 15
+        timeout: 600
+
+    - name: Wait for the upgrade to finish
+      ansible.builtin.async_status:
+        jid: "{{ tailscale_upgrade.ansible_job_id }}"
+      register: tailscale_upgrade_job
+      until: tailscale_upgrade_job is finished
+      retries: 60
+      delay: 10
+
+    - name: Check the pinned version is installed
+      ansible.builtin.command: dpkg-query -W -f=${Version} tailscale
+      register: tailscale_upgraded
+      changed_when: false
+      failed_when: tailscale_upgraded.stdout != tailscale_version
+
+- name: Hold Tailscale at the pinned version
+  ansible.builtin.dpkg_selections:
+    name: tailscale
+    selection: hold
+
+- name: Enable tailscaled
+  ansible.builtin.systemd_service:
+    name: tailscaled
+    enabled: true
+    state: started
+
+# A join still in progress (e.g. an interrupted earlier run) passes through NoState/Starting: wait it out
+# instead of mistaking it for "not joined" and spending a fresh key on a second node.
+- name: Read Tailscale state (waiting out a join in progress)
+  ansible.builtin.command: tailscale status --json
+  register: tailscale_status
+  changed_when: false
+  failed_when: false
+  retries: 30
+  delay: 2
+  until: >-
+    tailscale_status.rc != 0
+    or (tailscale_status.stdout | from_json).BackendState not in ['NoState', 'Starting']
+
+- name: Work out whether we are already on the tailnet
+  ansible.builtin.set_fact:
+    tailscale_running: "{{ tailscale_status.rc == 0 and (tailscale_status.stdout | from_json).BackendState == 'Running' }}"
+
+- name: Join the tailnet
+  when: not tailscale_running
+  block:
+    - name: Require an auth key for the first join
+      ansible.builtin.assert:
+        that: tailscale_auth_key | length > 0
+        fail_msg: Not on the tailnet yet. Export TS_AUTHKEY (terraform output -raw server_tailscale_auth_key).
+        quiet: true
+
+    - name: Write the one-time auth key to a root-only file
+      ansible.builtin.copy:
+        dest: /run/tailscale-authkey
+        content: "{{ tailscale_auth_key }}"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Tailscale up (tagged key, Tailscale SSH on, keep host DNS)
+      ansible.builtin.command: >-
+        tailscale up --auth-key=file:/run/tailscale-authkey
+        --hostname={{ mc_hostname }} --ssh --accept-dns=false
+      changed_when: true
+  always:
+    - name: Remove the auth key file
+      ansible.builtin.file:
+        path: /run/tailscale-authkey
+        state: absent
+
+# `tailscale up` returns once the node is authorised, possibly before it is Running with its addresses.
+- name: Wait until the node is Running with a 100.x address
+  ansible.builtin.command: tailscale status --json
+  register: tailscale_up_status
+  changed_when: false
+  failed_when: false
+  retries: 30
+  delay: 2
+  until: >-
+    tailscale_up_status.rc == 0
+    and (tailscale_up_status.stdout | from_json).BackendState == 'Running'
+    and ((tailscale_up_status.stdout | from_json).Self.TailscaleIPs | default([])
+         | select('match', '^100[.]') | list | length > 0)
+
+- name: Read Tailscale prefs
+  ansible.builtin.command: tailscale debug prefs
+  register: tailscale_prefs
+  changed_when: false
+
+- name: Enforce hostname, Tailscale SSH and DNS prefs
+  ansible.builtin.command: tailscale set --hostname={{ mc_hostname }} --ssh=true --accept-dns=false
+  when: >-
+    not (tailscale_prefs.stdout | from_json).RunSSH
+    or (tailscale_prefs.stdout | from_json).Hostname != mc_hostname
+    or (tailscale_prefs.stdout | from_json).CorpDNS
+  changed_when: true
+
+# Guards before anyone closes public SSH (bootstrap) and on every deploy.
+- name: Re-read Tailscale prefs and status
+  ansible.builtin.command: "{{ item }}"
+  loop: [tailscale debug prefs, tailscale status --json]
+  register: tailscale_final
+  changed_when: false
+
+- name: Tailscale SSH is on and the node has a tailnet IP
+  ansible.builtin.assert:
+    that:
+      - (tailscale_final.results[0].stdout | from_json).RunSSH
+      - (tailscale_final.results[1].stdout | from_json).Self.TailscaleIPs | default([]) | length > 0
+    fail_msg: Tailscale SSH is off or the node has no tailnet IP; do not close public SSH.
+    quiet: true
+
+- name: The node is Running and carries the server tag
+  ansible.builtin.assert:
+    that:
+      - (tailscale_final.results[1].stdout | from_json).BackendState == 'Running'
+      - mc_tailscale_server_tag in ((tailscale_final.results[1].stdout | from_json).Self.Tags | default([]))
+    fail_msg: >-
+      This node is {{ (tailscale_final.results[1].stdout | from_json).BackendState }} with tags
+      {{ (tailscale_final.results[1].stdout | from_json).Self.Tags | default([]) }}, not Running as
+      {{ mc_tailscale_server_tag }}: it was joined with another key or login. Run `tailscale logout` on the
+      server (public SSH or the provider console), then `mcctl bootstrap` again.
+    quiet: true
+
+- name: The node got the expected MagicDNS name
+  ansible.builtin.assert:
+    that: ((tailscale_final.results[1].stdout | from_json).Self.DNSName | default('')).startswith(mc_hostname ~ '.')
+    fail_msg: >-
+      This node is {{ (tailscale_final.results[1].stdout | from_json).Self.DNSName | default('?') }}, not
+      {{ mc_hostname }}.<tailnet>. An old machine probably still holds the name: delete it in the
+      Tailscale admin console (Machines), then re-run. CI and `ssh deploy@{{ mc_hostname }}` need the name.
+    quiet: true

@@ -1,0 +1,36 @@
+# {{ ansible_managed }}
+# The panel's restore (P10, design §5 "Restore"): `restore.py --snapshot %i --panel`, started by mc-agent (polkit
+# allows {{ mc_ops_user }} to start mc-restore@<8-64 hex>.service only; restore.py checks the id again and that the
+# snapshot exists). Steps: safety snapshot of the current world (tag pre-restore, kept by the bucket lock) ->
+# stop -> fetch into {{ mc_restore_dir }}/staging -> mc-restore-apply.service copies it in as minecraft -> start.
+# Runs as {{ mc_ops_user }} with the restic credentials, like mc-backup (same read capability for the safety
+# snapshot, same hidden paths); never as root, never as minecraft.
+[Unit]
+Description=Restore restic snapshot %i into the Minecraft server (panel; safety snapshot first)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User={{ mc_ops_user }}
+Group={{ mc_ops_user }}
+SupplementaryGroups=minecraft
+EnvironmentFile={{ mc_etc_dir }}/restic.env
+Environment=RESTIC_CACHE_DIR={{ backups_cache_dir }} PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+CacheDirectory=mc-restic
+CacheDirectoryMode=0750
+StateDirectory=mc-snapshots
+StateDirectoryMode=0750
+ExecStart={{ mc_bin_dir }}/restore.py --snapshot %i --panel
+TimeoutStartSec=2h
+# restore.lock and the maintenance/admin-stopped markers; the fetched snapshot before it is applied.
+ReadWritePaths={{ mc_state_dir }} {{ mc_restore_dir }}
+Nice=5
+OOMScoreAdjust=500
+# Sandbox (design §7): the shared set, see ansible/group_vars/all/main.yml.
+{{ mc_systemd_sandbox | join('\n') }}
+MemoryDenyWriteExecute=true
+# As mc-backup: read any world file for the safety snapshot (the JVM writes some 0600), nothing else.
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+AmbientCapabilities=CAP_DAC_READ_SEARCH
+InaccessiblePaths={{ backups_inaccessible_paths | join(' ') }}

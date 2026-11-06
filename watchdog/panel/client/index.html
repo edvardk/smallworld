@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<title>Get the client</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/pixelify-sans.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/client.css">
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/client.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="wrap bar">
+    <div>
+      <p class="kicker">Optional client</p>
+      <h1 id="title">Get the client</h1>
+    </div>
+    <button class="btn small" type="button" id="themeBtn" aria-pressed="false" title="Switch between dark and light">Light</button>
+  </div>
+</header>
+
+<main class="wrap" id="main">
+  <section class="panel" id="codeCard" hidden>
+    <h2>Your code</h2>
+    <p>In the game, type <kbd>/modpack</kbd> and click the link, or type the 6-digit code it shows you here.</p>
+    <form id="codeForm" class="codeform" autocomplete="off">
+      <label for="code" class="sr">6-digit code</label>
+      <input id="code" name="code" inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7" placeholder="123 456" required>
+      <button class="btn primary" type="submit">Continue</button>
+    </form>
+    <p class="err" id="codeErr" role="alert" hidden></p>
+  </section>
+
+  <div id="setup" hidden>
+    <p class="hello" id="hello"></p>
+
+    <nav class="stepper" role="tablist" aria-label="Setup steps">
+      <button type="button" role="tab" id="tab-os" aria-controls="step-os" aria-selected="true"><span class="n">1</span><span class="t">Computer</span></button>
+      <button type="button" role="tab" id="tab-tier" aria-controls="step-tier" aria-selected="false" tabindex="-1"><span class="n">2</span><span class="t">Tier</span></button>
+      <button type="button" role="tab" id="tab-install" aria-controls="step-install" aria-selected="false" tabindex="-1"><span class="n">3</span><span class="t">Install</span></button>
+      <button type="button" role="tab" id="tab-play" aria-controls="step-play" aria-selected="false" tabindex="-1"><span class="n">4</span><span class="t">Play</span></button>
+    </nav>
+
+    <section class="panel" role="tabpanel" id="step-os" aria-labelledby="tab-os">
+      <h2>Pick your computer</h2>
+      <div class="choices os" id="osChoices" role="radiogroup" aria-label="Your computer">
+        <button type="button" class="choice" role="radio" aria-checked="false" data-os="windows"><b>Windows</b><span class="hint"></span></button>
+        <button type="button" class="choice" role="radio" aria-checked="false" data-os="mac"><b>macOS</b><span class="hint"></span></button>
+        <button type="button" class="choice" role="radio" aria-checked="false" data-os="linux"><b>Linux</b><span class="hint"></span></button>
+      </div>
+      <p class="note" id="osNote" hidden></p>
+      <div class="nav"><span></span><button class="btn primary" type="button" data-go="tier">Next</button></div>
+    </section>
+
+    <section class="panel" role="tabpanel" id="step-tier" aria-labelledby="tab-tier" hidden>
+      <h2>Pick your tier</h2>
+      <p class="muted">Not sure? Take the recommended one. You can add another later.</p>
+      <div class="choices tiers" id="tiers" role="radiogroup" aria-label="Tier"></div>
+      <div class="nav"><button class="btn" type="button" data-go="os">Back</button><button class="btn primary" type="button" data-go="install">Next</button></div>
+    </section>
+
+    <section class="panel" role="tabpanel" id="step-install" aria-labelledby="tab-install" hidden>
+      <h2 id="installTitle">Install</h2>
+      <p class="muted">With the official Minecraft Launcher you already have. About five minutes.</p>
+      <p class="dl"><button class="btn primary" type="button" id="zipBtn" disabled>Download</button> <span class="muted" id="zipInfo"></span></p>
+      <p class="err" id="zipErr" role="alert" hidden></p>
+      <ol class="steps">
+        <li><b>Close the Minecraft Launcher</b> if it's open.</li>
+        <li>Open your Minecraft folder <span class="copyline"><kbd id="osPath"></kbd> <button class="btn small" type="button" id="copyPath">Copy</button></span> <span class="muted" id="osHow"></span></li>
+        <li id="unzipStep">Unzip the download <b>into that folder</b>. If it asks, merge the <b>versions</b> folder.</li>
+        <li>In the launcher: <b>Installations</b>, <b>New installation</b>.</li>
+        <li><b>Version</b>: <kbd id="profileId">fabric-loader-…</kbd> (near the bottom of the list).</li>
+        <li><b>Game directory</b>: <b>Browse</b>, then the <kbd id="gameDir">smallworld-…</kbd> folder in your Minecraft folder.</li>
+        <li><b>More options</b>, <b>JVM arguments</b>: change <kbd>-Xmx2G</kbd> at the start to <kbd id="xmx">-Xmx6G</kbd> <button class="btn small" type="button" id="copyXmx">Copy</button></li>
+        <li><b>Create</b>, then <b>Play</b>.</li>
+      </ol>
+      <p class="muted" id="storeNote"></p>
+
+      <details class="fold" id="extraFold" open>
+        <summary>Add the mods we can't share <span class="count" id="extraCount"></span></summary>
+        <p>Their makers only allow downloads from their own page. Download each file and put it into the folder shown (the list is also in <b>MISSING-MODS.txt</b> in the zip). Optional ones you can skip.</p>
+        <ul class="extras" id="extras"></ul>
+      </details>
+      <details class="fold">
+        <summary>Memory: why <span id="memGb">6</span> GB</summary>
+        <p>Launchers start new installations with 2 GB, too little for these mods. In the official launcher it's the <b>-Xmx</b> number in <b>JVM arguments</b> (step above). In the Modrinth App: the profile's <b>Settings</b>, <b>Java and memory</b>, <b>Memory allocated</b>. Never give it more than half of your computer's memory.</p>
+      </details>
+      <details class="fold" id="altFold">
+        <summary>Using Modrinth App or Prism?</summary>
+        <p>Use this file instead: it installs everything, including the mods above, by itself.</p>
+        <p class="dl"><button class="btn" type="button" id="dlBtn" disabled>Download</button> <span class="muted" id="dlInfo"></span></p>
+        <p class="err" id="dlErr" role="alert" hidden></p>
+        <p>Double-click the <b>.mrpack</b> file (or in the app: <b>+</b>, <b>Import from file</b>), <b>Install</b>, then <b>Play</b>. Set the memory as above. <a id="appLink" rel="noopener noreferrer" target="_blank">Get the Modrinth App</a></p>
+      </details>
+      <div class="nav"><button class="btn" type="button" data-go="tier">Back</button><button class="btn primary" type="button" data-go="play">Next</button></div>
+    </section>
+
+    <section class="panel" role="tabpanel" id="step-play" aria-labelledby="tab-play" hidden>
+      <h2>Play</h2>
+      <p>Start the new installation, choose <b>Multiplayer</b>: <b id="serverName">the server</b> is already in your list. Join, and that's it.</p>
+      <p class="muted">Tip: in game, <kbd>/view 16</kbd> lets you see further while the server runs smoothly.</p>
+      <h3>Troubleshooting</h3>
+      <details class="fold"><summary>Slow, stutters, or "out of memory"</summary>
+        <p>Give it the memory from step 3 (<b>JVM arguments</b>, <kbd>-Xmx</kbd>), or pick a lower tier and install that one too.</p></details>
+      <details class="fold"><summary>The picture tears, or the mouse lags</summary>
+        <p>Tearing (a line across the picture when you turn): <b>Options, Video Settings, VSync: ON</b>. Laggy mouse: VSync <b>OFF</b> and <b>Max Framerate</b> at your screen's refresh rate (60, 120, 144…).</p></details>
+      <details class="fold"><summary>The camera suddenly moves slowly and smoothly</summary>
+        <p>That's the cinematic camera. This client leaves its key unbound; if you gave it a key, press it again or remove it in <b>Options, Controls, Key Binds</b>.</p></details>
+      <details class="fold"><summary>A laptop with two graphics cards is slow</summary>
+        <p>Windows: <b>Settings, System, Display, Graphics</b>: add the launcher's <b>javaw.exe</b> and choose <b>High performance</b>. Plug the laptop in: on battery the graphics card slows down.</p></details>
+      <details class="fold"><summary>The mouse feels odd</summary>
+        <p><b>Options, Controls, Mouse Settings, Raw Input</b>: ON (the default) ignores the system's mouse acceleration. Turn it off if the mouse jumps.</p></details>
+      <details class="fold"><summary>My keys and mouse sensitivity are back to default</summary>
+        <p>It's a new game folder. Before the first Play you can copy <b>options.txt</b> from your Minecraft folder into <kbd id="gameDir2">smallworld-…</kbd> (you keep your keys and lose the tier's graphics settings), or set them once in <b>Options</b>.</p></details>
+      <details class="fold"><summary>No fabric-loader in the version list</summary>
+        <p>The zip wasn't unzipped into your Minecraft folder: its <b>versions</b> folder has to land next to the launcher's own. Close the launcher, unzip again, reopen it.</p></details>
+      <details class="fold"><summary>The code doesn't work</summary>
+        <p>Each code works once and only for a few minutes. Type <kbd>/modpack</kbd> in game for a new one.</p></details>
+      <details class="fold"><summary>What's inside?</summary>
+        <p id="includes"></p>
+        <p class="muted" id="credits"></p></details>
+      <div class="nav"><button class="btn" type="button" data-go="install">Back</button><span></span></div>
+    </section>
+  </div>
+  <p class="foot"><button class="linkbtn" type="button" id="logout" hidden>Sign out</button></p>
+</main>
+</body>
+</html>

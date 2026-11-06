@@ -1,0 +1,139 @@
+{
+  "steps": {
+    "apply": {
+      "input_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "outputs": {
+        "applied": true,
+        "created": [
+          "Terraform resources (backups bucket, tokens, tailnet key/identity, Actions secrets)"
+        ]
+      },
+      "status": "done",
+      "updated_at": "2026-11-01T23:23:47Z"
+    },
+    "cloudflare": {
+      "input_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "outputs": {
+        "account_id": "00000000000000000000000000000001",
+        "auto_renew": null,
+        "expires_on": "2027-10-01",
+        "owner": "account"
+      },
+      "status": "done",
+      "updated_at": "2026-11-01T23:23:47Z"
+    },
+    "discord": {
+      "input_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "outputs": {
+        "enabled": true
+      },
+      "status": "done",
+      "updated_at": "2026-11-01T23:23:47Z"
+    },
+    "github": {
+      "input_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "outputs": {
+        "admin_expires_on": "2027-10-31",
+        "created": [
+          "GitHub App e2e-panel (the admin panel's whitelist pull requests)",
+          "GitHub App e2e-updater (the weekly update pull requests (lock files, product version))"
+        ],
+        "panel_app": "e2e-panel",
+        "panel_app_id": "909",
+        "updater_app": "e2e-updater",
+        "updater_app_id": "911"
+      },
+      "status": "done",
+      "updated_at": "2026-11-01T23:23:47Z"
+    },
+    "host": {
+      "input_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "outputs": {
+        "reason": "waiting_for_host"
+      },
+      "status": "waiting",
+      "updated_at": "2026-11-01T23:23:47Z"
+    },
+    "preflight": {
+      "input_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "outputs": {
+        "os": "debian"
+      },
+      "status": "done",
+      "updated_at": "2026-11-01T23:23:46Z"
+    },
+    "product": {
+      "input_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "outputs": {
+        "applied": true,
+        "product": "edvardk/smallworld"
+      },
+      "status": "done",
+      "updated_at": "2026-11-01T23:23:47Z"
+    },
+    "questions": {
+      "input_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "outputs": {
+        "name": "e2e",
+        "players": 2
+      },
+      "status": "done",
+      "updated_at": "2026-11-01T23:23:47Z"
+    },
+    "repo": {
+      "input_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "outputs": {
+        "created": [
+          "GitHub repository mcctl-e2e/e2e-mc-config (private)"
+        ],
+        "product_sha": "1111111111111111111111111111111111111111",
+        "repository": "mcctl-e2e/e2e-mc-config",
+        "url": "https://github.com/mcctl-e2e/e2e-mc-config"
+      },
+      "status": "done",
+      "updated_at": "2026-11-01T23:23:47Z"
+    },
+    "state-backend": {
+      "input_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "outputs": {
+        "bucket": "e2e-tfstate",
+        "created": [
+          "R2 bucket e2e-tfstate (Terraform state)",
+          "Cloudflare API token r2-e2e-tfstate-rw (Terraform state)"
+        ],
+        "endpoint": "https://00000000000000000000000000000001.r2.cloudflarestorage.com"
+      },
+      "status": "done",
+      "updated_at": "2026-11-01T23:23:47Z"
+    },
+    "tailscale": {
+      "input_hash": "sha256:ad3fa5bd38250af44990a4a87149415b1b0dee3d89f3852cd80df67e0599cb87",
+      "outputs": {
+        "acl_applied": true,
+        "api_key": "revoked",
+        "api_key_id": "kMOCK1CNTRL",
+        "created": [
+          "Tailscale policy file (tags tag:mc-terraform, tag:mc-server, tag:ci; SSH rules)",
+          "Tailscale OAuth client kMOCKCLIENT1 (Terraform)"
+        ],
+        "oauth": true,
+        "oauth_tags": [
+          "tag:mc-terraform"
+        ]
+      },
+      "status": "done",
+      "updated_at": "2026-11-01T23:23:47Z"
+    },
+    "zero-trust": {
+      "input_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "outputs": {
+        "auth_domain": "mock-team.cloudflareaccess.com",
+        "global_session": "15m",
+        "needed": true
+      },
+      "status": "done",
+      "updated_at": "2026-11-01T23:23:47Z"
+    }
+  },
+  "version": 1
+}

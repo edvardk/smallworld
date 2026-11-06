@@ -1,0 +1,630 @@
+name: e2e-mock
+
+# P5 acceptance (docs/design/product-v1.md §8): the whole onboarding path without any real account.
+#   1. `mcctl init --answers tests/e2e/answers.yml --non-interactive --mock` builds a config repo in a temp dir
+#      (fake Cloudflare/GitHub/Tailscale/Discord APIs and fake gh/ssh/terraform; real git, real templates).
+#   2. That config repo validates and renders; the product's Terraform validates.
+#   3. site.yml runs against a systemd Debian 13 container (Tailscale, firewall and zram skipped), installs
+#      and starts the real Purpur with a 1 GB heap, answers a status ping, and a second run reports changed=0.
+#   5. P8: mc-agent pushes metrics/logs to a mock Worker and answers signed commands (tests/e2e/agent_check.py).
+#   4. P7 hardening on the live box (tests/e2e/hardening_check.py): systemd-analyze security gate per unit,
+#      the JVM really sandboxed, backup + health run inside their sandboxes, sysctls read back, persistent
+#      journal, OpenSSH masked, the admin-stopped marker; and the firewall role's ruleset in a throwaway
+#      network namespace (tests/e2e/firewall_check.py): per-source rate and concurrency limits, IPv4 and IPv6.
+#   6. P12: the --dry-run rehearsals of migrate/upgrade/lock update/secrets rotate, and a migration container ->
+#      container (tests/e2e/migrate_check.py): fence + final backup on the old box, restore on a fresh one, and
+#      the `mcctl restore` wrapper.
+# Nothing here has a secret: the MC_SECRET_* values below are fixed fakes for a throwaway container, and the
+# restic repository is a local directory inside it.
+#
+# What runs when (docs/ci.md; the product repo is public, so GitHub's runners cost no minutes here):
+#   - every pull request to main: `e2e` (a required check). The essential half (1-5, reboot gate, deploy checks,
+#     firewall, 6's dry runs) always; the heavy half (telemetry, branding, migrate container -> container, P16
+#     knobs) when the change touches what those exercise (scripts/ci_changes.py group `e2e_full`). Never the
+#     benches.
+#   - nightly: the whole e2e on main: the heavy half of every change that skipped it, and the outside world's
+#     drift (Debian, Purpur, PyPI) even when nothing was merged.
+#   - monthly (the 1st): the benches, if the last 31 days' commits touched what they measure (group `e2e_full`).
+#   - workflow_dispatch: scope full (default; update-lock dispatches it on its PR branch) / essential / none,
+#     and the benches with `bench: true`.
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "37 22 * * *" # nightly: e2e (full)
+    - cron: "43 23 1 * *" # monthly: benches
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "e2e: full (every check), essential (deploy, idempotency, hardening, agent, firewall) or none"
+        type: choice
+        options: [full, essential, none]
+        default: full
+      bench:
+        description: Also run the benches (bench, bench-gc, bench-brand, bench-profile; ~2 h of runner time)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# A new push to a pull request cancels its obsolete run; scheduled and dispatched runs queue instead.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # What this event needs: e2e at all, and its heavy half (see the header).
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      e2e: ${{ steps.decide.outputs.e2e }}
+      full: ${{ steps.decide.outputs.full }}
+      bench: ${{ steps.decide.outputs.bench }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # a pull request's merge commit and its base; a scheduled run's window
+          persist-credentials: false
+
+      - name: What changed
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          DAYS: ${{ github.event.schedule == '43 23 1 * *' && '31' || '1' }}
+        run: python3 scripts/ci_changes.py --event "$EVENT" --since-days "$DAYS"
+
+      - name: Decide
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          SCOPE: ${{ inputs.scope }}
+          IN_BENCH: ${{ inputs.bench }}
+          CHG_FULL: ${{ steps.changes.outputs.e2e_full }}
+        run: |
+          bench=false
+          case "$EVENT" in
+            pull_request) e2e=true; full="$CHG_FULL" ;;
+            workflow_dispatch)
+              e2e=true; full=true; bench="$IN_BENCH"
+              if [ "$SCOPE" = essential ]; then full=false; fi
+              if [ "$SCOPE" = none ]; then e2e=false; fi ;;
+            schedule)
+              if [ "$SCHEDULE" = "43 23 1 * *" ]; then e2e=false; full=false; bench="$CHG_FULL"
+              else e2e=true; full=true; fi ;;
+            *) e2e=true; full=true ;;
+          esac
+          echo "e2e=$e2e full=$full bench=$bench"
+          { echo "e2e=$e2e"; echo "full=$full"; echo "bench=$bench"; } >> "$GITHUB_OUTPUT"
+
+  e2e:
+    needs: changes
+    # If `changes` failed its outputs are empty: everything runs (never a silently skipped required check).
+    if: ${{ !cancelled() && needs.changes.outputs.e2e != 'false' }}
+    # Optional self-hosted runner (repository variable E2E_RUNNER, docs/ci.md), only for trusted code: the
+    # schedule, workflow_dispatch and pull requests from this repository. A fork's pull request always gets
+    # GitHub's runner, so it can never run on the self-hosted machine.
+    runs-on: >-
+      ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      && vars.E2E_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: ${{ needs.changes.outputs.full == 'false' && 50 || 80 }}
+    env:
+      CONFIG: ${{ github.workspace }}/../e2e-config
+      MC_SECRET_RCON_PASSWORD: e2e-not-a-secret-rcon-password-0001
+      MC_SECRET_RESTIC_PASSWORD: e2e-not-a-secret-restic-password
+      # A local repository inside restic's cache directory: the one path the sandboxed backup unit may write
+      # (CacheDirectory=); a real deployment's repository is the R2 bucket.
+      MC_SECRET_RESTIC_REPOSITORY: /var/cache/mc-restic/e2e-repo
+      MC_SECRET_R2_ACCESS_KEY_ID: e2e-unused
+      MC_SECRET_R2_SECRET_ACCESS_KEY: e2e-unused
+      MC_SECRET_HEARTBEAT_TOKEN: e2e-not-a-secret-heartbeat-token
+      MC_SECRET_AGENT_TOKEN: e2e-not-a-secret-agent-token-0000000000000001
+      MC_SECRET_COMMAND_HMAC_KEY: e2e-not-a-secret-command-hmac-key-000000000000000000000000000001
+      MC_SECRET_DISCORD_WEBHOOK_URL: ""
+      # the heavy half (header); empty (= run it) if `changes` failed
+      FULL: ${{ needs.changes.outputs.full }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2 # P15: the stale-pin run below pins HEAD~1, an ancestor of this checkout
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements/validate.txt
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.17.1
+
+      # mcctl itself needs PyYAML only.
+      - name: Install mcctl's dependencies
+        timeout-minutes: 5
+        run: pip install --require-hashes --no-deps -r requirements/validate.txt
+
+      # The pinned product commit is this checkout's (clean at github.sha). A second run must skip every step.
+      - name: mcctl init (answers file, mock providers), twice
+        timeout-minutes: 10
+        run: |
+          python -m mcctl init -C "$CONFIG" --answers tests/e2e/answers.yml --non-interactive --mock
+          python -m mcctl init -C "$CONFIG" --answers tests/e2e/answers.yml --non-interactive --mock | tee "$RUNNER_TEMP/init2.log"
+          test "$(grep -c 'done earlier (skipped)' "$RUNNER_TEMP/init2.log")" -eq 12
+
+      # P15: a config repo pinned behind this checkout (HEAD~1) is offered a move first; the answers file
+      # types yes (allowed with --mock only), so the pin moves forward to HEAD in one committed change.
+      - name: mcctl init moves a stale product pin forward
+        timeout-minutes: 10
+        run: |
+          old="$(git rev-parse HEAD~1)"
+          new="$(git rev-parse HEAD)"
+          sed -i -E "s/@[0-9a-f]{40}/@$old/" "$CONFIG/.github/workflows/server.yml"
+          git -C "$CONFIG" -c user.name=e2e -c user.email=e2e@tests.mcctl.internal commit -q -am "e2e: stale pin"
+          python -m mcctl init -C "$CONFIG" --answers tests/e2e/answers.yml --non-interactive --mock | tee "$RUNNER_TEMP/init3.log"
+          grep -q "move the product pin" "$RUNNER_TEMP/init3.log"
+          grep -q "@$new" "$CONFIG/.github/workflows/server.yml"
+          test -z "$(git -C "$CONFIG" status --porcelain)"
+
+      # v1.2: the drink under its own command name (mc-brand registers it next to /drink: brand_check.py).
+      - name: mcctl validate + render the new config repo
+        timeout-minutes: 5
+        run: |
+          GIT_AUTHOR_NAME=e2e GIT_AUTHOR_EMAIL=e2e@e2e.test GIT_COMMITTER_NAME=e2e GIT_COMMITTER_EMAIL=e2e@e2e.test \
+            python -m mcctl config set branding.drink.command cocoa -C "$CONFIG"
+          python -m mcctl validate -C "$CONFIG"
+          python -m mcctl render -C "$CONFIG" -o "$RUNNER_TEMP/rendered"
+
+      # v1.2 rollout bugs: a config repo without client.lock.yml (one from before v1.1) turns the client on in
+      # one command: `config set` writes the first lock (real Modrinth), commits both files and says an apply
+      # is needed. On a copy, so the deploy below keeps the client off.
+      - name: Turn the client on in a repo without a client lock or the publish secret
+        timeout-minutes: 10
+        run: |
+          copy="$RUNNER_TEMP/client-config"
+          cp -a "$CONFIG" "$copy"
+          git -C "$copy" rm -q client.lock.yml
+          git -C "$copy" -c user.name=e2e -c user.email=e2e@e2e.test commit -qm "e2e: no client lock"
+          GIT_AUTHOR_NAME=e2e GIT_AUTHOR_EMAIL=e2e@e2e.test GIT_COMMITTER_NAME=e2e GIT_COMMITTER_EMAIL=e2e@e2e.test \
+            python -m mcctl config set client.enabled true -C "$copy" | tee "$RUNNER_TEMP/client-enable.log"
+          grep -q "new client.lock.yml" "$RUNNER_TEMP/client-enable.log"
+          grep -q "mcctl apply" "$RUNNER_TEMP/client-enable.log"
+          git -C "$copy" show --name-only --format= HEAD | grep -qx client.lock.yml
+          test -z "$(git -C "$copy" status --porcelain)"
+          python -m mcctl validate -C "$copy"
+          # ... and a workflow that doesn't pass ARTIFACT_PUBLISH_TOKEN (mc-config before its PR #2) fails the
+          # deploy's client-publish instead of warning; the target release's schema-migrate adds the line.
+          sed -i '/ARTIFACT_PUBLISH_TOKEN:/d' "$copy/.github/workflows/server.yml"
+          if ARTIFACT_PUBLISH_TOKEN="" python -m mcctl client-publish -C "$copy"; then
+            echo "client-publish passed without its token"; exit 1
+          fi
+          python -m mcctl schema-migrate -C "$copy" --from 1.1.0 | grep -q "passes ARTIFACT_PUBLISH_TOKEN"
+          grep -qE '^ +ARTIFACT_PUBLISH_TOKEN: .+ARTIFACT_PUBLISH_TOKEN' "$copy/.github/workflows/server.yml"
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-providers-${{ runner.os }}-${{ hashFiles('terraform/.terraform.lock.hcl') }}
+
+      # Providers from the cache shared with ci.yml's lint job (terraform checks them against the lock file).
+      - name: terraform validate
+        timeout-minutes: 10
+        run: |
+          mkdir -p "$HOME/.terraform.d/plugin-cache"
+          export TF_PLUGIN_CACHE_DIR="$HOME/.terraform.d/plugin-cache"
+          terraform -chdir=terraform init -backend=false -input=false
+          terraform -chdir=terraform validate
+
+      - name: Start a systemd Debian 13 container
+        timeout-minutes: 15
+        run: |
+          sudo modprobe tcp_bbr   # the base role loads it; the container shares the runner's kernel
+          docker build -t mc-e2e -f tests/e2e/Containerfile tests/e2e
+          docker run -d --name mc-e2e --hostname e2e --privileged --cgroupns=host --network host \
+            -v /sys/fs/cgroup:/sys/fs/cgroup:rw -v /lib/modules:/lib/modules:ro --tmpfs /run --tmpfs /run/lock \
+            -v "$GITHUB_WORKSPACE:/src/product:ro" -v "$RUNNER_TEMP/rendered:/src/rendered:ro" mc-e2e
+          timeout 120 sh -c 'until docker exec mc-e2e systemctl is-system-running 2>/dev/null | grep -Eq "running|degraded"; do sleep 2; done'
+
+      - name: Install Ansible in the container (hash-pinned)
+        timeout-minutes: 10
+        run: |
+          docker exec mc-e2e python3 -m venv /opt/ansible
+          docker exec -w /src/product mc-e2e /opt/ansible/bin/pip install --require-hashes --no-deps -r requirements/deploy.txt
+          docker exec -w /src/product mc-e2e /opt/ansible/bin/ansible-galaxy collection install -r ansible/requirements.yml
+
+      # Same playbook and rendered inventory as a real deploy, run inside the box (connection local). The
+      # MC_SECRET_* values reach it through `docker exec -e NAME` (from this step's env, not argv).
+      # Container-only switches live in tests/e2e/vars.yml (e2e-only; production defaults are untouched).
+      # Tailscale and the nftables firewall are skipped: the first needs a real tailnet auth key (skipping the
+      # `tailscale` tag also skips the guards that refuse to close SSH without it), and the firewall's ruleset
+      # would be loaded into the runner's own network namespace (--network host; it is checked in a
+      # namespace below instead).
+      - name: site.yml (first run, then a second that must change nothing)
+        timeout-minutes: 35
+        run: |
+          set -o pipefail
+          for run in 1 2; do
+            docker exec -w /src/product/ansible \
+              -e MC_SECRET_RCON_PASSWORD -e MC_SECRET_RESTIC_PASSWORD -e MC_SECRET_RESTIC_REPOSITORY \
+              -e MC_SECRET_R2_ACCESS_KEY_ID -e MC_SECRET_R2_SECRET_ACCESS_KEY -e MC_SECRET_HEARTBEAT_TOKEN \
+              -e MC_SECRET_DISCORD_WEBHOOK_URL -e MC_SECRET_AGENT_TOKEN -e MC_SECRET_COMMAND_HMAC_KEY \
+              mc-e2e /opt/ansible/bin/ansible-playbook -i /src/rendered/ansible/inventory.yml site.yml \
+                --skip-tags tailscale,firewall -e @/src/product/tests/e2e/vars.yml \
+              | tee "$RUNNER_TEMP/site-$run.log"
+          done
+          grep -Eq 'changed=0 +unreachable=0 +failed=0' "$RUNNER_TEMP/site-2.log"
+
+      - name: The real server answers a status ping
+        timeout-minutes: 5
+        run: |
+          python - <<'PY'
+          import time
+          from mcctl import mcping
+          for attempt in range(30):
+              try:
+                  st = mcping.status("127.0.0.1", 25565, timeout=5)
+                  print("UP:", st.get("version"), st.get("players"))
+                  break
+              except (OSError, ValueError) as e:
+                  print("waiting:", e)
+                  time.sleep(5)
+          else:
+              raise SystemExit("the server never answered a status ping")
+          PY
+
+      # P7 acceptance: the hardening is exercised on the live box, not just rendered.
+      - name: Hardening checks (systemd-analyze gate, sandboxed units, sysctls, journal, sshd, admin-stopped)
+        timeout-minutes: 15
+        run: docker exec mc-e2e /opt/ansible/bin/python /src/product/tests/e2e/hardening_check.py /src/product
+
+      # P8 acceptance: mc-agent has been buffering since site.yml (its Worker, a mock on 127.0.0.1:8787, wasn't
+      # up); the check starts the mock and expects the buffered and live samples, the journal archive + D1 rows,
+      # and the poll fallback's signed commands (status, an allowed and a denied console line, a replay).
+      # P10 acceptance: every panel action through signed commands: whitelist add/remove (live, pending.json, a
+      # deploy's players role keeps it, PR to a mock GitHub API, merged), restart with a countdown, plugin disable
+      # -> restart without it -> enable, backup now -> snapshot list, restore round trip with a safety snapshot.
+      - name: mc-agent checks (pushes to a mock Worker, signed commands, P10 panel actions)
+        timeout-minutes: 25
+        run: |
+          docker exec \
+            -e MC_SECRET_RCON_PASSWORD -e MC_SECRET_RESTIC_PASSWORD -e MC_SECRET_RESTIC_REPOSITORY \
+            -e MC_SECRET_R2_ACCESS_KEY_ID -e MC_SECRET_R2_SECRET_ACCESS_KEY -e MC_SECRET_HEARTBEAT_TOKEN \
+            -e MC_SECRET_DISCORD_WEBHOOK_URL -e MC_SECRET_AGENT_TOKEN -e MC_SECRET_COMMAND_HMAC_KEY \
+            mc-e2e python3 /src/product/tests/e2e/agent_check.py
+
+      # P13 acceptance: the mc-telemetry plugin on the real Purpur, snapshots on tmpfs, mc-agent shipping minute rows
+      # and segments to the real Worker code (node, node:sqlite as D1, on 127.0.0.1:8787), verdicts back to the
+      # plugin (/lag over RCON), a signed in-game message, and an outage -> quiet-time backfill without gaps/dups.
+      - if: env.FULL != 'false'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22.22.0"
+
+      - name: Experience telemetry checks (plugin, agent, Worker, verdicts, /lag, backfill)
+        if: env.FULL != 'false'
+        timeout-minutes: 25
+        run: python tests/e2e/telemetry_check.py mc-e2e
+
+      # P17 acceptance: the mc-brand plugin on the real Purpur (enabled with the deploy's settings, pinned jar and
+      # icon, the icon in the status ping), its commands over RCON (/rules, /discord, /mcbrand selftest: greetings,
+      # title, tab list, sidebar, the drink read back through the API, /drink and its own name) and its task's time.
+      - name: Branding checks (mc-brand plugin, server icon, commands over RCON)
+        if: env.FULL != 'false'
+        timeout-minutes: 15
+        run: python tests/e2e/brand_check.py mc-e2e
+
+      # P11 acceptance: the reboot gate on the live box, with a harmless target standing in for reboot.target
+      # (tests/e2e/vars.yml mc_reboot_target; the polkit rule allows exactly that unit): nothing pending -> nothing;
+      # pending + window + nobody online -> the "reboot" (maintenance window, audit, state); a new boot id ->
+      # "back"; admin-stopped and outside the window -> it waits.
+      - name: Reboot gate checks (mock reboot)
+        timeout-minutes: 15
+        run: docker exec mc-e2e python3 /src/product/tests/e2e/reboot_check.py
+
+      - name: Deploy checks (restic password rotated by any deploy, pre-upgrade backup on a version change)
+        timeout-minutes: 25
+        run: python tests/e2e/deploy_check.py mc-e2e
+
+      - name: Firewall checks (ruleset in a network namespace; rate and concurrency limits)
+        timeout-minutes: 10
+        run: |
+          docker exec -w /src/product/ansible mc-e2e /opt/ansible/bin/ansible-playbook \
+            -i /src/rendered/ansible/inventory.yml ../tests/e2e/firewall.yml -e @/src/product/tests/e2e/vars.yml
+          docker exec mc-e2e python3 /src/product/tests/e2e/firewall_check.py /tmp/mc-nftables.conf
+
+      # P12 acceptance: the `--dry-run` rehearsals print the exact sequence and change nothing (no provider, no
+      # host); the config repo is unchanged afterwards.
+      - name: P12 dry runs (migrate, rollback, retire-old, upgrade, lock update, secrets rotate, restore)
+        timeout-minutes: 10
+        run: |
+          set -o pipefail
+          head=$(git -C "$CONFIG" rev-parse HEAD)
+          python -m mcctl migrate -C "$CONFIG" --to 8.8.4.4 --ipv6 2001:4860:4860::8844 --dry-run | tee "$RUNNER_TEMP/migrate.log"
+          for step in preflight fence addresses rename bootstrap deploy verify smoke; do grep -q " $step " "$RUNNER_TEMP/migrate.log"; done
+          python -m mcctl migrate -C "$CONFIG" --rollback --dry-run
+          python -m mcctl retire-old -C "$CONFIG" --dry-run
+          python -m mcctl upgrade -C "$CONFIG" --to v99.0.0 --sha 0123456789abcdef0123456789abcdef01234567 --dry-run
+          python -m mcctl upgrade -C "$CONFIG" --minecraft-version 26.3 --dry-run | grep -q 'update_lock.py'
+          for name in rcon heartbeat agent-token command-hmac r2 restic-key; do
+            python -m mcctl secrets rotate -C "$CONFIG" "$name" --dry-run
+          done
+          test "$(git -C "$CONFIG" rev-parse HEAD)" = "$head" && test -z "$(git -C "$CONFIG" status --porcelain)"
+
+      # P12 acceptance "migrate tested container -> container": the old box is fenced by mcctl's own fence script
+      # (proved, unfenced = the rollback helper, fenced again), its final backup is the snapshot the fresh box must
+      # restore. The restic repository (R2 in production) moves with `docker cp`, owned by the same mcops uid; the
+      # old box is powered off (host network: its ports). site.yml on the new box with world.expected restores
+      # the latest snapshot; then `.restored-from`, a status ping, and the `mcctl restore` wrapper (--to, --live).
+      - name: Migrate container -> container (fence, final backup, restore on a fresh box, restore wrapper)
+        if: env.FULL != 'false'
+        timeout-minutes: 35
+        run: |
+          set -o pipefail
+          python tests/e2e/migrate_check.py old mc-e2e "$RUNNER_TEMP/migrate.json"
+          uid=$(docker exec mc-e2e id -u mcops); gid=$(docker exec mc-e2e id -g mcops)
+          docker cp mc-e2e:/var/cache/mc-restic/e2e-repo "$RUNNER_TEMP/e2e-repo"
+          docker stop mc-e2e
+          docker run -d --name mc-e2e-new --hostname e2e --privileged --cgroupns=host --network host \
+            -v /sys/fs/cgroup:/sys/fs/cgroup:rw -v /lib/modules:/lib/modules:ro --tmpfs /run --tmpfs /run/lock \
+            -v "$GITHUB_WORKSPACE:/src/product:ro" -v "$RUNNER_TEMP/rendered:/src/rendered:ro" mc-e2e
+          timeout 120 sh -c 'until docker exec mc-e2e-new systemctl is-system-running 2>/dev/null | grep -Eq "running|degraded"; do sleep 2; done'
+          docker exec mc-e2e-new mkdir -p /var/cache/mc-restic
+          docker cp "$RUNNER_TEMP/e2e-repo" mc-e2e-new:/var/cache/mc-restic/e2e-repo
+          docker exec mc-e2e-new chown -R "$uid:$gid" /var/cache/mc-restic
+          docker exec mc-e2e-new python3 -m venv /opt/ansible
+          docker exec -w /src/product mc-e2e-new /opt/ansible/bin/pip install --require-hashes --no-deps -r requirements/deploy.txt
+          docker exec -w /src/product mc-e2e-new /opt/ansible/bin/ansible-galaxy collection install -r ansible/requirements.yml
+          docker exec -w /src/product/ansible \
+            -e MC_SECRET_RCON_PASSWORD -e MC_SECRET_RESTIC_PASSWORD -e MC_SECRET_RESTIC_REPOSITORY \
+            -e MC_SECRET_R2_ACCESS_KEY_ID -e MC_SECRET_R2_SECRET_ACCESS_KEY -e MC_SECRET_HEARTBEAT_TOKEN \
+            -e MC_SECRET_DISCORD_WEBHOOK_URL -e MC_SECRET_AGENT_TOKEN -e MC_SECRET_COMMAND_HMAC_KEY \
+            mc-e2e-new /opt/ansible/bin/ansible-playbook -i /src/rendered/ansible/inventory.yml site.yml \
+              --skip-tags tailscale,firewall -e @/src/product/tests/e2e/vars.yml -e mc_world_expected=true \
+            | tee "$RUNNER_TEMP/site-new.log"
+          # the restore task really ran and changed something (a skipped or ok task prints the same TASK line)
+          grep -A1 'Restore latest snapshot if there is no world yet' "$RUNNER_TEMP/site-new.log" | grep -q '^changed: '
+          python tests/e2e/migrate_check.py new mc-e2e-new "$RUNNER_TEMP/migrate.json"
+
+      # P16: the performance knobs away from their defaults on the migrated box (tests/e2e/p16.yml = what
+      # `mcctl render` writes for jvm.gc zgc, cpu_affinity split, chunk_threads 2, compression 512, noatime):
+      # the server restarts on ZGC with the JVM on CPUs 1..n-1 and the helpers on CPU 0, health.py parses the
+      # ZGC log, the units stay within the security gate, and a second run changes nothing. On a runner with
+      # fewer than 3 CPUs the split must be refused (site.yml pre_tasks, before any role); the rest then runs with
+      # it off. Then mc_noatime on real mounts, and a run back on g1 that reverts the shmem THP advise live.
+      - name: P16 knobs (ZGC, CPU split, noatime, chunk threads), then a second run that changes nothing
+        if: env.FULL != 'false'
+        timeout-minutes: 40
+        run: |
+          set -o pipefail
+          site() {
+            docker exec -w /src/product/ansible \
+              -e MC_SECRET_RCON_PASSWORD -e MC_SECRET_RESTIC_PASSWORD -e MC_SECRET_RESTIC_REPOSITORY \
+              -e MC_SECRET_R2_ACCESS_KEY_ID -e MC_SECRET_R2_SECRET_ACCESS_KEY -e MC_SECRET_HEARTBEAT_TOKEN \
+              -e MC_SECRET_DISCORD_WEBHOOK_URL -e MC_SECRET_AGENT_TOKEN -e MC_SECRET_COMMAND_HMAC_KEY \
+              mc-e2e-new /opt/ansible/bin/ansible-playbook -i /src/rendered/ansible/inventory.yml site.yml \
+                --skip-tags tailscale,firewall -e @/src/product/tests/e2e/vars.yml -e mc_world_expected=true \
+                -e @/src/product/tests/e2e/p16.yml "$@"
+          }
+          affinity="split"
+          extra=()
+          if [ "$(docker exec mc-e2e-new nproc)" -lt 3 ]; then
+            if site > "$RUNNER_TEMP/site-p16-refused.log"; then echo "split was not refused"; exit 1; fi
+            grep -q 'cpu_affinity split needs at least 3 CPUs' "$RUNNER_TEMP/site-p16-refused.log"
+            # refused in site.yml's pre_tasks, before any role: nothing changed
+            grep -Eq 'changed=0 +unreachable=0 +failed=1' "$RUNNER_TEMP/site-p16-refused.log"
+            affinity="off"
+            extra=(-e mc_cpu_affinity=off -e mc_helper_cpus=)
+          fi
+          for run in 1 2; do
+            site "${extra[@]}" | tee "$RUNNER_TEMP/site-p16-$run.log"
+          done
+          grep -Eq 'changed=0 +unreachable=0 +failed=0' "$RUNNER_TEMP/site-p16-2.log"
+          grep -q 'performance.noatime: no /etc/fstab entry for /: left as it is' "$RUNNER_TEMP/site-p16-1.log"
+          docker exec mc-e2e-new /opt/ansible/bin/python /src/product/tests/e2e/perf_check.py /src/product 1024 "$affinity"
+          # mc_noatime against real mounts with fstab entries (a tmpfs, a same-filesystem bind mount), twice each
+          docker exec mc-e2e-new /opt/ansible/bin/python /src/product/tests/e2e/noatime_check.py /src/product
+          # back to jvm.gc g1: the zgc-only shmem THP advise is reverted live (to the kernel's never), not at reboot
+          site "${extra[@]}" -e mc_jvm_gc=g1 | tee "$RUNNER_TEMP/site-p16-g1.log"
+          grep -A1 'Revert shmem THP to never' "$RUNNER_TEMP/site-p16-g1.log" | grep -q '^changed: '
+          docker exec mc-e2e-new cat /sys/kernel/mm/transparent_hugepage/shmem_enabled | grep -q '\[never\]'
+
+      - name: Server journal (on failure)
+        timeout-minutes: 5
+        if: failure()
+        run: |
+          for box in mc-e2e mc-e2e-new; do
+            docker exec "$box" journalctl -u minecraft -u mc-backup -u mc-health -u mc-agent -u mc-restore-apply \
+              -u 'mc-restore@*' -u mc-plugins-apply -u mc-reboot-gate --no-pager -n 600 || true
+          done
+
+  # The benches (report-only or with wide noise bands, ~2 h of runner time together) run only on
+  # workflow_dispatch with `bench: true` and monthly (when the month's commits touched what they measure),
+  # never on pull requests: dispatch them when a change could move tick times (the plugins, the JVM flags, the
+  # performance profile).
+
+  # P16: the collector A/B (scripts/bench_gc.py): the product's G1 flags vs its Generational ZGC flags, each
+  # also with the CPU split (JVM on CPUs 1..n-1), same synthetic load as the P13 bench. Report-only (job summary
+  # + bench-gc.json artifact): fails only when an arm is broken (no start, too few ticks, an unparsable GC log).
+  # THP as the base role sets it for zgc (shmem advise), so ZGC's heap can use huge pages as on a real box.
+  bench-gc:
+    needs: changes
+    if: needs.changes.outputs.bench == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Install the bench's dependency (PyYAML)
+        run: pip install --require-hashes --no-deps -r requirements/validate.txt
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: THP as on the box (madvise; shmem advise for ZGC's heap)
+        run: |
+          echo madvise | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+          echo advise | sudo tee /sys/kernel/mm/transparent_hugepage/shmem_enabled
+
+      - name: G1 vs ZGC, without and with the CPU split (tick p50/p99/p99.9/max, GC pauses, CPU, RSS)
+        run: >-
+          python scripts/bench_gc.py --jdk "$JAVA_HOME" --rounds 2 --seconds 120 --warmup 45 --affinity
+          --out "$RUNNER_TEMP/bench-gc.json"
+
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bench-gc
+          path: ${{ runner.temp }}/bench-gc.json
+          if-no-files-found: warn
+
+  # P17: the same tail-latency A/B for the branding plugin (scripts/bench_telemetry.py --plugin mc-brand: HUD on by
+  # default, tab list, 2 s refresh, the drink on). Report-only (job summary + artifact), like bench-gc: no players
+  # in the bench, so it measures the plugin's idle cost; it fails only when an arm is broken.
+  bench-brand:
+    needs: changes
+    if: needs.changes.outputs.bench == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Install the bench's dependency (PyYAML)
+        run: pip install --require-hashes --no-deps -r requirements/validate.txt
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: mc-brand on/off A/B (tick p99, p99.9; report only)
+        run: >-
+          python scripts/bench_telemetry.py --plugin mc-brand --report-only --jdk "$JAVA_HOME" --rounds 2
+          --seconds 120 --warmup 45 --out "$RUNNER_TEMP/bench-brand.json"
+
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bench-brand
+          path: ${{ runner.temp }}/bench-brand.json
+          if-no-files-found: warn
+
+  # v1.1: the tick cost of /view 16 (scripts/bench_view.py): walking offline bots (scripts/bench_bots.py) at the
+  # server's 12 vs `/view 16` through mc-brand, server view 12 / simulation 8. Report-only (job summary +
+  # artifact), like bench-brand; it fails only when an arm is broken (a bot can't join, the server stalls).
+  bench-view:
+    needs: changes
+    if: needs.changes.outputs.bench == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Install the bench's dependency (PyYAML)
+        run: pip install --require-hashes --no-deps -r requirements/validate.txt
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: view 12 vs /view 16 with walking bots (tick p99, p99.9; report only)
+        run: >-
+          python scripts/bench_view.py --jdk "$JAVA_HOME" --bots 4 --rounds 2 --seconds 120 --warmup 45
+          --out "$RUNNER_TEMP/bench-view.json"
+
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bench-view
+          path: ${{ runner.temp }}/bench-view.json
+          if-no-files-found: warn
+
+  # P13 TAIL-LATENCY RULE: tick-time p99/p99.9 with the mc-telemetry plugin on vs off on the real pinned Purpur
+  # under a synthetic load (scripts/bench_telemetry.py: ABBA rounds, a probe plugin in both arms). Generous noise
+  # bands (runners are noisy): only a clear regression fails. Results in the job summary.
+  bench:
+    needs: changes
+    if: needs.changes.outputs.bench == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Install the bench's dependency (PyYAML)
+        run: pip install --require-hashes --no-deps -r requirements/validate.txt
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Telemetry on/off A/B (tick p99, p99.9)
+        run: python scripts/bench_telemetry.py --jdk "$JAVA_HOME" --rounds 2 --seconds 120 --warmup 45 --out "$RUNNER_TEMP/bench.json"
+
+  # Performance profile A/B (scripts/bench_profile.py, report-only): the product's own overlays rendered for
+  # `balanced` and `vanilla`, a synthetic farm load (crowded chicken pens, cow herds) in force-loaded chunks, ZGC.
+  # Numbers in the job summary and design §8 "Performance profile"; only a broken arm fails it.
+  bench-profile:
+    needs: changes
+    if: needs.changes.outputs.bench == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      # PyYAML and Jinja2 (the overlays are the product's Jinja templates)
+      - name: Install the bench's dependencies
+        run: pip install --require-hashes --no-deps -r requirements/deploy.txt
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: balanced vs vanilla (tick p50/p99/p99.9/max)
+        run: python scripts/bench_profile.py --jdk "$JAVA_HOME" --rounds 2 --seconds 120 --warmup 45 --out "$RUNNER_TEMP/bench-profile.json"
+
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bench-profile
+          path: ${{ runner.temp }}/bench-profile.json
+          if-no-files-found: warn

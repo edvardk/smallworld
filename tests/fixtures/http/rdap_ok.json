@@ -1,0 +1,75 @@
+{
+  "_source": "Shaped from RFC 9224 (IANA bootstrap dns.json) and RFC 9083 (domain object events); the .internal service is made up (.internal is ICANN-reserved for private use, never delegated).",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://data.iana.org/rdap/dns.json"
+      },
+      "response": {
+        "body": {
+          "publication": "2026-10-01T00:00:00Z",
+          "services": [
+            [
+              [
+                "com",
+                "net"
+              ],
+              [
+                "https://rdap.verisign.com/com/v1/"
+              ]
+            ],
+            [
+              [
+                "dev",
+                "app"
+              ],
+              [
+                "https://pubapi.registry.google/rdap/"
+              ]
+            ],
+            [
+              [
+                "internal"
+              ],
+              [
+                "https://rdap.registry.internal/"
+              ]
+            ]
+          ],
+          "version": "1.0"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://rdap.registry.internal/domain/tests.mcctl.internal"
+      },
+      "response": {
+        "body": {
+          "events": [
+            {
+              "eventAction": "registration",
+              "eventDate": "2020-01-01T00:00:00Z"
+            },
+            {
+              "eventAction": "expiration",
+              "eventDate": "2027-01-01T00:00:00Z"
+            }
+          ],
+          "ldhName": "tests.mcctl.internal",
+          "objectClassName": "domain"
+        },
+        "headers": {
+          "content-type": "application/rdap+json"
+        },
+        "status": 200
+      }
+    }
+  ]
+}

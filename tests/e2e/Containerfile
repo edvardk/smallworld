@@ -1,0 +1,21 @@
+# The e2e-mock workflow's stand-in for a fresh VPS: Debian 13 with systemd as PID 1 (design §8 P5).
+# Base image pinned by digest (debian:trixie on Docker Hub, 2026-10-28).
+FROM debian:trixie@sha256:2dc419c6d7fe3dad0a2f9fd469c34cc90b0f9ba642d8fde837fe3d7d34a0e7f1
+ENV container=docker DEBIAN_FRONTEND=noninteractive
+# The apt lists are kept on purpose: the roles use `update_cache` with `cache_valid_time: 3600`, and an image
+# built minutes ago with its lists deleted looks "fresh" to Ansible but has no packages ("No package matching
+# 'acl'"). A real VPS image has its lists, or an old enough cache to be refreshed.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      systemd systemd-sysv dbus python3 python3-venv python3-apt sudo openssh-server ca-certificates \
+      iproute2 kmod procps \
+ && apt-get clean
+# The container shares the runner's network: keep this sshd off the runner's port 22 (the access role only
+# validates and reloads sshd; nothing connects to it).
+RUN printf 'Port 2222\nListenAddress 127.0.0.1\n' > /etc/ssh/sshd_config.d/00-e2e.conf
+# Stands in for the provider's bootstrap key (a public key, never used): the hardening role must remove it.
+RUN install -d -m 0700 /root/.ssh \
+ && echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA e2e-bootstrap' \
+      > /root/.ssh/authorized_keys
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]

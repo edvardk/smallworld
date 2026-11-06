@@ -1,0 +1,118 @@
+/* The client setup page (v1.1; v1.2: a four-step stepper with a blocky, Minecraft-like look in plain CSS: hard
+   edges, bevelled buttons like the game's own, a faint block pattern; no game assets). Dark by default, light on
+   request (html[data-theme]). Accents come from /theme.css (the server's branding, written by the Worker), with
+   neutral defaults here. No inline styles, no third-party files (CSP 'self'). Phone first, no horizontal scroll.
+   Headings: Pixelify Sans (OFL 1.1, self-hosted with the panel: /fonts/, licence in fonts/OFL.txt). */
+@font-face { font-family: "Pixelify Sans"; font-weight: 700; font-display: swap; src: url(/fonts/pixelify-sans.woff2) format("woff2"); }
+
+:root {
+  --bg: #16171a; --bg2: #1d1f23; --surface: #25272c; --raised: #30333a; --edge: #050506;
+  --line: rgb(255 255 255 / .12); --text: #f1f2f4; --muted: #b9bec7; --ok: #8fd16a; --bad: #ff9a8f;
+  --hi: rgb(255 255 255 / .22); --lo: rgb(0 0 0 / .45);
+  --accent: #3f7a2e; --secondary: #2c5a20; --subtle: #cfe6c4;
+  --f-body: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --f-head: "Pixelify Sans", var(--f-body);
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --bg: #ece8e0; --bg2: #e2ddd2; --surface: #fbfaf7; --raised: #e7e3da; --edge: #3a3a3a;
+  --line: rgb(0 0 0 / .14); --text: #1c1d20; --muted: #4f535b; --ok: #2f6b16; --bad: #a3261a;
+  --hi: rgb(255 255 255 / .8); --lo: rgb(0 0 0 / .22);
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; overflow-x: hidden; }
+body { background: var(--bg); color: var(--text); font: 16px/1.55 var(--f-body); }
+.wrap { width: min(820px, 100% - 32px); margin-inline: auto; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+h1, h2, h3, .stepper .t, .choice b { font-family: var(--f-head); font-weight: 700; letter-spacing: .02em; }
+.muted { color: var(--muted); }
+.err { color: var(--bad); }
+a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+kbd { background: var(--bg2); border: 1px solid var(--line); padding: 1px 6px; font: 600 .92em ui-monospace, Menlo, Consolas, monospace; white-space: nowrap;
+  overflow-wrap: anywhere; }
+
+/* header: a block-pattern strip in the branding colours */
+.top { color: #fff; border-bottom: 4px solid var(--edge);
+  background:
+    repeating-conic-gradient(rgb(0 0 0 / .10) 0 25%, transparent 0 50%) 0 0 / 16px 16px,
+    linear-gradient(180deg, var(--accent), var(--secondary)); }
+.bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 22px 0 18px; }
+.top h1 { margin: 2px 0 0; font-size: clamp(24px, 5.5vw, 38px); line-height: 1.1; text-shadow: 3px 3px 0 rgb(0 0 0 / .45); }
+.kicker { margin: 0; text-transform: uppercase; letter-spacing: .14em; font-size: 12px; font-weight: 700; text-shadow: 1px 1px 0 rgb(0 0 0 / .5); }
+main { padding: 20px 0 40px; }
+.hello { margin: 0 0 14px; font-size: 17px; }
+
+/* bevelled blocks: panels, buttons, choices */
+.panel { background: var(--surface); border: 3px solid var(--edge); box-shadow: inset 3px 3px 0 var(--hi), inset -3px -3px 0 var(--lo);
+  padding: 18px 20px; margin: 0 0 16px; }
+.panel h2 { margin: 0 0 6px; font-size: 24px; }
+.panel h3 { margin: 22px 0 6px; font-size: 19px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 8px 18px;
+  border: 2px solid var(--edge); border-radius: 0; background: var(--raised); color: var(--text); cursor: pointer;
+  font: 700 16px var(--f-body); text-decoration: none;
+  box-shadow: inset 2px 2px 0 var(--hi), inset -2px -3px 0 var(--lo); }
+.btn:hover:not(:disabled) { filter: brightness(1.08); }
+.btn:active:not(:disabled) { box-shadow: inset -2px -2px 0 var(--hi), inset 2px 3px 0 var(--lo); }
+.btn.primary { background: var(--accent); color: #fff; text-shadow: 1px 1px 0 rgb(0 0 0 / .45); }
+.btn.small { min-height: 32px; padding: 3px 10px; font-size: 14px; }
+.top .btn.small { background: rgb(0 0 0 / .35); color: #fff; }
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+.linkbtn { background: none; border: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font: inherit; }
+:focus-visible { outline: 3px solid var(--subtle); outline-offset: 2px; }
+:root[data-theme="light"] :focus-visible { outline-color: #1c1d20; }
+
+/* the code form */
+.codeform { display: flex; flex-wrap: wrap; gap: 10px; }
+.codeform input { flex: 1 1 160px; min-width: 0; min-height: 44px; padding: 8px 14px; border-radius: 0; border: 2px solid var(--edge);
+  background: var(--bg2); color: var(--text); font: 700 22px ui-monospace, Menlo, monospace; letter-spacing: .15em;
+  box-shadow: inset 2px 2px 0 var(--lo); }
+
+/* the stepper */
+.stepper { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 0 0 12px; }
+.stepper button { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 6px 4px;
+  border: 2px solid var(--edge); border-radius: 0; background: var(--bg2); color: var(--muted); cursor: pointer; font: inherit;
+  box-shadow: inset 2px 2px 0 var(--hi), inset -2px -3px 0 var(--lo); }
+.stepper .n { display: inline-grid; place-items: center; width: 26px; height: 26px; flex: none; background: var(--raised);
+  border: 2px solid var(--edge); color: var(--text); font: 700 14px var(--f-body); }
+.stepper .t { font-size: 16px; }
+.stepper [aria-selected="true"] { background: var(--surface); color: var(--text); border-bottom-color: var(--accent);
+  box-shadow: inset 2px 2px 0 var(--hi), inset 0 -4px 0 var(--accent); }
+.stepper [aria-selected="true"] .n { background: var(--accent); color: #fff; }
+@media (max-width: 480px) { .stepper .t { font-size: 13px; } .stepper button { flex-direction: column; gap: 2px; } }
+
+/* choices: OS and tiers */
+.choices { display: grid; gap: 10px; margin: 12px 0 4px; }
+.choices.os { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.choices.tiers { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.choice { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 64px; padding: 12px 14px; text-align: left;
+  border: 2px solid var(--edge); border-radius: 0; background: var(--bg2); color: var(--text); font: inherit; cursor: pointer;
+  box-shadow: inset 2px 2px 0 var(--hi), inset -2px -3px 0 var(--lo); }
+.choice b { font-size: 19px; }
+.choice[aria-checked="true"] { background: var(--raised); outline: 3px solid var(--accent); outline-offset: -3px; }
+.choice .hint { color: var(--muted); font-size: 13px; min-height: 1em; }
+.choice .line { font-size: 14px; }
+.choice .meta { color: var(--muted); font-size: 13px; }
+.choice.rec { border-color: var(--accent); }
+.badge { display: inline-block; vertical-align: middle; background: var(--accent); color: #fff; font: 700 11px var(--f-body);
+  padding: 2px 6px; text-transform: uppercase; letter-spacing: .06em; border: 1px solid var(--edge); }
+@media (max-width: 480px) { .choices.os .choice b { font-size: 16px; } .choices.os .choice { padding: 10px 8px; } }
+.note { margin: 10px 0 0; padding: 8px 12px; background: var(--bg2); border-left: 4px solid var(--accent); }
+
+/* the install step */
+.dl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 12px 0; }
+.steps { margin: 10px 0; padding-left: 26px; }
+.steps li { margin: 8px 0; padding-left: 2px; }
+.steps li::marker { font-weight: 700; color: var(--muted); }
+#osHow { display: block; }
+#osPath, .extras kbd { white-space: normal; overflow-wrap: anywhere; }
+.copyline { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0; max-width: 100%; }
+.extras { margin: 8px 0; padding-left: 22px; }
+.extras li { margin: 6px 0; overflow-wrap: anywhere; }
+.fold { border-top: 2px solid var(--line); padding: 10px 0; }
+.fold summary { cursor: pointer; font-weight: 700; min-height: 28px; list-style-position: outside; }
+.fold p { margin: 8px 0; }
+.count { color: var(--muted); font-weight: 400; }
+.nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 2px solid var(--line); }
+.foot { text-align: center; }

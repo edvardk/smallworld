@@ -1,0 +1,5 @@
+⚠️ **The server's memory is nearly full**
+**Impact:** Nothing visible yet; if it grows, players get freezes and the server may crash. 1 player(s) online right now.
+**Likely cause:** The world, the entities and the plugins need almost all of the Java heap, even after cleaning up.
+**What to do:** Raise the heap if the box has free RAM (`mcctl config set jvm.heap_mb <MB>`, push), or plan a move to a host with dedicated cores or more RAM (README: move to a new VPS).
+**Details:** 91% of the heap in use after collection (alert above 85%)

@@ -1,0 +1,27 @@
+{
+  "_source": "Cloudflare API v4 GET /accounts/{id}/registrar/registrations/{domain} (registration with auto-renew on; values anonymised)",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/registrar/registrations/tests.mcctl.internal"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "success": true,
+          "errors": [],
+          "messages": [],
+          "result": {
+            "auto_renew": true,
+            "expires_at": "2027-06-01T00:00:00Z",
+            "status": "active"
+          }
+        }
+      }
+    }
+  ]
+}

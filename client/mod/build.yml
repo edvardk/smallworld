@@ -1,0 +1,46 @@
+# Reproducible build of the Smallworld client mod (v1.2; scripts/build_client_mod.py, client/mod/WIRE.md).
+# javac only, like the server plugins (plugin/*/build.yml): Minecraft 26.x ships unobfuscated, so the mod compiles
+# straight against Mojang's client jar and the Fabric jars (no Loom, no Gradle, no mappings, no remapping), with
+# the JDK the plugins pin. Every input is sha256-pinned here; the jar is stored (no deflate), sorted, with fixed
+# dates and modes, so the same sources give the same bytes anywhere. `check` rebuilds it and compares with
+# dist/ and `jar_sha256` (CI: ci.yml job plugin; tests/test_client_mod.py when the inputs are cached).
+name: smallworld
+version: 1.0.0   # = fabric.mod.json "version"
+release: 25      # javac --release; = the client jar's javaVersion.majorVersion (version JSON)
+jdk:             # = plugin/mc-brand/build.yml jdk (tests/test_client_mod.py)
+  version: 25.0.5+8
+  x64:
+    url: https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/OpenJDK25U-jdk_x64_linux_hotspot_25.0.5_8.tar.gz
+    sha256: 68982529869257d0ee6b824ec5aa270ff8b118bb438670da0b97ebdab178d7fb
+# = template/client.lock.yml minecraft_version, loader.version and the fabric-api entry (tests/test_client_mod.py)
+minecraft:
+  version: '26.3'
+  # piston-meta 26.3.json downloads.client (sha1 e877b6a07acd633fb3bb475002175cec036e7b87)
+  url: https://piston-data.mojang.com/v1/objects/e877b6a07acd633fb3bb475002175cec036e7b87/client.jar
+  sha256: 4508d006323f24fa02876310c192d739af56516eb259000ac50f0909a68c9a2d
+fabric_loader:
+  version: 0.20.1
+  url: https://maven.fabricmc.net/net/fabricmc/fabric-loader/0.20.1/fabric-loader-0.20.1.jar
+  sha256: d0c5a082e07410aaff9de7ab196aa6b4236002870f9ba3ad5c1260fcce5110ad
+fabric_api:
+  version: 0.165.2+26.3
+  url: https://cdn.modrinth.com/data/P7dR8mSH/versions/nJlcvFfj/fabric-api-0.165.2%2B26.3.jar
+  sha256: 2612a078a5daa06d9a14cabad40fe66de36b8cb22ee8cdf346d5d9894478c392
+  # the modules the mod uses (jar-in-jar META-INF/jars/<prefix><version>.jar); also its fabric.mod.json depends
+  modules:
+    - fabric-api-base-
+    - fabric-networking-api-v1-
+    - fabric-rendering-v1-
+    - fabric-lifecycle-events-v1-
+# Libraries javac needs besides the client jar (piston-meta 26.3.json libraries; their sha1 match it): netty for
+# FriendlyByteBuf's supertypes, gson for the local config files. Only what javac asks for.
+libraries:
+  - url: https://libraries.minecraft.net/io/netty/netty-buffer/4.2.16.Final/netty-buffer-4.2.16.Final.jar
+    sha256: cc36ae9fbd0b03fe755eb4eb4424ca53b59cfd297d7fd47d49e5b1059beded6c
+  - url: https://libraries.minecraft.net/io/netty/netty-common/4.2.16.Final/netty-common-4.2.16.Final.jar
+    sha256: 9825ee68a0dc4cd2b53e2f532502401b2211bad9b77e8b04882d9e64487283ff
+  - url: https://libraries.minecraft.net/com/google/code/gson/gson/2.14.0/gson-2.14.0.jar
+    sha256: 2cbd119bf1961c28788310963dc80ba65f58cdeec1dd139c8bdb1240faa2c36f
+jar: client/mod/dist/smallworld.jar
+jar_sha256: 509ab811cfaa97c67730cbe17fdce2fc3abab2b8f2636f351aee7f18d36fe45e
+fixtures: client/mod/src/test/wire-fixtures.json   # printed by src/test/java/.../WireFixtures.java

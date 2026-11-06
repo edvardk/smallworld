@@ -1,0 +1,4 @@
+# The panel's plugin switch (P10): the names it disabled (mc-agent writes it, as the ops user) and the lock as
+# JSON for the agent and mc-plugins-apply.service (= scripts/mc_panel.py PLUGINS_DISABLED_FILE / PLUGINS_LOCK_FILE).
+plugins_disabled_file: "{{ mc_state_dir }}/plugins-disabled.json"
+plugins_lock_json: "{{ mc_root }}/plugins-lock.json"

@@ -1,0 +1,49 @@
+name: release
+
+# Push a tag vX.Y.Z on main (after bumping the version and the CHANGELOG, see scripts/release.py): runs CI,
+# checks the tag against pyproject.toml / mcctl.__version__ / CHANGELOG.md, and creates the GitHub release.
+# Config repos then pin the tag's commit SHA (their weekly update task opens the PR, P11).
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: write # requested by the reusable workflow's panel-merge job (P10; never runs from here)
+      pull-requests: write # same
+      id-token: write # requested by the reusable workflow's deploy job (never runs from the product's CI)
+
+  release:
+    needs: ci
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the tag matches the version and the changelog
+        env:
+          TAG: ${{ github.ref_name }}
+        run: python3 scripts/release.py check "$TAG"
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          python3 scripts/release.py notes "${TAG#v}" > "$RUNNER_TEMP/notes.md"
+          # Release checksums (design §7 supply chain): the source archive of the tagged commit and its
+          # SHA-256, so a download can be checked against what this run built from the tag.
+          name="smallworld-${TAG#v}"
+          git archive --format=tar.gz --prefix="$name/" -o "$RUNNER_TEMP/$name.tar.gz" HEAD
+          (cd "$RUNNER_TEMP" && sha256sum "$name.tar.gz" > SHA256SUMS && cat SHA256SUMS)
+          gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" \
+            "$RUNNER_TEMP/$name.tar.gz" "$RUNNER_TEMP/SHA256SUMS"

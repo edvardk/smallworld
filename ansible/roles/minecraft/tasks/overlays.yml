@@ -1,0 +1,29 @@
+# mc_overlay_check=true: compare only (check mode); any difference notifies the restart handler.
+# mc_overlay_check=false: write changes (only while the server is stopped).
+- name: Check config overlays
+  mc_config:
+    path: "{{ mc_server_dir }}/{{ item.path }}"
+    format: "{{ item.format }}"
+    settings: "{{ lookup('ansible.builtin.template', mc_config_dir ~ '/' ~ item.template) | from_yaml }}"
+    create: "{{ item.create | default(false) }}"
+  become: true
+  become_user: minecraft
+  check_mode: true
+  loop: "{{ mc_overlays }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when: mc_overlay_check | bool
+  notify: restart minecraft
+
+- name: Apply config overlays
+  mc_config:
+    path: "{{ mc_server_dir }}/{{ item.path }}"
+    format: "{{ item.format }}"
+    settings: "{{ lookup('ansible.builtin.template', mc_config_dir ~ '/' ~ item.template) | from_yaml }}"
+    create: "{{ item.create | default(false) }}"
+  become: true
+  become_user: minecraft   # files the server rewrites must stay owned by it
+  loop: "{{ mc_overlays }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when: not (mc_overlay_check | bool)

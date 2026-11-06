@@ -1,0 +1,15 @@
+{
+  "_source": "Shaped from the GitHub REST reference (GET /repos/{owner}/{repo}/releases/latest, GET /repos/{owner}/{repo}/git/ref/tags/{tag}), 2026-11-01; sha fake.",
+  "exchanges": [
+    {
+      "request": {"method": "GET", "url": "https://api.github.com/repos/edvardk/smallworld/releases/latest"},
+      "response": {"status": 200, "headers": {"content-type": "application/json"},
+                   "body": {"tag_name": "v9.0.0", "name": "v9.0.0", "draft": false, "prerelease": false}}
+    },
+    {
+      "request": {"method": "GET", "url": "https://api.github.com/repos/edvardk/smallworld/git/ref/tags/v9.0.0"},
+      "response": {"status": 200, "headers": {"content-type": "application/json"},
+                   "body": {"ref": "refs/tags/v9.0.0", "object": {"type": "commit", "sha": "cccccccccccccccccccccccccccccccccccccccc"}}}
+    }
+  ]
+}

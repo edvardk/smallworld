@@ -1,0 +1,5 @@
+🔴 **The health check hasn't run for 16 min**
+**Impact:** Self-heal and the server's own alerts may not be running; players may not be affected.
+**Likely cause:** The server doesn't report in at all: the host may be down.
+**What to do:** `mcctl doctor`; on the box: `systemctl status mc-health.timer` and `journalctl -u mc-health -n 50`.
+**Details:** no finished health run for 16 min (expected every 5 min)

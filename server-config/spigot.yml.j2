@@ -1,0 +1,30 @@
+# Overlay for spigot.yml. Keys verified in keys/<minecraft_version>/spigot.txt.
+# server.yml performance.profile (mcctl/render.py TUNING). vanilla: activation ranges 0 = every entity always
+# ticks (ActivationRange.initializeEntityActivationState: range <= 0 -> always active), vanilla item/XP merging
+# (item 0.5, exp -1 = Spigot's merging off), max-tnt-per-tick 0 = no cap (PrimedTnt.tick: <= 0 skips it).
+world-settings:
+  default:
+    entity-activation-range:
+      animals: {{ mc_activation_range.animals }}
+      monsters: {{ mc_activation_range.monsters }}
+      raiders: {{ mc_activation_range.raiders }}
+      misc: {{ mc_activation_range.misc }}
+      water: {{ mc_activation_range.water }}
+      villagers: {{ mc_activation_range.villagers }}
+      flying-monsters: {{ mc_activation_range.flying_monsters }}
+      tick-inactive-villagers: {{ mc_tuning.tick_inactive_villagers | bool | lower }}
+    # Invisible: how far away clients are sent entities (performance.tracking_range; never ticking or AI).
+    entity-tracking-range:
+      players: {{ mc_tracking_range.players }}
+      animals: {{ mc_tracking_range.animals }}
+      monsters: {{ mc_tracking_range.monsters }}
+      misc: {{ mc_tracking_range.misc }}
+      display: {{ mc_tracking_range.display }}
+      other: {{ mc_tracking_range.other }}
+    # Spigot's default (8 chunks = vanilla's 128-block spawning sphere); capped by the simulation distance.
+    mob-spawn-range: 8
+    merge-radius:
+      item: {{ mc_tuning.merge_radius.item }}
+      exp: {{ mc_tuning.merge_radius.exp }}
+    nerf-spawner-mobs: {{ mc_nerf_spawner_mobs | bool | lower }}
+    max-tnt-per-tick: {{ mc_tuning.max_tnt_per_tick }}

@@ -1,0 +1,40 @@
+---
+# Extra vars for the e2e-mock workflow ONLY (`-e @/src/product/tests/e2e/vars.yml`). Never referenced by a
+# real deploy; every production default stays as it is. Each entry is a container-only difference.
+# A file (not `-e key=value`) so booleans stay booleans: `-e x=false` is the string "false".
+ansible_connection: local      # site.yml runs inside the container itself
+# (Not a variable: the run uses --skip-tags tailscale,firewall; no tailnet here, so the tasks that refuse to
+# close SSH unless Tailscale is up are skipped with the tailscale role.)
+base_zram_enabled: false       # no zram devices in a container (the kernel is the runner's)
+mc_expect_ipv6: false          # the runner has no public IPv6
+# The mock `mcctl init` "ran" the first backup and so set world.expected: true, but this box is brand new
+# and its restic repository (a local directory) is empty: the guard would rightly refuse to start. A fresh
+# world is what the e2e wants.
+mc_world_expected: false
+# Self-heal's start-up grace (production 900 s): tests/e2e/hardening_check.py freezes the JVM a minute after it
+# started and expects two health runs to dump threads and restart it.
+monitoring_heal_startup_grace_s: 60
+# mc-agent (P8) pushes to a mock of the Worker that tests/e2e/agent_check.py starts in the container (http:// is
+# accepted for loopback only), every 30 s (metrics and journal batches) instead of 60/300 s.
+agent_ingest_url: http://127.0.0.1:8787
+agent_log_batch_s: 30
+mc_metrics_interval_s: 30
+# P10: the agent opens the panel's whitelist pull requests against a mock of the GitHub API that agent_check.py
+# serves in the container (http:// is accepted for loopback only).
+agent_github_api_url: http://127.0.0.1:8788
+agent_panel_sync_s: 3
+agent_panel_batch_s: 5
+agent_panel_pr_check_s: 5
+# P11: the reboot gate starts this harmless target instead of reboot.target (tests/e2e/reboot_check.py creates it;
+# the polkit rule allows exactly this unit), and its window covers the whole day so the check can run any time.
+mc_reboot_target: mc-e2e-reboot.target
+mc_reboot_window: "00:00-23:59"
+# P12 review: health.py's Chunky pre-generation would generate the bordered worlds for hours on the runner;
+# tests/e2e/deploy_check.py checks Chunky answers over RCON instead.
+monitoring_pregen_enabled: false
+# P13: telemetry segments every minute instead of 5 (tests/e2e/telemetry_check.py waits for uploads and a backfill).
+agent_segment_s: 60
+# v1.1: mc-agent's /modpack code hand-off (CLIENT=1; the verdict directory) for tests/e2e/agent_check.py, against
+# its mock Worker. The plugin side (mc-brand's /modpack) is off in the example config; its rules run in
+# tests/e2e/brand_check.py's selftest.
+mc_client_enabled: true

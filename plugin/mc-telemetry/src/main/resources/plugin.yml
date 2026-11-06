@@ -1,0 +1,18 @@
+# mc-telemetry (design §8 P13): built by scripts/build_plugin.py, never edited on the server.
+name: mc-telemetry
+version: 1.0.0
+main: io.github.edvardk.mctelemetry.TelemetryPlugin
+api-version: '1.13'
+description: Tick-time distribution and per-player experience snapshots for mc-agent; /lag explains lag.
+load: POSTWORLD
+commands:
+  lag:
+    description: Why is it lagging? Your connection, the server, and what helps.
+    aliases: [whylag]
+    usage: /lag [tips on|off]
+    permission: mctelemetry.lag
+permissions:
+  mctelemetry.lag:
+    default: true
+  mctelemetry.lag.others:
+    default: op

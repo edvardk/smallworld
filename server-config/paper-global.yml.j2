@@ -1,0 +1,9 @@
+# Overlay for config/paper-global.yml. Keys verified in keys/<minecraft_version>/paper-global.txt.
+# spark is bundled with Paper; keep it on so `spark profiler` / `spark health` work without a plugin.
+spark:
+  enabled: true
+# P16: chunk generation/loading workers (server.yml performance.chunk_threads). -1 = Paper's default (Moonrise,
+# javap of the pinned jar): c = cores / 2, then 1 if c <= 3, 2 if c = 4, else c / 2: 1 worker up to 7 cores, 2 on
+# 8-9, cores/4 from 10. io-threads stays at Paper's default (1).
+chunk-system:
+  worker-threads: {{ mc_chunk_worker_threads }}

@@ -1,0 +1,23 @@
+backups_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts['architecture']] }}"
+backups_restic_dir: /usr/local/lib/restic
+backups_restic_bin: "{{ backups_restic_dir }}/restic-{{ restic_version }}"
+backups_cache_dir: /var/cache/mc-restic
+# Hidden from mc-backup (it has CAP_DAC_READ_SEARCH, so file modes alone don't keep it out). "-": skip a path
+# that doesn't exist on this host. tests/e2e/hardening_check.py proves the unit can't read them.
+backups_inaccessible_paths:
+  - -/etc/shadow
+  - -/etc/gshadow
+  - -/etc/sudoers
+  - -/etc/sudoers.d
+  - -/etc/minecraft
+  - -/etc/ssh
+  - -/etc/ssl/private
+  - -/var/lib/tailscale
+  - -/var/lib/mc-agent
+  - -/var/lib/systemd/credential.secret
+# The weekly backup test (mc-backup-check.timer, v1.2; until then the config repo's Monday Actions job, at the same
+# time): clear of the hourly backups (:00 + a few minutes) and the Sunday prune. UTC, whatever host.timezone is.
+backups_check_schedule: "Mon *-*-* 09:41:00 UTC"
+# It fails when the newest snapshot is older than two backup periods (backups have stopped); a custom OnCalendar
+# backups.schedule gets a day and a bit.
+backups_check_max_age_hours: "{{ {'minutely': 2, 'hourly': 2, 'daily': 48, 'weekly': 336}.get(mc_backup_schedule, 26) }}"

@@ -1,0 +1,23 @@
+---
+# e2e-mock only: render the firewall role's ruleset with the role's own defaults into the container (validated
+# with `nft -c`), for tests/e2e/firewall_check.py to load into a throwaway network namespace. The role itself
+# isn't run in the container: it would load the ruleset into the runner's network (--network host).
+- name: Render the product's nftables ruleset
+  hosts: all
+  become: true
+  vars_files:
+    - ../../ansible/roles/firewall/defaults/main.yml
+  tasks:
+    - name: Install nftables
+      ansible.builtin.apt:
+        name: nftables
+        state: present
+
+    - name: Render and check the ruleset
+      ansible.builtin.template:
+        src: ../../ansible/roles/firewall/templates/nftables.conf.j2
+        dest: /tmp/mc-nftables.conf
+        owner: root
+        group: root
+        mode: "0644"
+        validate: nft -c -f %s

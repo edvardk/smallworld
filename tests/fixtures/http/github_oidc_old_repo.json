@@ -1,0 +1,45 @@
+{
+  "_source": "Shaped from the GitHub REST API reference (repos; \"GitHub Actions OIDC\": actions/oidc/customization/sub, field use_immutable_subject) and docs.github.com \"OpenID Connect reference\" (immutable subject claims), 2026-11-02; ids fake.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/mcctl-tests/tests-mc-config"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": 1,
+          "name": "tests-mc-config",
+          "full_name": "mcctl-tests/tests-mc-config",
+          "private": true,
+          "owner": {
+            "login": "mcctl-tests",
+            "id": 2,
+            "type": "User"
+          },
+          "created_at": "2025-03-01T09:00:00Z"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/mcctl-tests/tests-mc-config/actions/oidc/customization/sub"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "use_default": true,
+          "use_immutable_subject": false
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+# {{ ansible_managed }}
+# The second half of a restore (scripts/restore.py): the first half runs as {{ mc_ops_user }} (it holds the
+# restic credentials) and fetches the snapshot into {{ mc_restore_dir }}/staging; this unit copies it into the
+# server dir as minecraft, so the world stays owned by the user that runs the server. No credentials here.
+# Only root and {{ mc_ops_user }} (polkit, base role) may start it; it refuses unless the server is stopped, a
+# restore holds restore.lock and a staged snapshot with its manifest is there.
+[Unit]
+Description=Apply a fetched restic snapshot to the Minecraft server dir (started by restore.py)
+After=minecraft.service
+
+[Service]
+Type=oneshot
+User=minecraft
+Group=minecraft
+UMask=0027
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart={{ mc_bin_dir }}/restore.py --apply-staged
+ReadWritePaths={{ mc_server_dir }}
+# Sandbox (design §7): the shared set, see ansible/group_vars/all/main.yml.
+{{ mc_systemd_sandbox | join('\n') }}
+MemoryDenyWriteExecute=true

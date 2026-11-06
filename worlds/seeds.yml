@@ -1,0 +1,247 @@
+# v1.2 seed catalogue for the world library (the panel's Worlds tab: New world > Start from).
+#
+# Researched seeds for the pinned Minecraft version (template/server.lock.yml), each with the page it was found on.
+# Only claims that `python scripts/seed_check.py verify` confirmed on the pinned server build are kept here: it boots
+# the jar per seed and measures each claim with /locate from the world spawn (the Nether: from spawn / 8, where a
+# portal at spawn leads; the End: from the main island). The source pages' own highlights that the check could not
+# confirm (or that /locate can't see, such as chest loot) are left out. watchdog/panel/seeds.json holds the
+# measurements; tests/test_seeds.py and ci.yml's `seeds` job keep the two in step (docs/operations.md, World library).
+#
+# Fields: id (1-40 lowercase letters, digits, -), name (<= 60 chars), seed (quoted 64-bit integer), description
+# (<= 200 chars), source (https URL), claims: structure (id or #tag) or biome, within (blocks), optional dimension
+# (overworld | nether | end) and label.
+
+seeds:
+  - id: forest-village
+    name: Forest village crossroads
+    seed: "-6924395187383011929"
+    description: >-
+      Forest spawn with a village, a meadow, a cherry grove, a dappled forest, ice spikes and an abandoned camp all
+      within about 350 blocks.
+    source: https://www.mc-mod.net/?p=804721
+    claims:
+      - structure: "#minecraft:village"
+        within: 250
+      - biome: minecraft:meadow
+        within: 150
+      - biome: minecraft:dappled_forest
+        within: 250
+      - biome: minecraft:cherry_grove
+        within: 300
+      - biome: minecraft:ice_spikes
+        within: 350
+      - structure: "#minecraft:abandoned_camp"
+        within: 350
+
+  - id: cherry-lake
+    name: Cherry lake
+    seed: "2419633"
+    description: >-
+      Spawn in a cherry grove by a lake, a deep dark about 200 blocks off; a village and an abandoned camp are a
+      longer walk away.
+    source: https://www.craftmc.net/minecraft-seeds/26.3/binocular-cherry-lake-village-camp-26-3
+    claims:
+      - biome: minecraft:cherry_grove
+        within: 50
+      - biome: minecraft:deep_dark
+        within: 250
+      - structure: "#minecraft:abandoned_camp"
+        within: 600
+      - structure: "#minecraft:village"
+        within: 650
+
+  - id: mansion-village-island
+    name: Mansion on a village island
+    seed: "4358921489363102297"
+    description: >-
+      A woodland mansion crushes a village on the spawn island, in a dark forest; trial chambers close by.
+    source: https://www.craftmc.net/minecraft-seeds/26.3/mansion-crushes-village-spawn-island-java-26-3
+    claims:
+      - structure: "#minecraft:village"
+        within: 100
+      - structure: minecraft:mansion
+        within: 100
+        label: woodland mansion
+      - biome: minecraft:dark_forest
+        within: 100
+      - structure: minecraft:trial_chambers
+        within: 350
+
+  - id: mansion-lush-cave
+    name: Mansion over lush caves
+    seed: "6726509936435638690"
+    description: >-
+      Lush caves right under spawn, a dark forest with a woodland mansion, trail ruins near spawn and a bastion close
+      in the Nether.
+    source: https://www.craftmc.net/minecraft-seeds/26.3/woodland-mansion-lush-cave-java-26-3
+    claims:
+      - biome: minecraft:lush_caves
+        within: 100
+      - structure: minecraft:trail_ruins
+        within: 300
+      - biome: minecraft:dark_forest
+        within: 400
+      - structure: minecraft:mansion
+        within: 700
+        label: woodland mansion
+      - structure: minecraft:bastion_remnant
+        dimension: nether
+        within: 150
+        label: bastion
+
+  - id: dappled-double-village
+    name: Dappled forest double village
+    seed: "-2071092601429184301"
+    description: >-
+      Spawn between a cherry grove and a huge dappled forest, with villages, trial chambers and an ancient city
+      nearby.
+    source: https://www.craftmc.net/minecraft-seeds/26.3/massive-dappled-forest-double-village-26-3
+    claims:
+      - biome: minecraft:cherry_grove
+        within: 50
+      - biome: minecraft:dappled_forest
+        within: 100
+      - structure: minecraft:trial_chambers
+        within: 250
+      - structure: minecraft:ancient_city
+        within: 300
+      - structure: "#minecraft:village"
+        within: 400
+
+  - id: dappled-ice-spikes
+    name: Dappled forest and ice spikes
+    seed: "6306952185402203104"
+    description: >-
+      A dappled forest, ice spikes and a cherry grove around spawn, with an ancient city and a pillager outpost
+      within about 600 blocks.
+    source: https://www.craftmc.net/minecraft-seeds/26.3/dappled-forest-ice-spikes-ancient-city-starter-26-3
+    claims:
+      - biome: minecraft:dappled_forest
+        within: 400
+      - biome: minecraft:ice_spikes
+        within: 550
+      - structure: minecraft:ancient_city
+        within: 550
+      - biome: minecraft:cherry_grove
+        within: 650
+      - structure: "#minecraft:village"
+        within: 600
+
+  - id: pale-garden-camp
+    name: Pale garden campsite
+    seed: "-4696916708035556965"
+    description: >-
+      Spawn at a pale garden next to a dark forest, with a village and an abandoned camp for a day-one base.
+    source: https://www.craftmc.net/minecraft-seeds/26.3/pale-garden-campsite-dappled-forest-showcase-26-3
+    claims:
+      - biome: minecraft:pale_garden
+        within: 100
+      - biome: minecraft:dark_forest
+        within: 250
+      - structure: "#minecraft:village"
+        within: 350
+      - structure: "#minecraft:abandoned_camp"
+        within: 450
+
+  - id: dark-forest-mansion
+    name: Dark forest mansion and campsite
+    seed: "4374896627388464667"
+    description: >-
+      Spawn in a dark forest: an abandoned camp, an ancient city, a village and a woodland mansion all within about
+      600 blocks.
+    source: https://www.craftmc.net/minecraft-seeds/26.3/dark-forest-mansion-campsite-thumbnail-26-3
+    claims:
+      - biome: minecraft:dark_forest
+        within: 50
+      - structure: "#minecraft:abandoned_camp"
+        within: 350
+      - structure: minecraft:ancient_city
+        within: 350
+      - structure: "#minecraft:village"
+        within: 400
+      - structure: minecraft:mansion
+        within: 600
+        label: woodland mansion
+
+  - id: triple-dappled
+    name: Dappled forest coast
+    seed: "-4227634870293935746"
+    description: >-
+      Spawn in a dappled forest on the coast, a shipwreck and trial chambers close by and a cherry grove further on.
+    source: https://www.craftmc.net/minecraft-seeds/26.3/triple-dappled-forest-trial-ancient-city-26-3
+    claims:
+      - biome: minecraft:dappled_forest
+        within: 50
+      - structure: "#minecraft:shipwreck"
+        within: 300
+      - structure: minecraft:trial_chambers
+        within: 350
+      - biome: minecraft:cherry_grove
+        within: 700
+
+  - id: floating-village
+    name: Floating village island
+    seed: "-2524830541087318325"
+    description: >-
+      Spawn on a village island next to a dappled forest, a shipwreck offshore and a Nether fortress right by the
+      spawn portal.
+    source: https://www.craftmc.net/minecraft-seeds/26.3/floating-village-well-island-dappled-26-3
+    claims:
+      - structure: "#minecraft:village"
+        within: 50
+      - biome: minecraft:dappled_forest
+        within: 100
+      - structure: "#minecraft:shipwreck"
+        within: 300
+      - structure: minecraft:fortress
+        dimension: nether
+        within: 100
+        label: nether fortress
+
+  - id: nether-fortress-start
+    name: Nether fortress start
+    seed: "396009952850625630"
+    description: >-
+      A Nether fortress within 100 blocks of the spawn portal, with trial chambers and a shipwreck near the
+      Overworld spawn.
+    source: https://www.craftmc.net/minecraft-seeds/26.3/quadruple-nether-fortress-java-26-3
+    claims:
+      - structure: minecraft:fortress
+        dimension: nether
+        within: 150
+        label: nether fortress
+      - structure: minecraft:trial_chambers
+        within: 300
+      - structure: "#minecraft:shipwreck"
+        within: 300
+
+  - id: stony-shore-island
+    name: Stony shore island
+    seed: "7630080007485637379"
+    description: >-
+      Spawn on a stony shore by a dappled forest, trial chambers just inland and an ocean monument offshore.
+    source: https://www.mc-mod.net/?p=802676
+    claims:
+      - biome: minecraft:dappled_forest
+        within: 100
+      - structure: minecraft:trial_chambers
+        within: 150
+      - structure: minecraft:monument
+        within: 450
+        label: ocean monument
+
+  - id: plains-ice-spikes
+    name: Plains with ice spikes
+    seed: "5111262115741632263"
+    description: >-
+      Plains spawn near a dappled forest and ice spikes, with trial chambers and a village a short walk away.
+    source: https://www.mc-mod.net/?p=805321
+    claims:
+      - biome: minecraft:dappled_forest
+        within: 150
+      - biome: minecraft:ice_spikes
+        within: 300
+      - structure: minecraft:trial_chambers
+        within: 250
+      - structure: "#minecraft:village"
+        within: 400

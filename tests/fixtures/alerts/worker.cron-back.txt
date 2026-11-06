@@ -1,0 +1,4 @@
+✅ **The outside watchdog runs cleanly again**
+**Impact:** Outages, late backups and lag are reported again.
+**What to do:** No action needed - informational.
+**Details:** failing since 2026-11-05 11:00 UTC

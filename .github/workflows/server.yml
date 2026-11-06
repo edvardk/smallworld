@@ -1,0 +1,818 @@
+# REUSABLE workflow: the whole CI/CD of a deployment. Every config repo calls it from its single workflow,
+# pinned by commit SHA (template/.github/workflows/server.yml):
+#   uses: <owner>/<product repo>/.github/workflows/server.yml@<40-char sha> # vX.Y.Z
+#
+# The github context (event, ref, repository, secrets owner) is the CALLER's, i.e. the config repo's. The
+# product code is checked out at exactly the commit that is running: the caller's `uses:` pin, read from
+# the checked-out config repo (no OIDC token; only the deploy job, which joins the tailnet, gets one; a
+# manual deploy from a branch other than main only validates). While the product repo is private, its
+# Settings > Actions > General > Access must allow "repositories owned by the user", and the
+# PRODUCT_READ_TOKEN secret (contents: read on the product) is used for the checkout.
+#
+# Tasks: pull_request / push -> validate (+ the required `gate` check and panel-merge for a panel/* pull request, P10
+# review); push to main -> + deploy (server.yml deploy.enabled); schedule "17 4 * * <update_day>" -> update + deploy
+# (P11); "41 9 * * 1" -> expiry-check; workflow_dispatch -> the chosen task
+# (a manual deploy also runs site.yml a second time and fails unless it reports changed=0).
+#
+# Actions minutes (docs/ci.md "Keeping a config repo's minutes low"): a push or schedule deploys only when something
+# deploy-relevant changed since the last successful deploy (scripts/deploy_record.py; a manual deploy or a product
+# pin change always deploys); the weekly backup test runs on the server (mc-backup-check.timer, v1.2), the
+# backup-check task only on a manual dispatch; pip downloads are cached (hash-checked on every install). validate
+# stays a job of its own before deploy: the deploy job's environment (M2, the tailnet's OIDC subject) must be known
+# before it starts, and only server.yml says which it is. Jobs that run third-party code (update-test, boot-test)
+# use no cache: a cache they saved would be restored on main.
+name: server
+
+on:
+  workflow_call:
+    inputs:
+      config-path:
+        description: >-
+          The config repo's directory inside the caller's checkout. "." for a real config repo; the product's
+          own CI passes examples/config-repo and then only validates.
+        type: string
+        default: "."
+    secrets:
+      TS_OAUTH_CLIENT_ID:
+        required: false
+      TS_AUDIENCE:
+        required: false
+      RCON_PASSWORD:
+        required: false
+      RESTIC_PASSWORD:
+        required: false
+      RESTIC_REPOSITORY:
+        required: false
+      R2_ACCESS_KEY_ID:
+        required: false
+      R2_SECRET_ACCESS_KEY:
+        required: false
+      HEARTBEAT_TOKEN:
+        required: false
+      AGENT_TOKEN:
+        required: false
+      COMMAND_HMAC_KEY:
+        required: false
+      DISCORD_WEBHOOK_URL:
+        required: false
+      PRODUCT_READ_TOKEN:
+        required: false
+      UPDATER_APP_ID:
+        required: false
+      UPDATER_APP_KEY:
+        required: false
+      ARTIFACT_PUBLISH_TOKEN: # v1.1: the deploy job's uploads to the artifact mirror
+        required: false
+
+permissions: {}
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read # no id-token here: only the deploy job (which joins the tailnet) gets one
+    outputs:
+      tasks: ${{ steps.task.outputs.tasks }}
+      product_repository: ${{ steps.product.outputs.repository }}
+      product_sha: ${{ steps.product.outputs.sha }}
+      deploy_enabled: ${{ steps.config.outputs.deploy_enabled }}
+      tailscale_name: ${{ steps.config.outputs.tailscale_name }}
+      server_address: ${{ steps.config.outputs.server_address }}
+      # Security review M2: server.yml github.environments -> "deploy"/"update", else "" (no environment: the
+      # repository-level secrets, as before; an older config repo keeps working unchanged).
+      deploy_environment: ${{ steps.config.outputs.deploy_environment }}
+      update_environment: ${{ steps.config.outputs.update_environment }}
+      # "false" only when the deploy can be skipped (scripts/deploy_record.py); empty or "true" deploys.
+      deploy_needed: ${{ steps.last-deploy.outputs.deploy_needed }}
+    steps:
+      - name: Check out the config repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: config
+          fetch-depth: 0 # gitleaks scans the whole history, not just the files at this commit
+          persist-credentials: false
+
+      # Which product commit is running? A config repo (config-path ".") runs exactly the `uses:` pin in its
+      # only workflow, checked out above at the commit that triggered this run (GitHub reads the workflow file
+      # from the same commit). The product's own CI calls `./.github/workflows/server.yml` (possibly nested in
+      # release.yml -> ci.yml), so the running product is the caller itself at github.workflow_sha.
+      - name: Which product commit is running?
+        id: product
+        shell: python
+        env:
+          CONFIG_PATH: ${{ inputs.config-path }}
+          CALLER_REPOSITORY: ${{ github.repository }}
+          CALLER_WORKFLOW_REF: ${{ github.workflow_ref }}
+          CALLER_WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          import os, re
+          env = os.environ
+          if env["CONFIG_PATH"] != ".":
+              repository, sha = env["CALLER_REPOSITORY"], env["CALLER_WORKFLOW_SHA"]
+          else:
+              path = env["CALLER_WORKFLOW_REF"].split("@", 1)[0].split("/", 2)[2]
+              if path != ".github/workflows/server.yml":
+                  raise SystemExit(f"a config repo runs from .github/workflows/server.yml, not {path!r}")
+              text = open("config/.github/workflows/server.yml").read()
+              calls = re.findall(r"^\s*(?:-\s+)?uses:\s*(\S+)", text, re.M)
+              pins = [m for c in calls if (m := re.fullmatch(r"([A-Za-z0-9-]+/[A-Za-z0-9._-]+)/\.github/workflows/server\.yml@([0-9a-f]{40})", c))]
+              if len(calls) != 1 or len(pins) != 1:
+                  raise SystemExit(f"expected exactly one `uses: <owner>/<repo>/.github/workflows/server.yml@<sha>`, found {calls}")
+              repository, sha = pins[0].group(1), pins[0].group(2)
+          if not re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9._-]+", repository) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+              raise SystemExit(f"unexpected product repository/sha: {repository!r} {sha!r}")
+          with open(env["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"repository={repository}\nsha={sha}\n")
+          print(f"product {repository} @ {sha}")
+
+      - name: Check out the product at the running commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ steps.product.outputs.repository }}
+          ref: ${{ steps.product.outputs.sha }}
+          token: ${{ secrets.PRODUCT_READ_TOKEN || github.token }}
+          path: product
+          persist-credentials: false
+
+      # pip's download cache, keyed by the hashed requirements file (pip checks every hash on install).
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: product/requirements/validate.txt
+
+      # validate needs PyYAML only; every requirements file is fully resolved with hashes.
+      - name: Install mcctl's dependencies
+        run: pip install --require-hashes --no-deps -r product/requirements/validate.txt
+
+      # server.yml (schema + cross-field rules), players.yml (canonical), lock files vs server.yml,
+      # expiry.yml, the pinned `uses:` line, and that every rendered file can be produced.
+      - name: mcctl validate
+        id: config
+        working-directory: product
+        env:
+          CONFIG_DIR: ${{ github.workspace }}/config/${{ inputs.config-path }}
+          CONFIG_PATH: ${{ inputs.config-path }}
+          CALLER_REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          # A real config repo must name itself in server.yml github.owner/config_repo (Terraform writes its
+          # secrets and the CI identity there); the product's own example fixture doesn't.
+          expect=()
+          if [ "$CONFIG_PATH" = "." ]; then expect=(--expect-repository "$CALLER_REPOSITORY"); fi
+          python -m mcctl validate -C "$CONFIG_DIR" --github-output "$GITHUB_OUTPUT" "${expect[@]}"
+
+      # Secret scan of the config repo's whole git history (design §7): nothing secret belongs in a config repo
+      # (.env is git-ignored), and a secret committed once and deleted later is still in the history. The
+      # product's own CI (config-path != ".") scans the example's files only: ci.yml scans the product history.
+      # The pinned gitleaks release, sha256-checked; --redact keeps values out of the log.
+      - name: gitleaks (config repo)
+        env:
+          GITLEAKS_VERSION: 8.30.1 # same pin in ci.yml and server.yml (tests/test_consistency.py)
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb # linux_x64
+          CONFIG_DIR: ${{ github.workspace }}/config/${{ inputs.config-path }}
+          CONFIG_PATH: ${{ inputs.config-path }}
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/gitleaks.tgz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/gitleaks.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tgz" -C "$RUNNER_TEMP" gitleaks
+          if [ "$CONFIG_PATH" = "." ]; then
+            "$RUNNER_TEMP/gitleaks" git --redact --no-banner --verbose "$GITHUB_WORKSPACE/config"
+          else
+            "$RUNNER_TEMP/gitleaks" dir --redact --no-banner --verbose "$CONFIG_DIR"
+          fi
+
+      - name: Pick the task
+        id: task
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SCHEDULE: ${{ github.event.schedule }}
+          INPUT_TASK: ${{ github.event.inputs.task }}
+          CONFIG_PATH: ${{ inputs.config-path }}
+          DEPLOY_ENABLED: ${{ steps.config.outputs.deploy_enabled }}
+        shell: bash
+        run: |
+          case "$EVENT" in
+            push) if [ "$REF" = refs/heads/main ]; then tasks='["deploy"]'; else tasks='["validate"]'; fi ;;
+            schedule)
+              case "$SCHEDULE" in
+                # P11: the weekly slot (automation.update_day; mcctl validate checks the day): update PRs, and a
+                # deploy of main as it stands (it restarts only if something changed).
+                "17 4 * * "[0-6]) tasks='["update","deploy"]' ;;
+                # v1.2: the backup test runs on the server (mc-backup-check.timer); a dispatch still runs it here.
+                "41 9 * * 1") tasks='["expiry-check"]' ;;
+                *) echo "::error::unknown schedule '$SCHEDULE'"; exit 1 ;;
+              esac ;;
+            workflow_dispatch)
+              case "$INPUT_TASK" in
+                deploy|update|backup-check|expiry-check) tasks="[\"$INPUT_TASK\"]" ;;
+                # the product's own CI (ci.yml dispatched by hand) has no task input: it validates (below)
+                *) if [ "$CONFIG_PATH" = "." ]; then echo "::error::unknown task '$INPUT_TASK'"; exit 1; fi ;;
+              esac ;;
+            *) tasks='["validate"]' ;;
+          esac
+          if [ "$CONFIG_PATH" != "." ]; then tasks='["validate"]'; fi   # the product's own CI: never deploy
+          # Only main deploys (the tailnet identity trusts main only); a manual run from a branch validates.
+          if [ "$tasks" = '["update","deploy"]' ] && [ "$DEPLOY_ENABLED" != true ]; then tasks='["update"]'; fi
+          if [ "$tasks" = '["deploy"]' ] && [ "$REF" != refs/heads/main ]; then
+            echo "::notice::deploy skipped: only refs/heads/main deploys (this run: $REF)"
+            tasks='["validate"]'
+          fi
+          if [ "$tasks" = '["deploy"]' ] && [ "$DEPLOY_ENABLED" != true ]; then
+            echo "::notice::deploy skipped: server.yml deploy.enabled is false"
+          fi
+          echo "tasks=$tasks" >> "$GITHUB_OUTPUT"
+          echo "tasks: $tasks"
+
+      # Anything to deploy? The newest record of a successful deploy (saved by the deploy job; the newest cache entry
+      # with the prefix wins) against this commit: scripts/deploy_record.py. No record, a manual dispatch, a push
+      # that touched the workflow (the product pin) or any doubt: deploy.
+      - name: The last successful deploy
+        if: contains(steps.task.outputs.tasks, 'deploy') && inputs.config-path == '.'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/deploy-record
+          key: mc-deployed-lookup-${{ github.run_id }}
+          restore-keys: mc-deployed-
+
+      - name: Anything to deploy?
+        id: last-deploy
+        if: contains(steps.task.outputs.tasks, 'deploy') && inputs.config-path == '.'
+        env:
+          CONFIG_DIR: ${{ github.workspace }}/config
+          PRODUCT_SHA: ${{ steps.product.outputs.sha }}
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: >-
+          python3 product/scripts/deploy_record.py decide --config "$CONFIG_DIR" --product-sha "$PRODUCT_SHA"
+          --event "$EVENT" --before "$BEFORE" --record "$RUNNER_TEMP/deploy-record/record.json"
+
+  # P10 review: the config repo's required check `server / gate` (terraform/github.tf ruleset on main, pinned to the
+  # GitHub Actions app; no GitHub App bypasses it, only the admin). Passes only for what may merge without a human,
+  # judged by the pull request's diff (mcctl/gate.py): players.yml whitelist-only; lock files re-verified against
+  # the upstream APIs (auto_merge builds|builds+patch); a product patch bump to a tagged release (builds+patch).
+  # Never skipped on a config repo's pull request (a skipped required check counts as passed), and it fails when
+  # validate failed.
+  gate:
+    name: gate
+    needs: validate
+    if: always() && github.event_name == 'pull_request' && inputs.config-path == '.'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: validate must have passed
+        if: needs.validate.result != 'success'
+        env:
+          RESULT: ${{ needs.validate.result }}
+        run: |
+          echo "::error::validate: $RESULT"
+          exit 1
+
+      - name: Check out the config repo (the pull request's head, full history for the diff)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: config
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out the product at the running commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.validate.outputs.product_repository }}
+          ref: ${{ needs.validate.outputs.product_sha }}
+          token: ${{ secrets.PRODUCT_READ_TOKEN || github.token }}
+          path: product
+          persist-credentials: false
+
+      # pip's download cache, keyed by the hashed requirements file (pip checks every hash on install).
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: product/requirements/validate.txt
+
+      - name: Install mcctl's dependencies
+        run: pip install --require-hashes --no-deps -r product/requirements/validate.txt
+
+      # PRODUCT_TOKEN reads the product's tags (a product bump must point at the tag's commit).
+      - name: May this merge without the admin?
+        working-directory: product
+        env:
+          CONFIG_DIR: ${{ github.workspace }}/config
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # The head branch binds the policy (panel/* whitelist, update/* locks and product); a fork's: none.
+          HEAD_REF: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref || '' }}
+          # Who opened the pull request and who sent this event (opened/synchronize/reopened): the policy's App
+          # must be both (personal repos can't make an App a ruleset bypass actor; mcctl/gate.py).
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_SENDER: ${{ github.event.sender.login }}
+          PRODUCT_TOKEN: ${{ secrets.PRODUCT_READ_TOKEN || github.token }}
+        run: >-
+          python -m mcctl pr-gate -C "$CONFIG_DIR" --base "$BASE_SHA" --head "$HEAD_SHA" --head-ref "$HEAD_REF"
+          --author "$PR_AUTHOR" --sender "$PR_SENDER"
+
+  # P10 (design §5 "Whitelist → Git" (3)): the panel's whitelist changes arrive as pull requests from branches
+  # panel/<ts> of the config repo itself (opened by mc-agent with a short-lived token of the panel's GitHub App,
+  # which the Worker mints). They are live on the server already, so once the gate passed this merges them with
+  # GITHUB_TOKEN (a push by GITHUB_TOKEN starts no deploy), but only when `mcctl panel-pr-check` finds a
+  # whitelist-only change (players.yml alone, valid and canonical, ops unchanged) or, v1.2, a world-library change
+  # (server.yml alone, only world.active/world.library). Anything else stays open for a human.
+  # --match-head-commit: exactly the commit that was checked is merged.
+  panel-merge:
+    needs: [validate, gate]
+    if: >-
+      github.event_name == 'pull_request' && inputs.config-path == '.' && startsWith(github.head_ref, 'panel/') &&
+      github.event.pull_request.head.repo.full_name == github.repository && needs.gate.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # the squash merge
+      pull-requests: write
+    steps:
+      - name: Check out the config repo (the pull request's head, full history for the diff)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: config
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out the product at the running commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.validate.outputs.product_repository }}
+          ref: ${{ needs.validate.outputs.product_sha }}
+          token: ${{ secrets.PRODUCT_READ_TOKEN || github.token }}
+          path: product
+          persist-credentials: false
+
+      # pip's download cache, keyed by the hashed requirements file (pip checks every hash on install).
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: product/requirements/validate.txt
+
+      - name: Install mcctl's dependencies
+        run: pip install --require-hashes --no-deps -r product/requirements/validate.txt
+
+      - name: Whitelist or world-library change only?
+        working-directory: product
+        env:
+          CONFIG_DIR: ${{ github.workspace }}/config
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python -m mcctl panel-pr-check -C "$CONFIG_DIR" --base "$BASE_SHA" --head "$HEAD_SHA"
+
+      - name: Merge it (GITHUB_TOKEN; the change is live on the server already)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: gh pr merge "$PR" --repo "$REPO" --squash --delete-branch --match-head-commit "$HEAD_SHA"
+
+  deploy:
+    needs: validate
+    if: >-
+      github.ref == 'refs/heads/main' && contains(fromJSON(needs.validate.outputs.tasks), 'deploy') &&
+      needs.validate.outputs.deploy_enabled == 'true' && needs.validate.outputs.deploy_needed != 'false'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Security review M2: the deploy secrets are secrets of the config repo's environment `deploy`, which admits
+    # main only (terraform/github.tf); in a job with an environment its secrets take the place of the ones the
+    # caller passes. It also makes the OIDC sub `...:environment:deploy` (the tailnet's CI identity trusts that).
+    environment: ${{ needs.validate.outputs.deploy_environment }}
+    # Never two deploys at once; a newer queued deploy replaces an older queued one (it deploys newer state).
+    concurrency:
+      group: deploy-${{ github.repository }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write # GitHub OIDC -> Tailscale federated identity (no stored Tailscale secret)
+    env:
+      ANSIBLE_FORCE_COLOR: "1"
+    steps:
+      - name: Check out the config repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: config
+          persist-credentials: false
+
+      - name: Check out the product at the running commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.validate.outputs.product_repository }}
+          ref: ${{ needs.validate.outputs.product_sha }}
+          token: ${{ secrets.PRODUCT_READ_TOKEN || github.token }}
+          path: product
+          persist-credentials: false
+
+      # pip's download cache, keyed by the hashed requirements file (pip checks every hash on install).
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: product/requirements/deploy.txt
+
+      - name: Install tooling
+        run: |
+          pip install --require-hashes --no-deps -r product/requirements/deploy.txt
+          ansible-galaxy collection install -r product/ansible/requirements.yml
+
+      - name: mcctl render
+        working-directory: product
+        env:
+          CONFIG_DIR: ${{ github.workspace }}/config/${{ inputs.config-path }}
+        run: python -m mcctl render -C "$CONFIG_DIR" -o "$RUNNER_TEMP/rendered"
+
+      # v1.1: the pinned artifact mirror (server jar, plugins, restic, client mods: hash-checked, never overwritten)
+      # and the client packs' plans, before Ansible fetches from it. Its token is an Actions secret only here.
+      - name: Mirror the pinned artifacts and publish the client packs
+        working-directory: product
+        env:
+          CONFIG_DIR: ${{ github.workspace }}/config/${{ inputs.config-path }}
+          ARTIFACT_PUBLISH_TOKEN: ${{ secrets.ARTIFACT_PUBLISH_TOKEN }}
+        run: python -m mcctl client-publish -C "$CONFIG_DIR"
+
+      # tailscale_federated_identity.ci trusts only the config repo's main branch (sub) running this
+      # workflow (job_workflow_ref).
+      - name: Join the tailnet (ephemeral tag:ci node)
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: tag:ci
+          version: "1.104.4"
+          ping: ${{ needs.validate.outputs.tailscale_name }}
+
+      # Secrets (Terraform -> Actions secrets -> this workflow's secrets) reach Ansible only as MC_SECRET_*
+      # env on the steps that run it, not job-wide. Names: mcctl/secrets.py (tests/test_consistency.py).
+      - name: ansible-playbook site.yml
+        working-directory: product/ansible
+        env:
+          MC_SECRET_RCON_PASSWORD: ${{ secrets.RCON_PASSWORD }}
+          MC_SECRET_RESTIC_PASSWORD: ${{ secrets.RESTIC_PASSWORD }}
+          MC_SECRET_RESTIC_REPOSITORY: ${{ secrets.RESTIC_REPOSITORY }}
+          MC_SECRET_R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          MC_SECRET_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          MC_SECRET_HEARTBEAT_TOKEN: ${{ secrets.HEARTBEAT_TOKEN }}
+          MC_SECRET_AGENT_TOKEN: ${{ secrets.AGENT_TOKEN }}
+          MC_SECRET_COMMAND_HMAC_KEY: ${{ secrets.COMMAND_HMAC_KEY }}
+          MC_SECRET_DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: ansible-playbook -i "$RUNNER_TEMP/rendered/ansible/inventory.yml" site.yml
+
+      - name: Second run must change nothing (manual deploys)
+        if: github.event_name == 'workflow_dispatch'
+        working-directory: product/ansible
+        shell: bash
+        env:
+          MC_SECRET_RCON_PASSWORD: ${{ secrets.RCON_PASSWORD }}
+          MC_SECRET_RESTIC_PASSWORD: ${{ secrets.RESTIC_PASSWORD }}
+          MC_SECRET_RESTIC_REPOSITORY: ${{ secrets.RESTIC_REPOSITORY }}
+          MC_SECRET_R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          MC_SECRET_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          MC_SECRET_HEARTBEAT_TOKEN: ${{ secrets.HEARTBEAT_TOKEN }}
+          MC_SECRET_AGENT_TOKEN: ${{ secrets.AGENT_TOKEN }}
+          MC_SECRET_COMMAND_HMAC_KEY: ${{ secrets.COMMAND_HMAC_KEY }}
+          MC_SECRET_DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -o pipefail
+          ansible-playbook -i "$RUNNER_TEMP/rendered/ansible/inventory.yml" site.yml | tee "$RUNNER_TEMP/second-run.log"
+          grep -Eq 'changed=0 +unreachable=0 +failed=0' "$RUNNER_TEMP/second-run.log"
+
+      - name: Smoke test from the public internet
+        env:
+          SERVER_ADDRESS: ${{ needs.validate.outputs.server_address }}
+        run: python product/scripts/smoke_test.py "$SERVER_ADDRESS" --timeout 180
+
+      # What this successful deploy applied (the product sha + the deploy-relevant config files): the next push or
+      # schedule skips its deploy if nothing of it changed (validate's "Anything to deploy?").
+      - name: Record the deploy
+        env:
+          CONFIG_DIR: ${{ github.workspace }}/config
+          PRODUCT_SHA: ${{ needs.validate.outputs.product_sha }}
+        run: >-
+          python3 product/scripts/deploy_record.py write --config "$CONFIG_DIR" --product-sha "$PRODUCT_SHA"
+          --out "$RUNNER_TEMP/deploy-record/record.json"
+
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/deploy-record
+          key: mc-deployed-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # A failure reaches Discord in the alert template (scripts/ci_alert.py; docs/operations.md "Alerts").
+      - name: Tell Discord the deploy failed
+        if: failure()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python product/scripts/ci_alert.py deploy "$RUN_URL"
+
+  # The backup test from outside the server: a manual dispatch only (task backup-check). v1.2: the weekly run is the
+  # server's mc-backup-check.timer (scripts/backup_check.py, the same checks), which costs no Actions minutes.
+  backup-check:
+    needs: validate
+    if: contains(fromJSON(needs.validate.outputs.tasks), 'backup-check')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: ${{ needs.validate.outputs.deploy_environment }} # the restic + R2 secrets (M2)
+    permissions:
+      contents: read
+    env:
+      RESTIC_VERSION: "0.19.1"
+      RESTIC_SHA256: f415415624dcc452f2a02b8c33641791a8c6d6d3b65bbb3543fcf9a25151585c
+    # The restic credentials are set on the three steps that use them only (not on the checkout).
+    steps:
+      - name: Check out the product at the running commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.validate.outputs.product_repository }}
+          ref: ${{ needs.validate.outputs.product_sha }}
+          token: ${{ secrets.PRODUCT_READ_TOKEN || github.token }}
+          path: product
+          persist-credentials: false
+
+      - name: Install pinned restic
+        run: |
+          curl -fsSL -o restic.bz2 "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_amd64.bz2"
+          echo "${RESTIC_SHA256}  restic.bz2" | sha256sum -c -
+          bunzip2 -c restic.bz2 > restic && chmod +x restic && sudo mv restic /usr/local/bin/
+
+      # restic waits for any lock held by a backup (--retry-lock) instead of failing.
+      - name: Latest snapshots
+        env:
+          RESTIC_REPOSITORY: ${{ secrets.RESTIC_REPOSITORY }}
+          RESTIC_PASSWORD: ${{ secrets.RESTIC_PASSWORD }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: restic --retry-lock 30m snapshots --latest 3
+
+      - name: Verify repository structure and a 5% sample of data
+        env:
+          RESTIC_REPOSITORY: ${{ secrets.RESTIC_REPOSITORY }}
+          RESTIC_PASSWORD: ${{ secrets.RESTIC_PASSWORD }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: restic --retry-lock 30m check --read-data-subset=5%
+
+      # Same code the server uses (stdlib only; the runner's python3 is >= 3.11): restores the newest
+      # snapshot with --verify, compares the file list, samples checksums, then requires a usable world
+      # (level.dat + region files) and a snapshot < 2 h old (backups run hourly).
+      - name: Restore the latest snapshot and check the world
+        env:
+          RESTIC_REPOSITORY: ${{ secrets.RESTIC_REPOSITORY }}
+          RESTIC_PASSWORD: ${{ secrets.RESTIC_PASSWORD }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          MC_SERVER_DIR: ${{ runner.temp }}/no-server
+        run: python3 product/scripts/restore.py --verify-into "${RUNNER_TEMP}/restore" --max-age-hours 2
+
+      # A failure reaches Discord in the alert template (scripts/ci_alert.py; docs/operations.md "Alerts").
+      - name: Tell Discord the backup-check failed
+        if: failure()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 product/scripts/ci_alert.py backup-check "$RUN_URL"
+
+  # P11 (design §6): the weekly update, in two jobs (p11-review). Same Minecraft version only (a version bump is a
+  # human decision).
+  # update-test: the lock tool resolves the newest builds; if anything changed, the boot test starts the new jar
+  # with the locked plugins on this runner until "Done" + a status ping. That runs third-party code, so this job
+  # holds NO secret beyond the read-only product checkout (finished before anything runs) and hands only the lock
+  # texts on, as job outputs set before the boot test starts.
+  # update: a fresh runner. It re-verifies those locks against the upstream APIs (verify_lock_update.py: hashes,
+  # newer builds and versions; it never runs a jar), and only then gets the updater App's key, in the last step's
+  # env, to open the PRs (lock update; product update when the product has a newer release) with auto-merge per
+  # automation.auto_merge (off without github.protect_main). The required `server / gate` check verifies each
+  # PR again before it can merge, and the App's merge pushes to main, which deploys.
+  update-test:
+    needs: validate
+    if: contains(fromJSON(needs.validate.outputs.tasks), 'update')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.locks.outputs.changed }}
+      server_lock: ${{ steps.locks.outputs.server_lock }}
+      plugins_lock: ${{ steps.locks.outputs.plugins_lock }}
+      client_lock: ${{ steps.locks.outputs.client_lock }}
+    steps:
+      - name: Check out the config repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: config
+          persist-credentials: false
+
+      - name: Check out the product at the running commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.validate.outputs.product_repository }}
+          ref: ${{ needs.validate.outputs.product_sha }}
+          token: ${{ secrets.PRODUCT_READ_TOKEN || github.token }}
+          path: product
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Install mcctl's dependencies
+        run: pip install --require-hashes --no-deps -r product/requirements/validate.txt
+
+      - name: Resolve the newest builds (same Minecraft version)
+        id: locks
+        run: |
+          python product/scripts/update_lock.py --lock-dir config
+          # v1.1: client.lock.yml too (the client pack); only a server/plugin change needs the boot test
+          if [ -z "$(git -C config status --porcelain -- server.lock.yml plugins.lock.yml client.lock.yml)" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git -C config diff --stat -- server.lock.yml plugins.lock.yml client.lock.yml
+            java=$(python -c 'import sys, yaml; print(int(yaml.safe_load(open(sys.argv[1]))["java_major"]))' config/server.lock.yml)
+            server_changed=true
+            if git -C config diff --quiet -- server.lock.yml plugins.lock.yml; then server_changed=false; fi
+            {
+              echo "changed=true"
+              echo "server_changed=$server_changed"
+              echo "java_major=$java"
+              echo "server_lock=$(base64 -w0 config/server.lock.yml)"
+              echo "plugins_lock=$(base64 -w0 config/plugins.lock.yml)"
+              if [ -f config/client.lock.yml ]; then echo "client_lock=$(base64 -w0 config/client.lock.yml)"; fi
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Java for the boot test
+        if: steps.locks.outputs.server_changed == 'true'
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: ${{ steps.locks.outputs.java_major }}
+
+      # The last step of this job: nothing that runs after it could be read or influenced by what it starts.
+      - name: Boot test (the new jar + plugins, throwaway world, until Done + status ping)
+        if: steps.locks.outputs.server_changed == 'true'
+        run: python product/scripts/boot_test.py --lock-dir config --timeout 900
+
+  # P12: the staged boot test of a Minecraft version upgrade (`mcctl upgrade --minecraft-version V` opens the PR
+  # from a same-repo branch upgrade/minecraft-V): the PR's locks, sha256-verified, boot with every locked plugin on
+  # the runner until Done + a status ping. Not a required check (the gate leaves such a PR to the admin, who merges
+  # after it passed); it runs only for that branch prefix in a real config repo.
+  boot-test:
+    needs: validate
+    if: >-
+      github.event_name == 'pull_request' && inputs.config-path == '.'
+      && startsWith(github.head_ref, 'upgrade/minecraft-')
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the config repo (the pull request)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: config
+          persist-credentials: false
+
+      - name: Check out the product at the running commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.validate.outputs.product_repository }}
+          ref: ${{ needs.validate.outputs.product_sha }}
+          token: ${{ secrets.PRODUCT_READ_TOKEN || github.token }}
+          path: product
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Install mcctl's dependencies
+        run: pip install --require-hashes --no-deps -r product/requirements/validate.txt
+
+      - name: Java version of the new lock
+        id: java
+        run: |
+          java=$(python -c 'import sys, yaml; print(int(yaml.safe_load(open(sys.argv[1]))["java_major"]))' config/server.lock.yml)
+          echo "major=$java" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: ${{ steps.java.outputs.major }}
+
+      # The last step of this job: nothing that runs after it could be read or influenced by what it starts.
+      - name: Boot test (the new jar + plugins, throwaway world, until Done + status ping)
+        run: python product/scripts/boot_test.py --lock-dir config --timeout 900
+
+  update:
+    needs: [validate, update-test]
+    if: contains(fromJSON(needs.validate.outputs.tasks), 'update') && needs.update-test.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: ${{ needs.validate.outputs.update_environment }} # the updater App's key, main only (M2)
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the config repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: config
+          persist-credentials: false
+
+      - name: Check out the product at the running commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.validate.outputs.product_repository }}
+          ref: ${{ needs.validate.outputs.product_sha }}
+          token: ${{ secrets.PRODUCT_READ_TOKEN || github.token }}
+          path: product
+          persist-credentials: false
+
+      # pip's download cache, keyed by the hashed requirements file (pip checks every hash on install).
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: product/requirements/validate.txt
+
+      - name: Install mcctl's dependencies
+        run: pip install --require-hashes --no-deps -r product/requirements/validate.txt
+
+      - name: Re-verify the boot-tested locks against the upstream APIs (no jar runs here)
+        if: needs.update-test.outputs.changed == 'true'
+        env:
+          SERVER_LOCK: ${{ needs.update-test.outputs.server_lock }}
+          PLUGINS_LOCK: ${{ needs.update-test.outputs.plugins_lock }}
+          CLIENT_LOCK: ${{ needs.update-test.outputs.client_lock }}
+        run: |
+          base="$RUNNER_TEMP/base-locks"
+          mkdir -p "$base"
+          cp config/server.lock.yml config/plugins.lock.yml "$base/"
+          if [ -f config/client.lock.yml ]; then cp config/client.lock.yml "$base/"; fi
+          printf '%s' "$SERVER_LOCK" | base64 -d > config/server.lock.yml
+          printf '%s' "$PLUGINS_LOCK" | base64 -d > config/plugins.lock.yml
+          if [ -n "$CLIENT_LOCK" ]; then printf '%s' "$CLIENT_LOCK" | base64 -d > config/client.lock.yml; fi
+          python product/scripts/verify_lock_update.py "$base" config
+
+      - name: Open the update pull requests (updater GitHub App)
+        working-directory: product
+        env:
+          CONFIG_DIR: ${{ github.workspace }}/config
+          UPDATER_APP_ID: ${{ secrets.UPDATER_APP_ID }}
+          UPDATER_APP_KEY: ${{ secrets.UPDATER_APP_KEY }}
+          PRODUCT_TOKEN: ${{ secrets.PRODUCT_READ_TOKEN || github.token }}
+        run: python -m mcctl update-prs -C "$CONFIG_DIR"
+
+  # P11 (design §3 "Expiry", §6): Mondays. expiry.yml (from `mcctl doctor`) + RDAP for dns.zone + the watchdog's
+  # public /status; no admin token. Problems go to Discord (when alerts.discord) and fail the job.
+  expiry-check:
+    needs: validate
+    if: contains(fromJSON(needs.validate.outputs.tasks), 'expiry-check')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: ${{ needs.validate.outputs.deploy_environment }} # the Discord webhook (M2)
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the config repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: config
+          persist-credentials: false
+
+      - name: Check out the product at the running commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.validate.outputs.product_repository }}
+          ref: ${{ needs.validate.outputs.product_sha }}
+          token: ${{ secrets.PRODUCT_READ_TOKEN || github.token }}
+          path: product
+          persist-credentials: false
+
+      # pip's download cache, keyed by the hashed requirements file (pip checks every hash on install).
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: product/requirements/validate.txt
+
+      - name: Install mcctl's dependencies
+        run: pip install --require-hashes --no-deps -r product/requirements/validate.txt
+
+      - name: Credentials, domain and watchdog
+        working-directory: product
+        env:
+          CONFIG_DIR: ${{ github.workspace }}/config
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python -m mcctl expiry-check -C "$CONFIG_DIR"

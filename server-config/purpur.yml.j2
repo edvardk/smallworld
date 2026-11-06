@@ -1,0 +1,17 @@
+# Overlay for purpur.yml. Keys verified in keys/<minecraft_version>/purpur.txt.
+# DAB (dynamic activation of brain) does not exist in this Purpur version, so it is not set.
+# server.yml performance.profile (mcctl/render.py TUNING): vanilla = Purpur's defaults (vanilla villager AI,
+# search radius 48, dolphins lead to treasure, zombies always chase villagers).
+world-settings:
+  default:
+    mobs:
+      villager:
+        lobotomize:
+          enabled: {{ mc_tuning.villager_lobotomize | bool | lower }}
+        search-radius:
+          acquire-poi: {{ mc_villager_search_radius }}
+          nearest-bed-sensor: {{ mc_villager_search_radius }}
+      dolphin:
+        disable-treasure-searching: {{ mc_tuning.dolphin_disable_treasure_searching | bool | lower }}
+      zombie:
+        aggressive-towards-villager-when-lagging: {{ mc_tuning.zombie_aggressive_when_lagging | bool | lower }}

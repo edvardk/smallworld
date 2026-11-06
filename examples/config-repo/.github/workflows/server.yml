@@ -1,0 +1,57 @@
+# The config repo's only workflow. It calls the product's reusable workflow, pinned by commit SHA: this
+# `uses:` line is the single source of the product version (mcctl reads it; `mcctl upgrade` bumps it).
+# The reusable workflow picks the task from the event: pull requests and pushes validate, pushes to main
+# deploy (when server.yml deploy.enabled is true and something deploy-relevant changed since the last successful
+# deploy), the weekly slot (automation.update_day, 04:17 UTC) opens the update PRs and deploys main if it changed,
+# Mondays expiry-check (the weekly backup test runs on the server; `backup-check` here is for a manual run).
+# Actions minutes: batch config changes into one push (docs/ci.md "Keeping a config repo's minutes low").
+name: server
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: What to run
+        type: choice
+        options: [deploy, update, backup-check, expiry-check]
+        default: deploy
+  schedule:
+    - cron: "17 4 * * 2"   # update + deploy (automation.update_day, Tue; 04:17 UTC)
+    - cron: "41 9 * * 1"   # expiry-check (Mon)
+
+permissions: {}
+
+jobs:
+  server:
+    uses: edvardk/smallworld/.github/workflows/server.yml@0000000000000000000000000000000000000000 # v0.0.0
+    # The ceiling for the reusable workflow (its jobs can only ask for less; each asks for what it needs).
+    # id-token: the deploy job's tailnet login (Tailscale federated identity). contents/pull-requests write:
+    # only the panel-merge job (P10), which merges the panel's whitelist-only pull requests.
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    # Explicit, not `secrets: inherit` (GitHub documents inherit for callers in the same organization or
+    # enterprise only). All are created by Terraform; optional ones may be absent. With server.yml
+    # github.environments (security review M2) all but PRODUCT_READ_TOKEN are secrets of the environments
+    # `deploy`/`update` (main only): they read as empty here, and the product's jobs that run in an environment
+    # get them from it instead.
+    secrets:
+      TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+      TS_AUDIENCE: ${{ secrets.TS_AUDIENCE }}
+      RCON_PASSWORD: ${{ secrets.RCON_PASSWORD }}
+      RESTIC_PASSWORD: ${{ secrets.RESTIC_PASSWORD }}
+      RESTIC_REPOSITORY: ${{ secrets.RESTIC_REPOSITORY }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      HEARTBEAT_TOKEN: ${{ secrets.HEARTBEAT_TOKEN }}
+      AGENT_TOKEN: ${{ secrets.AGENT_TOKEN }}
+      COMMAND_HMAC_KEY: ${{ secrets.COMMAND_HMAC_KEY }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      PRODUCT_READ_TOKEN: ${{ secrets.PRODUCT_READ_TOKEN }}
+      UPDATER_APP_ID: ${{ secrets.UPDATER_APP_ID }}
+      UPDATER_APP_KEY: ${{ secrets.UPDATER_APP_KEY }}
+      ARTIFACT_PUBLISH_TOKEN: ${{ secrets.ARTIFACT_PUBLISH_TOKEN }}

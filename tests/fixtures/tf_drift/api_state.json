@@ -1,0 +1,66 @@
+{
+  "_comment": "State as provider 5.28.1 reads it back from the Cloudflare API (a live deployment, `mcctl plan` of 2026-11-02, r2_lock_days = 7; ids and sizes are placeholders). tests/test_tf_drift.py compares the configuration with it: any configured value the API reads back differently is a perpetual in-place update.",
+  "cloudflare_d1_database": {
+    "account_id": "0123456789abcdef0123456789abcdef",
+    "created_at": "2026-10-01T10:00:00Z",
+    "fields": null,
+    "file_size": 12288,
+    "id": "00000000-0000-4000-8000-000000000001",
+    "jurisdiction": null,
+    "name": "lh-watchdog",
+    "num_tables": 3,
+    "primary_location_hint": null,
+    "read_replication": { "mode": "disabled" },
+    "uuid": "00000000-0000-4000-8000-000000000001",
+    "version": "production"
+  },
+  "cloudflare_r2_bucket_lock": {
+    "rules": [
+      {
+        "condition": { "date": null, "max_age_seconds": null, "type": "Indefinite" },
+        "enabled": true,
+        "id": "restic-config-indefinite",
+        "prefix": "config"
+      },
+      {
+        "condition": { "date": null, "max_age_seconds": 604800, "type": "Age" },
+        "enabled": true,
+        "id": "restic-data-7d",
+        "prefix": "data/"
+      },
+      {
+        "condition": { "date": null, "max_age_seconds": null, "type": "Indefinite" },
+        "enabled": true,
+        "id": "restic-keys-indefinite",
+        "prefix": "keys/"
+      },
+      {
+        "condition": { "date": null, "max_age_seconds": 604800, "type": "Age" },
+        "enabled": true,
+        "id": "restic-snapshots-7d",
+        "prefix": "snapshots/"
+      }
+    ]
+  },
+  "cloudflare_workers_script": {
+    "observability": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "issues": null,
+      "logs": {
+        "destinations": null,
+        "enabled": true,
+        "head_sampling_rate": 1,
+        "invocation_logs": false,
+        "persist": true
+      },
+      "traces": {
+        "destinations": null,
+        "enabled": false,
+        "head_sampling_rate": 1,
+        "persist": true,
+        "propagation_policy": null
+      }
+    }
+  }
+}

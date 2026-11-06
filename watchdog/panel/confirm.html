@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="referrer" content="no-referrer">
+<title>Confirm panel action</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/panel.css">
+<script type="module" src="/confirm.js"></script>
+</head>
+<body class="confirm-page">
+<div class="bgfx" aria-hidden="true"></div>
+<main class="wrap confirm-wrap" id="main">
+  <div class="confirm-card">
+    <h1 id="cTitle">Confirm a panel action</h1>
+    <p class="note" id="cWho">Checking your sign-in…</p>
+    <div id="cBody"></div>
+    <div class="df confirm-actions">
+      <button class="btn" type="button" id="cCancel">Cancel</button>
+      <button class="btn danger solid" type="button" id="cOk" disabled>Confirm</button>
+    </div>
+    <p class="note" id="cStatus" role="status" aria-live="polite"></p>
+  </div>
+</main>
+</body>
+</html>

@@ -1,0 +1,11 @@
+# Overlay for plugins/AxGraves/config.yml (v1.2). Keys verified in keys/<minecraft_version>/plugin-AxGraves.txt.
+# A grave (the player's head + a hologram) keeps the items and XP where a player died.
+# 15 minutes to get back (the plugin's 180 s is short for a long walk); then the items drop as in vanilla.
+despawn-time-seconds: 900
+# Only the owner (and admins) open or shift-click-empty a grave: no looting a friend's death.
+interact-only-own: true
+instant-pickup-only-own: true
+# Versions are pinned by the lock (scripts/update_lock.py): no update checks or join messages.
+update-notifier:
+  enabled: false
+  on-join: false

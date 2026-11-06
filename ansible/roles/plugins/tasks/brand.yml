@@ -1,0 +1,111 @@
+# P17: the in-house plugin mc-brand (plugin/mc-brand: built reproducibly by scripts/build_plugin.py, the jar
+# committed and its sha256 pinned in group_vars mc_brand_jar_sha256) and the server-list icon (the product's,
+# scripts/brand_art.py, pinned mc_brand_icon_sha256, asserted only then; or the config repo's branding.icon,
+# rendered next to the inventory and checked by mcctl render). v1.2: the resource pack's sha1 is rendered too
+# (mc_brand_pack_sha1, from the config's art). The server reads both only at start-up: a change restarts it. branding.enabled: false removes the
+# jar and the icon (the players' /hud choices and glass serials live in their player data and stay).
+- name: Install the mc-brand plugin and the server icon
+  when: mc_brand_enabled | bool
+  block:
+    - name: Copy the mc-brand jar
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../plugin/mc-brand/dist/mc-brand.jar"
+        dest: "{{ mc_server_dir }}/plugins/mc-brand.jar"
+        owner: minecraft
+        group: minecraft
+        mode: "0640"
+      notify: restart minecraft
+
+    - name: Read the installed jar's sha256
+      ansible.builtin.stat:
+        path: "{{ mc_server_dir }}/plugins/mc-brand.jar"
+        checksum_algorithm: sha256
+      register: brand_jar
+
+    - name: The jar is the pinned build (a mismatch fails the deploy)
+      ansible.builtin.assert:
+        that: brand_jar.stat.checksum == mc_brand_jar_sha256
+        fail_msg: >-
+          plugins/mc-brand.jar has sha256 {{ brand_jar.stat.checksum }}, the product pins
+          {{ mc_brand_jar_sha256 }} (run scripts/build_plugin.py check in the product checkout).
+        quiet: true
+
+    # minecraft-owned like every directory of the server dir (mc-restore-apply, running as minecraft, replaces
+    # the whole tree; a root-owned directory would make the restore fail); the settings file inside is root's.
+    - name: Create the plugin's data folder (it writes nothing there)
+      ansible.builtin.file:
+        path: "{{ mc_server_dir }}/plugins/mc-brand"
+        state: directory
+        owner: minecraft
+        group: minecraft
+        mode: "0750"
+
+    - name: Write the plugin's settings (read-only for the plugin)
+      ansible.builtin.template:
+        src: mc-brand.yml.j2
+        dest: "{{ mc_server_dir }}/plugins/mc-brand/config.yml"
+        owner: root
+        group: minecraft
+        mode: "0640"
+      notify: restart minecraft
+
+    - name: Copy the server-list icon (read-only for the server)
+      ansible.builtin.copy:
+        src: >-
+          {{ (inventory_dir ~ '/' ~ mc_brand_icon_file) if mc_brand_icon_file | default('')
+             else (playbook_dir ~ '/../plugin/mc-brand/dist/server-icon.png') }}
+        dest: "{{ mc_server_dir }}/server-icon.png"
+        owner: root
+        group: minecraft
+        mode: "0640"
+      notify: restart minecraft
+
+    - name: Read the installed icon's sha256
+      ansible.builtin.stat:
+        path: "{{ mc_server_dir }}/server-icon.png"
+        checksum_algorithm: sha256
+      register: brand_icon
+      when: not (mc_brand_icon_file | default(''))
+
+    - name: The product's icon is the pinned one (a config repo's own icon is checked by mcctl render)
+      ansible.builtin.assert:
+        that: brand_icon.stat.checksum == mc_brand_icon_sha256
+        fail_msg: >-
+          server-icon.png has sha256 {{ brand_icon.stat.checksum }}, the product pins {{ mc_brand_icon_sha256 }}
+          (run scripts/brand_art.py check in the product checkout).
+        quiet: true
+      when: not (mc_brand_icon_file | default(''))
+
+    # The pack itself is uploaded by Terraform (watchdog Worker static assets) and served on the watchdog host;
+    # a deploy can't upload it. Warn (no change, no failure: players without it see the plain potion) when the
+    # URL doesn't answer, e.g. before the first `mcctl apply` after turning resource_pack on.
+    - name: Check the resource pack is served (server.properties offers it to players)
+      ansible.builtin.uri:
+        url: "{{ mc_watchdog_url }}/pack/{{ mc_brand_pack_sha1 }}.zip"
+        method: HEAD
+        timeout: 10
+        status_code: [200]
+      register: brand_pack_url
+      failed_when: false
+      changed_when: false
+      when: mc_brand_pack.enabled | bool
+
+    - name: Warn that the resource pack isn't served yet
+      ansible.builtin.debug:
+        msg: >-
+          WARNING: {{ mc_watchdog_url }}/pack/{{ mc_brand_pack_sha1 }}.zip answered
+          {{ brand_pack_url.status | default('nothing') }}: run `mcctl apply` (Terraform uploads the pack with the
+          watchdog Worker). Players are offered it anyway and see the plain potion until then.
+      when: mc_brand_pack.enabled | bool and brand_pack_url.status | default(0) != 200
+
+- name: Remove the mc-brand plugin and the server icon (branding.enabled is false)
+  when: not (mc_brand_enabled | bool)
+  block:
+    - name: Remove the mc-brand jar and the icon
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ mc_server_dir }}/plugins/mc-brand.jar"
+        - "{{ mc_server_dir }}/server-icon.png"
+      notify: restart minecraft

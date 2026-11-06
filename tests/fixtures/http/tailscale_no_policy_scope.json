@@ -1,0 +1,38 @@
+{
+  "_source": "Shaped from Tailscale KB 1215 (OAuth clients: token endpoint and example response) and the API's GET /tailnet/{tailnet}/acl, 2026-10-31.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://api.tailscale.com/api/v2/oauth/token"
+      },
+      "response": {
+        "body": {
+          "access_token": "tskey-api-test-access-token",
+          "expires_in": 3600,
+          "scope": "auth_keys devices:core:read devices:posture_attributes federated_keys policy_file",
+          "token_type": "Bearer"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.tailscale.com/api/v2/tailnet/-/acl"
+      },
+      "response": {
+        "body": {
+          "message": "calling actor does not have enough permissions to perform this function"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    }
+  ]
+}

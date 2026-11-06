@@ -1,0 +1,20 @@
+# {{ ansible_managed }}
+# The panel's plugin switch (P10, scripts/mc_panel.py apply-plugins): moves the jars named in plugins.lock.yml
+# between plugins/ and plugins/disabled/ (Paper doesn't load subdirectories) as {{ plugins_disabled_file }} says.
+# Runs as minecraft (the server dir's owner), no credentials, no network; may write only plugins/. Only root and
+# {{ mc_ops_user }} (polkit, base role) may start it; mc-agent restarts the server afterwards.
+[Unit]
+Description=Apply the panel's plugin switches (move locked jars to/from plugins/disabled)
+
+[Service]
+Type=oneshot
+User=minecraft
+Group=minecraft
+UMask=0027
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart={{ mc_bin_dir }}/mc_panel.py apply-plugins
+ReadWritePaths={{ mc_server_dir }}/plugins
+PrivateNetwork=true
+# Sandbox (design §7): the shared set, see ansible/group_vars/all/main.yml.
+{{ mc_systemd_sandbox | join('\n') }}
+MemoryDenyWriteExecute=true

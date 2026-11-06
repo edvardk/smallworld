@@ -1,0 +1,25 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Minecraft health check and self-heal (MSPT/TPS/GC -> watchdog heartbeat, Discord)
+After=minecraft.service
+# Never on a box `mcctl migrate` fenced: another box owns the world (removed only by mcctl's unfence).
+ConditionPathExists=!{{ mc_state_dir }}/fenced
+
+[Service]
+Type=oneshot
+# Not minecraft: code in the JVM must not be able to read this process's environment (the tokens).
+User={{ mc_ops_user }}
+Group={{ mc_ops_user }}
+SupplementaryGroups=minecraft
+EnvironmentFile={{ mc_etc_dir }}/health.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+StateDirectory=mc-health
+ExecStart={{ mc_bin_dir }}/health.py
+# P13: timely priority (has a deadline; the JVM still wins 10:1), see mc_timely_priority.
+{{ mc_timely_priority | join('\n') }}
+{% if mc_helper_cpus %}
+AllowedCPUs={{ mc_helper_cpus }}
+{% endif %}
+# Sandbox (design §7): the shared set, see ansible/group_vars/all/main.yml.
+{{ mc_systemd_sandbox | join('\n') }}
+MemoryDenyWriteExecute=true

@@ -1,0 +1,12 @@
+# Bench-only probe for scripts/bench_telemetry.py (never deployed): records every tick's duration.
+name: tickprobe
+version: 1.0.0
+main: io.github.edvardk.tickprobe.TickProbe
+api-version: '1.13'
+commands:
+  tickprobe:
+    description: reset | dump <file>
+    permission: tickprobe.use
+permissions:
+  tickprobe.use:
+    default: op

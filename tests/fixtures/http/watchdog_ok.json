@@ -1,0 +1,46 @@
+{
+  "_source": "Shaped from watchdog/worker.js's GET /status (this repo), 2026-10-31.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://hb.mc.tests.mcctl.internal/status"
+      },
+      "response": {
+        "body": {
+          "ok": true,
+          "last_run": "2026-10-31T11:58:00.000Z",
+          "last_run_age_s": 120,
+          "maintenance": null,
+          "checks": {
+            "health": {
+              "state": "ok",
+              "last_ping": "2026-10-31T11:57:00.000Z",
+              "last_ok": "2026-10-31T11:57:00.000Z",
+              "age_s": 180
+            },
+            "backup": {
+              "state": "ok",
+              "last_ping": "2026-10-31T11:05:00.000Z",
+              "last_ok": "2026-10-31T11:05:00.000Z",
+              "age_s": 3300
+            }
+          },
+          "probes": {
+            "v4": {
+              "ok": true,
+              "last_ok": "2026-10-31T11:58:00.000Z",
+              "failed_runs": 0,
+              "error": "",
+              "version": "Purpur 26.3"
+            }
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ]
+}

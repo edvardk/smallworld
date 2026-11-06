@@ -1,0 +1,38 @@
+# {{ ansible_managed }}
+# v1.2 world library: `worlds.py --panel` runs the request mc-agent wrote to {{ mc_state_dir }}/world-request.json
+# (world_create, world_switch, world_delete from the panel's confirmation host; the agent checked it first and
+# worlds.py checks it again). A switch: stop -> archive the active world (a restic snapshot tagged world-archive +
+# world:<name>, the safety snapshot) -> fetch the target archive into {{ mc_restore_dir }}/world-staging ->
+# mc-world-apply.service swaps the world folders as minecraft -> start -> verify. Holds restore.lock throughout.
+# Runs as {{ mc_ops_user }} with the restic credentials, like mc-restore@ (same read capability for the archive,
+# same hidden paths); never as root, never as minecraft. A fixed unit: polkit allows {{ mc_ops_user }} `start`.
+[Unit]
+Description=World library: create, switch or delete a world (panel; the active world is archived first)
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=!{{ mc_state_dir }}/fenced
+
+[Service]
+Type=oneshot
+User={{ mc_ops_user }}
+Group={{ mc_ops_user }}
+SupplementaryGroups=minecraft
+EnvironmentFile={{ mc_etc_dir }}/restic.env
+Environment=RESTIC_CACHE_DIR={{ backups_cache_dir }} PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+CacheDirectory=mc-restic
+CacheDirectoryMode=0750
+StateDirectory=mc-snapshots
+StateDirectoryMode=0750
+ExecStart={{ mc_bin_dir }}/worlds.py --panel
+TimeoutStartSec=2h
+# restore.lock, the maintenance/admin-stopped markers and the request; the fetched archive before it is applied.
+ReadWritePaths={{ mc_state_dir }} {{ mc_restore_dir }}
+Nice=5
+OOMScoreAdjust=500
+# Sandbox (design §7): the shared set, see ansible/group_vars/all/main.yml.
+{{ mc_systemd_sandbox | join('\n') }}
+MemoryDenyWriteExecute=true
+# As mc-backup: read any world file for the archive (the JVM writes some 0600), nothing else.
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+AmbientCapabilities=CAP_DAC_READ_SEARCH
+InaccessiblePaths={{ backups_inaccessible_paths | join(' ') }}

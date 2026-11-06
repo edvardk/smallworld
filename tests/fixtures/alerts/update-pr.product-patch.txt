@@ -1,0 +1,5 @@
+**What changed:** the product v1.2.0 -> v1.2.1 (example-owner/example-product@aaaaaaaaaaaa). A patch release (fixes only).
+
+**What it means for players:** usually nothing they notice; if the deploy changes a setting that needs a restart, the server restarts once with an in-game countdown.
+
+**What to do:** Nothing: it merges by itself once `server / gate` passes (automation.auto_merge builds+patch), and the merge deploys.

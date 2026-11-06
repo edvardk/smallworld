@@ -1,0 +1,2 @@
+# Only needed the first time (bootstrap). Never stored: comes from $TS_AUTHKEY.
+tailscale_auth_key: ""

@@ -1,0 +1,5 @@
+⚠️ **Security updates are waiting for a reboot (4 days now)**
+**Impact:** Nothing for players yet; the host runs without the latest security fixes until it reboots.
+**Likely cause:** The nightly reboot window never found the server empty, and a reboot is never forced while players are online.
+**What to do:** Reboot by hand when nobody minds a few minutes' break: `sudo systemctl reboot` on the box (the server stops gracefully and starts again on boot).
+**Details:** pending for 4 days; reminder at most once a day

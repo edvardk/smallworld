@@ -1,0 +1,4 @@
+net.minecraft.server.rcon.thread.GenericThread	Thread {} ({}) failed to exit after {} second(s)
+net.minecraft.server.rcon.thread.GenericThread	Thread {} started
+net.minecraft.server.rcon.thread.GenericThread	Thread {} stopped
+net.minecraft.server.rcon.thread.RconClient	Thread {} shutting down

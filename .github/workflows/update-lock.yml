@@ -1,0 +1,91 @@
+name: update-lock
+
+# Bumps the product's reference locks (template/server.lock.yml, template/plugins.lock.yml: what new config
+# repos start with and what server-config/keys/ is checked against), regenerates examples/config-repo, and
+# opens a PR. Changing the Minecraft version is a human decision. Config repos get their own weekly `update`
+# task (P11).
+# Needs: "Allow GitHub Actions to create and approve pull requests" (`mcctl product-setup` sets it).
+on:
+  workflow_dispatch:
+    inputs:
+      minecraft_version:
+        description: Target Minecraft version (blank = latest builds for the pinned version)
+        required: false
+        default: ""
+      allow_paper:
+        description: Allow falling back to Paper if Purpur has no successful build (default fails)
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write   # dispatch ci.yml and e2e-mock.yml on the PR branch (GITHUB_TOKEN PRs don't trigger pull_request)
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements/validate.txt
+
+      - name: Resolve latest builds
+        env:
+          MC_VERSION: ${{ inputs.minecraft_version }}
+          ALLOW_PAPER: ${{ inputs.allow_paper }}
+        shell: bash
+        run: |
+          set -o pipefail
+          pip install --require-hashes --no-deps -r requirements/validate.txt
+          extra=()
+          if [ "$ALLOW_PAPER" = "true" ]; then extra+=(--allow-paper); fi
+          python scripts/update_lock.py ${MC_VERSION:+--minecraft-version "$MC_VERSION"} "${extra[@]}" | tee summary.txt
+          python scripts/sync_example.py
+
+      # v1.2: re-measure the seed catalogue on the new build (the panel's "verified on <version>" badge). A claim
+      # that no longer holds is reported here and fails the PR's ci `seeds` job: drop or fix it in worlds/seeds.yml.
+      - name: Re-verify the seed catalogue
+        run: |
+          if git diff --quiet -- template/server.lock.yml; then echo "Server build unchanged"; exit 0; fi
+          python scripts/seed_check.py verify --cache "$RUNNER_TEMP/build-plugin" \
+            || echo "::warning::a seed catalogue claim no longer holds on the new build (see above)"
+
+      - name: Open PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- template examples watchdog/panel/seeds.json; then echo "Already up to date"; exit 0; fi
+          branch="update-lock/$(date -u +%Y%m%d-%H%M%S)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add template examples watchdog/panel/seeds.json
+          git commit -m "chore: update lock files"
+          git push -u origin "$branch"
+          # Both are required checks of main's ruleset (mcctl product-setup). A new server build: the whole e2e
+          # (scope full), no benches (dispatch e2e-mock with bench=true by hand if the build looks suspect).
+          gh workflow run ci.yml --ref "$branch"
+          gh workflow run e2e-mock.yml --ref "$branch" -f scope=full -f bench=false
+          {
+            echo "Automated lock update. ci and e2e-mock were dispatched manually on this branch (PRs opened by"
+            echo "GITHUB_TOKEN don't trigger pull_request workflows): check the runs in the Actions tab."
+            echo
+            echo "Before merging:"
+            echo
+            echo '- If minecraft_version changed: regenerate config keys (scripts/config_keys.py), check the overlays still validate,'
+            echo '  and set minecraft.version in template/server.yml (then run scripts/sync_example.py).'
+            echo '- If java_major changed: bump temurin_version in ansible/group_vars/all/main.yml.'
+            echo
+            echo '```'; cat summary.txt; echo '```'
+          } > body.md
+          gh pr create --title "Update lock files" --body-file body.md

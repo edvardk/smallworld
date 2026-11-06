@@ -1,0 +1,5 @@
+🔴 **The backup failed**
+**Impact:** Players are not affected, but recent progress is not backed up: a crash or mistake now could lose it.
+**Likely cause:** It reported: backup failed: restic exit 1
+**What to do:** `mcctl backup now` to retry; on the box: `journalctl -u mc-backup -n 100`; check the R2 bucket and its credentials (`mcctl doctor`).
+**Details:** backup /fail heartbeat

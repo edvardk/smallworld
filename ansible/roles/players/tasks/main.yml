@@ -1,0 +1,51 @@
+# players.yml from the config repo -> whitelist.json / ops.json on the server (design §5 "Whitelist → Git" (4),
+# P10). What a deploy leaves on the server is Git + the panel's pending adds - its pending removes, so a deploy
+# that races the panel's pull request can't undo a change made in the panel. Ops come from Git only. Applied
+# live over RCON when the server runs (`whitelist reload`, op/deop), compared by UUID (and op level), so the
+# server's own rewrites of those files never count as a change.
+- name: Read the panel's pending whitelist changes
+  ansible.builtin.slurp:
+    src: "{{ players_pending_file }}"
+  register: players_pending_raw
+  failed_when: false
+  when: mc_panel_mode == 'cloudflare'
+
+- name: Remember them
+  ansible.builtin.set_fact:
+    players_pending: >-
+      {{ (players_pending_raw.content | b64decode | from_json).entries | default([])
+         if players_pending_raw.content is defined else [] }}
+
+- name: Write the players this deploy wants (Git + pending)
+  ansible.builtin.copy:
+    dest: "{{ players_desired_file }}"
+    content: |
+      {{ {'whitelist': mc_players_whitelist, 'ops': mc_players_ops, 'pending': players_pending} | to_nice_json }}
+    owner: root
+    group: minecraft
+    mode: "0640"
+
+- name: Is the server running?
+  ansible.builtin.systemd_service:
+    name: minecraft.service
+  register: players_server
+
+- name: Is the server admin-stopped?
+  ansible.builtin.stat:
+    path: "{{ mc_state_dir }}/admin-stopped"
+  register: players_admin_stopped
+
+- name: Reconcile whitelist.json and ops.json
+  ansible.builtin.command: >-
+    {{ mc_bin_dir }}/mc_panel.py reconcile-players {{ players_desired_file }}
+    {{ '--live' if players_server.status.ActiveState | default('') == 'active'
+                   and not players_admin_stopped.stat.exists else '' }}
+  become: true
+  become_user: minecraft
+  register: players_reconcile
+  changed_when: players_reconcile.stdout.startswith('CHANGED')
+
+- name: Show what the reconcile changed
+  ansible.builtin.debug:
+    msg: "{{ players_reconcile.stdout }}"
+  when: players_reconcile is changed  # noqa: no-handler

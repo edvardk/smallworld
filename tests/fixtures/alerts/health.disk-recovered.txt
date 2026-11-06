@@ -1,0 +1,4 @@
+✅ **Disk space is fine again**
+**Impact:** The server's disk is below 85% full.
+**What to do:** No action needed - informational.
+**Details:** it was over for 1 min; now 60%

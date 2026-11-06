@@ -1,0 +1,47 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Minecraft server ({{ server_lock.server.project }} {{ server_lock.server.version }} build {{ server_lock.server.build }})
+Wants=network-online.target
+After=network-online.target systemd-tmpfiles-setup.service
+# Never on a box `mcctl migrate` fenced: another box owns the world (removed only by mcctl's unfence).
+ConditionPathExists=!{{ mc_state_dir }}/fenced
+
+[Service]
+Type=simple
+User=minecraft
+Group=minecraft
+WorkingDirectory={{ mc_server_dir }}
+UMask=0027
+ExecStart={{ mc_java_bin }} -Xms{{ mc_heap_mb }}M -Xmx{{ mc_heap_mb }}M {{ mc_jvm_flags | join(' ') }} -Dlog4j.configurationFile={{ mc_root }}/log4j2.xml -jar server.jar --nogui
+# Graceful: save-all flush + stop over RCON, then wait for the JVM ($MAINPID) to exit.
+ExecStop={{ mc_bin_dir }}/mc_rcon.py stop
+Environment=PYTHONDONTWRITEBYTECODE=1
+TimeoutStopSec=120
+SuccessExitStatus=0 143
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=65535
+
+ReadWritePaths={{ mc_server_dir }}
+# P13: tmpfs hand-off to mc-agent (the mc-telemetry plugin's snapshots) and the GC log: no telemetry disk IO.
+# Kept across restarts (mc-agent reads the last snapshots; the JVM's -Xlog needs the directory at start).
+RuntimeDirectory=mc-telemetry
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+# P13 tail latency: the JVM wins every CPU/IO contention against the product's helpers (mc_helper_priority).
+CPUWeight=1000
+IOWeight=1000
+IOAccounting=yes
+{% if mc_jvm_cpus %}
+# P16 (performance.cpu_affinity split): the JVM on CPUs 1..n-1, the product's helpers on CPU 0.
+AllowedCPUs={{ mc_jvm_cpus }}
+{% endif %}
+# Sandbox (design §7): the shared set, see ansible/group_vars/all/main.yml. No MemoryDenyWriteExecute: the
+# JIT needs writable+executable memory. Netlink for the JDK's/Netty's interface lookups. A system call
+# outside @system-service fails with EPERM instead of killing the JVM (spark's async-profiler needs
+# perf_event_open and falls back to its Java sampler).
+{{ mc_systemd_sandbox | join('\n') }}
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target

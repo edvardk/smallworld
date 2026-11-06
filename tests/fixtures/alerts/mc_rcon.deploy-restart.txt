@@ -1,0 +1,5 @@
+ℹ️ **The server restarts in 60 s for a config deploy**
+**Impact:** 3 player(s) online are warned in-game and disconnected for about a minute; they can rejoin as soon as it is back.
+**Likely cause:** A deploy changed a setting that needs a restart.
+**What to do:** No action needed - informational.
+**Details:** in-game countdown 60 s

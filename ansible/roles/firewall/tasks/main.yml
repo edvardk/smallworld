@@ -1,0 +1,63 @@
+- name: Refuse to close public SSH unless Tailscale is up
+  ansible.builtin.command: tailscale status --json
+  register: firewall_ts
+  changed_when: false
+  failed_when: >-
+    firewall_ts.rc != 0 or (firewall_ts.stdout | from_json).BackendState != 'Running'
+
+- name: Remove ufw (nftables is the single source of truth)
+  ansible.builtin.apt:
+    name: ufw
+    state: absent
+    purge: true
+
+- name: Install nftables
+  ansible.builtin.apt:
+    name: nftables
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# The stock unit's ExecStop is `nft flush ruleset`, which would also wipe Tailscale's own tables
+# (and with them the tailnet path we deploy over) on every stop/restart. Only remove our table.
+- name: Create nftables.service drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/nftables.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Stop nftables.service without flushing other tables
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/nftables.service.d/override.conf
+    content: |
+      # Managed by Ansible (firewall role)
+      [Service]
+      ExecStop=
+      ExecStop=-/usr/sbin/nft delete table inet mc_filter
+    owner: root
+    group: root
+    mode: "0644"
+  register: firewall_override
+
+- name: Reload systemd after the nftables override
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: firewall_override.changed  # noqa: no-handler
+
+- name: Write ruleset
+  ansible.builtin.template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: nft -c -f %s
+  notify: Reload nftables
+
+- name: Enable nftables
+  ansible.builtin.systemd_service:
+    name: nftables
+    enabled: true
+    state: started

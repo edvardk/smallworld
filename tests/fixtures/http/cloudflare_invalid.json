@@ -1,0 +1,51 @@
+{
+  "_source": "Shaped from the Cloudflare API v4 reference (verify token, list zones, list R2 buckets, list Workers scripts), 2026-10-31; ids are fake.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/user/tokens/verify"
+      },
+      "response": {
+        "body": {
+          "errors": [
+            {
+              "code": 1000,
+              "message": "Invalid API Token"
+            }
+          ],
+          "messages": [],
+          "result": null,
+          "success": false
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/zones?name=tests.mcctl.internal"
+      },
+      "response": {
+        "body": {
+          "errors": [
+            {
+              "code": 9109,
+              "message": "Invalid access token"
+            }
+          ],
+          "messages": [],
+          "result": null,
+          "success": false
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    }
+  ]
+}

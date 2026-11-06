@@ -1,0 +1,48 @@
+// {{ ansible_managed }}
+// The ops user ({{ mc_ops_user }}) may take exactly these systemd actions and nothing else (design §5
+// "Privilege model", SECURITY.md "Privilege separation"). systemd passes the unit and the verb to polkit with
+// org.freedesktop.systemd1.manage-units (systemd's polkit documentation). ES5 only: polkit's JS engine.
+//   minecraft.service        restart, kill  health.py's self-heal (kill = SIGQUIT thread dump first)
+//                            start, stop    mc-agent: the panel's start/stop/restart (P8, signed commands)
+//   mc-backup.service        start          mc-agent: the panel's "back up now"
+//   mc-restore-apply.service start          restore.py: copy a fetched snapshot into the server dir
+//   mc-plugins-apply.service start          mc-agent: the panel's plugin switch (P10; moves locked jars only)
+//   mc-restore@<hex>.service start          mc-agent: the panel's restore (P10); the instance must be a restic
+//                                           snapshot id (8-64 lowercase hex), restore.py checks it again
+//   mc-world.service         start          mc-agent: the panel's world library (v1.2); worlds.py runs the
+//                                           request the agent wrote and checks it again (archive first)
+//   mc-world-apply.service   start          worlds.py: swap the world folders (as minecraft, server stopped)
+//   {{ "%-24s" | format(mc_reboot_target) }} start          mc-reboot-gate: reboot for pending updates when nobody
+//                                           is online (P11; the e2e run uses a harmless target)
+// None of this adds power: the RCON password the ops user reads can stop the server anyway, the apply units
+// only copy or move what is already on the box (they check the server is stopped / the jar is in the lock),
+// a restore and a world switch take a safety snapshot first, and a reboot is a (graceful) stop + start of
+// everything.
+var MC_OPS_ALLOWED = {
+    "minecraft.service": ["restart", "kill", "start", "stop"],
+    "mc-backup.service": ["start"],
+    "mc-restore-apply.service": ["start"],
+    "mc-plugins-apply.service": ["start"],
+    "mc-world.service": ["start"],
+    "mc-world-apply.service": ["start"],
+    "{{ mc_reboot_target }}": ["start"]
+};
+var MC_OPS_RESTORE = /^mc-restore@[0-9a-f]{8,64}\.service$/;
+
+polkit.addRule(function(action, subject) {
+    if (action.id != "org.freedesktop.systemd1.manage-units" || subject.user != "{{ mc_ops_user }}") {
+        return polkit.Result.NOT_HANDLED;
+    }
+    var unit = action.lookup("unit");
+    var verb = action.lookup("verb");
+    if (typeof unit == "string" && MC_OPS_RESTORE.test(unit) && verb == "start") {
+        return polkit.Result.YES;
+    }
+    if (!Object.prototype.hasOwnProperty.call(MC_OPS_ALLOWED, unit)) {
+        return polkit.Result.NOT_HANDLED;
+    }
+    if (MC_OPS_ALLOWED[unit].indexOf(verb) >= 0) {
+        return polkit.Result.YES;
+    }
+    return polkit.Result.NOT_HANDLED;
+});

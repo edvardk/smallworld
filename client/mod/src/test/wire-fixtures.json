@@ -1,0 +1,29 @@
+{
+  "protocol": 1,
+  "max_utf_bytes": 64,
+  "cases": [
+    {"channel": "hello", "input": {"mod_version": "1.0.0", "pack": "26.3-0123456789ab", "protocol": 1, "tier": "medium"}, "hex": "0105312e302e30066d656469756d1132362e332d303132333435363738396162", "decoded": {"mod_version": "1.0.0", "pack": "26.3-0123456789ab", "protocol": 1, "tier": "medium"}},
+    {"channel": "hello", "input": {"mod_version": "1.0.0", "pack": "", "protocol": 1, "tier": "none"}, "hex": "0105312e302e30046e6f6e6500", "decoded": {"mod_version": "1.0.0", "pack": "", "protocol": 1, "tier": "none"}},
+    {"channel": "hello", "input": {"mod_version": "1.0.0-\u00fc\u20ac", "pack": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "protocol": 1, "tier": "maximum"}, "hex": "010b312e302e302dc3bce282ac076d6178696d756d4078787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878", "decoded": {"mod_version": "1.0.0-\u00fc\u20ac", "pack": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "protocol": 1, "tier": "maximum"}},
+    {"channel": "fps", "input": {"fps": 0}, "hex": "00", "decoded": {"fps": 0}},
+    {"channel": "fps", "input": {"fps": 1}, "hex": "01", "decoded": {"fps": 1}},
+    {"channel": "fps", "input": {"fps": 127}, "hex": "7f", "decoded": {"fps": 127}},
+    {"channel": "fps", "input": {"fps": 128}, "hex": "8001", "decoded": {"fps": 128}},
+    {"channel": "fps", "input": {"fps": 300}, "hex": "ac02", "decoded": {"fps": 300}},
+    {"channel": "fps", "input": {"fps": 16384}, "hex": "904e", "decoded": {"fps": 10000}},
+    {"channel": "fps", "input": {"fps": 20000}, "hex": "904e", "decoded": {"fps": 10000}},
+    {"channel": "fps", "input": {"fps": -5}, "hex": "00", "decoded": {"fps": 0}},
+    {"channel": "config", "input": {"flags": 1, "interval_seconds": 5, "protocol": 1}, "hex": "010501", "decoded": {"clamped_interval": 5, "flags": 1, "hud": true, "interval_seconds": 5, "protocol": 1}},
+    {"channel": "config", "input": {"flags": 0, "interval_seconds": 2, "protocol": 1}, "hex": "010200", "decoded": {"clamped_interval": 2, "flags": 0, "hud": false, "interval_seconds": 2, "protocol": 1}},
+    {"channel": "config", "input": {"flags": 1, "interval_seconds": 1, "protocol": 1}, "hex": "010101", "decoded": {"clamped_interval": 2, "flags": 1, "hud": true, "interval_seconds": 1, "protocol": 1}},
+    {"channel": "config", "input": {"flags": 3, "interval_seconds": 300, "protocol": 1}, "hex": "01ac0203", "decoded": {"clamped_interval": 60, "flags": 3, "hud": true, "interval_seconds": 300, "protocol": 1}},
+    {"channel": "config", "hex": "0105010203", "decoded": {"clamped_interval": 5, "flags": 1, "hud": true, "interval_seconds": 5, "protocol": 1}}
+  ],
+  "malformed": [
+    {"channel": "fps", "hex": ""},
+    {"channel": "fps", "hex": "8080808080"},
+    {"channel": "config", "hex": "0105"},
+    {"channel": "hello", "hex": "0105312e302e30"},
+    {"channel": "hello", "hex": "014178787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878780000"}
+  ]
+}

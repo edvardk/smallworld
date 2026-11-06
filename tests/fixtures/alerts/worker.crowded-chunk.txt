@@ -1,0 +1,5 @@
+⚠️ **A crowded chunk is slowing the server: 412 entities in one spot**
+**Impact:** Every tick has to move and collide them all; with more it turns into lag for everyone. 3 player(s) online.
+**Likely cause:** In world chunk 12,-3 (blocks 192..207, -48..-33) there are 412 entities (40 villagers, 220 dropped items) and 18 tile entities: usually an animal pen, a mob farm's collection area or items piling up.
+**What to do:** Spread the pen or farm over more chunks or add floor space; collect dropped items quickly (hoppers next to the kill spot). Vanilla cramming kills mobs above 24 per block. The panel's Experience tab lists the busiest chunks.
+**Details:** alert at 300 entities per chunk (monitoring.alerts.chunk_entities); again after 6 h if still crowded

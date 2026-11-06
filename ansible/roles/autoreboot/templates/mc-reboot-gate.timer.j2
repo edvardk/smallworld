@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Check every 30 minutes whether a pending reboot may happen now (reboot_gate.py decides)
+
+[Timer]
+OnBootSec=3min
+OnCalendar=*-*-* *:00,30:00
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

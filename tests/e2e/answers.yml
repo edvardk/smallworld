@@ -1,0 +1,45 @@
+# Answers for `mcctl init --answers tests/e2e/answers.yml --non-interactive --mock` (tests and the e2e-mock
+# workflow). Keys are the wizard's question keys (mcctl/init.py); secrets are never here: with --mock each
+# one is a fixed fake value unless its .env variable is set in the environment.
+dir: ~/mc-config
+repo: mcctl-e2e/e2e-mc-config
+name: e2e
+admin_name: E2E Admin
+tailscale_login: e2e@github
+email: e2e@tests.mcctl.internal
+zone: tests.mcctl.internal
+hostname: mc
+timezone: Europe/Dublin
+minecraft_version: "26.3"
+accept_eula: true
+border_overworld: 5000
+border_nether: 1250
+discord: true
+# P14: Discord slash commands (the mock's Discord application; the bot token is a fixed fake with --mock)
+discord_commands: true
+discord_guild_id: "1300000000000000002"
+discord_channel_id: "1300000000000000003"
+discord_user_id: "1300000000000000004"
+discord_installed: true
+# P14: Dashlane is offered only when dcli is installed and logged in (never in the mock); asked once
+dashlane_store: false
+dashlane_item_saved: false
+restic_dashlane: false
+# P15: the config repo pinned behind the running product checkout (e2e-mock moves it on its third run)
+move_product_pin: "yes"
+create_repo: true
+op: E2EAdmin
+players: E2EFriend
+host_ipv4: 9.9.9.9
+host_ipv6: "2620:fe::fe"
+host_key_matches: true
+confirm_apply: e2e
+restic_password_stored: true
+api_key_revoked: true
+# P10 review / P11: the GitHub Apps created through the manifest flow (faked with --mock) are installed; asked
+# only when init can't check the installation as the App (no openssl)
+panel_app_installed: true
+updater_app_installed: true
+# Extra server.yml values (dotted path: value). The container run needs a small heap.
+set:
+  jvm.heap_mb: 1024

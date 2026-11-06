@@ -1,0 +1,179 @@
+# --- restic (pinned release binary, sha256-verified) ----------------------------------------------
+- name: Create restic directory
+  ansible.builtin.file:
+    path: "{{ backups_restic_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# v1.1: the mirror first (no_log: the request carries the agent token); a failure there just falls through.
+- name: Download restic from the artifact mirror
+  ansible.builtin.get_url:
+    url: "{{ mc_mirror_url }}/{{ restic_sha256[backups_arch] }}/restic_{{ restic_version }}_linux_{{ backups_arch }}.bz2"
+    headers:
+      Authorization: "Bearer {{ mc_secret_agent_token }}"
+    timeout: "{{ mc_mirror_timeout }}"
+    dest: "{{ backups_restic_bin }}.bz2"
+    checksum: "sha256:{{ restic_sha256[backups_arch] }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: mc_mirror_url | length > 0
+  failed_when: false
+  no_log: true
+
+- name: Download restic
+  ansible.builtin.get_url:
+    url: "https://github.com/restic/restic/releases/download/v{{ restic_version }}/restic_{{ restic_version }}_linux_{{ backups_arch }}.bz2"
+    dest: "{{ backups_restic_bin }}.bz2"
+    checksum: "sha256:{{ restic_sha256[backups_arch] }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Unpack restic
+  ansible.builtin.shell: |
+    set -eu
+    bunzip2 -c '{{ backups_restic_bin }}.bz2' > '{{ backups_restic_bin }}.tmp'
+    chmod 0755 '{{ backups_restic_bin }}.tmp'
+    mv '{{ backups_restic_bin }}.tmp' '{{ backups_restic_bin }}'
+  args:
+    creates: "{{ backups_restic_bin }}"
+
+- name: Link restic into PATH
+  ansible.builtin.file:
+    src: "{{ backups_restic_bin }}"
+    dest: /usr/local/bin/restic
+    state: link
+    force: true
+
+- name: Create restic cache directory
+  ansible.builtin.file:
+    path: "{{ backups_cache_dir }}"
+    state: directory
+    owner: "{{ mc_ops_user }}"
+    group: "{{ mc_ops_user }}"
+    mode: "0750"
+
+# --- Credentials (root-only; systemd reads them before dropping to the ops user) -------------------
+# P12 review (H2): `mcctl secrets rotate restic-key` replaces the password in Terraform (and the Actions secret)
+# before the repository knows it, so ANY deploy from then on (CI schedule, panel merge, push, mcctl) brings a password
+# the repository may not accept. Before restic.env is (re)written, restic_rekey.py (as the ops user, environment =
+# the current restic.env, stdin = the new one: never argv) checks the new environment opens the repository; if not
+# but the current one does, it runs `restic key add` with the new password on stdin. Otherwise the deploy fails here
+# and restic.env stays as it is.
+- name: Make sure the new restic password opens the repository (adds it as a key if needed)
+  ansible.builtin.command:
+    argv: [/usr/local/bin/mc-run, "-{{ mc_etc_dir }}/restic.env", "{{ mc_bin_dir }}/restic_rekey.py"]
+    stdin: "{{ lookup('ansible.builtin.template', 'restic.env.j2') }}"
+  register: backups_rekey
+  changed_when: "'KEY_ADDED' in backups_rekey.stdout"
+  failed_when: false
+  no_log: true
+
+- name: Stop unless the new restic password works (restic.env untouched)
+  ansible.builtin.assert:
+    that: backups_rekey.rc == 0
+    fail_msg: >-
+      The restic password this deploy would write doesn't open the repository, and the server's current
+      restic.env couldn't add it as a key (rc={{ backups_rekey.rc }}): {{ backups_rekey.stderr_lines | default([]) | join(' | ') }}.
+      restic.env was left as it is. Check `terraform output restic_password` against your password manager and
+      `sudo mc-restic restic key list` on the server.
+    quiet: true
+
+- name: Write restic environment file
+  ansible.builtin.template:
+    src: restic.env.j2
+    dest: "{{ mc_etc_dir }}/restic.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Install `mc-restic` helper (runs a command as the ops user with the restic credentials)
+  ansible.builtin.copy:
+    dest: /usr/local/bin/mc-restic
+    content: |
+      #!/bin/sh
+      # Usage: sudo mc-restic restic snapshots
+      #        sudo mc-restic {{ mc_bin_dir }}/restore.py --verify-into /var/tmp/restore-test
+      exec /usr/local/bin/mc-run {{ mc_etc_dir }}/restic.env "$@"
+    owner: root
+    group: root
+    mode: "0750"
+
+# --- Units (before the restore: it needs mc-restore-apply.service) ---------------------------------
+- name: Install backup units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - mc-backup.service
+    - mc-backup.timer
+    - mc-prune.service
+    - mc-prune.timer
+    - mc-restore-apply.service
+    - mc-restore@.service   # the panel's restore (P10)
+    - mc-world.service      # v1.2 world library (scripts/worlds.py --panel, as the ops user)
+    - mc-world-apply.service   # v1.2: its folder swap, as minecraft
+    - mc-backup-check.service   # the weekly backup test (v1.2; was the config repo's Monday Actions job)
+    - mc-backup-check.timer
+  register: backups_units
+
+# Now, not in a handler: restore.py below may start mc-restore-apply.service on a fresh box.
+- name: Reload systemd after unit changes
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: backups_units.changed  # noqa: no-handler
+
+# Credentials reach restic via mc-restic's EnvironmentFile=, never via `environment:` (which
+# Ansible puts on the sudo command line, visible in ps and the journal).
+- name: Check whether the restic repository exists
+  ansible.builtin.command: /usr/local/bin/mc-restic restic cat config
+  register: backups_repo
+  changed_when: false
+  failed_when: false
+
+- name: Stop unless the repository exists or is missing (rc 10)
+  ansible.builtin.assert:
+    that: backups_repo.rc in [0, 10]
+    fail_msg: >-
+      `restic cat config` failed with rc={{ backups_repo.rc }}. Only rc 10 (repository does not exist)
+      leads to `restic init`; anything else is a credentials, network or repository problem:
+      {{ backups_repo.stderr_lines | last | default('') }}
+    quiet: true
+
+- name: Initialise the restic repository
+  ansible.builtin.command: /usr/local/bin/mc-restic restic init
+  when: backups_repo.rc == 10
+  changed_when: true
+
+# --- Fresh box: put the world back before the server first starts ---------------------------------
+- name: Restore latest snapshot if there is no world yet
+  ansible.builtin.command: >-
+    /usr/local/bin/mc-restic {{ mc_bin_dir }}/restore.py --if-missing --level-name {{ mc_level_name }}
+  register: backups_restore
+  changed_when: "'RESTORED' in backups_restore.stdout"
+
+- name: Refuse to start a new world when one is expected
+  ansible.builtin.assert:
+    that: not (mc_world_expected | bool and 'NO_SNAPSHOT' in backups_restore.stdout_lines)
+    fail_msg: >-
+      There is no world on this box and the restic repository has no snapshot, but mc_world_expected
+      is true. Starting now would silently generate a NEW world. Check the R2 credentials/bucket
+      (Terraform outputs restic_repository, r2_*; MC_SECRET_* in the deploy) and `sudo mc-restic restic snapshots`. Only if a fresh world is
+      really wanted, set mc_world_expected: false for this deploy.
+    quiet: true
+
+# --- Schedules ------------------------------------------------------------------------------------
+- name: Enable backup timers
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop: [mc-backup.timer, mc-prune.timer, mc-backup-check.timer]

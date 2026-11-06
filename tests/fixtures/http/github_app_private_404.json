@@ -1,0 +1,22 @@
+{
+  "_source": "Seen live 2026-11-02 (a live re-run): `GET /apps/{slug}` for a private App (manifest public:false) with the admin's fine-grained PAT; body shaped from the GitHub REST reference. The App exists.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/apps/tests-panel"
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "message": "Not Found",
+          "documentation_url": "https://docs.github.com/rest/apps/apps#get-an-app",
+          "status": "404"
+        }
+      }
+    }
+  ]
+}

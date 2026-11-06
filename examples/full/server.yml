@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=../../schema/server.schema.json
+# A full-featured example deployment ("Lighthouse"): every optional feature switched on, with made-up values
+# that identify nobody. The tests use it as the reference deployment (rendering, branding, client, hardening);
+# start your own from template/ (`mcctl init`), not from here.
+#
+# Names: the zone and logins use the never-delegated .internal TLD and the Discord ids are invented, so nothing
+# here points at a real server. Everything not set is the product default (schema/server.schema.json).
+schema_version: 1
+name: lighthouse
+admin:
+  name: Sam
+  tailscale_login: keeper@github
+  email: keeper@lighthouse.internal
+github: {owner: lighthouse-admin, config_repo: lighthouse-mc-config, environments: true}
+state: {bucket: lighthouse-tfstate, key: minecraft-server/terraform.tfstate}
+dns: {zone: lighthouse.internal, hostname: mc}
+cloudflare: {token_owner: account}
+host:
+  # ipv4 / ipv6: set once the host exists (`mcctl config set host.ipv6 ...`).
+  tailscale_name: lighthouse-mc
+  timezone: UTC
+  resize_hint: a host with dedicated cores or more RAM
+minecraft: {version: "26.3", accept_eula: true, motd: "Lighthouse"}
+backups: {bucket: lighthouse-backups}
+jvm: {gc: zgc, heap_mb: 6144}
+performance:
+  profile: vanilla
+  view_distance: 12
+  cpu_affinity: split
+  noatime: true
+panel: {mode: cloudflare}   # access.emails: [admin.email] (derived)
+experience: {enabled: true}
+alerts: {discord: true}
+discord:
+  commands: true
+  application_id: "100000000000000001"
+  public_key: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  guild_id: "100000000000000002"
+  channel_ids: ["100000000000000003"]
+  user_ids: ["100000000000000004"]
+  helper_user_ids: ["100000000000000005"]
+deploy: {enabled: true}
+branding:
+  name: Lighthouse
+  # explicit colours (not the product defaults): navy, signal red, foam
+  colors: {text: "#F4F1EA", accent: "#E4572E", secondary: "#1D3557", subtle: "#A8DADC"}
+  motd:
+    - "&f&lLight&c&lhouse &8| &7Keep the lamp lit"
+    - "&7A small survival world by the sea"
+  icon: art/server-icon.png
+  rules:
+    - Be kind.
+    - Don't grief or steal.
+    - No cheats or hacked clients (visual mods are fine).
+    - "Have fun {glyph}"   # the pack's glyph (resource_pack.glyph); nothing for players without the pack
+  discord_invite: https://discord.gg/lighthouse
+  website: https://www.lighthouse.internal/
+  join:
+    first_join: "Welcome to {server}, {player}! {glyph} Warm up by the lamp and stay a while"
+    welcome_back: "Welcome back, {player} — last seen {ago} ago"
+  hud: {default_mode: top}
+  drink:
+    enabled: true
+    name: Cocoa Mug
+    command: cocoa                 # /cocoa
+    texture: art/cocoa-mug.png     # 16x16, in the resource pack
+    lore: ["Always warm.", "A hint of cinnamon."]
+    color: "#6F4E37"
+  resource_pack:
+    enabled: true
+    prompt: "Lighthouse textures: the cocoa mug"
+    description: "The cocoa mug and the lamp glyph of Lighthouse"
+    glyph: art/glyph.png           # 8x8
+  holograms:                       # v1.2: floating texts at spawn
+    - {x: 0, y: 72, z: 0, lines: ["Welcome to {server} {glyph}", "{players} online"], health: true}
+client: {enabled: true}

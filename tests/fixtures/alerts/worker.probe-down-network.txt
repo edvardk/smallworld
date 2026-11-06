@@ -1,0 +1,5 @@
+🔴 **Players can't reach the server over IPv6**
+**Impact:** Players on IPv6 can't connect; the other address family still works.
+**Likely cause:** The server itself still reports in (the agent's samples arrive), so the host is up: a network, firewall or DNS problem between players and the server.
+**What to do:** Check the DNS records and the firewall (`mcctl doctor`), and the hosting provider's status page.
+**Details:** no Minecraft status reply over IPv6 for 2 runs (timeout)

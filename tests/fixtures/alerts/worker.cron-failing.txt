@@ -1,0 +1,5 @@
+🔴 **The outside watchdog itself is failing**
+**Impact:** Players are not affected, but outages, late backups and lag would go unreported while it lasts.
+**Likely cause:** Its scheduled run failed: D1_ERROR: database unavailable.
+**What to do:** Usually a passing Cloudflare problem (https://www.cloudflarestatus.com). If it lasts: the Worker's logs (https://dash.cloudflare.com: Workers & Pages, the watchdog Worker, Logs).
+**Details:** watchdog cron run failed

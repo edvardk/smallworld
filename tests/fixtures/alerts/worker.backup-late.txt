@@ -1,0 +1,5 @@
+🔴 **The backup hasn't run for 95 min**
+**Impact:** Players are not affected, but recent progress is not backed up: a crash or mistake now could lose it.
+**Likely cause:** The server is up, but its backup stopped reporting (stuck, failing before it reports, or its timer is off).
+**What to do:** `mcctl backup now` to retry; on the box: `journalctl -u mc-backup -n 100`; check the R2 bucket and its credentials (`mcctl doctor`).
+**Details:** no finished backup run for 95 min (expected every 60 min)

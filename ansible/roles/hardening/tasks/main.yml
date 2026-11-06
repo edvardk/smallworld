@@ -1,0 +1,93 @@
+# --- Kernel and network sysctls --------------------------------------------------------------------
+- name: Kernel and network hardening sysctls
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/80-mc-hardening.conf
+    reload: true
+  loop: "{{ hardening_sysctls | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}={{ item.value }}"
+
+# --- Journal ----------------------------------------------------------------------------------------
+- name: Create the journald drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Persistent journal, capped
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/50-minecraft.conf
+    content: |
+      # Managed by Ansible (hardening role)
+      [Journal]
+      Storage=persistent
+      SystemMaxUse={{ hardening_journal_max_use }}
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart journald
+
+# --- OpenSSH off -----------------------------------------------------------------------------------
+# Never lock the only door: Tailscale SSH must be up before sshd goes. (Tagged `tailscale`: the e2e-mock
+# container has no tailnet and runs with --skip-tags tailscale.)
+- name: Refuse to turn sshd off unless Tailscale (with Tailscale SSH) is up
+  ansible.builtin.command: tailscale debug prefs
+  register: hardening_ts_prefs
+  changed_when: false
+  failed_when: hardening_ts_prefs.rc != 0 or not (hardening_ts_prefs.stdout | from_json).RunSSH
+  when: hardening_disable_sshd | bool
+  tags: [tailscale]
+
+- name: Is OpenSSH installed (service and socket units)?
+  ansible.builtin.stat:
+    path: "/usr/lib/systemd/system/{{ item }}"
+  loop: [ssh.service, ssh.socket]
+  register: hardening_ssh_units
+
+# Masked, not removed: break-glass from the provider console is `systemctl unmask ssh.socket ssh.service`
+# then `systemctl start ssh.service` (README: Break-glass). Stopping sshd keeps sessions that are open.
+- name: Stop and mask OpenSSH (Ubuntu socket-activates it, Debian runs the service)
+  ansible.builtin.systemd_service:
+    name: "{{ item.item }}"
+    state: stopped
+    masked: true
+  loop: "{{ hardening_ssh_units.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when:
+    - hardening_disable_sshd | bool
+    - item.stat.exists
+
+# --- root: no password, no SSH key (security review M1) --------------------------------------------
+# After bootstrap nobody logs in as root: Tailscale SSH admits the deploy user only and sshd is masked (above).
+# The provider's image may still carry a root password (console login) and the bootstrap key in
+# /root/.ssh/authorized_keys (the way back in if sshd ever runs again). site.yml runs over Tailscale SSH as the
+# deploy user, so this play proves that door works before it closes these; break-glass is the provider's console
+# with its rescue system (docs/operations.md "Break-glass"). Never a lock-out: the deploy user's sudo stays.
+- name: Refuse to lock root unless this play came in through Tailscale SSH as the deploy user
+  ansible.builtin.assert:
+    that:
+      - ansible_user | default('') == deploy_user
+      - (hardening_ts_prefs.stdout | default('{}') | from_json).RunSSH | default(false)
+    fail_msg: >-
+      root stays as it is: this play must run as {{ deploy_user }} over Tailscale SSH (site.yml after bootstrap)
+      before root's password is locked and its SSH key removed.
+    quiet: true
+  when: hardening_lock_root | bool
+  tags: [tailscale]
+
+- name: Lock root's password (no password login, also not on the provider's console)
+  ansible.builtin.user:
+    name: root
+    password_lock: true
+  when: hardening_lock_root | bool
+
+- name: Remove root's SSH authorized_keys (the bootstrap key)
+  ansible.builtin.file:
+    path: /root/.ssh/authorized_keys
+    state: absent
+  when: hardening_lock_root | bool

@@ -1,0 +1,58 @@
+
+[7/17] GitHub tokens
+       GitHub token for Terraform.
+       1. Open the pre-filled form: https://github.com/settings/personal-access-tokens/new?name=mcctl+lh+admin&secrets=write
+       2. Repository access: Only select repositories > octocat/mc-config.
+       3. Paste the token below (input hidden).
+Token permissions:
+  Scope       Permission      Level           Resources
+  Repository  Secrets         Read and write  octocat/mc-config
+  Repository  Administration  Read and write  octocat/mc-config
+  [ok] GitHub admin token: valid, expires 2027-11-01
+  [!!] couldn't allow auto-merge: Settings > General > Allow auto-merge
+  [xx] the token can't read the Actions secrets
+       366 days; `mcctl doctor` warns 30 days before it expires.
+       Domain auto-renew: switch it on in the dashboard.
+       See https://dash.cloudflare.com/ for it.
+         export TF_DATA_DIR=/x/.mcctl/terraform
+  [xx] terraform apply failed:
+Error: creating R2 bucket: 403 Forbidden
+       fix: give the admin token Workers R2 Storage > Edit
+       then re-run: mcctl init -C /x (it resumes here)
+
+Terraform will: 1 to add, 0 to change, 1 to replace, 0 to destroy
+  replace: tailscale_tailnet_key.server
+[  ok] tool git            /usr/bin/git
+[warn] github admin token  expires in 20 days
+[fail] dns                 mc.example.org has no AAAA record
+[skip] panel               panel.mode: off
+
+Checklist:
+  [x]  1 Prerequisites
+  [x]  2 Config repo
+  [!]  3 Your server (server.yml) (failed)
+  [ ]  4 Cloudflare admin token (account-owned, made by hand)
+  [ ]  5 Cloudflare Zero Trust (panel login)
+  [ ]  6 Terraform state bucket and token
+  [ ]  7 GitHub tokens
+  [ ]  8 Product repo settings (owner only)
+  [ ]  9 Discord alerts and slash commands
+  [ ] 10 Tailscale policy and OAuth client
+  [ ] 11 Cloud resources (terraform apply)
+  [ ] 12 Discord commands endpoint
+  [ ] 13 The server machine
+  [ ] 14 Bootstrap: Tailscale, deploy user, firewall
+  [ ] 15 First deploy (CI)
+  [ ] 16 Smoke test (IPv4 + IPv6)
+  [ ] 17 First backup, restore check, doctor
+
+Still needs you:
+  - create the account-owned Cloudflare admin token by hand (link and exact form printed)
+  - sign up for Cloudflare Zero Trust (team name, Free plan) if the account hasn't
+  - create the GitHub fine-grained PATs (links pre-filled) and click through the two GitHub Apps
+  - if you want slash commands: create the Discord application (developer portal), copy ids
+  - generate the one-off Tailscale API access token
+  - approve each `terraform apply` (type the deployment name)
+  - order the VPS (costs money) and give init its IPv4
+  config repo  https://github.com/octocat/mc-config
+  server       mc.lh.example:25565

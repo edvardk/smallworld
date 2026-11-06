@@ -1,0 +1,4 @@
+# Fired by: jar/plugin/unit/JRE changes, or a config overlay that differs from the live files.
+- name: Restart minecraft (announced)
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/restart.yml"
+  listen: restart minecraft

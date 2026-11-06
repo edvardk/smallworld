@@ -1,0 +1,3 @@
+✅ **The outside watchdog is reachable again**
+**Impact:** Outages are reported again.
+**What to do:** No action needed - informational.

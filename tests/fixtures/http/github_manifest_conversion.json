@@ -1,0 +1,31 @@
+{
+  "_source": "Shaped from the GitHub REST API reference (apps, app-manifests, branches/protection), 2026-11-01; ids fake.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://api.github.com/app-manifests/abc123code/conversions"
+      },
+      "response": {
+        "body": {
+          "client_id": "Iv1.fake",
+          "client_secret": "fake-client-secret",
+          "events": [],
+          "id": 123456,
+          "pem": "-----BEGIN RSA PRIVATE KEY-----\nZmFrZS1rZXktZm9yLXRlc3Rz\n-----END RSA PRIVATE KEY-----\n",
+          "permissions": {
+            "contents": "write",
+            "metadata": "read",
+            "pull_requests": "write"
+          },
+          "slug": "tests-panel",
+          "webhook_secret": null
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 201
+      }
+    }
+  ]
+}

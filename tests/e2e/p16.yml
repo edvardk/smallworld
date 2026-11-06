@@ -1,0 +1,13 @@
+---
+# P16 (e2e-mock only, `-e @/src/product/tests/e2e/p16.yml` after vars.yml): the performance knobs switched away
+# from their defaults, as `mcctl render` would write them for this server.yml:
+#   jvm.gc: zgc, performance.cpu_affinity: split, performance.chunk_threads: 2,
+#   performance.network_compression_threshold: 512, performance.noatime: true
+# (helpers on CPU 0 = what render derives for split). tests/e2e/perf_check.py checks the result live. The
+# container's root is an overlay without an fstab entry: noatime must leave it alone and change nothing.
+mc_jvm_gc: zgc
+mc_cpu_affinity: split
+mc_helper_cpus: "0"
+mc_chunk_worker_threads: 2
+mc_network_compression_threshold: 512
+mc_noatime: true

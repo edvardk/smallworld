@@ -1,0 +1,5 @@
+🔴 **The weekly backup test failed**
+**Impact:** Players are not affected right now, but the backups may not be restorable: a crash or a mistake could lose their progress.
+**Likely cause:** The Monday check couldn't list, verify or restore the newest backup, or the newest one is older than 2 hours (the failing step in the run says which).
+**What to do:** Open the run: https://github.com/example-owner/example-config/actions/runs/123 . Then `mcctl doctor` (backup storage credentials) and `mcctl backup now`; once a backup has run, re-run the check (Actions, server, Run workflow, backup-check).
+**Details:** backup-check job failed

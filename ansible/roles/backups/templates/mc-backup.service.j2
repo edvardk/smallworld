@@ -1,0 +1,42 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Minecraft world backup (restic -> R2)
+Wants=network-online.target
+After=network-online.target minecraft.service
+# Never on a box `mcctl migrate` fenced: another box owns the world (removed only by mcctl's unfence).
+ConditionPathExists=!{{ mc_state_dir }}/fenced
+
+[Service]
+Type=oneshot
+# Not minecraft: code in the JVM must not be able to read this process's environment (restic/R2 keys).
+User={{ mc_ops_user }}
+Group={{ mc_ops_user }}
+SupplementaryGroups=minecraft
+EnvironmentFile={{ mc_etc_dir }}/restic.env
+Environment=RESTIC_CACHE_DIR={{ backups_cache_dir }} PYTHONDONTWRITEBYTECODE=1
+CacheDirectory=mc-restic
+CacheDirectoryMode=0750
+ExecStart={{ mc_bin_dir }}/backup.py
+# P10: restic's snapshot list for the panel (its Backups tab and restore picker); a failure here never fails
+# the backup ("-").
+ExecStartPost=-{{ mc_bin_dir }}/backup.py --list-snapshots
+StateDirectory=mc-snapshots
+StateDirectoryMode=0750
+# If memory runs out, sacrifice restic rather than the server.
+OOMScoreAdjust=500
+# P13: timely priority (has a deadline; the JVM still wins 10:1), see mc_timely_priority.
+{{ mc_timely_priority | join('\n') }}
+{% if mc_helper_cpus %}
+AllowedCPUs={{ mc_helper_cpus }}
+{% endif %}
+# Sandbox (design §7): the shared set, see ansible/group_vars/all/main.yml.
+{{ mc_systemd_sandbox | join('\n') }}
+MemoryDenyWriteExecute=true
+# The JVM writes some world files 0600 (level.dat via a temp file), which group read can't reach: restic gets
+# CAP_DAC_READ_SEARCH (read and list any file, nothing else; restic's documented way to back up as a non-root
+# user). The sandbox above keeps it read-only; whatever holds a secret it doesn't need stays out of its view
+# (P8 review): the password databases, the other env files (EnvironmentFile= above is read before the namespace
+# is set up), SSH host keys, Tailscale's node key, the agent's state and TLS private keys.
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+AmbientCapabilities=CAP_DAC_READ_SEARCH
+InaccessiblePaths={{ backups_inaccessible_paths | join(' ') }}

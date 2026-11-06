@@ -1,0 +1,26 @@
+{
+  "_source": "Shaped from the Cloudflare API v4 reference (verify token, list zones, list R2 buckets, list Workers scripts), 2026-10-31; ids are fake.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/user/tokens/verify"
+      },
+      "response": {
+        "body": {
+          "errors": [],
+          "messages": [],
+          "result": {
+            "id": "ed17574386854bf78a67040be0a770b0",
+            "status": "active"
+          },
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ]
+}

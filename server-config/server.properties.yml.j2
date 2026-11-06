@@ -1,0 +1,39 @@
+# Overlay for server.properties (flat keys). Rendered by Ansible, applied by the mc_config module.
+# Every key must exist in keys/<minecraft_version>/server.properties.txt (checked by tests).
+level-name: {{ mc_level_name | to_json }}
+motd: {{ mc_motd | to_json }}
+max-players: {{ mc_max_players }}
+online-mode: {{ mc_online_mode | bool | lower }}
+white-list: {{ mc_whitelist | bool | lower }}
+enforce-whitelist: {{ mc_whitelist | bool | lower }}
+server-port: 25565
+enable-status: true
+
+# Performance (PLAN §5)
+view-distance: {{ mc_view_distance }}
+simulation-distance: {{ mc_simulation_distance }}
+network-compression-threshold: {{ mc_network_compression_threshold }}
+sync-chunk-writes: false
+
+# RCON: localhost only, password from Terraform (MC_SECRET_RCON_PASSWORD). Used by mc_rcon.py / backup.py / health.py.
+enable-rcon: true
+rcon.ip: 127.0.0.1
+rcon.port: {{ mc_rcon_port }}
+rcon.password: {{ mc_secret_rcon_password | to_json }}
+broadcast-rcon-to-ops: false
+
+# P17 branding: the optional resource pack (drink + glyph; mcctl render mc_brand_pack + _sha1). Served by the
+# watchdog Worker at /pack/<sha1>.zip (an immutable URL); the client checks the sha1 (verified in the 26.3 client:
+# ^[a-fA-F0-9]{40}$, a mismatch fails the download) and may decline (require-resource-pack false). The prompt is a
+# JSON text component (parsed strictly by the server). Only managed while branding is on.
+{% if mc_brand_enabled | bool %}
+{% set pack = mc_brand_pack.enabled | bool %}
+resource-pack: {{ (mc_watchdog_url ~ '/pack/' ~ mc_brand_pack_sha1 ~ '.zip' if pack else '') | to_json }}
+resource-pack-sha1: {{ (mc_brand_pack_sha1 if pack else '') | to_json }}
+require-resource-pack: false
+resource-pack-prompt: {{ (mc_brand_pack.prompt if pack else '') | to_json }}
+{% endif %}
+
+enable-query: false
+management-server-enabled: false
+enable-jmx-monitoring: false

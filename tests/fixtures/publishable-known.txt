@@ -1,0 +1,3 @@
+# Files that still fail tests/test_publishable.py: the cleanup left before publishing (docs/publishing.md).
+# Paths only, sorted. This list only shrinks (a clean file listed here fails the test); it is empty before a
+# release is published, and publish_fresh.py refuses while any of these problems remain.

@@ -1,0 +1,5 @@
+🔴 **The weekly backup test failed**
+**Impact:** Players are not affected right now, but the backups may not be restorable: a crash or a mistake could lose their progress.
+**Likely cause:** The server's weekly test failed while restoring and verifying the newest snapshot: latest snapshot 1a2b3c4d is 30.0 h old (> 2 h): backups have stopped.
+**What to do:** On the server, `sudo journalctl -u mc-backup-check` shows the details. Then `mcctl doctor` (backup storage credentials) and `mcctl backup now`; once a backup has run, re-run the test with `sudo systemctl start mc-backup-check` (or Actions, server, Run workflow, backup-check).
+**Details:** mc-backup-check: restore failed

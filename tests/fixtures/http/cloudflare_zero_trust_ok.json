@@ -1,0 +1,28 @@
+{
+  "_source": "Shaped from the Cloudflare API reference (zero_trust organizations list), 2026-11-01; ids fake.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/access/organizations"
+      },
+      "response": {
+        "body": {
+          "errors": [],
+          "messages": [],
+          "result": {
+            "auth_domain": "tests-team.cloudflareaccess.com",
+            "name": "tests-team.cloudflareaccess.com",
+            "session_duration": "15m",
+            "is_ui_read_only": false
+          },
+          "success": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ]
+}

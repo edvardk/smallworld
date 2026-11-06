@@ -1,0 +1,15 @@
+# mc-agent (design §5a, P8). The Worker is the watchdog's own hostname; the e2e-mock run points it at a
+# local mock (http:// is accepted only for loopback addresses).
+agent_ingest_url: "{{ mc_watchdog_url }}"
+agent_log_batch_s: 300
+agent_poll_s: 15
+# P10: the GitHub REST API the agent opens the whitelist pull requests with; empty = https://api.github.com.
+# Only the e2e-mock run sets it (a mock on loopback; http:// is accepted for loopback addresses only).
+agent_github_api_url: ""
+# P10: the whitelist -> Git loop (seconds): how often it runs, how long changes are batched before a pull request,
+# how often an open pull request is checked. The e2e-mock run shortens them.
+agent_panel_sync_s: 30
+agent_panel_batch_s: 60
+agent_panel_pr_check_s: 120
+# P13: how often the agent closes a telemetry segment (seconds); the e2e-mock run shortens it.
+agent_segment_s: 300

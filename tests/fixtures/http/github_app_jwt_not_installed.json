@@ -1,0 +1,41 @@
+{
+  "_source": "Shaped from the GitHub REST API reference (apps: Get the authenticated app, Get a repository installation for the authenticated app; JWT authentication), 2026-11-01; ids fake.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/app"
+      },
+      "response": {
+        "body": {
+          "id": 123456,
+          "slug": "tests-panel",
+          "owner": {
+            "login": "tests"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/tests/tests-mc-config/installation"
+      },
+      "response": {
+        "body": {
+          "message": "Not Found",
+          "documentation_url": "https://docs.github.com/rest/apps/apps#get-a-repository-installation-for-the-authenticated-app",
+          "status": "404"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+**What changed:** newer builds for the same Minecraft version, boot-tested on the runner.
+
+- server: paper 1.21.10 build 130
+- plugin: Chunky 1.4.40
+
+**What it means for players:** Nothing to do for them. When this deploys, the server restarts once (an in-game countdown warns anyone online) and runs the newer builds: bug and security fixes, same Minecraft version.
+
+**What to do:** Review and merge it (auto-merge is off): the required `server / gate` check re-verifies every changed entry against the upstream APIs first, and the merge deploys.

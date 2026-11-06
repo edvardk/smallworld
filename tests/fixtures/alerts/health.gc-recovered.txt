@@ -1,0 +1,4 @@
+✅ **The short freezes from Java memory management have stopped**
+**Impact:** No freeze over 50 ms for 30 min.
+**What to do:** No action needed - informational.
+**Details:** they went on for 60 min; worst 240 ms

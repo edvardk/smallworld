@@ -1,0 +1,265 @@
+# P10 review: never write the server dir or start the server while a restore runs (waits for it, or fails).
+- name: Wait for a running restore and read the admin-stopped marker
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/restore_guard.yml"
+
+# v1.2 world library: Git + the panel's pending change -> worlds-library.json; the active world's border/pregen.
+- name: The world library this deploy honours
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/worlds.yml"
+
+# P12 review (M3): the rollback point of a Minecraft upgrade is a backup taken by THIS deploy, right before the new jar
+# can touch the world (an upgrade PR may merge days after it was opened). The version that last ran is recorded in
+# {{ mc_state_dir }}/minecraft-version; when it differs (or is unknown and the pinned jar changes), mc-backup.service
+# runs now and its snapshot id goes to {{ mc_state_dir }}/pre-upgrade.json (`mcctl restore --list` shows it).
+- name: Read the Minecraft version that last ran here
+  ansible.builtin.slurp:
+    src: "{{ mc_state_dir }}/minecraft-version"
+  register: mc_prev_version_file
+  failed_when: false
+
+- name: Read the current server.jar link
+  ansible.builtin.stat:
+    path: "{{ mc_server_dir }}/server.jar"
+    follow: false
+  register: mc_prev_jar
+
+- name: Does a world exist yet?
+  ansible.builtin.stat:
+    path: "{{ mc_server_dir }}/{{ mc_level_name }}/level.dat"
+  register: mc_prev_world
+
+- name: Work out whether this deploy changes the Minecraft version
+  ansible.builtin.set_fact:
+    mc_prev_version: "{{ (mc_prev_version_file.content | default('') | b64decode).strip() }}"
+    mc_version_changes: >-
+      {{ mc_prev_world.stat.exists
+         and ((mc_prev_version_file.content | default('') | b64decode).strip()
+              not in ['', server_lock.minecraft_version | string]
+              or ((mc_prev_version_file.content | default('')) == ''
+                  and mc_prev_jar.stat.islnk | default(false)
+                  and (mc_prev_jar.stat.lnk_source | default('') | basename) != server_lock.server.filename)) }}
+
+- name: Pre-upgrade backup before the new jar touches the world
+  when: mc_version_changes | bool
+  block:
+    - name: Back up the world now (pre-upgrade)
+      ansible.builtin.systemd_service:
+        name: mc-backup.service
+        state: started
+      changed_when: true
+
+    - name: Read the pre-upgrade snapshot id
+      ansible.builtin.command: /usr/local/bin/mc-restic restic snapshots --json --latest 1 --host mc-server
+      register: mc_pre_upgrade_snapshots
+      changed_when: false
+
+    - name: Record the pre-upgrade snapshot
+      ansible.builtin.copy:
+        dest: "{{ mc_state_dir }}/pre-upgrade.json"
+        content: "{{ {'from': mc_prev_version or 'unknown', 'to': server_lock.minecraft_version | string,
+                     'snapshot_id': (mc_pre_upgrade_snapshots.stdout | from_json | last).id,
+                     'time': (mc_pre_upgrade_snapshots.stdout | from_json | last).time} | to_nice_json }}\n"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Show the pre-upgrade snapshot (the rollback point)
+      ansible.builtin.debug:
+        msg: >-
+          PRE-UPGRADE SNAPSHOT {{ (mc_pre_upgrade_snapshots.stdout | from_json | last).id }}: Minecraft
+          {{ mc_prev_version or 'unknown' }} -> {{ server_lock.minecraft_version }}. To roll back: revert the upgrade
+          and `mcctl restore --live {{ ((mc_pre_upgrade_snapshots.stdout | from_json | last).id)[:8] }}`.
+
+- name: Record the Minecraft version this box runs
+  ansible.builtin.copy:
+    dest: "{{ mc_state_dir }}/minecraft-version"
+    content: "{{ server_lock.minecraft_version }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Require EULA acceptance
+  ansible.builtin.assert:
+    that: mc_accept_eula | bool
+    fail_msg: Set minecraft.accept_eula to true in server.yml to accept https://aka.ms/MinecraftEULA
+    quiet: true
+
+# v1.1: the mirror first (no_log: the request carries the agent token); a failure there just falls through.
+- name: Download pinned server jar from the artifact mirror (sha256-verified)
+  ansible.builtin.get_url:
+    url: "{{ mc_mirror_url }}/{{ server_lock.server.sha256 }}/{{ server_lock.server.filename }}"
+    headers:
+      Authorization: "Bearer {{ mc_secret_agent_token }}"
+    timeout: "{{ mc_mirror_timeout }}"
+    dest: "{{ mc_jar_dir }}/{{ server_lock.server.filename }}"
+    checksum: "sha256:{{ server_lock.server.sha256 }}"
+    owner: root
+    group: minecraft
+    mode: "0640"
+  when: mc_mirror_url | length > 0
+  failed_when: false
+  no_log: true
+  notify: restart minecraft
+
+- name: Download pinned server jar (sha256-verified)
+  ansible.builtin.get_url:
+    url: "{{ server_lock.server.url }}"
+    dest: "{{ mc_jar_dir }}/{{ server_lock.server.filename }}"
+    checksum: "sha256:{{ server_lock.server.sha256 }}"
+    owner: root
+    group: minecraft
+    mode: "0640"
+  notify: restart minecraft
+
+- name: Point server.jar at the pinned build
+  ansible.builtin.file:
+    src: "{{ mc_jar_dir }}/{{ server_lock.server.filename }}"
+    dest: "{{ mc_server_dir }}/server.jar"
+    state: link
+    owner: minecraft
+    group: minecraft
+    follow: false   # own the link itself; following it would chown the root-owned jar every run
+    force: true
+  notify: restart minecraft
+
+- name: Remove superseded server jars
+  ansible.builtin.find:
+    paths: "{{ mc_jar_dir }}"
+    patterns: "*.jar"
+  register: mc_old_jars
+
+- name: Delete old jars
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ mc_old_jars.files | rejectattr('path', 'equalto', mc_jar_dir ~ '/' ~ server_lock.server.filename) }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+
+- name: Accept the EULA
+  ansible.builtin.copy:
+    dest: "{{ mc_server_dir }}/eula.txt"
+    content: "# Accepted via server.yml minecraft.accept_eula (https://aka.ms/MinecraftEULA)\neula=true\n"
+    owner: minecraft
+    group: minecraft
+    mode: "0640"
+
+# v1.0.1: the server jar's own log4j2.xml plus two filters that drop the INFO lines vanilla logs for every RCON
+# connection (server-config/log4j2.xml; tests/test_log4j2.py checks it against the pinned jar's file). Root-owned
+# and read-only for the JVM (-Dlog4j.configurationFile in the unit); a change restarts the server.
+- name: Install the server's logging config
+  ansible.builtin.copy:
+    src: "{{ mc_config_dir }}/log4j2.xml"
+    dest: "{{ mc_root }}/log4j2.xml"
+    owner: root
+    group: minecraft
+    mode: "0640"
+  notify: restart minecraft
+
+- name: Install systemd unit
+  ansible.builtin.template:
+    src: minecraft.service.j2
+    dest: /etc/systemd/system/minecraft.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart minecraft
+
+# P13 (SECURITY.md "Player-experience telemetry"): vanilla login lines carry IP addresses; the server's own logs/
+# stay on the box and are deleted after 30 days by systemd-tmpfiles-clean (daily). Players' IPs never leave it.
+- name: Keep the server's logs/ for 30 days
+  ansible.builtin.copy:
+    dest: /etc/tmpfiles.d/mc-server-logs.conf
+    content: |
+      # Managed by Ansible (minecraft role, P13): age out the server's own logs (they contain IPs)
+      e {{ mc_server_dir }}/logs - - - 30d
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Build the list of config overlays (core + locked plugins that have one)
+  ansible.builtin.set_fact:
+    mc_overlays: >-
+      {{ mc_overlays_core
+         + (mc_overlays_plugins | selectattr('plugin', 'in', plugins_lock.plugins | map(attribute='name') | list) | list) }}
+
+- name: Is the server running?
+  ansible.builtin.systemd_service:
+    name: minecraft.service
+  register: mc_active
+
+
+# Stopped (fresh box, after a restore, admin-stopped): apply overlays directly, nothing to restart.
+- name: Apply config overlays while stopped
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/overlays.yml"
+  vars:
+    mc_overlay_check: false
+  when: mc_active.status.ActiveState | default('inactive') != 'active'
+
+- name: Enable the server at boot
+  ansible.builtin.systemd_service:
+    name: minecraft.service
+    enabled: true
+    daemon_reload: true
+
+# Again right before starting: a restore may have begun since the top of the role.
+- name: Wait for a running restore, then read the admin-stopped marker again
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/restore_guard.yml"
+
+- name: Start the server and wait for it
+  when: not mc_admin_stopped
+  block:
+    - name: Start the server
+      ansible.builtin.systemd_service:
+        name: minecraft.service
+        state: started
+
+    - name: Wait for the server to finish starting (RCON up)
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ mc_rcon_port }}"
+        timeout: 900
+
+    # Running: compare only. Any difference triggers the announced restart, which applies the
+    # overlays while the server is stopped so it can't overwrite them on shutdown. This also picks
+    # up config files the server generated on its first start.
+    - name: Check config overlays against the live server
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/overlays.yml"
+      vars:
+        mc_overlay_check: true
+
+- name: Warn that the server is admin-stopped
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: {{ mc_state_dir }}/admin-stopped exists, so this deploy left the server stopped (config is
+      applied). Start it with `sudo {{ mc_bin_dir }}/admin.py start` or `mcctl start`.
+  when: mc_admin_stopped
+
+- name: Restart now if anything changed (so world border etc. apply to the new config)
+  ansible.builtin.meta: flush_handlers
+
+- name: Set world borders
+  ansible.builtin.command: >-
+    {{ mc_bin_dir }}/mc_rcon.py worldborder --dimension {{ item.key }} --radius {{ item.value }}
+  become: true
+  become_user: minecraft
+  register: mc_border
+  changed_when: "'CHANGED' in mc_border.stdout"
+  loop: "{{ mc_world_border_radius | dict2items | rejectattr('value', 'none') }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: not mc_admin_stopped
+
+# v1.2: game rules (server.yml gameplay.locator_bar / sleeping_percentage + minecraft.gamerules), in every
+# dimension (Paper keeps them per world); read first, set only a different value: idempotent.
+- name: Set game rules
+  ansible.builtin.command: >-
+    {{ mc_bin_dir }}/mc_rcon.py gamerule --name {{ item.key }} --value {{ item.value }}
+    --dimension minecraft:overworld --dimension minecraft:the_nether --dimension minecraft:the_end
+  become: true
+  become_user: minecraft
+  register: mc_gamerule
+  changed_when: "'CHANGED' in mc_gamerule.stdout"
+  loop: "{{ mc_gamerules | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}={{ item.value }}"
+  when: not mc_admin_stopped

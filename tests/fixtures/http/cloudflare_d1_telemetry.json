@@ -1,0 +1,13 @@
+{
+  "_source": "Shaped from the Cloudflare API v4 reference: list zones (GET /zones?name=), list D1 databases (GET /accounts/{account_id}/d1/database?name=, result[].name/uuid), 2026-11-01; ids are fake. The query endpoint (POST .../query, {sql} -> result[0].results) is answered by tests/test_mcctl_metrics.py from a real SQLite database.",
+  "exchanges": [
+    {
+      "request": {"method": "GET", "url": "https://api.cloudflare.com/client/v4/zones?name=example.org"},
+      "response": {"status": 200, "headers": {"content-type": "application/json"}, "body": {"success": true, "errors": [], "messages": [], "result": [{"id": "023e105f4ecef8ad9ca31a8372d0c353", "name": "example.org", "account": {"id": "f037e56e89293a057740de681ac9abbe", "name": "Sam"}}]}}
+    },
+    {
+      "request": {"method": "GET", "url": "https://api.cloudflare.com/client/v4/accounts/f037e56e89293a057740de681ac9abbe/d1/database?name=lh-telemetry"},
+      "response": {"status": 200, "headers": {"content-type": "application/json"}, "body": {"success": true, "errors": [], "messages": [], "result": [{"name": "lh-telemetry", "uuid": "7a9e8d1c-0000-4000-8000-00000000d1d1", "created_at": "2026-11-01T00:00:00Z", "version": "production"}]}}
+    }
+  ]
+}

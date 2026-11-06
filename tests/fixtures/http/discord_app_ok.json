@@ -1,0 +1,107 @@
+{
+  "_source": "Shaped from Discord's API docs (Get/Edit Current Application, Bulk Overwrite Guild Application Commands), 2026-11-02.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://discord.com/api/v10/applications/@me"
+      },
+      "response": {
+        "body": {
+          "bot_public": true,
+          "flags": 0,
+          "id": "1300000000000000001",
+          "interactions_endpoint_url": "https://hb.mc.tests.mcctl.internal/discord/interactions",
+          "name": "lh server",
+          "verify_key": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "PUT",
+        "url": "https://discord.com/api/v10/applications/1300000000000000001/guilds/1300000000000000002/commands"
+      },
+      "response": {
+        "body": [
+          {
+            "application_id": "1300000000000000001",
+            "id": "1",
+            "name": "status",
+            "type": 1
+          },
+          {
+            "application_id": "1300000000000000001",
+            "id": "2",
+            "name": "players",
+            "type": 1
+          },
+          {
+            "application_id": "1300000000000000001",
+            "id": "3",
+            "name": "lag",
+            "type": 1
+          },
+          {
+            "application_id": "1300000000000000001",
+            "id": "4",
+            "name": "perf",
+            "type": 1
+          },
+          {
+            "application_id": "1300000000000000001",
+            "id": "5",
+            "name": "backups",
+            "type": 1
+          },
+          {
+            "application_id": "1300000000000000001",
+            "id": "6",
+            "name": "backup",
+            "type": 1
+          },
+          {
+            "application_id": "1300000000000000001",
+            "id": "7",
+            "name": "whitelist",
+            "type": 1
+          },
+          {
+            "application_id": "1300000000000000001",
+            "id": "8",
+            "name": "rejected",
+            "type": 1
+          }
+        ],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "PATCH",
+        "url": "https://discord.com/api/v10/applications/@me"
+      },
+      "response": {
+        "body": {
+          "bot_public": true,
+          "flags": 0,
+          "id": "1300000000000000001",
+          "interactions_endpoint_url": "https://hb.mc.tests.mcctl.internal/discord/interactions",
+          "name": "lh server",
+          "verify_key": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ]
+}

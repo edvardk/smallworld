@@ -1,0 +1,9 @@
+🔴 **The weekly expiry check found 3 problem(s) for mc**
+**Impact:** If the domain expires, players can't find the server by its address any more; players are not affected yet, but an expired credential stops deploys, backups or the watchdog (whichever uses it); outages and late backups may go unreported while the watchdog isn't checking.
+**Likely cause:** Credentials and the domain registration have fixed lifetimes, and expiry.yml is only as fresh as the last `mcctl doctor`.
+**What to do:** one by one:
+- credential cloudflare-admin expires in 17 days (2026-11-22): renew it, then `mcctl doctor`
+- domain example.org expires in 22 days (2026-11-27): renew it
+- watchdog: cron isn't running (last run 60 min ago)
+Then commit expiry.yml and re-run the check (the run: https://github.com/example-owner/example-config/actions/runs/123).
+**Details:** 3 problem(s), 1 OK; nothing secret was read

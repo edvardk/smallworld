@@ -1,0 +1,49 @@
+# mc-brand (design §8 P17): built by scripts/build_plugin.py, never edited on the server.
+name: mc-brand
+version: 1.0.0
+main: io.github.edvardk.mcbrand.BrandPlugin
+api-version: '1.13'
+description: The server's branding - join greeting, rules, Discord link, an optional HUD and the signature drink.
+load: POSTWORLD
+commands:
+  rules:
+    description: The server rules.
+    usage: /rules [page]
+    permission: mcbrand.rules
+  discord:
+    description: The server's Discord invite.
+    permission: mcbrand.discord
+  drink:
+    description: Get your drink back if you lost it (one at a time; branding.drink.command adds its own name).
+    permission: mcbrand.drink
+  hud:
+    description: Show or hide the sidebar (players, ping, server speed).
+    usage: /hud [on|off]
+    permission: mcbrand.hud
+  modpack:
+    description: Your personal link to the server's optional client (smoother FPS, further views).
+    usage: /modpack [off|on]
+    permission: mcbrand.modpack
+  view:
+    description: Your own view distance (higher only while the server runs smoothly).
+    usage: /view [number|reset]
+    permission: mcbrand.view
+  mcbrand:
+    description: mc-brand status and self-test (operators and the console).
+    usage: /mcbrand status|selftest
+    permission: mcbrand.admin
+permissions:
+  mcbrand.rules:
+    default: true
+  mcbrand.discord:
+    default: true
+  mcbrand.drink:
+    default: true
+  mcbrand.hud:
+    default: true
+  mcbrand.modpack:
+    default: true
+  mcbrand.view:
+    default: true
+  mcbrand.admin:
+    default: op

@@ -1,0 +1,18 @@
+# Overlay for bukkit.yml. Keys verified in keys/<minecraft_version>/bukkit.txt.
+# server.yml performance.profile (mcctl/render.py TUNING): vanilla = the pinned jar's defaults (spawn attempts
+# every tick, animals every 400 ticks as in vanilla); balanced = fewer spawn attempts.
+spawn-limits:
+  monsters: {{ mc_spawn_limits.monsters }}
+  animals: {{ mc_spawn_limits.animals }}
+  water-animals: {{ mc_spawn_limits.water_animals }}
+  water-ambient: {{ mc_spawn_limits.water_ambient }}
+  ambient: {{ mc_spawn_limits.ambient }}
+ticks-per:
+  monster-spawns: {{ mc_tuning.ticks_per.monster }}
+  animal-spawns: {{ mc_tuning.ticks_per.animal }}
+  water-spawns: {{ mc_tuning.ticks_per.water }}
+  water-ambient-spawns: {{ mc_tuning.ticks_per.water_ambient }}
+  ambient-spawns: {{ mc_tuning.ticks_per.ambient }}
+# Invisible (both profiles): unused chunks are unloaded every 20 s instead of 30 s.
+chunk-gc:
+  period-in-ticks: 400

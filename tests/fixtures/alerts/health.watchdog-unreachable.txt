@@ -1,0 +1,5 @@
+⚠️ **The outside watchdog can't be reached from the server**
+**Impact:** Players are not affected. But if the server went down now, nobody would be told.
+**Likely cause:** The server's heartbeat to the Cloudflare watchdog failed 3 checks in a row (network trouble or a Cloudflare problem).
+**What to do:** Usually nothing: it recovers by itself. If it lasts: check https://www.cloudflarestatus.com and `mcctl doctor`.
+**Details:** 3 heartbeats not delivered

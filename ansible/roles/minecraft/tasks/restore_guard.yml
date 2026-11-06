@@ -1,0 +1,46 @@
+# P10 review: a restore (restore.py, panel or CLI) holds an exclusive flock on restore.lock for its whole run, and
+# a panel restore also marks the server admin-stopped (by=restore). A deploy must neither write the server dir
+# nor start the server halfway through, so it waits for the lock to be released, then reads the admin-stopped
+# marker afresh (mc_admin_stopped). Still held after mc_restore_wait_s: the deploy fails (run it again later).
+# The lock file is only probed when it exists (flock would create it, owned by root).
+- name: Does a restore lock file exist?
+  ansible.builtin.stat:
+    path: "{{ mc_state_dir }}/restore.lock"
+  register: mc_restore_lockfile
+
+- name: Is a restore running? (restore.lock held)
+  ansible.builtin.command:
+    argv: [flock, --nonblock, --shared, --conflict-exit-code, "75", "{{ mc_state_dir }}/restore.lock", "true"]
+  register: mc_restore_lock
+  changed_when: false
+  failed_when: mc_restore_lock.rc not in [0, 75]
+  when: mc_restore_lockfile.stat.exists
+
+- name: Wait for the running restore to finish
+  ansible.builtin.command:
+    argv: [flock, --nonblock, --shared, --conflict-exit-code, "75", "{{ mc_state_dir }}/restore.lock", "true"]
+  register: mc_restore_wait
+  until: mc_restore_wait.rc == 0
+  retries: "{{ [(mc_restore_wait_s | int) // 10, 1] | max }}"
+  delay: 10
+  changed_when: false
+  failed_when: false
+  when: (mc_restore_lock.rc | default(0)) == 75
+
+- name: Refuse to touch the server while a restore runs
+  ansible.builtin.fail:
+    msg: >-
+      A restore is still running ({{ mc_state_dir }}/restore.lock held after {{ mc_restore_wait_s }} s): this deploy
+      changed nothing in the server dir and did not start the server. Deploy again once the restore finished.
+  when: (mc_restore_wait.rc | default(0)) == 75
+
+# admin.py stop (or the panel, or a running/failed restore) wrote it: the server stays down until `admin.py start`.
+# The deploy still installs everything and applies the overlays, but never starts it (design §5 "Stop").
+- name: Is the server admin-stopped?
+  ansible.builtin.stat:
+    path: "{{ mc_state_dir }}/admin-stopped"
+  register: mc_admin_stopped_marker
+
+- name: Remember whether the server is admin-stopped
+  ansible.builtin.set_fact:
+    mc_admin_stopped: "{{ mc_admin_stopped_marker.stat.exists }}"

@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Minecraft backup ({{ mc_backup_schedule }})
+
+[Timer]
+OnCalendar={{ mc_backup_schedule }}
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

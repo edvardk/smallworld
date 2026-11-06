@@ -1,0 +1,20 @@
+# This server's settings: the only file most people edit. Every field and default is documented in the
+# product's schema/server.schema.json (pinned version: .github/workflows/server.yml). Check it with
+# `mcctl validate`; every push runs the same check in CI.
+#
+# `mcctl init` writes this file from your answers. The values below are placeholders (example.com / example
+# names): `mcctl validate` warns about them and `mcctl render` / any deploy refuses to run until they're
+# replaced.
+schema_version: 1
+name: example
+admin:
+  name: Alex
+  tailscale_login: alex@example.com   # your Tailscale login (owns the tailnet ACL)
+  email: alex@example.com             # may log in to the panel (Access one-time codes); not your Cloudflare login
+# this repo (default: from `git remote`); environments: the deploy secrets usable from main only (GitHub Pro if private)
+github: {owner: example-owner, config_repo: example-mc-config, environments: true}
+dns: {zone: example.com, hostname: mc}
+host:
+  # ipv4 / ipv6: set once the host exists (one address from its IPv6 prefix for ipv6).
+  timezone: UTC
+minecraft: {version: "26.3", accept_eula: true}

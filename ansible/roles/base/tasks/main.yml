@@ -1,0 +1,379 @@
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - acl                 # lets Ansible become the unprivileged minecraft user
+      - bzip2
+      - ca-certificates
+      - chrony
+      - curl
+      - python3-yaml        # used by the mc_config module on the target
+      - unattended-upgrades
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# --- IPv6 (netcup assigns a /64; the AAAA record points at one address from it) -------------------
+- name: Read global IPv6 addresses and the default IPv6 route
+  ansible.builtin.command: "{{ item }}"
+  loop:
+    - ip -6 -o addr show scope global
+    - ip -6 route show default
+  register: base_ipv6
+  changed_when: false
+  when: mc_expect_ipv6 | bool
+
+- name: The host has public IPv6 (mc_expect_ipv6)
+  ansible.builtin.assert:
+    that:
+      # 2000::/3 global unicast, not the tailnet's fd7a:... address on tailscale0
+      - base_ipv6.results[0].stdout_lines | reject('search', ' tailscale0 ') | select('search', 'inet6 [23][0-9a-f]{0,3}:') | list | length > 0
+      - base_ipv6.results[1].stdout | trim | length > 0
+    fail_msg: >-
+      mc_expect_ipv6 is true (Terraform publishes an AAAA record when server_ipv6 is set) but this host
+      has no global IPv6 address and/or no default IPv6 route
+      (`ip -6 addr show scope global`, `ip -6 route show default`). Configure the address from the
+      netcup SCP's /64 on the interface, or set mc_expect_ipv6: false and remove server_ipv6 from
+      terraform.tfvars so players aren't sent to a dead AAAA record.
+    quiet: true
+  when: mc_expect_ipv6 | bool
+
+# --- Unattended security upgrades, never auto-reboot ---------------------------------------------
+- name: Enable unattended upgrades
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Never reboot automatically
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/52unattended-upgrades-local
+    content: |
+      Unattended-Upgrade::Automatic-Reboot "false";
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Stop needrestart from restarting the server behind our back (Ubuntu)
+  ansible.builtin.copy:
+    dest: /etc/needrestart/conf.d/50-minecraft.conf
+    content: |
+      # Restarts of minecraft.service must go through the announced, graceful deploy path.
+      $nrconf{override_rc}{qr(^minecraft\.service$)} = 0;
+    owner: root
+    group: root
+    mode: "0644"
+  when: ansible_facts['distribution'] == 'Ubuntu'
+
+# --- Memory ---------------------------------------------------------------------------------------
+- name: Install zram generator
+  ansible.builtin.apt:
+    name: systemd-zram-generator
+    state: present
+  when: base_zram_enabled
+
+- name: Configure zram swap
+  ansible.builtin.copy:
+    dest: /etc/systemd/zram-generator.conf
+    content: |
+      [zram0]
+      zram-size = {{ base_zram_fraction }}
+      compression-algorithm = zstd
+      swap-priority = 100
+    owner: root
+    group: root
+    mode: "0644"
+  when: base_zram_enabled
+  notify: Restart zram
+
+- name: Start zram swap
+  ansible.builtin.systemd_service:
+    name: dev-zram0.swap
+    state: started
+    daemon_reload: true
+  when: base_zram_enabled
+
+- name: Load BBR at boot
+  community.general.modprobe:
+    name: tcp_bbr
+    state: present
+    persistent: present
+
+- name: Kernel tuning
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/90-minecraft.conf
+    reload: true
+  loop: "{{ base_sysctls | dict2items }}"
+  vars:
+    base_sysctls:
+      vm.swappiness: "{{ base_swappiness }}"
+      net.core.default_qdisc: fq
+      net.ipv4.tcp_congestion_control: bbr
+
+# Transparent Huge Pages = madvise (the JVM opts in with -XX:+UseTransparentHugePages). systemd-tmpfiles
+# writes it early at every boot (tmpfiles.d(5) type `w`, which skips a file that doesn't exist), so no root
+# helper unit is needed. P16: ZGC's heap is a memfd (shmem), whose huge pages follow shmem_enabled instead
+# (Debian: never): advise for jvm.gc zgc, so only regions that ask for them (the heap) get them. Switching back
+# to g1 reverts it live to never (the kernel's default; nothing else here madvises shmem).
+- name: Transparent Huge Pages = madvise at boot
+  ansible.builtin.copy:
+    dest: /etc/tmpfiles.d/mc-thp.conf
+    content: |
+      # Managed by Ansible (base role)
+      w /sys/kernel/mm/transparent_hugepage/enabled - - - - madvise
+      w /sys/kernel/mm/transparent_hugepage/defrag - - - - defer+madvise
+      {% if mc_jvm_gc == 'zgc' %}
+      w /sys/kernel/mm/transparent_hugepage/shmem_enabled - - - - advise
+      {% endif %}
+    owner: root
+    group: root
+    mode: "0644"
+
+# P16: compare the live values instead of a handler: a handler is lost when a later task fails in the same run
+# (the e2e proved it: a refused cpu_affinity split left shmem_enabled at never), and the next run would see the
+# file unchanged. Reading sysfs is idempotent and catches a hand-made change too. shmem_enabled is optional
+# (a kernel without shmem THP, a container without the file): read only when present, acted on only then.
+- name: Read the live THP settings
+  ansible.builtin.command: >-
+    cat /sys/kernel/mm/transparent_hugepage/enabled /sys/kernel/mm/transparent_hugepage/defrag
+  register: base_thp_live
+  changed_when: false
+  check_mode: false   # read-only; `mcctl deploy --check` needs the values for the tasks below
+
+- name: Is shmem THP configurable?
+  ansible.builtin.stat:
+    path: /sys/kernel/mm/transparent_hugepage/shmem_enabled
+  register: base_thp_shmem_file
+
+- name: Read the live shmem THP setting
+  ansible.builtin.command: cat /sys/kernel/mm/transparent_hugepage/shmem_enabled
+  register: base_thp_shmem_live
+  changed_when: false
+  check_mode: false
+  when: base_thp_shmem_file.stat.exists
+
+- name: Apply the THP settings now
+  ansible.builtin.command: systemd-tmpfiles --create /etc/tmpfiles.d/mc-thp.conf
+  changed_when: true
+  when: >-
+    '[madvise]' not in base_thp_live.stdout_lines[0]
+    or '[defer+madvise]' not in base_thp_live.stdout_lines[1]
+    or (mc_jvm_gc == 'zgc' and base_thp_shmem_file.stat.exists
+        and '[advise]' not in base_thp_shmem_live.stdout)
+
+# jvm.gc back to g1: the tmpfiles rule no longer sets shmem_enabled, so the boot value is the kernel's (never);
+# match it now instead of at the next reboot. Only from advise (what zgc set): any other value is left alone.
+- name: Revert shmem THP to never (jvm.gc g1)
+  ansible.builtin.command: tee /sys/kernel/mm/transparent_hugepage/shmem_enabled
+  args:
+    stdin: never
+  changed_when: true
+  when: >-
+    mc_jvm_gc != 'zgc' and base_thp_shmem_file.stat.exists
+    and '[advise]' in base_thp_shmem_live.stdout
+
+- name: Report a kernel without shmem THP (jvm.gc zgc)
+  ansible.builtin.debug:
+    msg: >-
+      jvm.gc zgc: /sys/kernel/mm/transparent_hugepage/shmem_enabled is missing, so ZGC's heap runs without huge
+      pages on this kernel.
+  when: mc_jvm_gc == 'zgc' and not base_thp_shmem_file.stat.exists
+
+# Hosts set up before P7 have the old root helper unit (replaced by the tmpfiles rule above).
+- name: Is the old THP helper unit installed?
+  ansible.builtin.stat:
+    path: /etc/systemd/system/thp-madvise.service
+  register: base_thp_unit
+
+- name: Stop and disable the old THP helper unit
+  ansible.builtin.systemd_service:
+    name: thp-madvise.service
+    state: stopped
+    enabled: false
+  when: base_thp_unit.stat.exists
+
+- name: Remove the old THP helper unit
+  ansible.builtin.file:
+    path: /etc/systemd/system/thp-madvise.service
+    state: absent
+  notify: Reload systemd
+
+- name: Raise open-file limits for the minecraft user
+  ansible.builtin.copy:
+    dest: /etc/security/limits.d/90-minecraft.conf
+    content: |
+      minecraft soft nofile 65535
+      minecraft hard nofile 65535
+    owner: root
+    group: root
+    mode: "0644"
+
+# --- Time -----------------------------------------------------------------------------------------
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ timezone }}"
+
+- name: Enable chrony
+  ansible.builtin.systemd_service:
+    name: chrony
+    enabled: true
+    state: started
+
+# --- Users and layout (SECURITY.md "Privilege separation") ---------------------------------------
+- name: Create minecraft system user (the JVM and its plugins)
+  ansible.builtin.user:
+    name: minecraft
+    system: true
+    home: "{{ mc_root }}"
+    create_home: false
+    shell: /usr/sbin/nologin
+
+# The credential-holding helpers run as this user. Its only supplementary group is `minecraft`: read-only
+# access to the server dir (and the RCON password in server.properties). `minecraft` is in no group of it,
+# so code running as minecraft can't read its processes' environment or its files.
+- name: Create the ops system user (backup, prune, health, notify, restore fetch, mc-run)
+  ansible.builtin.user:
+    name: "{{ mc_ops_user }}"
+    system: true
+    groups: [minecraft]
+    append: false
+    home: /nonexistent
+    create_home: false
+    shell: /usr/sbin/nologin
+
+- name: Create directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: "{{ mc_root }}", owner: root, group: minecraft, mode: "0750"}
+    - {path: "{{ mc_bin_dir }}", owner: root, group: minecraft, mode: "0750"}
+    - {path: "{{ mc_jar_dir }}", owner: root, group: minecraft, mode: "0750"}
+    - {path: "{{ mc_server_dir }}", owner: minecraft, group: minecraft, mode: "0750"}
+    - {path: "{{ mc_server_dir }}/plugins", owner: minecraft, group: minecraft, mode: "0750"}
+    - {path: "{{ mc_server_dir }}/logs", owner: minecraft, group: minecraft, mode: "0750"}   # -Xlog:gc:file=logs/gc.log needs it
+    - {path: "{{ mc_etc_dir }}", owner: root, group: root, mode: "0750"}
+    # Markers self-heal respects: maintenance.json (notify.py maintenance), admin-stopped (admin.py), restore.lock.
+    # Owned by the ops user: readable by everyone, writable by no code running as minecraft (a plugin can't
+    # forge "admin-stopped" or a maintenance window to silence self-heal and the watchdog).
+    - {path: "{{ mc_state_dir }}", owner: "{{ mc_ops_user }}", group: "{{ mc_ops_user }}", mode: "0755"}
+    # restore.py fetches a snapshot here (as the ops user); mc-restore-apply.service (as minecraft, group
+    # read) copies it into the server dir. setgid: what restic creates inherits the group.
+    - {path: "{{ mc_restore_dir }}", owner: "{{ mc_ops_user }}", group: minecraft, mode: "2750"}
+  loop_control:
+    label: "{{ item.path }}"
+
+# P16 (server.yml performance.noatime, default off): no access-time writes on the filesystem holding the
+# server dir. Rewrites only the options of its existing fstab entry (never adds one) and remounts it live;
+# off leaves the mount as it is (a provider image may already use noatime).
+- name: Mount the server's filesystem with noatime
+  mc_noatime:
+    path: "{{ mc_server_dir }}"
+  when: mc_noatime | bool
+  register: base_noatime
+  notify: Reload systemd   # systemd-fstab-generator re-reads fstab
+
+- name: Report a server filesystem without an fstab entry
+  ansible.builtin.debug:
+    msg: "performance.noatime: {{ base_noatime.msg }}"
+  when: mc_noatime | bool and not base_noatime.found
+
+- name: Install server-side scripts
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/{{ item }}"
+    dest: "{{ mc_bin_dir }}/{{ item }}"
+    owner: root
+    group: minecraft
+    mode: "0750"
+  loop: [mc_rcon.py, notify.py, alerts.py, backup.py, restore.py, health.py, admin.py, mc_agent.py, mc_panel.py,
+         reboot_gate.py, restic_rekey.py, telemetry.py, worlds.py, world_info.py, backup_check.py]
+
+- name: Install `mc-run` helper (runs a command as the ops user with secrets from an env file)
+  ansible.builtin.copy:
+    dest: /usr/local/bin/mc-run
+    content: |
+      #!/bin/sh
+      # Usage: mc-run ENV_FILE COMMAND [ARG...]   (prefix ENV_FILE with "-" if it may not exist)
+      # Runs COMMAND as {{ mc_ops_user }} (never as minecraft: code in the JVM could read the environment of
+      # a same-uid process) in a transient systemd unit that reads ENV_FILE (root-only) itself.
+      # Secrets passed via sudo/Ansible `environment:` end up on a command line (ps, journal); not here.
+      set -eu
+      env_file=$1
+      shift
+      # Sandboxed like the product's units (design §7), less strict where these commands write: ProtectSystem=full
+      # leaves /opt and /var writable (file permissions still apply: the ops user can't write the server dir;
+      # restic's cache, the markers, the restore staging dir and /var/tmp restore tests are its own).
+      exec systemd-run --quiet --pipe --wait --collect --uid={{ mc_ops_user }} --gid={{ mc_ops_user }} \
+        -p SupplementaryGroups=minecraft -p EnvironmentFile="$env_file" -E PYTHONDONTWRITEBYTECODE=1 \
+        -p NoNewPrivileges=yes -p ProtectSystem=full -p ProtectHome=yes -p PrivateDevices=yes \
+        -p ProtectKernelTunables=yes -p ProtectKernelModules=yes -p ProtectKernelLogs=yes \
+        -p ProtectControlGroups=yes -p ProtectClock=yes -p ProtectHostname=yes -p RestrictSUIDSGID=yes \
+        -p RestrictRealtime=yes -p RestrictNamespaces=yes -p LockPersonality=yes \
+        -p SystemCallArchitectures=native -p CapabilityBoundingSet= \
+        -p "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6" "$@"
+    owner: root
+    group: root
+    mode: "0750"
+
+# --- polkit: the only system actions the ops user may take (design §5 "Privilege model") -------------
+- name: Install polkit (the ops user starts/restarts exactly the units its rules name)
+  ansible.builtin.apt:
+    name: polkitd
+    state: present
+  register: base_polkit
+
+# dbus-daemon reads its policy for org.freedesktop.PolicyKit1 while the package is being installed, before the
+# polkitd user exists ("Unknown username polkitd"): polkitd then can't own its bus name and exits ("Lost the
+# name"), and every polkit-checked call (self-heal, restore) times out. Reproduced on Debian 13; a reload fixes it.
+- name: Reload dbus after installing polkit (so polkitd may own its name)
+  ansible.builtin.shell: |
+    set -eu
+    systemctl reload dbus.service
+    systemctl reset-failed polkit.service 2>/dev/null || true
+  when: base_polkit.changed  # noqa: no-handler
+  changed_when: true
+
+- name: Allow the ops user exactly its systemd actions (unit + verb)
+  ansible.builtin.template:
+    src: 50-mc-ops.rules.j2
+    dest: /etc/polkit-1/rules.d/50-mc-ops.rules
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Remove the pre-P7-review rule (health.py ran as minecraft then)
+  ansible.builtin.file:
+    path: /etc/polkit-1/rules.d/50-mc-health.rules
+    state: absent
+
+- name: Write notification environment file (restart announcements, maintenance windows)
+  ansible.builtin.copy:
+    dest: "{{ mc_etc_dir }}/notify.env"
+    content: |
+      # Managed by Ansible (base role)
+      DISCORD_WEBHOOK_URL={{ mc_secret_discord_webhook_url }}
+      WATCHDOG_URL={{ mc_watchdog_url }}
+      HEARTBEAT_TOKEN={{ mc_secret_heartbeat_token }}
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Install `mc` console helper (e.g. `mc list`, `mc spark tps`)
+  ansible.builtin.copy:
+    dest: /usr/local/bin/mc
+    content: |
+      #!/bin/sh
+      # Run a server console command over RCON.
+      exec sudo -u minecraft {{ mc_bin_dir }}/mc_rcon.py cmd "$@"
+    owner: root
+    group: root
+    mode: "0755"

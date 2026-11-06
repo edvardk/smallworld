@@ -1,0 +1,8 @@
+# Left out of the public repository by scripts/publish_fresh.py (docs/publishing.md): the maintainer's planning
+# and design history. They stay in the archived original repository.
+# One entry per line: `dir/` (everything under it), an exact path, or an fnmatch glob; `#` comments.
+# CHANGELOG.md isn't listed: it is transformed (publish_fresh.public_changelog), not excluded.
+plans/
+PLAN.md
+docs/design/
+.claude/

@@ -1,0 +1,5 @@
+# try-reload-or-restart: no-op if sshd is socket-activated and idle (Ubuntu 24.04); the next
+# connection then starts sshd with the new config. Existing sessions are never dropped.
+- name: Reload sshd
+  ansible.builtin.command: systemctl try-reload-or-restart ssh.service  # noqa: command-instead-of-module (no module equivalent)
+  changed_when: true

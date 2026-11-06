@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+[Unit]
+Description=restic prune ({{ mc_prune_schedule }}; pick a time between backups)
+
+[Timer]
+OnCalendar={{ mc_prune_schedule }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

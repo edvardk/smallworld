@@ -1,0 +1,374 @@
+{
+  "desktop-full": {
+    "throttle": 4,
+    "fx": "full",
+    "fx_applied": "full",
+    "median_p95": 16.7,
+    "worst_p95": 16.8,
+    "tabs": {
+      "overview": {
+        "frames": 144,
+        "scroll_px": 726,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "console": {
+        "frames": 145,
+        "scroll_px": 0,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "console-log": {
+        "frames": 143,
+        "scroll_px": 2909,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 50
+      },
+      "players": {
+        "frames": 145,
+        "scroll_px": 333,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "experience": {
+        "frames": 145,
+        "scroll_px": 1243,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "bans": {
+        "frames": 145,
+        "scroll_px": 0,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "plugins": {
+        "frames": 144,
+        "scroll_px": 0,
+        "p50": 16.7,
+        "p95": 16.8,
+        "max": 16.8
+      },
+      "backups": {
+        "frames": 144,
+        "scroll_px": 0,
+        "p50": 16.7,
+        "p95": 16.8,
+        "max": 16.8
+      },
+      "worlds": {
+        "frames": 145,
+        "scroll_px": 0,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "logs": {
+        "frames": 144,
+        "scroll_px": 21,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "health": {
+        "frames": 145,
+        "scroll_px": 179,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "audit": {
+        "frames": 144,
+        "scroll_px": 511,
+        "p50": 16.7,
+        "p95": 16.8,
+        "max": 33.3
+      }
+    }
+  },
+  "desktop-auto": {
+    "throttle": 4,
+    "fx": "auto",
+    "fx_applied": "full",
+    "median_p95": 16.8,
+    "worst_p95": 16.8,
+    "tabs": {
+      "overview": {
+        "frames": 144,
+        "scroll_px": 726,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "console": {
+        "frames": 145,
+        "scroll_px": 0,
+        "p50": 16.7,
+        "p95": 16.8,
+        "max": 16.8
+      },
+      "console-log": {
+        "frames": 145,
+        "scroll_px": 4211,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "players": {
+        "frames": 144,
+        "scroll_px": 333,
+        "p50": 16.7,
+        "p95": 16.8,
+        "max": 33.3
+      },
+      "experience": {
+        "frames": 145,
+        "scroll_px": 1243,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "bans": {
+        "frames": 145,
+        "scroll_px": 0,
+        "p50": 16.7,
+        "p95": 16.8,
+        "max": 16.8
+      },
+      "plugins": {
+        "frames": 145,
+        "scroll_px": 0,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "backups": {
+        "frames": 145,
+        "scroll_px": 0,
+        "p50": 16.7,
+        "p95": 16.8,
+        "max": 16.8
+      },
+      "worlds": {
+        "frames": 145,
+        "scroll_px": 0,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "logs": {
+        "frames": 144,
+        "scroll_px": 21,
+        "p50": 16.7,
+        "p95": 16.8,
+        "max": 16.8
+      },
+      "health": {
+        "frames": 145,
+        "scroll_px": 179,
+        "p50": 16.7,
+        "p95": 16.8,
+        "max": 16.8
+      },
+      "audit": {
+        "frames": 144,
+        "scroll_px": 511,
+        "p50": 16.7,
+        "p95": 16.8,
+        "max": 16.8
+      }
+    }
+  },
+  "phone-full": {
+    "throttle": 4,
+    "fx": "full",
+    "fx_applied": "full",
+    "median_p95": 16.8,
+    "worst_p95": 16.8,
+    "tabs": {
+      "overview": {
+        "frames": 145,
+        "scroll_px": 2437,
+        "p50": 16.7,
+        "p95": 16.8,
+        "max": 16.8
+      },
+      "console": {
+        "frames": 144,
+        "scroll_px": 212,
+        "p50": 16.7,
+        "p95": 16.8,
+        "max": 16.8
+      },
+      "console-log": {
+        "frames": 143,
+        "scroll_px": 7169,
+        "p50": 16.7,
+        "p95": 16.8,
+        "max": 33.4
+      },
+      "players": {
+        "frames": 145,
+        "scroll_px": 1208,
+        "p50": 16.7,
+        "p95": 16.8,
+        "max": 16.8
+      },
+      "experience": {
+        "frames": 144,
+        "scroll_px": 5763,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "bans": {
+        "frames": 144,
+        "scroll_px": 0,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "plugins": {
+        "frames": 145,
+        "scroll_px": 0,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "backups": {
+        "frames": 145,
+        "scroll_px": 391,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "worlds": {
+        "frames": 145,
+        "scroll_px": 757,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "logs": {
+        "frames": 145,
+        "scroll_px": 970,
+        "p50": 16.7,
+        "p95": 16.8,
+        "max": 16.8
+      },
+      "health": {
+        "frames": 145,
+        "scroll_px": 1895,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "audit": {
+        "frames": 145,
+        "scroll_px": 3910,
+        "p50": 16.7,
+        "p95": 16.8,
+        "max": 16.8
+      }
+    }
+  },
+  "phone-auto": {
+    "throttle": 4,
+    "fx": "auto",
+    "fx_applied": "full",
+    "median_p95": 16.7,
+    "worst_p95": 16.8,
+    "tabs": {
+      "overview": {
+        "frames": 145,
+        "scroll_px": 2437,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "console": {
+        "frames": 145,
+        "scroll_px": 212,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "console-log": {
+        "frames": 144,
+        "scroll_px": 8574,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 33.3
+      },
+      "players": {
+        "frames": 145,
+        "scroll_px": 1208,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "experience": {
+        "frames": 145,
+        "scroll_px": 5763,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "bans": {
+        "frames": 145,
+        "scroll_px": 0,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "plugins": {
+        "frames": 145,
+        "scroll_px": 0,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "backups": {
+        "frames": 145,
+        "scroll_px": 391,
+        "p50": 16.7,
+        "p95": 16.8,
+        "max": 16.8
+      },
+      "worlds": {
+        "frames": 145,
+        "scroll_px": 757,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "logs": {
+        "frames": 144,
+        "scroll_px": 970,
+        "p50": 16.7,
+        "p95": 16.8,
+        "max": 16.8
+      },
+      "health": {
+        "frames": 145,
+        "scroll_px": 1895,
+        "p50": 16.7,
+        "p95": 16.8,
+        "max": 16.8
+      },
+      "audit": {
+        "frames": 145,
+        "scroll_px": 3910,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      }
+    }
+  }
+}

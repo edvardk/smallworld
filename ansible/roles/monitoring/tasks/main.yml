@@ -1,0 +1,25 @@
+# health.py runs as the ops user; the polkit rule that lets it restart minecraft.service is in the base role.
+- name: Write health-check environment file
+  ansible.builtin.template:
+    src: health.env.j2
+    dest: "{{ mc_etc_dir }}/health.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Install health-check units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: [mc-health.service, mc-health.timer]
+
+- name: Enable health-check timer
+  ansible.builtin.systemd_service:
+    name: mc-health.timer
+    enabled: true
+    state: started
+    daemon_reload: true

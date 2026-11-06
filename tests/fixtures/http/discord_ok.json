@@ -1,0 +1,23 @@
+{
+  "_source": "Shaped from the Discord API (Get Webhook with Token returns the webhook object).",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://discord.com/api/webhooks/123456789012345678/abcDEF_ghi-JKL"
+      },
+      "response": {
+        "body": {
+          "channel_id": "1",
+          "id": "123456789012345678",
+          "name": "mc",
+          "type": 1
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "_source": "Shaped from the GitHub REST API reference (apps, app-manifests, branches/protection), 2026-11-01; ids fake.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/mcctl-tests/tests-mc-config/installation"
+      },
+      "response": {
+        "body": {
+          "app_id": 123456,
+          "id": 4242
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://api.github.com/app/installations/4242/access_tokens"
+      },
+      "response": {
+        "body": {
+          "expires_at": "2026-11-01T13:00:00Z",
+          "permissions": {
+            "contents": "write"
+          },
+          "token": "fake-installation-token-for-tests"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 201
+      }
+    }
+  ]
+}

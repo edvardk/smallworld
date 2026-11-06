@@ -1,0 +1,5 @@
+ℹ️ **Rebooting the server host for security updates**
+**Impact:** Nobody is online; the server is back in a few minutes.
+**Likely cause:** Security updates installed overnight need a reboot, and the reboot window found the server empty.
+**What to do:** No action needed - informational.
+**Details:** in the reboot window (04:30-06:00), nobody online

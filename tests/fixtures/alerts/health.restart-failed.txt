@@ -1,0 +1,5 @@
+🔴 **The Minecraft server is down and self-heal couldn't restart it**
+**Impact:** Nobody can join or play.
+**Likely cause:** The restart command itself failed (unit failed).
+**What to do:** `journalctl -u mc-health -n 50` and `journalctl -u minecraft -n 100` on the box; `mcctl doctor`.
+**Details:** unit failed

@@ -1,0 +1,5 @@
+⚠️ **Short freezes: Java memory management paused the server**
+**Impact:** Players would notice freezes of up to 120 ms (~2 ticks). Nobody is online right now.
+**Likely cause:** The server ran out of free memory faster than ZGC could free it: 3 allocation stall(s), 120 ms in total; the heap is still 90% full after collection (short on memory) while chunk pre-generation is running (world).
+**What to do:** Usually nothing: it clears when chunk pre-generation finishes. If it keeps happening: give the JVM more heap if the box has free RAM (`mcctl config set jvm.heap_mb <MB>`, push) or move to a host with dedicated cores or more RAM.
+**Details:** 3 stall(s) this check, longest freeze 120 ms (alert above 50 ms); collector zgc
