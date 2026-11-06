@@ -6,6 +6,32 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-06
+
+### Added
+
+- **Anonymity safeguards on every commit** now that the product is developed in the open (docs/publishing.md
+  "After publishing: safeguards on every commit"): `scripts/guard.py` runs publish_fresh's denylist and generic
+  checks from git hooks (`.githooks/`: staged files and paths, `publish-exclude` paths refused, the commit
+  message, a GitHub noreply author/committer identity, every pushed commit; gitleaks on the staged changes when
+  installed; `python3 scripts/guard.py install`) and in the new required CI check `publication` (a pull request's
+  commits, nightly and on releases the whole tree; the denylist from the product repo's Actions secret
+  `PUBLISH_DENYLIST`). Its output never shows a pattern, the matched text or an email. The denylist is found
+  through `--denylist`, `$SMALLWORLD_DENYLIST_TEXT`, `$SMALLWORLD_DENYLIST` or `git config smallworld.denylist`
+  (publish_fresh.py too). `mcctl product-setup` turns on GitHub secret scanning and push protection on a public
+  product repository.
+
+### Changed
+
+- `mcctl product-setup`: the product's `main` ruleset has no bypass actor and requires a pull request (no
+  approvals), so the admin's changes pass the same checks as everyone's.
+- LICENSE: copyright Edvard Kristiansen; the README names the maintainer.
+
+### Fixed
+
+- CI `gitleaks` on the public repository: `.gitleaksignore` names the known test fixtures by `file:rule:line`
+  too, so they match in any commit (the v1.2.0 release run failed on them).
+
 ## [1.2.0] - 2026-11-06
 
 Smallworld: the product is generic and anonymous (neutral defaults, MIT, renamed to edvardk/smallworld), every

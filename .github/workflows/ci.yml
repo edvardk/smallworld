@@ -4,14 +4,15 @@ name: ci
 # product repo is public, so GitHub's standard runners cost no Actions minutes: this workflow is thorough, and only
 # a config repo's workflow (the reusable server.yml) is tuned for minutes.
 #
-# Required checks (main's ruleset, mcctl/productsetup.py REQUIRED_CHECKS): lint, gitleaks, actionlint,
-# config-repo / validate (and e2e-mock.yml's e2e). They are never filtered out at the workflow level (a workflow
-# that never starts leaves its required checks pending forever); the `changes` job decides what is heavy work:
+# Required checks (main's ruleset, mcctl/productsetup.py REQUIRED_CHECKS): lint, gitleaks, publication,
+# actionlint, config-repo / validate (and e2e-mock.yml's e2e). They are never filtered out at the workflow level
+# (a workflow that never starts leaves its required checks pending forever); the `changes` job decides what is
+# heavy work:
 #   - lint always runs; a docs-only change (scripts/ci_changes.py) runs ruff, yamllint and the tests that read
 #     the docs, and skips the rest of the job's steps;
 #   - actionlint runs when a workflow changed, else it is skipped (a skipped job reports success);
-#   - gitleaks and config-repo / validate always run (both cheap; a skipped reusable-workflow call would report
-#     under another check name);
+#   - gitleaks, publication and config-repo / validate always run (all cheap; a skipped reusable-workflow call
+#     would report under another check name);
 #   - if `changes` itself fails, its outputs are empty and every `!= 'false'` test below runs everything.
 #
 # When: every pull request (plus the controller matrix when code changed); nightly on main (everything: catches
@@ -22,6 +23,9 @@ on:
   schedule:
     - cron: "7 22 * * *" # nightly: everything
   workflow_call: # release.yml
+    secrets:
+      PUBLISH_DENYLIST: # the publication job's private denylist (release.yml passes it explicitly)
+        required: false
   # PRs opened with GITHUB_TOKEN (update-lock) don't trigger pull_request; update-lock dispatches this.
   workflow_dispatch:
 
@@ -239,6 +243,44 @@ jobs:
           echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/gitleaks.tgz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/gitleaks.tgz" -C "$RUNNER_TEMP" gitleaks
           "$RUNNER_TEMP/gitleaks" git --redact --no-banner --verbose .
+
+  # The anonymity gate on every change, now that the product is developed in the open (docs/publishing.md "After
+  # publishing"): scripts/guard.py with publish_fresh.py's checks. A pull request: every commit in base..head
+  # (messages, author/committer identities, the files each commit changed, no publish-exclude paths); anything
+  # else: the whole tree of HEAD. The private denylist comes from the PUBLISH_DENYLIST Actions secret (the file's
+  # content) in an environment variable, never on a command line; guard.py prints rule numbers and paths, never a
+  # pattern or what it matched (the log is public). Fork pull requests get no secrets: generic checks only.
+  # Dependabot's runs get Dependabot's secrets only, so they aren't required to have it either.
+  publication:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the pull request's commits, one by one
+          persist-credentials: false
+
+      # The runner's python3 (guard.py is stdlib-only, like the hooks that run it).
+      - name: guard.py
+        env:
+          SMALLWORLD_DENYLIST_TEXT: ${{ secrets.PUBLISH_DENYLIST }}
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          # In the public repository the secret must be there, except where GitHub withholds it.
+          REQUIRE: >-
+            ${{ github.repository == 'edvardk/smallworld'
+            && (github.event_name != 'pull_request'
+            || (github.event.pull_request.head.repo.full_name == github.repository
+            && github.event.pull_request.user.login != 'dependabot[bot]')) }}
+        run: |
+          set --
+          if [ "$REQUIRE" = true ]; then set -- --require-denylist; fi
+          if [ "$EVENT" = pull_request ]; then
+            python3 scripts/guard.py range "$@" "$BASE" "$HEAD"
+          else
+            python3 scripts/guard.py tree "$@" HEAD
+          fi
 
   # P13/P17: the in-house plugins (mc-telemetry, mc-brand) are reproducible: rebuilt from source with the pinned JDK
   # against the API bundled in the pinned server jar (all downloads sha256-checked), each must equal the committed

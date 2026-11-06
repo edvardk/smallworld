@@ -463,8 +463,11 @@ class Cloud:
         expiry = {"github-authentication-token-expiration": "2027-10-31 00:00:00 UTC"}
         if re.fullmatch(r"/repos/[^/]+/[^/]+", path):
             settings = self.gh_settings.setdefault(path[7:], {})
-            if req.method == "PATCH":  # repository settings (auto-merge)
-                settings.update(json.loads(req.body or b"{}"))
+            if req.method == "PATCH":  # repository settings (auto-merge, secret scanning)
+                body = json.loads(req.body or b"{}")
+                analysis = settings.setdefault("security_and_analysis", {})
+                analysis.update(body.pop("security_and_analysis", {}))
+                settings.update(body)
                 return _json({"full_name": path[7:], **settings})
             owner, name = path[7:].split("/")
             repo = {

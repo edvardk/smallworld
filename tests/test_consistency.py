@@ -101,10 +101,18 @@ def test_base_role_installs_all_server_scripts() -> None:
     assert m and sorted(x.strip() for x in m.group(1).split(",")) == sorted(SERVER_SCRIPTS)
 
 
+# Actions secrets of the product repository itself (set by its maintainer, docs/publishing.md), not of a config
+# repo: only the product's own CI uses them, never the reusable workflow.
+PRODUCT_REPO_SECRETS = {"PUBLISH_DENYLIST": {"ci.yml", "release.yml"}}
+
+
 def test_actions_secrets_used_by_workflows_exist_in_terraform() -> None:
     tf = (REPO / "terraform/github.tf").read_text()
     for wf in [*(REPO / ".github/workflows").glob("*.yml"), CALLER]:
         for secret in re.findall(r"secrets\.([A-Z0-9_]+)", wf.read_text()):
+            if secret in PRODUCT_REPO_SECRETS:
+                assert wf.parent == REPO / ".github/workflows" and wf.name in PRODUCT_REPO_SECRETS[secret], wf
+                continue
             assert re.search(rf"\b{secret}\s*=", tf), (
                 f"{wf.name} uses secrets.{secret}, not created by Terraform"
             )

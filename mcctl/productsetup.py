@@ -7,6 +7,9 @@ docs checked 2026-11-01):
 
 - `GET|PATCH /repos/{o}/{r}`: `allow_auto_merge` (Dependabot's auto-merge, P11) and `delete_branch_on_merge`;
   `allow_forking: false` while the product is private (security review).
+- `GET|PATCH /repos/{o}/{r}`: `security_and_analysis.secret_scanning` and
+  `secret_scanning_push_protection` (`{"status": "enabled"}`) on a public repository (free there): GitHub
+  scans every push for known credential formats and push protection blocks one that carries a secret.
 - `GET|PUT /repos/{o}/{r}/actions/permissions/access`: `access_level` `user` (`organization` for an org) while
   the product is private, so the owner's private config repos can call the reusable workflow.
 - `GET|PUT /repos/{o}/{r}/actions/permissions/workflow`: `can_approve_pull_request_reviews` ("Allow GitHub
@@ -15,11 +18,12 @@ docs checked 2026-11-01):
 - `GET|PUT /repos/{o}/{r}/vulnerability-alerts` (204 on, 404 off) and `GET|PUT
   /repos/{o}/{r}/automated-security-fixes` (`{enabled}`): Dependabot alerts + security updates.
 - `GET|POST /repos/{o}/{r}/rulesets`, `GET|PUT /repos/{o}/{r}/rulesets/{id}`: the `main` ruleset requiring
-  the CI checks (lint, gitleaks, actionlint, config-repo / validate, e2e) from the GitHub Actions app, no
-  force-push or deletion, the repository admin bypasses (the admin can still push to main). Private repos
-  of personal accounts need a paid plan for rulesets (403 "Upgrade to GitHub Pro"). A second ruleset (target
-  `tag`, `refs/tags/v*`): creation, update and deletion for the admin only (security review: config repos pin
-  releases by tag).
+  the CI checks (lint, gitleaks, publication, actionlint, config-repo / validate, e2e) from the GitHub
+  Actions app, changes only through pull requests (no approvals required), no force-push or deletion, and
+  no bypass actor: the admin too goes through a pull request whose checks passed (the ruleset can still be
+  edited in Settings in an emergency). Private repos of personal accounts need a paid plan for rulesets
+  (403 "Upgrade to GitHub Pro"). A second ruleset (target `tag`, `refs/tags/v*`): creation, update and
+  deletion for the admin only (security review: config repos pin releases by tag).
 
 The token: `GH_TOKEN` from the environment, else the output of `gh auth token` (captured, never on a command
 line), else a hidden prompt. It is never stored or printed.
@@ -42,9 +46,12 @@ RULESET_NAME = "main: CI must pass (mcctl product-setup)"
 TAG_RULESET_NAME = "v* tags: admin only (mcctl product-setup)"
 GITHUB_ACTIONS_APP_ID = 15368  # = terraform/github.tf local.github_actions_app_id (tests/test_consistency.py)
 ADMIN_ROLE_ID = 5  # repository role "admin" (GitHub REST rulesets: bypass_actors)
-# Check-run names: ci.yml jobs lint/gitleaks/actionlint, its reusable call config-repo -> "config-repo /
-# validate", e2e-mock.yml job e2e. update-lock.yml dispatches ci.yml and e2e-mock.yml on its PR branch.
-REQUIRED_CHECKS = ("lint", "gitleaks", "actionlint", "config-repo / validate", "e2e")
+# Check-run names: ci.yml jobs lint/gitleaks/publication/actionlint, its reusable call config-repo ->
+# "config-repo / validate", e2e-mock.yml job e2e. update-lock.yml dispatches ci.yml and e2e-mock.yml on its PR
+# branch.
+REQUIRED_CHECKS = ("lint", "gitleaks", "publication", "actionlint", "config-repo / validate", "e2e")
+# Public repositories only (GitHub Advanced Security features, free for public repositories).
+SECRET_SCANNING = ("secret_scanning", "secret_scanning_push_protection")
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
 
@@ -66,9 +73,8 @@ def desired_ruleset() -> dict[str, Any]:
         "target": "branch",
         "enforcement": "active",
         "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
-        "bypass_actors": [
-            {"actor_id": ADMIN_ROLE_ID, "actor_type": "RepositoryRole", "bypass_mode": "always"}
-        ],
+        # Nobody bypasses, the admin included: every change to main is a pull request whose checks passed.
+        "bypass_actors": [],
         "rules": [
             {"type": "deletion"},
             {"type": "non_fast_forward"},
@@ -79,6 +85,16 @@ def desired_ruleset() -> dict[str, Any]:
                     "required_status_checks": [
                         {"context": c, "integration_id": GITHUB_ACTIONS_APP_ID} for c in REQUIRED_CHECKS
                     ],
+                },
+            },
+            {
+                "type": "pull_request",  # no direct pushes; one maintainer, so no approvals required
+                "parameters": {
+                    "required_approving_review_count": 0,
+                    "dismiss_stale_reviews_on_push": False,
+                    "require_code_owner_review": False,
+                    "require_last_push_approval": False,
+                    "required_review_thread_resolution": False,
                 },
             },
         ],
@@ -196,6 +212,19 @@ def plan(token: str, repository: str, transport: http.Transport) -> Plan:
 
     for key in ("allow_auto_merge", "delete_branch_on_merge"):
         item(key, bool(repo.get(key)), True, lambda k=key: c.must("PATCH", "", {k: True}))
+
+    analysis = repo.get("security_and_analysis") or {}
+    if repo.get("private"):
+        notes.append("private repository: secret scanning and push protection are set once it is public")
+    else:
+        for key in SECRET_SCANNING:
+            status = str((analysis.get(key) or {}).get("status") or "disabled")
+            item(
+                key.replace("_", " "),
+                status,
+                "enabled",
+                lambda k=key: c.must("PATCH", "", {"security_and_analysis": {k: {"status": "enabled"}}}),
+            )
 
     if repo.get("private"):
         owner_type = (repo.get("owner") or {}).get("type")

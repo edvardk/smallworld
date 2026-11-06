@@ -6,8 +6,9 @@ Debian host and a CI pipeline that deploys every `git push`. After setup it most
 are tested and merged every week, reboots wait until nobody is playing, a watchdog outside the box notices when
 it is down, and the world is backed up every hour to storage the server itself can't wipe.
 
-Version **1.2.0** ([CHANGELOG](CHANGELOG.md)). Built for one admin with a handful of players. A tour with
-screenshots: [docs/features.md](docs/features.md).
+Version **1.2.1** ([CHANGELOG](CHANGELOG.md)). Built for one admin with a handful of players. A tour with
+screenshots: [docs/features.md](docs/features.md). Built and maintained by Edvard Kristiansen
+([GitHub](https://github.com/edvardk)).
 
 | You get | How |
 |---|---|

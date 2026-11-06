@@ -17,6 +17,8 @@ jobs:
       contents: write # requested by the reusable workflow's panel-merge job (P10; never runs from here)
       pull-requests: write # same
       id-token: write # requested by the reusable workflow's deploy job (never runs from the product's CI)
+    secrets:
+      PUBLISH_DENYLIST: ${{ secrets.PUBLISH_DENYLIST }} # ci.yml's publication job (docs/publishing.md)
 
   release:
     needs: ci

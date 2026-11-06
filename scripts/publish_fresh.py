@@ -9,8 +9,10 @@
    archived original repository). `CHANGELOG.md` is transformed: the public changelog starts at the release
    being published (plus `## [Unreleased]`), with one line saying where the earlier history is.
 2. **Scan** every exported path and every file against
-   - the denylist (`--denylist`, default `../mc-config/publish-denylist.txt` relative to the product
-     checkout, i.e. in the private config repo): one case-insensitive regex per line, `#` comments,
+   - the denylist (`find_denylist`: `--denylist`, else `$SMALLWORLD_DENYLIST_TEXT` (the content) or
+     `$SMALLWORLD_DENYLIST`, else `git config smallworld.denylist`, else `../mc-config/publish-denylist.txt`
+     relative to the product checkout, i.e. in the private config repo; scripts/guard.py resolves it the
+     same way): one case-insensitive regex per line, `#` comments,
      `## <category>` lines name the category of the patterns below them. It holds identifying data, so it is
      never part of this repository (refused if it would be exported);
    - the generic checks (`generic_problems`, also run on the working tree by `tests/test_publishable.py`):
@@ -47,7 +49,7 @@ import tomllib
 import zipfile
 import zlib
 from collections import Counter
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -61,9 +63,13 @@ PUBLIC_REPOSITORY = (
 )
 OWNER = PUBLIC_REPOSITORY.split("/")[0]
 PRODUCT_NAME = "Smallworld"
+AUTHOR = "Edvard Kristiansen"  # copyright holder (LICENSE) and README byline: allowed in exactly this form
 EXCLUDE_FILE = "publish-exclude"
 CHANGELOG = "CHANGELOG.md"
 DEFAULT_DENYLIST = Path("..") / "mc-config" / "publish-denylist.txt"  # relative to the product checkout
+DENYLIST_ENV = "SMALLWORLD_DENYLIST"  # a path
+DENYLIST_TEXT_ENV = "SMALLWORLD_DENYLIST_TEXT"  # the content itself (CI: an Actions secret)
+DENYLIST_GIT_CONFIG = "smallworld.denylist"
 ZIP_DEPTH = 3
 
 _o = re.escape(OWNER)
@@ -75,6 +81,7 @@ ALLOWED = tuple(
         rf"github\.com/{_o}(?![\w/-])",  # the GitHub account
         rf"io[./$]github[./$]{_o}(?![\w-])",  # the Java package (source dir, javac $SwitchMap$)
         r"(?<![\w.+-])(?:\d+\+)?[\w.-]+@users\.noreply\.github\.com",  # GitHub noreply addresses
+        rf"(?-i:{re.escape(AUTHOR)})",  # the author's name, exactly (LICENSE, README byline)
     )
 )
 
@@ -159,6 +166,47 @@ def parse_denylist(text: str, name: str = "denylist") -> list[Rule]:
     if not rules:
         raise PublishError(f"{name}: no patterns (an empty denylist proves nothing)")
     return rules
+
+
+@dataclass(frozen=True)
+class DenylistSource:
+    origin: str  # which setting named it (for messages; never the content)
+    path: Path | None  # None: the content came from DENYLIST_TEXT_ENV
+    text: str | None  # None: no file at `path`
+    default: bool = False  # the built-in default path (a missing default isn't a configuration error)
+
+    @property
+    def name(self) -> str:
+        return self.path.name if self.path is not None else DENYLIST_TEXT_ENV
+
+
+def find_denylist(
+    source: Path,
+    explicit: Path | None = None,
+    env: Mapping[str, str] | None = None,
+    run: Runner = default_runner,
+) -> DenylistSource:
+    """The denylist to use (shared by publish_fresh.py and guard.py): `--denylist PATH`, else the content in
+    $SMALLWORLD_DENYLIST_TEXT, else the path in $SMALLWORLD_DENYLIST, else `git config smallworld.denylist`
+    (`~` expanded, relative to the checkout), else DEFAULT_DENYLIST next to the checkout. Empty values count
+    as unset (a fork pull request's CI run gets an empty secret)."""
+    env = os.environ if env is None else env
+
+    def at(origin: str, path: Path, default: bool = False) -> DenylistSource:
+        path = (source / path.expanduser()).resolve()
+        text = path.read_text(encoding="utf-8") if path.is_file() else None
+        return DenylistSource(origin, path, text, default)
+
+    if explicit is not None:
+        return at("--denylist", explicit)
+    if (text := env.get(DENYLIST_TEXT_ENV) or "").strip():
+        return DenylistSource(f"${DENYLIST_TEXT_ENV}", None, text)
+    if value := (env.get(DENYLIST_ENV) or "").strip():
+        return at(f"${DENYLIST_ENV}", Path(value))
+    proc = run(["git", "-C", str(source), "config", "--path", "--get", DENYLIST_GIT_CONFIG])
+    if proc.returncode == 0 and (value := proc.stdout.strip()):
+        return at(f"git config {DENYLIST_GIT_CONFIG}", Path(value))
+    return at("default", DEFAULT_DENYLIST, default=True)
 
 
 # --- export ------------------------------------------------------------------------------------------------
@@ -335,7 +383,8 @@ EMAIL_DOMAINS = re.compile(
     r"(?:^|\.)(?:example(?:\.com|\.net|\.org)?|test|invalid|internal|localhost|users\.noreply\.github\.com)$",
     re.I,
 )
-EMAIL_ADDRESSES = {"noreply@anthropic.com", "noreply@github.com", "git@github.com"}
+# GitHub's own addresses (support@: the Signed-off-by line of every Dependabot commit).
+EMAIL_ADDRESSES = {"noreply@anthropic.com", "noreply@github.com", "git@github.com", "support@github.com"}
 NOT_EMAIL = re.compile(r"\.(?:service|timer|socket|target|mount|path|slice|scope)$")  # systemd unit@instance
 IPV4 = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.-])")
 IPV6 = re.compile(r"(?<![\w:.])[0-9A-Fa-f]{0,4}(?::[0-9A-Fa-f]{0,4}){2,7}(?![\w:.])")
@@ -562,24 +611,29 @@ def main(
     p.add_argument("--source", type=Path, default=ROOT, help="the product checkout (default: %(default)s)")
     p.add_argument("--commit", default="HEAD", help="the commit to publish (default: HEAD)")
     p.add_argument("--version", help="X.Y.Z (default: pyproject.toml at the commit)")
-    p.add_argument("--denylist", type=Path, help=f"default: <source>/{DEFAULT_DENYLIST}")
+    p.add_argument(
+        "--denylist",
+        type=Path,
+        help=f"default: ${DENYLIST_TEXT_ENV}, ${DENYLIST_ENV}, git config {DENYLIST_GIT_CONFIG}, "
+        f"else <source>/{DEFAULT_DENYLIST}",
+    )
     p.add_argument("--create", type=Path, metavar="DEST", help="build the one-commit repository in DEST")
     p.add_argument("--noreply-id", type=int, help="the owner's numeric GitHub id (default: asked via gh)")
     p.add_argument("--quiet", action="store_true", help="only the summary, not every hit")
     args = p.parse_args(argv)
     source = args.source.resolve()
-    denylist = (args.denylist or source / DEFAULT_DENYLIST).resolve()
     try:
+        denylist = find_denylist(source, args.denylist, run=run)
         everything = export(run, source, args.commit)
         version = (args.version or version_of(everything)).removeprefix("v")
         files, excludes = select(everything, version)
-        if denylist.is_relative_to(source):
-            rel = denylist.relative_to(source).as_posix()
+        if denylist.path is not None and denylist.path.is_relative_to(source):
+            rel = denylist.path.relative_to(source).as_posix()
             if rel in files:
                 raise PublishError(f"the denylist {rel} would be published: keep it outside this repository")
-        if not denylist.is_file():
-            raise PublishError(f"no denylist at {denylist} (--denylist PATH)")
-        rules = parse_denylist(denylist.read_text(), denylist.name)
+        if denylist.text is None:
+            raise PublishError(f"no denylist at {denylist.path} ({denylist.origin}; --denylist PATH)")
+        rules = parse_denylist(denylist.text, denylist.name)
         hits = scan(files, rules) + generic_problems(files, excludes, everything)
         left_out = len(everything) - len(files)
         out(f"{args.commit} as v{version}: {len(files)} files published, {left_out} excluded")

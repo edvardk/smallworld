@@ -14,7 +14,7 @@ account URL, the `io.github.edvardk` Java package, GitHub noreply addresses). Tw
 | Check | Where | What |
 |---|---|---|
 | Generic | `tests/test_publishable.py` (every pytest run), `publish_fresh.generic_problems` | session links, emails outside reserved domains (`example.*`, `.test`, `.invalid`, `.internal`, noreply), public IP literals outside the documentation/test ranges, the owner's name outside the allowed forms, a personal timezone default in `mcctl/schema.py` or `mcctl/init.py`, references to paths that aren't published |
-| Denylist | `scripts/publish_fresh.py` only | the identifying values themselves, from a file in the private config repo, never in this one |
+| Denylist | `scripts/publish_fresh.py`; after publishing also `scripts/guard.py` (hooks, CI) | the identifying values themselves, from a file in the private config repo, never in this one |
 
 `tests/fixtures/publishable-known.txt` lists, as paths only, the files that still fail the generic check
 during the cleanup. A clean file still on the list fails the test, so the list only shrinks. It must be empty
@@ -23,7 +23,8 @@ before you publish, and `publish_fresh.py` refuses anyway while any problem is l
 ## 1. Draft the denylist
 
 Create `publish-denylist.txt` at the root of the private config repo (`../mc-config/` next to the product
-checkout is the default path; elsewhere, pass `--denylist PATH`). Never commit it to the product:
+checkout is the default path; elsewhere, pass `--denylist PATH`, set `SMALLWORLD_DENYLIST=PATH` or
+`git config smallworld.denylist PATH`; `publish_fresh.find_denylist` resolves it, for `guard.py` too). Never commit it to the product:
 `publish_fresh.py` refuses a denylist that would be published.
 
 Format: one case-insensitive Python regex per line, `#` comments. A `## <category>` line names the category
@@ -85,9 +86,10 @@ delete the review directory.
 
 **gitleaks.** CI scans the whole history (`ci.yml` job `gitleaks`). The entries in `.gitleaksignore` of the form
 `commit:file:rule:line` name commits of the archived repository, so they don't match the new commit. Run the
-pinned gitleaks on the review directory (`gitleaks git --redact --no-banner /tmp/smallworld-review`). For
-each test-fixture finding, add a global entry `file:rule:line` with the file's current line in this
-repository. gitleaks 8.30.1 checks a finding's global fingerprint before its commit fingerprint (checked in its
+pinned gitleaks on the review directory (`gitleaks git --redact --no-banner /tmp/smallworld-review`) before
+publishing: it must find nothing. For each test-fixture finding, add a global entry `file:rule:line` with the
+file's current line in this repository (v1.2.0's are at the end of `.gitleaksignore`), and keep them current
+when a fixture moves. gitleaks 8.30.1 checks a finding's global fingerprint before its commit fingerprint (checked in its
 `detect/detect.go`, `AddFinding`).
 
 ## 4. Tag and build the repository
@@ -123,8 +125,8 @@ gh repo archive <old owner/name> --yes                            # stays privat
 
 ## 6. After publishing
 
-1. **`mcctl product-setup --repo edvardk/smallworld`**: auto-merge, Dependabot alerts and security updates, the
-   `main` ruleset (the required CI checks) and the tag ruleset. The private-only settings (Actions access
+1. **`mcctl product-setup --repo edvardk/smallworld`**: auto-merge, Dependabot alerts and security updates,
+   secret scanning and push protection, the `main` ruleset (the required CI checks) and the tag ruleset. The private-only settings (Actions access
    level, forking) don't apply to a public repository. Run `--check` afterwards.
 2. **Private vulnerability reporting**: **Settings > Security > Private vulnerability reporting > Enable**
    (`SECURITY.md` sends reporters there).
@@ -147,6 +149,47 @@ gh repo archive <old owner/name> --yes                            # stays privat
 7. **Deploy** (push to the config repo's main, or `mcctl deploy -C <config>`), and check the server.
 8. The `PRODUCT_READ_TOKEN` secret and its PAT were only needed while the product was private. Revoke the PAT
    once the deploy works.
+
+## After publishing: safeguards on every commit
+
+`publish_fresh.py` gates one export. From then on development happens in the public repository, so the same
+checks run on every commit. `scripts/guard.py` imports publish_fresh's functions (stdlib only: the hooks work
+with any `python3` >= 3.11, no venv):
+
+| Where | What runs | What it checks |
+|---|---|---|
+| `pre-commit` hook | `guard.py staged` | every staged added or modified file, read from the index: its path and content against the denylist (zips and PNG metadata as in the dry run) and the per-file generic checks (session links, emails, public IPs, the owner's name outside its allowed forms, timezone defaults); paths listed in `publish-exclude` are refused (they never exist in the public repository); the pinned gitleaks on the staged changes when it is on `PATH` (one warning line when it isn't) |
+| `commit-msg` hook | `guard.py commit-msg FILE` | the message (denylist, session links, emails) and the author and committer identity: the email must be a GitHub noreply address (or a reserved test domain) |
+| `pre-push` hook | `guard.py range BASE HEAD` | every commit being pushed: message, author and committer names (denylist) and emails, the files it changed. A new branch is checked from where it left `origin/main` |
+| CI, required check `publication` (`ci.yml`) | `guard.py range` on a pull request (every commit, `fetch-depth: 0`); `guard.py tree HEAD` nightly, on releases and dispatches (the whole tree, exactly like the dry run, including references to excluded paths) | the same checks. The denylist is the Actions secret `PUBLISH_DENYLIST` (the file's content, in `SMALLWORLD_DENYLIST_TEXT`). A fork's pull request gets no secrets and runs the generic checks only; in `edvardk/smallworld` every other run fails without the secret |
+| GitHub | secret scanning and push protection (`mcctl product-setup`) | known credential formats in every push; push protection refuses the push |
+
+CI logs are public, so the output never contains a denylist pattern, the text it matched or an email address:
+a hit reads `path:line: denylist rule N` (N: the rule's position among the file's patterns, comments not
+counted); a path that itself matches the denylist is shown as `<file K of M scanned ...>`. Generic hits keep
+their category names. Exit codes: 0 clean, 1 hits, 2 a usage or configuration error.
+
+The denylist is found in this order: `--denylist PATH`, `$SMALLWORLD_DENYLIST_TEXT` (the content), the path
+in `$SMALLWORLD_DENYLIST`, `git config smallworld.denylist`, `../mc-config/publish-denylist.txt`. Without one
+the generic checks still run with a warning; `git config smallworld.requireDenylist true` (or
+`--require-denylist`) turns that into a failure. A configured path that doesn't exist is always an error.
+
+**The maintainer's one-time setup**, in each clone of the public repository:
+
+```sh
+python3 scripts/guard.py install        # core.hooksPath = .githooks; reports the identity, denylist, gitleaks
+git config smallworld.denylist /path/to/private-config/publish-denylist.txt
+git config smallworld.requireDenylist true
+git config user.email <ID>+<login>@users.noreply.github.com   # your noreply address; also --global
+gh secret set PUBLISH_DENYLIST -R edvardk/smallworld < /path/to/private-config/publish-denylist.txt
+```
+
+- GitHub **Settings > Emails**: turn on **Keep my email addresses private** and **Block command line pushes
+  that expose my email**.
+- Install gitleaks at the version and sha256 pinned in `ci.yml` (job `gitleaks`) somewhere on `PATH`.
+- Update the `PUBLISH_DENYLIST` secret whenever the denylist file changes (the same `gh secret set`).
+- Never bypass a hook (`git commit --no-verify`, `git push --no-verify`). A hit is fixed in the change; if it
+  slipped into a local commit, amend or rebase it before pushing.
 
 ## Does anything depend on the repository's numeric id?
 

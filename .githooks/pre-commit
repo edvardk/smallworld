@@ -1,0 +1,4 @@
+#!/bin/sh
+# Anonymity and secret checks on the staged files: scripts/guard.py (docs/publishing.md "After publishing").
+# Installed by `python3 scripts/guard.py install` (core.hooksPath). Never bypass it with --no-verify.
+exec python3 scripts/guard.py staged
