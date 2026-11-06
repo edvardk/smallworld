@@ -236,7 +236,7 @@ def test_commit_msg_refuses_a_personal_author_email(tmp_path, env) -> None:
     code, out = run(repo, env, "commit-msg", msg.as_posix(), "--denylist", deny(tmp_path).as_posix())
     assert code == 1
     assert "author email isn't a GitHub noreply address" in out and "committer email" in out
-    assert "users.noreply.github.com" in out  # the fix
+    assert f"(fix: {guard.NOREPLY_FIX})" in out  # the fix, as printed
     clean(out)
 
 
