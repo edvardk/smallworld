@@ -3,6 +3,10 @@
 f917aae5e63b8f974c3f835d067cee76cd0bb3ed:tests/test_agent.py:generic-api-key:439
 f917aae5e63b8f974c3f835d067cee76cd0bb3ed:tests/test_agent.py:generic-api-key:440
 f917aae5e63b8f974c3f835d067cee76cd0bb3ed:tests/test_agent.py:generic-api-key:467
+# The same fixtures after the P12 review moved them (d5d4b42).
+d5d4b4248afae64d8e3cf501464c1267d69f726b:tests/test_agent.py:generic-api-key:458
+d5d4b4248afae64d8e3cf501464c1267d69f726b:tests/test_agent.py:generic-api-key:459
+d5d4b4248afae64d8e3cf501464c1267d69f726b:tests/test_agent.py:generic-api-key:537
 # P10 review: a made-up installation token the Worker test's fake GitHub API returns (watchdog/test/actions.test.mjs).
 0e0c3e16fa8c8de8804641f840c6725dc627c2c0:watchdog/test/actions.test.mjs:generic-api-key:263
 0e0c3e16fa8c8de8804641f840c6725dc627c2c0:watchdog/test/actions.test.mjs:generic-api-key:276
@@ -11,3 +15,11 @@ f917aae5e63b8f974c3f835d067cee76cd0bb3ed:tests/test_agent.py:generic-api-key:467
 249fc10a74221618a484bfec7671b29aad60a488:tests/fixtures/http/discord_app_ok.json:generic-api-key:16
 249fc10a74221618a484bfec7671b29aad60a488:tests/fixtures/http/discord_app_ok.json:generic-api-key:98
 249fc10a74221618a484bfec7671b29aad60a488:tests/test_discord.py:generic-api-key:23
+# Global entries (file:rule:line, any commit) for the same fixtures at their current lines: the public repository
+# is one squashed commit, so the commit entries above never match there (docs/publishing.md, "gitleaks").
+tests/test_agent.py:generic-api-key:467
+tests/test_agent.py:generic-api-key:468
+tests/test_agent.py:generic-api-key:546
+tests/fixtures/http/discord_app_ok.json:generic-api-key:16
+tests/fixtures/http/discord_app_ok.json:generic-api-key:98
+tests/test_discord.py:generic-api-key:23

@@ -80,6 +80,9 @@ def test_known_list_only_shrinks() -> None:
 
 def test_the_export_leaves_out_the_history() -> None:
     everything, files, excludes = tree()
+    if len(files) == len(everything):  # the public repository: no history to leave out
+        assert excludes and not any(publish_fresh.is_excluded(p, excludes) for p in everything)
+        return
     assert excludes and len(files) < len(everything)
     assert publish_fresh.EXCLUDE_FILE in files and "CHANGELOG.md" in files
     changelog = files["CHANGELOG.md"].data.decode()

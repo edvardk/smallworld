@@ -111,6 +111,10 @@ Where things are: `docs/map.md` (feature map + phase glossary).
   the updater App (Workflows write) only in the scheduled update job's step env. Whatever may merge without the
   admin must pass `mcctl pr-gate` (`mcctl/gate.py`, the required `server / gate` check in `terraform/github.tf`),
   decided by the diff, never by branch name or author; App permissions are exactly `mcctl/ghapp.py`'s.
+- Anonymity (docs/publishing.md "After publishing"): install the hooks once per clone (`python3 scripts/guard.py
+  install`) and never bypass them (`--no-verify`, `core.hooksPath` changes): they refuse denylisted text,
+  personal emails, non-noreply commit identities and `publish-exclude` paths. Commit messages carry no session
+  links (the commit-msg hook refuses them). The `publication` CI check runs the same checks on every PR.
 - Lint locally before committing:
   `ruff check . && ruff format --check . && yamllint --strict . && pytest -q && (cd ansible && ansible-lint) && terraform -chdir=terraform fmt -check -recursive`
   (plus `terraform -chdir=terraform init -backend=false && terraform -chdir=terraform validate`; CI also runs actionlint).

@@ -27,6 +27,7 @@ CONTROLLER_TESTS = frozenset(
         "test_configrepo.py",
         "test_environments.py",
         "test_gate.py",
+        "test_guard.py",
         "test_mcctl_metrics.py",
         "test_mcctl_providers.py",
         "test_mcctl_render.py",

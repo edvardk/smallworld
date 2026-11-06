@@ -345,6 +345,9 @@ def test_product_setup_plan_apply_idempotent() -> None:
     assert tags["target"] == "tag" and tags["conditions"]["ref_name"]["include"] == ["refs/tags/v*"]
     assert [r["type"] for r in tags["rules"]] == ["creation", "update", "deletion"]
     assert tags["bypass_actors"] == [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}]
+    assert rs["bypass_actors"] == []  # the admin doesn't bypass main's checks either
+    assert rs["rules"][3]["type"] == "pull_request"
+    assert rs["rules"][3]["parameters"]["required_approving_review_count"] == 0
     checks = rs["rules"][2]["parameters"]["required_status_checks"]
     assert [c["context"] for c in checks] == list(productsetup.REQUIRED_CHECKS)
     assert {c["integration_id"] for c in checks} == {15368}
@@ -355,7 +358,35 @@ def test_product_setup_plan_apply_idempotent() -> None:
     drift = productsetup.plan("t", PRODUCT, cloud)
     assert [c.name for c in drift.changes] == ["ruleset on main"]
     productsetup.apply(drift)
-    assert list(st["rulesets"]) == [rs["id"], tags["id"]] and len(st["rulesets"][rs["id"]]["rules"]) == 3
+    assert list(st["rulesets"]) == [rs["id"], tags["id"]] and len(st["rulesets"][rs["id"]]["rules"]) == 4
+
+
+def test_product_setup_public_repo_secret_scanning() -> None:
+    """A public product: secret scanning and push protection on (security_and_analysis, PATCH /repos); the
+    private-only settings (Actions access, forking) are notes."""
+    cloud = mock.Cloud()
+    cloud.gh_settings[PRODUCT] = {
+        "private": False,
+        "security_and_analysis": {"secret_scanning": {"status": "enabled"}},
+    }
+    p = productsetup.plan("t", PRODUCT, cloud)
+    names = {c.name for c in p.changes}
+    assert "secret scanning push protection" in names and "secret scanning" not in names
+    assert "secret scanning: enabled" in p.in_sync
+    assert "actions access" not in names and "allow_forking" not in names
+    productsetup.apply(p)
+    analysis = cloud.gh_settings[PRODUCT]["security_and_analysis"]
+    assert analysis == {
+        "secret_scanning": {"status": "enabled"},
+        "secret_scanning_push_protection": {"status": "enabled"},
+    }
+    patches = [json.loads(r.body) for r in cloud.requests if r.method == "PATCH" and r.url.endswith(PRODUCT)]
+    assert {"security_and_analysis": {"secret_scanning_push_protection": {"status": "enabled"}}} in patches
+    assert productsetup.plan("t", PRODUCT, cloud).changes == []
+    # a private product: not offered (it needs a paid plan there), only noted
+    private = productsetup.plan("t", PRODUCT, mock.Cloud())
+    assert any("secret scanning" in n for n in private.notes)
+    assert not any("secret scanning" in c.name for c in private.changes)
 
 
 def test_product_setup_refuses_a_non_admin() -> None:

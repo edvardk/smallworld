@@ -1,0 +1,30 @@
+#!/bin/sh
+# Every commit about to be pushed (message, identities, the files it changed): scripts/guard.py range
+# (docs/publishing.md "After publishing"). Never bypass it with --no-verify.
+# stdin: one line per ref, "<local ref> <local sha> <remote ref> <remote sha>"; $1 is the remote's name.
+status=0
+while read -r _ local_sha _ remote_sha; do
+  case "$local_sha" in
+    *[!0]*) ;;
+    *) continue ;; # a deletion: nothing to check
+  esac
+  base=-
+  case "$remote_sha" in
+    *[!0]*)
+      if git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+        base=$remote_sha
+      fi
+      ;;
+  esac
+  if [ "$base" = - ]; then
+    # A new branch (or a remote tip this clone doesn't have): from where it left main; all commits if never.
+    for main in "refs/remotes/$1/main" refs/remotes/origin/main; do
+      if found=$(git merge-base "$main" "$local_sha" 2>/dev/null); then
+        base=$found
+        break
+      fi
+    done
+  fi
+  python3 scripts/guard.py range "$base" "$local_sha" || status=1
+done
+exit "$status"

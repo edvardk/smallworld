@@ -112,7 +112,7 @@ def test_required_checks_always_report() -> None:
                 r"\$\{\{ !cancelled\(\)( && needs\.changes\.outputs\.\w+ != 'false')? \}\}", cond
             )
     ci = load("ci.yml")["jobs"]
-    assert "if" not in ci["gitleaks"] and "if" not in ci["config-repo"]
+    assert "if" not in ci["gitleaks"] and "if" not in ci["config-repo"] and "if" not in ci["publication"]
     lint = "\n".join(str(s.get("if", "")) for s in ci["lint"]["steps"])
     assert "env.CODE" in lint and ci["lint"]["env"]["CODE"] == "${{ needs.changes.outputs.code != 'false' }}"
 

@@ -1,0 +1,4 @@
+#!/bin/sh
+# The commit message (denylist, session links, emails) and the author/committer identity (GitHub noreply):
+# scripts/guard.py (docs/publishing.md "After publishing"). Never bypass it with --no-verify.
+exec python3 scripts/guard.py commit-msg "$1"

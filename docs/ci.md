@@ -11,8 +11,8 @@ reusable workflow it runs is built to keep those near zero: see
 
 | Event | `ci.yml` | `e2e-mock.yml` |
 |---|---|---|
-| Pull request, docs only (`docs/**` except the brand previews, root `*.md`, `LICENSE`) | `lint` (ruff, yamllint, the tests that read the docs), `gitleaks`, `config-repo / validate` | `e2e` essential half |
-| Pull request, code | `lint` (everything), `gitleaks`, `config-repo / validate`, `controller` (3 OS x 3 Pythons); `plugin` / `seeds` if their inputs changed, `actionlint` if a workflow changed | `e2e` essential half; the heavy half too if the change touches what those checks exercise |
+| Pull request, docs only (`docs/**` except the brand previews, root `*.md`, `LICENSE`) | `lint` (ruff, yamllint, the tests that read the docs), `gitleaks`, `publication`, `config-repo / validate` | `e2e` essential half |
+| Pull request, code | `lint` (everything), `gitleaks`, `publication`, `config-repo / validate`, `controller` (3 OS x 3 Pythons); `plugin` / `seeds` if their inputs changed, `actionlint` if a workflow changed | `e2e` essential half; the heavy half too if the change touches what those checks exercise |
 | Nightly, 22:07 / 22:37 UTC on `main` | everything | the whole `e2e` |
 | Monthly, the 1st, 23:43 UTC | | the four benches, if the month's commits touched what they measure |
 | `release.yml` (tag push) | everything, including `controller` | |
@@ -42,11 +42,12 @@ answer is "everything changed".
 ## Required checks
 
 Main's ruleset (`mcctl product-setup`, `REQUIRED_CHECKS` in `mcctl/productsetup.py`) requires `lint`,
-`gitleaks`, `actionlint`, `config-repo / validate` and `e2e`. A workflow skipped by a `paths:` filter never
-reports, so a required check would wait forever. Neither workflow therefore has a path filter: a small
+`gitleaks`, `publication` (the anonymity checks, [publishing](publishing.md#after-publishing-safeguards-on-every-commit)),
+`actionlint`, `config-repo / validate` and `e2e`. A workflow skipped by a `paths:` filter never reports, so a
+required check would wait forever. Neither workflow therefore has a path filter: a small
 `changes` job decides, and
 
-- `lint`, `gitleaks` and `config-repo / validate` always run (`lint` cheaply on a docs-only change; the
+- `lint`, `gitleaks`, `publication` and `config-repo / validate` always run (`lint` cheaply on a docs-only change; the
   reusable-workflow call would report under another name if it were skipped);
 - `actionlint` is skipped by its `if:` when no workflow changed (a skipped job reports success); `e2e` runs on
   every pull request;
@@ -61,7 +62,7 @@ reports, so a required check would wait forever. Neither workflow therefore has 
 `pytest -m "controller and not posix_only"`:
 
 - `controller` is set by `tests/conftest.py` on the files in `CONTROLLER_TESTS`: the controller's pure logic
-  (schema, render, the gate, update PRs, the pin move, workflow secrets, metrics, providers through recorded HTTP).
+  (schema, render, the gate, the anonymity guard, update PRs, the pin move, workflow secrets, metrics, providers through recorded HTTP).
   The flows that drive ssh, terraform, Ansible or fake binaries (init, deploy, doctor, tf, p12, galaxy, ui) and
   the box's scripts (fcntl, pwd, grp) are left to Linux. On Windows the other test files aren't even collected.
 - `posix_only` marks a test in those files that needs POSIX (a `#!/bin/sh` fake binary, a 0600 file mode,
