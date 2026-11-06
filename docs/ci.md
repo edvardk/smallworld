@@ -30,6 +30,19 @@ answer is "everything changed".
   container, the P16 knobs. It runs on a pull request that touches `plugin/`, `watchdog/`, `server-config/`,
   `tests/e2e/`, the lock files, `ansible/site.yml`, the `base`/`java`/`minecraft`/`plugins`/`backups` roles, or
   the migrate/restore/telemetry code, and in the nightly run.
+- **Shards:** the checks run in parallel, each shard on its own runner with its own freshly deployed box (they
+  can't share one: host-network ports, restarts, restores, world switches, paused timers). Job `e2e-shard`
+  (static matrix, `fail-fast: false`):
+
+  | Shard | Checks (after its own boot + first `site.yml`) | Runs | Wall time |
+  |---|---|---|---|
+  | `core` | `mcctl init` re-run and stale pin, the client switch, `terraform validate`, the second `site.yml` (`changed=0`), hardening, reboot gate, deploy checks, firewall, P12 dry runs | always | ~15 min |
+  | `agent` | mc-agent and the P10 panel actions (`agent_check.py`) | always | ~20 min |
+  | `telemetry-brand` | experience telemetry, then branding | heavy half | ~13 min |
+  | `migrate-p16` | migrate container -> container, then the P16 knobs on the migrated box | heavy half | ~17 min |
+
+  A heavy shard in an essential run skips every step (its boot too) and passes in seconds. Each check sets up
+  its own preconditions, so none depends on another shard; the failure journal dump runs in every shard.
 - **The benches** (`bench`, `bench-gc`, `bench-brand`, `bench-profile`, v1.1 `bench-view`) never run on pull requests. Dispatch
   `e2e-mock` with `scope: none` and `bench: true` when a change could move tick times (a plugin, the JVM flags,
   the performance profile).
@@ -50,7 +63,11 @@ required check would wait forever. Neither workflow therefore has a path filter:
 - `lint`, `gitleaks`, `publication` and `config-repo / validate` always run (`lint` cheaply on a docs-only change; the
   reusable-workflow call would report under another name if it were skipped);
 - `actionlint` is skipped by its `if:` when no workflow changed (a skipped job reports success); `e2e` runs on
-  every pull request;
+  every pull request. It is an aggregator (`needs: [changes, e2e-shard]`, no checkout): its one step fails
+  unless `needs.e2e-shard.result` is `success` or `skipped`, so the required name stays `e2e` however the shards
+  are cut, and one failed shard fails it. It has the shards' own `if:` (`!cancelled()` plus
+  `needs.changes.outputs.e2e != 'false'`), so it waits for all of them and is skipped only with them (scope
+  `none`, the monthly benches);
 - if `changes` itself fails, its outputs are empty, and every `!= 'false'` condition runs the job.
 
 `tests/test_ci_changes.py` checks all three.
@@ -88,13 +105,16 @@ Not a required check.
 
 ## Expected runner time (product repo)
 
-No minutes are billed (public repo). For wall-clock planning: a docs-only PR ~25 minutes (the essential e2e), a
-code PR ~35-55 (e2e; the controller matrix runs in parallel, ~5-10 per cell), the nightly run ~70, the benches
-~110.
+No minutes are billed (public repo). For wall-clock planning: a docs-only PR ~20 minutes (the essential e2e:
+its `agent` shard), a code PR ~20-25 (e2e's shards and the controller matrix run in parallel, ~5-10 per cell),
+the nightly run ~20 shorter than its former ~70 (e2e's heavy half now runs beside the rest), the benches ~110.
+The e2e shards together use about as much runner time as the one job did, plus a boot and deploy (~6 min) per
+extra shard; e2e's wall time is its slowest shard (`agent`, ~20 min; it was ~23 essential / ~42 full as one
+job).
 
 ### An optional self-hosted runner for e2e
 
-The `e2e` job can move to your own machine (faster, or for a private fork that pays for minutes): set a repository variable `E2E_RUNNER`
+The e2e shards (job `e2e-shard`) can move to your own machine (faster, or for a private fork that pays for minutes): set a repository variable `E2E_RUNNER`
 (Settings > Secrets and variables > Actions > Variables, e.g. `self-hosted`). The workflow uses it only for
 trusted code: the schedule, `workflow_dispatch` and pull requests whose head branch is in the product repo
 itself (`github.event.pull_request.head.repo.full_name == github.repository`). A pull request from a fork always
@@ -103,6 +123,12 @@ that machine, so on a public repo also turn on Settings > Actions > General > "R
 contributors", and give push access only to people you would let run code there. The machine needs Docker,
 passwordless `sudo` (`modprobe`), cgroup v2, Python 3.13 and the Terraform CLI that `setup-terraform` installs.
 Use a throwaway VM, not your desktop. Delete the variable to go back to GitHub's runners.
+
+On the self-hosted runner the e2e shards run one at a time (`max-parallel: 1`, an expression on the matrix):
+every shard's box uses the host network (ports 8787/8788, 25565/25575) and the same container names, so two on
+one machine would clash. Each shard removes its boxes at the end and any leftover ones before it boots, and
+starts from an empty config repo. Two runs (two refs) on the same machine still clash; give it one runner.
+Wall time there is the shards' sum.
 
 ## Keeping a config repo's minutes low
 

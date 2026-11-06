@@ -164,7 +164,7 @@ def test_e2e_mock_workflow() -> None:
     path = REPO / ".github/workflows/e2e-mock.yml"
     wf, text = load(path), path.read_text()
     assert wf["permissions"] == {"contents": "read"} and "secrets." not in text and "id-token" not in text
-    job = wf["jobs"]["e2e"]
+    job = wf["jobs"]["e2e-shard"]  # the checks; job e2e only aggregates its shards
     runs = "\n".join(step.get("run", "") for step in job["steps"])
     assert runs.count("--answers tests/e2e/answers.yml --non-interactive --mock") == 3  # P15: stale pin
     assert "move the product pin" in runs and "fetch-depth: 2" in text
@@ -174,7 +174,7 @@ def test_e2e_mock_workflow() -> None:
         "terraform -chdir=terraform validate",
         "--skip-tags tailscale,firewall",
         "-e @/src/product/tests/e2e/vars.yml",
-        "for run in 1 2",
+        "for run in $RUNS",
         "changed=0 +unreachable=0 +failed=0",
         "mcping.status",
         "docker exec -w /src/product/ansible",

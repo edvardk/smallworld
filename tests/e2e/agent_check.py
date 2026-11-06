@@ -1,4 +1,4 @@
-"""P8 acceptance inside the e2e-mock container (run as root after site.yml and hardening_check.py; stdlib only).
+"""P8 acceptance inside the e2e-mock container (run as root after site.yml, in its own shard; stdlib only).
 
 mc-agent was installed by site.yml with INGEST_URL=http://127.0.0.1:8787 (tests/e2e/vars.yml) and has been
 failing to reach it since: this script now starts a mock of the Worker there and checks that the agent
@@ -272,7 +272,9 @@ def rcon_quiet_round() -> None:
     filters); the RCON listener's own start line is still there."""
     before = rcon_client_lines()
     first = rcon_client_sockets()
-    time.sleep(95)  # three metric rounds
+    # at least two metric rounds (30 s apart in the e2e, tests/e2e/vars.yml) fall between the two looks, wherever
+    # in its cycle the agent is, plus a margin for a slow round
+    time.sleep(65)
     later = rcon_client_sockets()
     expect(len(first) == 1 and first == later,
            f"mc-agent keeps one RCON connection across metric rounds ({first} -> {later})")  # fmt: skip
@@ -822,6 +824,11 @@ def checks() -> int:
     expect(as_minecraft_read(f"/proc/{pid}/environ") == 13, "minecraft can't read mc-agent's environment")
     expect(as_minecraft_read("/etc/minecraft/agent.env") == 13, "minecraft can't read agent.env")
     spool = Path("/var/lib/mc-agent/spool.jsonl")
+    # the agent buffers its first sample as soon as it starts; in its own e2e shard this check may begin right
+    # after the deploy, so give it one metric round (30 s here) and a margin before looking
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline and not (spool.exists() and spool.read_text().strip()):
+        time.sleep(3)
     buffered = len(spool.read_text().splitlines()) if spool.exists() else 0
     expect(buffered > 0, f"while the Worker was unreachable the agent buffered {buffered} sample(s) on disk")
 

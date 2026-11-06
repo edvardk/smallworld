@@ -6,6 +6,12 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Changed
+
+- The product's `e2e` CI runs its checks as four parallel shards (core, agent, telemetry-brand, migrate-p16),
+  each on its own freshly deployed box; the required check `e2e` aggregates them (docs/ci.md): ~20 minutes
+  instead of ~23 (pull requests) / ~42 (nightly).
+
 ## [1.2.1] - 2026-11-06
 
 ### Added
