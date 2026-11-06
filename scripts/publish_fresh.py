@@ -383,7 +383,8 @@ EMAIL_DOMAINS = re.compile(
     r"(?:^|\.)(?:example(?:\.com|\.net|\.org)?|test|invalid|internal|localhost|users\.noreply\.github\.com)$",
     re.I,
 )
-EMAIL_ADDRESSES = {"noreply@anthropic.com", "noreply@github.com", "git@github.com"}
+# GitHub's own addresses (support@: the Signed-off-by line of every Dependabot commit).
+EMAIL_ADDRESSES = {"noreply@anthropic.com", "noreply@github.com", "git@github.com", "support@github.com"}
 NOT_EMAIL = re.compile(r"\.(?:service|timer|socket|target|mount|path|slice|scope)$")  # systemd unit@instance
 IPV4 = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.-])")
 IPV6 = re.compile(r"(?<![\w:.])[0-9A-Fa-f]{0,4}(?::[0-9A-Fa-f]{0,4}){2,7}(?![\w:.])")

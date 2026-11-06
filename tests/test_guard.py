@@ -294,6 +294,22 @@ def test_range_checks_identities_and_changed_files(tmp_path, env) -> None:
     assert code == 1 and "2 commit(s) checked" in out
 
 
+def test_range_passes_a_dependabot_commit(tmp_path, env) -> None:
+    """Dependabot's identity and its Signed-off-by line (support@github.com) must not fail `publication`."""
+    repo = make_repo(tmp_path, env)
+    base = git(repo, env, "rev-parse", "HEAD").strip()
+    stage(repo, env, {"requirements.in": "ansible-core==2.21.6\n"})
+    msg = (
+        "Bump ansible-core in /requirements in the python group\n\n"
+        "- [Release notes](https://github.com/ansible/ansible/releases)\n\n"
+        "Signed-off-by: dependabot[bot] <support@github.com>\n"
+    )
+    bot = "49699333+dependabot[bot]@users.noreply.github.com"
+    git(repo, env, "commit", "-q", "-m", msg, email=bot, name="dependabot[bot]")
+    code, out = run(repo, env, "range", base, "HEAD", "--denylist", deny(tmp_path, "zorblax").as_posix())
+    assert code == 0, out
+
+
 def test_tree_scans_one_revision_like_publish_fresh(tmp_path, env) -> None:
     repo = make_repo(tmp_path, env, {"plans/p.md": f"{SECRET_WORD}\n", "docs/a.md": "see plans/\n"})
     code, out = run(repo, env, "tree", "HEAD", "--denylist", deny(tmp_path, "zorblax").as_posix())
