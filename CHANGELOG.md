@@ -6,6 +6,8 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-07
+
 ### Added
 
 - **Update notice:** interactive mcctl commands (and the home screen's new "Update" row) say when a newer
