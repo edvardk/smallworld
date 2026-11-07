@@ -147,7 +147,8 @@ def test_bump_keeps_crlf(tmp_path) -> None:
     work, _ = make_repo(tmp_path)
     for name in ("CHANGELOG.md", "README.md"):
         path = work / name
-        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+        # normalise first: write_text already wrote CRLF on Windows (a second replace would give \r\r\n)
+        path.write_bytes(path.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
     must(work, "commit", "-qam", "crlf")
     assert release.bump("1.2.3", work, "2026-11-08", git) == []
     raw = (work / "CHANGELOG.md").read_bytes()
