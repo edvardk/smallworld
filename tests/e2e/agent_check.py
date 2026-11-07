@@ -39,11 +39,15 @@ failing to reach it since: this script now starts a mock of the Worker there and
     against the GitHub mock, read-only, its steps in the inventory, one run a minute from the panel; `lookup` of a
     Java name from the box against a mock Mojang (first endpoint 403, the fallback answers; unknown and malformed
     names).
+  - v1.3, mcctl's actions: `mc_agent.py cli` run as mcctl runs it over SSH (sudo mc-run, the ops user): a kick and
+    a refused unconfirmed world_delete, both audited with MC_VIA=mcctl; then two processes in the CLI's place
+    record players in pending.json while mc-agent's sync loop merges and opens pull requests on the same file
+    (pending.json.lock): nothing lost.
 
 Rounds (v1.3): the shared part always runs (the agent's sandbox, the buffered and live metrics, the journal, the
 first poll's status/console/denied/replay, the final checks); `--rounds` picks the rest, so CI runs them as two
 shards on two boxes (docs/ci.md): `a` = rcon, client-code, stop-start, whitelist, restart, plugin, restore-guard,
-versions;
+versions, cli;
 `b` = backup-restore, world. Round names (comma-separated) work too; whitelist brings stop-start along (it seeds
 the profile cache). Without `--rounds`, every round, in the order above with backup-restore before restore-guard.
 Each round prints its wall time (`round <name>: N s`).
@@ -64,6 +68,7 @@ import json
 import os
 import pwd
 import secrets
+import shlex
 import signal
 import subprocess
 import sys
@@ -973,6 +978,156 @@ def versions_round() -> None:
     expect(INSTALLATION_TOKEN not in audit, "the token never reaches the journal")
 
 
+# v1.3: mcctl's actions over SSH run `mc_agent.py cli` on the box (mcctl/actions.py agent_command); here the shell
+# is local (no Tailscale), the command line the same (tests/test_agent.py compares the two).
+CLI_LOGIN = "mcctl:e2e"
+CLI_UUID_PREFIX = "e2ec0000-0000-4000-8000-"  # the made-up players the cli round's writers record
+PENDING_FILE = Path("/var/lib/mc-agent/pending.json")
+# What `mc_agent.py cli` does to pending.json (mc_panel.Pending.record), in a process of its own with its user and
+# sandbox (mc-run): writer W records N players, one every GAP seconds.
+PENDING_WRITER = """
+import sys, time
+from pathlib import Path
+sys.path.insert(0, "/opt/minecraft/bin")
+import mc_panel
+w, n, gap = int(sys.argv[1]), int(sys.argv[2]), float(sys.argv[3])
+pend = mc_panel.Pending(Path("/var/lib/mc-agent/pending.json"))
+for j in range(n):
+    pend.record("add", f"E2eCli{w}_{j:02d}", f"e2ec0000-0000-4000-8000-{w:04x}{j:08x}", "mcctl:e2e", time.time())
+    time.sleep(gap)
+"""
+# A failed cli round must not leave its made-up players (or its pull request) for a deploy or the next round.
+PENDING_CLEANUP = """
+import sys
+from pathlib import Path
+sys.path.insert(0, "/opt/minecraft/bin")
+import mc_panel
+ours = {int(n) for n in sys.argv[1:]}
+with mc_panel.Pending(Path("/var/lib/mc-agent/pending.json")).update() as d:
+    d["entries"] = [e for e in d["entries"] if not e["uuid"].startswith("e2ec0000-")]
+    if (d.get("pr") or {}).get("number") in ours:
+        d["pr"] = None
+"""
+
+
+def cli_argv(action: str, args: dict[str, Any] | None = None) -> list[str]:
+    """= mcctl.actions.agent_command(CLI_LOGIN, action, args), split."""
+    argv = ["sudo", "/usr/local/bin/mc-run", "-/etc/minecraft/notify.env", "/opt/minecraft/bin/mc_agent.py",
+            "cli", CLI_LOGIN, action]  # fmt: skip
+    if args is not None:
+        argv.append(json.dumps(args, sort_keys=True, separators=(",", ":")))
+    return argv
+
+
+def agent_cli(action: str, args: dict[str, Any] | None = None) -> subprocess.CompletedProcess[str]:
+    """One action as `mcctl` runs it: the command line through a shell, as sshd would."""
+    return subprocess.run(["sh", "-c", shlex.join(cli_argv(action, args))], capture_output=True, text=True,
+                          timeout=60, check=False)  # fmt: skip
+
+
+def as_ops(script: str, *args: str) -> list[str]:
+    """A Python snippet as the ops user in mc-run's sandbox (where `mc_agent.py cli` runs)."""
+    return [
+        "sudo",
+        "/usr/local/bin/mc-run",
+        "-/etc/minecraft/notify.env",
+        "/usr/bin/python3",
+        "-c",
+        script,
+        *args,
+    ]
+
+
+def cli_audit() -> list[dict[str, Any]]:
+    out = subprocess.run(["journalctl", "SYSLOG_IDENTIFIER=mc-agent", "MC_AUDIT=1", "MC_VIA=mcctl", "-o", "json",
+                          "--no-pager"], capture_output=True, text=True, check=False).stdout  # fmt: skip
+    return [json.loads(line) for line in out.splitlines() if line.strip()]
+
+
+def ours_pending() -> dict[str, dict[str, Any]]:
+    return {e["uuid"]: e for e in pending() if e["uuid"].startswith(CLI_UUID_PREFIX)}
+
+
+def cli_round() -> None:
+    """v1.3: an action from mcctl, end to end: `mc_agent.py cli` as mcctl runs it over SSH (sudo mc-run, the ops
+    user): a kick of a player who isn't online (its RESULT, exit 0), a destructive action without its typed
+    confirmation (refused), both in the audit journal with MC_VIA=mcctl and the mcctl login. Then pending.json
+    with two writers in the CLI's place (its user, its sandbox) while mc-agent's sync loop works on the same file
+    (a pull request merged, the next opened) against the GitHub mock: nothing either side recorded is lost."""
+    r = agent_cli("moderate", {"verb": "kick", "target": "E2E_Nobody"})
+    last = (r.stdout.strip().splitlines() or [""])[-1]
+    expect(r.returncode == 0 and last.startswith("RESULT ok: "),
+           f"mc_agent.py cli moderate kick ran ({r.stdout[-300:]}{r.stderr[-300:]})")  # fmt: skip
+    r = agent_cli("world_delete", {"name": "e2e-nope"})
+    expect(r.returncode == 1 and 'RESULT refused: world_delete: type "delete e2e-nope" to confirm' in r.stdout,
+           f"a destructive action without its confirmation is refused ({r.stdout[-300:]})")  # fmt: skip
+    seen_audit = {(e.get("MC_ACTION"), e.get("MC_RESULT", "")[:3]) for e in cli_audit()
+                  if e.get("MC_LOGIN") == CLI_LOGIN}  # fmt: skip
+    expect({("moderate", "ok"), ("world_delete", "wor")} <= seen_audit,
+           f"both in the audit journal with MC_VIA=mcctl and the login {CLI_LOGIN} ({sorted(seen_audit)})")  # fmt: skip
+
+    with github_mock():
+        main_before, ours_prs = GitHubMock.files["main"], []
+        try:
+            _cli_pending(ours_prs)
+        finally:
+            for n in ours_prs:
+                if GitHubMock.prs[n]["state"] == "open":
+                    merge_pr(n)
+            if ours_pending():
+                wait_for("the cli round's players to leave pending.json", lambda: not ours_pending(), 20)
+            if ours_pending():
+                subprocess.run(as_ops(PENDING_CLEANUP, *map(str, ours_prs)), check=False, timeout=60)
+            GitHubMock.files["main"] = main_before
+
+
+def _cli_pending(ours_prs: list[int]) -> None:
+    known = set(GitHubMock.prs)
+    first = subprocess.run(as_ops(PENDING_WRITER, "1", "5", "0"), capture_output=True, text=True, timeout=60,
+                           check=False, stdin=subprocess.DEVNULL)  # fmt: skip
+    expect(first.returncode == 0 and len(ours_pending()) == 5,
+           f"a CLI-side process recorded 5 players ({first.stderr[-300:]})")  # fmt: skip
+    meta = {}
+    for path in (PENDING_FILE, PENDING_FILE.with_name("pending.json.lock")):
+        st = path.stat() if path.exists() else None
+        meta[path.name] = (st.st_uid, oct(st.st_mode & 0o777)) if st else None
+    ops = (pwd.getpwnam("mcops").pw_uid, oct(0o600))
+    expect(list(meta.values()) == [ops, ops], f"pending.json and its lock: mcops, 0600 ({meta})")
+    number = wait_for(
+        "mc-agent's pull request for them", lambda: next(iter(set(GitHubMock.prs) - known), None), 30
+    )
+    if not number:
+        return
+    ours_prs.append(number)
+    first_five = set(ours_pending())
+    # two writers at once while mc-agent finds the merge and drops those five (its read-modify-write)
+    writers = [subprocess.Popen(as_ops(PENDING_WRITER, str(w), "20", "0.2"), stdin=subprocess.DEVNULL,
+                                stderr=subprocess.PIPE, text=True)
+               for w in (2, 3)]  # fmt: skip
+    time.sleep(1)
+    merge_pr(number)
+    codes = [w.wait(60) for w in writers]
+    expect(codes == [0, 0], f"both writers ran ({[w.stderr.read()[-200:] for w in writers if w.stderr]})")
+    want = {f"{CLI_UUID_PREFIX}{w:04x}{j:08x}" for w in (2, 3) for j in range(20)}
+    got = wait_for("pending.json: the merged five gone, all 40 new players there",
+                   lambda: set(ours_pending()) == want or None, 30)  # fmt: skip
+    if not got:
+        have = set(ours_pending())
+        expect(False, f"lost {len(want - have)} of 40, {len(have & first_five)} of the merged five left")
+        return
+    expect(True, "mc-agent's sync and two CLI-side writers on pending.json at once: nothing lost")
+    second = wait_for(
+        "the next pull request", lambda: next(iter(set(GitHubMock.prs) - known - {number}), None), 30
+    )
+    if second:
+        ours_prs.append(second)
+        text = GitHubMock.files.get(GitHubMock.prs[second]["head"], "")
+        expect(all(f'"E2eCli{w}_{j:02d}"' in text for w in (2, 3) for j in range(20)),
+               "all 40 in the next pull request's players.yml")  # fmt: skip
+        merge_pr(second)
+        wait_for("pending.json to clear", lambda: not ours_pending(), 30)
+
+
 def done() -> bool:
     return bool(
         seen["results"] and seen["archive"] and seen["logs"] and seen["inventory"]
@@ -997,9 +1152,20 @@ ROUNDS: dict[str, Callable[[], None]] = {
     "restore-guard": restore_guard_round,
     "world": world_round,  # v1.2
     "versions": versions_round,  # v1.3: version file, self-test, lookup (~20 s)
+    "cli": cli_round,  # v1.3: mcctl's actions (mc_agent.py cli), pending.json shared with mc-agent (~40 s)
 }
 GROUPS: dict[str, tuple[str, ...]] = {
-    "a": ("rcon", "client-code", "stop-start", "whitelist", "restart", "plugin", "restore-guard", "versions"),
+    "a": (
+        "rcon",
+        "client-code",
+        "stop-start",
+        "whitelist",
+        "restart",
+        "plugin",
+        "restore-guard",
+        "versions",
+        "cli",
+    ),
     "b": ("unmanaged", "backup-restore", "world"),  # unmanaged: two players-only deploys, ~30 s
 }
 NEEDS: dict[str, str] = {"whitelist": "stop-start"}

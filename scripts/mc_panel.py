@@ -42,6 +42,7 @@ from __future__ import annotations
 import base64
 import calendar
 import contextlib
+import copy
 import fcntl
 import ipaddress
 import json
@@ -54,7 +55,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -94,9 +95,13 @@ class ActionError(Exception):
 
 
 def atomic_write(path: Path, text: str, mode: int = 0o644) -> None:
+    """A temporary file next to `path`, created with `mode` (never wider while it is written), then renamed
+    over it: a reader sees the old file or the new one, never half of it."""
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text)
-    tmp.chmod(mode)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_CLOEXEC, mode)
+    with os.fdopen(fd, "w") as f:
+        os.fchmod(f.fileno(), mode)  # an existing tmp (or the umask) can't leave other bits
+        f.write(text)
     os.replace(tmp, path)
 
 
@@ -185,13 +190,53 @@ def apply_entries(
 
 class Pending:
     """pending.json in the agent's state dir: {"entries": [{uuid, name, op, ts, login, pr}], "pr": {...},
-    "error": str, "changed": ts}. The deploy (players role) reads it as root."""
+    "error": str, "changed": ts}. The deploy (players role) reads it as root.
 
-    def __init__(self, path: Path) -> None:
+    v1.3: two processes write it, mc-agent (the panel's commands and the sync loop) and `mc_agent.py cli`
+    (mcctl's actions over SSH), so every read-modify-write holds an flock on pending.json.lock (next to it,
+    0600: only the ops user opens it) and reads the file again under it; the write is atomic (tmp + rename,
+    0600). Nobody holds the lock across a network call: sync_pending works on a snapshot and merges its result
+    back (merge_sync)."""
+
+    def __init__(self, path: Path, lock_path: Path | None = None) -> None:
         self.path = path
-        self.lock = threading.Lock()
+        self.lock_path = lock_path or path.with_name(path.name + ".lock")
+        self.lock = threading.Lock()  # the threads of one process (flock alone would do, this is cheaper)
+
+    @contextlib.contextmanager
+    def locked(self) -> Iterator[None]:
+        """Exclusive across threads and processes (an flock, released by the kernel if the process dies). Held
+        for a read and a write of a small file, never across a network call, so it blocks. A lock file that
+        can't be opened (no state dir: a test, a dev box) only loses the cross-process part."""
+        with self.lock:
+            try:
+                fd: int | None = os.open(self.lock_path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600)
+            except OSError as e:
+                why = f"{type(e).__name__} (this process only)"
+                print(f"pending lock {self.lock_path}: {why}", file=sys.stderr)
+                fd = None
+            try:
+                if fd is not None:
+                    fcntl.flock(fd, fcntl.LOCK_EX)
+                yield
+            finally:
+                if fd is not None:
+                    with contextlib.suppress(OSError):
+                        fcntl.flock(fd, fcntl.LOCK_UN)
+                    os.close(fd)
+
+    @contextlib.contextmanager
+    def update(self) -> Iterator[dict[str, Any]]:
+        """pending.json as it is now (read under the lock), saved on leaving the block if it changed."""
+        with self.locked():
+            data = self.load()
+            before = json.dumps(data, sort_keys=True)
+            yield data
+            if json.dumps(data, sort_keys=True) != before:
+                self.save(data)
 
     def load(self) -> dict[str, Any]:
+        """A consistent read without the lock (writes are atomic renames); modify only inside update()."""
         data = read_json(self.path, {})
         if not isinstance(data, dict):
             data = {}
@@ -208,6 +253,7 @@ class Pending:
         }
 
     def save(self, data: dict[str, Any]) -> None:
+        """Only under locked() (update() does both)."""
         atomic_write(self.path, json.dumps(data, sort_keys=True, indent=1), 0o600)
 
     def record_world(
@@ -216,8 +262,7 @@ class Pending:
         """v1.2: the world library as it now is on the server (world.active + world.library for server.yml).
         The latest state wins; it stays until a pull request with it is merged (a switch can't be undone by
         dropping it, so it never expires). Deploys honour it (minecraft role: worlds-library.json)."""
-        with self.lock:
-            data = self.load()
+        with self.update() as data:
             prev = data.get("world") or {}
             data["world"] = {
                 "active": active,
@@ -230,18 +275,39 @@ class Pending:
                 "error": "",
             }
             data["changed"] = data["changed"] or now
-            self.save(data)
 
     def record(self, op: str, name: str, uuid: str, login: str, now: float) -> None:
         """The latest change per player wins (one already in an open PR is replaced: superseded)."""
-        with self.lock:
-            data = self.load()
+        with self.update() as data:
             data["entries"] = [e for e in data["entries"] if e["uuid"] != uuid]
             data["entries"].append(
                 {"uuid": uuid, "name": name, "op": op, "ts": now, "login": login, "pr": None}
             )
             data["changed"] = now
-            self.save(data)
+
+
+def merge_sync(current: dict[str, Any], snap: dict[str, Any], done: dict[str, Any]) -> dict[str, Any]:
+    """v1.3: a sync round's result (`done`, worked out from `snap` without the lock) applied to pending.json
+    as it is now (`current`, read again under the lock). What changed meanwhile (record/record_world from the
+    other process or a panel command) wins: an entry recorded again is kept as recorded (its own PR comes
+    next), a new entry is kept; a world change keeps its new state and takes the round's view of the open
+    world PR. The rest (expired, merged, rejected, put in a PR) is the round's; pr, error and expired are only
+    the round's to write."""
+    before = {e["uuid"]: e for e in snap["entries"]}
+    after = {e["uuid"]: e for e in done["entries"]}
+    entries = []
+    for e in current["entries"]:
+        if before.get(e["uuid"]) != e:  # new, or recorded again since the snapshot
+            entries.append(e)
+        elif e["uuid"] in after:
+            entries.append(after[e["uuid"]])
+        # else: the round dropped it (expired, merged, rejected, already in Git)
+    out = dict(current, entries=entries, pr=done["pr"], error=done["error"], expired=done["expired"])
+    if current["world"] == snap["world"]:
+        out["world"] = done["world"]
+    elif current["world"] is not None:  # a newer world state: the round's open PR (or its end) still counts
+        out["world"] = dict(current["world"], open_pr=(done["world"] or {}).get("open_pr"))
+    return out
 
 
 # --- GitHub (contents + pulls API, stdlib) ------------------------------------------------------------------
@@ -668,79 +734,82 @@ def sync_pending(
     pending.json (so the next deploy follows Git) and announced on Discord."""
     log = log or (lambda msg, **f: None)
     run = rcon or rcon_command
-    with pending.lock:
-        data = pending.load()
-        before = json.dumps(data, sort_keys=True)
-        entries = data["entries"]
-        # 24 h without reaching Git: drop, tell the admin (the next deploy will follow Git again)
-        old = [e for e in entries if now - float(e.get("ts") or 0) > PENDING_TTL_S]
-        if old:
-            data["entries"] = entries = [e for e in entries if e not in old]
-            data["expired"] = (
-                data["expired"] + [{"name": e["name"], "op": e["op"], "ts": now} for e in old]
-            )[-20:]
-            names = ", ".join(f"{e['op']} {e['name']}" for e in old)
-            alert(expired_alert(names))
-            log(f"panel whitelist entries expired: {names}", action="whitelist-expire", result="dropped")
-        if gh is None:
-            data["error"] = (
-                "no config repo for the panel (CONFIG_REPO): changes stay pending until they expire"
-            )
-        else:
-            try:
-                pr = data.get("pr")
-                if pr and pr.get("number") and now - float(pr.get("checked") or 0) >= pr_check_s:
-                    state = gh.pr_state(int(pr["number"]))
-                    pr["checked"] = now
-                    if state == "merged":
-                        data["entries"] = entries = [e for e in entries if e.get("pr") != pr["number"]]
-                        log(f"panel PR #{pr['number']} merged", action="whitelist-pr", result="merged")
-                        data["pr"] = pr = None
-                    elif state == "closed":
-                        number = int(pr["number"])
-                        rejected = [e for e in entries if e.get("pr") == number]
-                        reverted, failed = revert_live(rejected, run)
-                        data["entries"] = entries = [e for e in entries if e.get("pr") != number]
-                        data["error"] = (
-                            f"pull request #{number} was closed without merging: reverted on the server"
-                            + (
-                                f" (couldn't revert {', '.join(failed)}: the next deploy follows Git)"
-                                if failed
-                                else ""
-                            )
+    # v1.3: a snapshot under the lock, the round (GitHub, RCON, Discord) without it, then merged back into
+    # pending.json as it is by then (mc_agent.py cli or a panel command may have recorded something meanwhile)
+    with pending.locked():
+        snap = pending.load()
+    data = copy.deepcopy(snap)
+    entries = data["entries"]
+    # 24 h without reaching Git: drop, tell the admin (the next deploy will follow Git again)
+    old = [e for e in entries if now - float(e.get("ts") or 0) > PENDING_TTL_S]
+    if old:
+        data["entries"] = entries = [e for e in entries if e not in old]
+        gone = [{"name": e["name"], "op": e["op"], "ts": now} for e in old]
+        data["expired"] = (data["expired"] + gone)[-20:]
+        names = ", ".join(f"{e['op']} {e['name']}" for e in old)
+        alert(expired_alert(names))
+        log(f"panel whitelist entries expired: {names}", action="whitelist-expire", result="dropped")
+    if gh is None:
+        data["error"] = "no config repo for the panel (CONFIG_REPO): changes stay pending until they expire"
+    else:
+        try:
+            pr = data.get("pr")
+            if pr and pr.get("number") and now - float(pr.get("checked") or 0) >= pr_check_s:
+                state = gh.pr_state(int(pr["number"]))
+                pr["checked"] = now
+                if state == "merged":
+                    data["entries"] = entries = [e for e in entries if e.get("pr") != pr["number"]]
+                    log(f"panel PR #{pr['number']} merged", action="whitelist-pr", result="merged")
+                    data["pr"] = pr = None
+                elif state == "closed":
+                    number = int(pr["number"])
+                    rejected = [e for e in entries if e.get("pr") == number]
+                    reverted, failed = revert_live(rejected, run)
+                    data["entries"] = entries = [e for e in entries if e.get("pr") != number]
+                    data["error"] = (
+                        f"pull request #{number} was closed without merging: reverted on the server"
+                        + (
+                            f" (couldn't revert {', '.join(failed)}: the next deploy follows Git)"
+                            if failed
+                            else ""
                         )
-                        why = f"PR #{number} closed"
-                        gone = [{"name": e["name"], "op": e["op"], "ts": now, "why": why} for e in rejected]
-                        data["expired"] = (data["expired"] + gone)[-20:]
-                        alert(rejected_alert(number, reverted, failed))
-                        log(f"panel PR #{number} closed unmerged; reverted {reverted} failed {failed}",
-                            action="whitelist-pr", result="reverted")  # fmt: skip
-                        data["pr"] = pr = None
-                fresh = [e for e in entries if e.get("pr") is None]
-                if fresh and (not pr) and now - data["changed"] >= batch_s:
-                    made = gh.open_pr(fresh, now)
-                    if made["number"] is None:
-                        data["entries"] = [e for e in entries if e not in fresh]  # Git already has them
-                    else:
-                        for e in fresh:
-                            e["pr"] = made["number"] if e["uuid"] in made["changed"] else 0
-                        data["entries"] = [e for e in entries if e.get("pr") != 0]
-                        data["pr"] = {
-                            "number": made["number"],
-                            "url": made["url"],
-                            "branch": made["branch"],
-                            "created": now,
-                            "checked": now,
-                        }
-                        log(f"panel PR #{made['number']} opened", action="whitelist-pr", result="opened")
-                    data["error"] = ""
-                sync_world(data, gh, now, alert, log, batch_s, pr_check_s)
-            except (GitHubError, ValueError, KeyError, TypeError) as e:
-                data["error"] = f"GitHub: {str(e)[:200]}"
-        changed = json.dumps(data, sort_keys=True) != before
-        if changed:
-            pending.save(data)
-        return changed
+                    )
+                    why = f"PR #{number} closed"
+                    gone = [{"name": e["name"], "op": e["op"], "ts": now, "why": why} for e in rejected]
+                    data["expired"] = (data["expired"] + gone)[-20:]
+                    alert(rejected_alert(number, reverted, failed))
+                    log(f"panel PR #{number} closed unmerged; reverted {reverted} failed {failed}",
+                        action="whitelist-pr", result="reverted")  # fmt: skip
+                    data["pr"] = pr = None
+            fresh = [e for e in entries if e.get("pr") is None]
+            if fresh and (not pr) and now - data["changed"] >= batch_s:
+                made = gh.open_pr(fresh, now)
+                if made["number"] is None:
+                    data["entries"] = [e for e in entries if e not in fresh]  # Git already has them
+                else:
+                    for e in fresh:
+                        e["pr"] = made["number"] if e["uuid"] in made["changed"] else 0
+                    data["entries"] = [e for e in entries if e.get("pr") != 0]
+                    data["pr"] = {
+                        "number": made["number"],
+                        "url": made["url"],
+                        "branch": made["branch"],
+                        "created": now,
+                        "checked": now,
+                    }
+                    log(f"panel PR #{made['number']} opened", action="whitelist-pr", result="opened")
+                data["error"] = ""
+            sync_world(data, gh, now, alert, log, batch_s, pr_check_s)
+        except (GitHubError, ValueError, KeyError, TypeError) as e:
+            data["error"] = f"GitHub: {str(e)[:200]}"
+    if data == snap:
+        return False
+    with pending.update() as current:
+        merged = merge_sync(current, snap, data)
+        changed = merged != current
+        current.clear()
+        current.update(merged)
+    return changed
 
 
 def world_rejected_alert(number: int, active: str) -> str:
