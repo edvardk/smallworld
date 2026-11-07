@@ -253,6 +253,7 @@ def test_the_job_lock_is_shared_across_job_runners(tmp_path: Path) -> None:
         threading.Event().wait(0.02)
     job = cli.start("c2", "restart", "Restart", "mcctl:sam", 0, lambda j: "done")  # released: runs now
     assert job.state == "done"
+    assert lock.stat().st_mode & 0o777 == 0o600  # CodeQL: not world-readable; only mcops opens it
 
     def boom(job: mc_panel.Job) -> str:
         raise ValueError("broken")

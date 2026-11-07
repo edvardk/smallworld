@@ -870,7 +870,8 @@ class Jobs:
         if self.lock_path is None:
             return
         try:
-            fd = os.open(self.lock_path, os.O_RDWR | os.O_CREAT, 0o644)
+            # only mcops takes it (mc-agent and `mc_agent.py cli`): nobody else needs to open it
+            fd = os.open(self.lock_path, os.O_RDWR | os.O_CREAT, 0o600)
         except OSError as e:
             print(
                 f"job lock {self.lock_path}: {type(e).__name__} (one job per process only)", file=sys.stderr
