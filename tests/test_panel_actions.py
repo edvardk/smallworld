@@ -323,8 +323,22 @@ def test_installation_tokens_are_cached_until_near_expiry_and_errors_hide_detail
 
     with pytest.raises(mc_panel.GitHubError, match="no GitHub token from the Worker"):
         mc_panel.TokenCache(broken)()
-    with pytest.raises(mc_panel.GitHubError, match="no usable GitHub token"):
+    with pytest.raises(
+        mc_panel.GitHubError, match=r"no usable GitHub token \(no token in the reply \(keys: error\)"
+    ):
         mc_panel.TokenCache(lambda: {"error": "no GitHub App configured"})()
+
+
+def test_long_installation_tokens_are_accepted_and_refusals_say_why() -> None:
+    """v1.2.2: GitHub's installation tokens grew to 390 characters (seen live); the old 255 cap refused them."""
+    long_token = "ghs_" + "aB3_." * 77 + "xy"  # 391 characters, the live shape
+    exp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 3600))
+    assert mc_panel.TokenCache(lambda: {"token": long_token, "expires_at": exp})() == long_token
+    with pytest.raises(mc_panel.GitHubError) as e:
+        mc_panel.TokenCache(lambda: {"token": "ghs_" + "x" * 30 + " $", "expires_at": exp})()
+    assert "36 characters, unexpected ' $'" in str(e.value) and "xxxx" not in str(e.value)
+    with pytest.raises(mc_panel.GitHubError, match="5000 characters"):
+        mc_panel.TokenCache(lambda: {"token": "a" * 5000})()
 
 
 def test_a_401_gets_one_fresh_token(tmp_path, github) -> None:

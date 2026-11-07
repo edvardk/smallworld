@@ -244,6 +244,24 @@ class GitHubError(Exception):
     pass
 
 
+# GitHub installation tokens: `ghs_` plus letters, digits, `_` and `.`. v1.2.2: GitHub's tokens grew past the
+# old 255-character cap (390 seen live), so only the character set is strict; the length is a sanity bound.
+TOKEN_RE = re.compile(r"[A-Za-z0-9_.-]{20,4096}")
+
+
+def token_shape(data: Any, token: str) -> str:  # noqa: ANN401 - the Worker's JSON reply
+    """Why a token was refused, never the token: the reply's keys, its length, any unexpected characters."""
+    if not isinstance(data, dict):
+        return f"reply is {type(data).__name__}"
+    if not token:
+        err = str(data.get("error") or "")[:120]
+        return f"no token in the reply (keys: {', '.join(sorted(map(str, data))) or 'none'})" + (
+            f": {err}" if err else ""
+        )
+    odd = sorted(set(re.sub(r"[A-Za-z0-9_.-]", "", token)))
+    return f"{len(token)} characters" + (f", unexpected {''.join(odd[:8])!r}" if odd else "")
+
+
 class TokenCache:
     """Short-lived GitHub App installation tokens for the panel's pull requests (P10 review). The App's
     private key never reaches the server: the Worker holds it, mints a token narrowed to the config repo with
@@ -264,8 +282,8 @@ class TokenCache:
         except Exception as e:  # the agent's IngestError, network errors: one message, never the token
             raise GitHubError(f"no GitHub token from the Worker: {str(e)[:160]}") from None
         token = str((data or {}).get("token") or "") if isinstance(data, dict) else ""
-        if not re.fullmatch(r"[A-Za-z0-9_.-]{20,255}", token):
-            raise GitHubError("the Worker returned no usable GitHub token")
+        if not TOKEN_RE.fullmatch(token):
+            raise GitHubError(f"the Worker returned no usable GitHub token ({token_shape(data, token)})")
         try:
             expires = float(
                 calendar.timegm(time.strptime(str(data.get("expires_at", ""))[:19], "%Y-%m-%dT%H:%M:%S"))
