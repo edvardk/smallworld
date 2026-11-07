@@ -6,6 +6,12 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Fixed
+
+- Panel whitelist form: Mojang answers the Worker's lookup with HTTP 403 (Cloudflare's shared egress), so no name
+  could be added. The Worker falls back to `api.minecraftservices.com`'s name lookup; when neither answers, the form
+  offers to add the name unverified (the server resolves it itself, as Discord's `/whitelist add` does).
+
 ## [1.2.1] - 2026-11-06
 
 ### Added
