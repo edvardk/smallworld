@@ -25,6 +25,7 @@ All commands are parsed in `mcctl/cli.py` (`build_parser`); the `cmd_*` function
 
 | Command | Module | Tests |
 |---|---|---|
+| `mcctl` (no command: the home screen, v1.3), `-C` remembered | `mcctl/home.py`, `mcctl/homecfg.py` (~/.config/mcctl/config.toml) | `tests/test_home.py` |
 | `mcctl validate` | `mcctl/configrepo.py`, `mcctl/schema.py` | `tests/test_mcctl_schema.py`, `tests/test_configrepo.py` |
 | `mcctl render` | `mcctl/render.py` | `tests/test_mcctl_render.py`, `tests/test_overlays.py` |
 | `mcctl schema` | `mcctl/schema.py` → `schema/server.schema.json` | `tests/test_mcctl_schema.py` |

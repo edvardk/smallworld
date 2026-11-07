@@ -295,6 +295,10 @@
     mode: "0750"
   loop: [mc_rcon.py, notify.py, alerts.py, backup.py, restore.py, health.py, admin.py, mc_agent.py, mc_panel.py,
          reboot_gate.py, restic_rekey.py, telemetry.py, worlds.py, world_info.py, backup_check.py]
+  # v1.2.3: mc-agent is the one long-running process that imports these: without a restart it keeps running the
+  # old code (v1.2.2's token fix was installed but inactive until the agent restarted). The handler lives in the
+  # agent role (handlers are play-wide) and restarts it only where it's installed.
+  notify: mc-agent code changed
 
 - name: Install `mc-run` helper (runs a command as the ops user with secrets from an env file)
   ansible.builtin.copy:

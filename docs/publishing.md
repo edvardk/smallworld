@@ -95,8 +95,9 @@ when a fixture moves. gitleaks 8.30.1 checks a finding's global fingerprint befo
 ## 4. Tag and build the repository
 
 Cut the release as usual ([reference: Releasing](reference.md#releasing)): bump the version and the
-changelog, merge, tag `vX.Y.Z` on main (the private repository's tag; don't push it if the old repository's
-release workflow shouldn't run). Then:
+changelog (`scripts/release.py bump`), merge, tag `vX.Y.Z` on main (`scripts/release.py tag`: the private
+repository's tag; it only prints the push command, so don't push it if the old repository's release workflow
+shouldn't run). Then:
 
 ```sh
 python scripts/publish_fresh.py --commit vX.Y.Z --create ../smallworld-publish

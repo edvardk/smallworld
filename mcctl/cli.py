@@ -1,5 +1,6 @@
 """mcctl command line (design §4). Each `cmd_*` here parses arguments and calls the module that does the work:
 
+  (none: the home screen, v1.3)     home, homecfg (the remembered config repo)
   validate, render, schema          configrepo, render, schema
   deploy, plan, apply, bootstrap    deploy, tf, bootstrap (re-executed from the pin: product)
   doctor, metrics                   doctor (+ pinmove, wfsecrets), metrics
@@ -15,8 +16,9 @@
   panel-pr-check, pr-gate, client-publish
 
 docs/map.md has the tests and docs per command. `-C DIR` names the config repo (default: the current
-directory). Commands that run the product's Terraform or Ansible (plan, apply, deploy, bootstrap) re-run
-themselves from the pinned product commit (mcctl/product.py).
+directory if it is one, else the remembered one: mcctl/homecfg.py). Commands that run the product's
+Terraform or Ansible (plan, apply, deploy, bootstrap) re-run themselves from the pinned product commit
+(mcctl/product.py).
 """
 
 from __future__ import annotations
@@ -52,6 +54,8 @@ if TYPE_CHECKING:
     from mcctl import init
 
 SCHEMA_FILE = Path("schema") / "server.schema.json"  # relative to the working directory (product checkout)
+# `-C` not given (identity-compared): the current directory, or the remembered config repo (mcctl/homecfg.py).
+DEFAULT_DIR = Path(".")
 
 
 def _repo(args: argparse.Namespace) -> configrepo.ConfigRepo:
@@ -810,7 +814,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     def with_config(sp: argparse.ArgumentParser) -> None:
         sp.add_argument(
-            "-C", "--config-dir", type=Path, default=Path("."), help="the config repo (default: .)"
+            "-C",
+            "--config-dir",
+            type=Path,
+            default=DEFAULT_DIR,
+            help="the config repo (default: ., else the remembered one: ~/.config/mcctl/config.toml)",
         )
         sp.add_argument("--i-know", action="store_true", help="allow risky settings (online_mode: false)")
 
@@ -1130,6 +1138,57 @@ def strip_plain(argv: list[str]) -> tuple[list[str], bool]:
     return out, plain
 
 
+def _command_words(args: argparse.Namespace) -> int:
+    """How many leading words of argv name the command (`config get`, `lock update`: 2)."""
+    return 2 if getattr(args, "action", None) and args.command in _NESTED else 1
+
+
+_NESTED = ("config", "lock", "secrets", "discord")
+
+
+def resolve_config_dir(args: argparse.Namespace) -> None:
+    """`-C` not given and the current directory isn't a config repo: use the remembered one (and pass it on
+    to a re-executed pinned mcctl, which may be older and not know about remembering)."""
+    from mcctl import homecfg
+
+    if getattr(args, "config_dir", None) is not DEFAULT_DIR or homecfg.looks_like_config_repo(Path.cwd()):
+        return
+    remembered = homecfg.remembered()
+    if remembered is None:
+        return
+    args.config_dir = remembered
+    at = _command_words(args)
+    args.argv = [*args.argv[:at], "-C", str(remembered), *args.argv[at:]]
+    print(f"mcctl: config repo {remembered} (remembered; -C DIR for another)", file=sys.stderr)
+
+
+def remember_config_dir(args: argparse.Namespace) -> None:
+    """After a successful command with an explicit `-C` naming a config repo: remember it (not in CI)."""
+    from mcctl import homecfg
+
+    given = getattr(args, "config_dir", None)
+    if given is None or given is DEFAULT_DIR or os.environ.get("CI"):
+        return
+    root = Path(given).expanduser()
+    if not homecfg.looks_like_config_repo(root):
+        return
+    try:
+        homecfg.remember(root)
+    except OSError as e:  # never fails the command that just succeeded
+        print(f"mcctl: couldn't remember {root}: {e}", file=sys.stderr)
+
+
+def run(argv: list[str]) -> int:
+    """Parse and run one command (argv without --plain): `main` and the home screen's items."""
+    args = build_parser().parse_args(argv)
+    args.argv = list(argv)  # without --plain: an older pinned product doesn't know the flag
+    resolve_config_dir(args)
+    code = int(args.func(args))
+    if code == 0:
+        remember_config_dir(args)
+    return code
+
+
 def main(argv: list[str] | None = None) -> int:
     if problem := python_problem():
         print(f"mcctl: {problem}", file=sys.stderr)
@@ -1138,9 +1197,11 @@ def main(argv: list[str] | None = None) -> int:
     argv, plain = strip_plain(argv)
     if plain:
         ui.set_plain()  # MCCTL_PLAIN=1: this process and a re-executed (pinned) mcctl
-    args = build_parser().parse_args(argv)
-    args.argv = argv  # without --plain: an older pinned product doesn't know the flag
-    return int(args.func(args))
+    from mcctl import home
+
+    if (opened := home.wanted(argv)) is not None:  # v1.3: plain `mcctl` on a terminal opens the home screen
+        return home.main(opened)
+    return run(argv)
 
 
 if __name__ == "__main__":

@@ -852,7 +852,7 @@ def test_reconcile_honours_pending_changes_so_a_deploy_cant_undo_them(tmp_path: 
             {"op": "add", "name": "bad name", "uuid": UUID_C}]  # fmt: skip
     changes = mc_panel.reconcile_players(
         desired(pend), tmp_path, live=True, rcon=lambda c: rcon.append(c) or ""
-    )
+    ).changes
     wl = {e["uuid"]: e["name"] for e in json.loads((tmp_path / "whitelist.json").read_text())}
     assert wl == {UUID_A: "Em_K", UUID_C: "Felix_2011"}
     ops = json.loads((tmp_path / "ops.json").read_text())
@@ -866,22 +866,23 @@ def test_reconcile_honours_pending_changes_so_a_deploy_cant_undo_them(tmp_path: 
     )
     rcon.clear()
     assert (
-        mc_panel.reconcile_players(desired(pend), tmp_path, live=True, rcon=rcon.append) == [] and rcon == []
+        mc_panel.reconcile_players(desired(pend), tmp_path, live=True, rcon=rcon.append).changes == []
+        and rcon == []
     )
     # the PR merged: Git has the change, pending is empty: still nothing to do
     merged = desired([])
     merged["whitelist"] = [{"name": "Em_K", "uuid": UUID_A}, {"name": "Felix_2011", "uuid": UUID_C}]
-    assert mc_panel.reconcile_players(merged, tmp_path, live=True, rcon=rcon.append) == []
-    # without the pending entries a deploy would have reverted the panel's change
-    assert [c.split(" (")[0] for c in mc_panel.reconcile_players(desired([]), tmp_path, live=False)] == [
-        "whitelist +1 -1"
-    ]
+    assert mc_panel.reconcile_players(merged, tmp_path, live=True, rcon=rcon.append).changes == []
+    # without the pending entries a deploy reverts the panel's change: Felix was in Git at the last
+    # reconcile and isn't now, so his removal is intended (the whitelist guard keeps only never-in-Git players)
+    res = mc_panel.reconcile_players(desired([]), tmp_path, live=False)
+    assert [c.split(" (")[0] for c in res.changes] == ["whitelist +1 -1"] and res.kept == []
 
 
 def test_reconcile_deops_and_level_changes_while_stopped(tmp_path: Path) -> None:
     (tmp_path / "ops.json").write_text(json.dumps([{"uuid": UUID_B, "name": "jonas_r", "level": 4}]))
     rcon: list[str] = []
-    changes = mc_panel.reconcile_players(desired([]), tmp_path, live=True, rcon=rcon.append)
+    changes = mc_panel.reconcile_players(desired([]), tmp_path, live=True, rcon=rcon.append).changes
     assert (
         any(c.startswith("ops +1 -1") for c in changes)
         and rcon[-1:] == ["deop jonas_r"]
@@ -889,7 +890,7 @@ def test_reconcile_deops_and_level_changes_while_stopped(tmp_path: Path) -> None
     )
     d = desired([])
     d["ops"][0]["level"] = 2
-    assert mc_panel.reconcile_players(d, tmp_path, live=False)[0].startswith("ops +0 -0")
+    assert mc_panel.reconcile_players(d, tmp_path, live=False).changes[0].startswith("ops +0 -0")
     assert json.loads((tmp_path / "ops.json").read_text())[0]["level"] == 2
 
 
@@ -902,6 +903,124 @@ def test_reconcile_cli(tmp_path: Path, monkeypatch, capsys) -> None:
     assert mc_panel.main(["reconcile-players", str(path)]) == 0
     assert capsys.readouterr().out.strip() == "UNCHANGED"
     assert mc_panel.main(["bogus"]) == 2
+
+
+# --- v1.3 whitelist guard: players never in Git are kept and announced, intended removals still apply -----------
+
+UUID_D = "9e1d0000-0000-4000-8000-0000000000d4"
+UUID_E = "7b2e0000-0000-4000-8000-0000000000e5"
+
+
+def live(tmp_path: Path, players: dict[str, str]) -> None:
+    """whitelist.json as the server leaves it (its own format and order)."""
+    body = [{"uuid": u, "name": n} for u, n in players.items()]
+    (tmp_path / "whitelist.json").write_text(json.dumps(body, indent=4))
+
+
+def whitelist(tmp_path: Path) -> dict[str, str]:
+    return {e["uuid"]: e["name"] for e in json.loads((tmp_path / "whitelist.json").read_text())}
+
+
+def test_guard_first_run_keeps_unmanaged_players_and_alerts_once(tmp_path: Path) -> None:
+    # the incident: players.yml empty, players added on Discord/the panel never reached Git, pending expired
+    live(tmp_path, {UUID_D: "Dora_K", UUID_E: "eli"})
+    alerts: list[list[str]] = []
+    rcon: list[str] = []
+    empty = {"whitelist": [], "ops": [], "pending": []}
+    res = mc_panel.reconcile_players(empty, tmp_path, live=True, rcon=rcon.append, alert=alerts.append)
+    assert res.changes == [] and res.kept == ["Dora_K", "eli"] and rcon == []  # nothing removed, no reload
+    assert whitelist(tmp_path) == {UUID_D: "Dora_K", UUID_E: "eli"}
+    assert alerts == [["Dora_K", "eli"]]
+    state = json.loads((tmp_path / mc_panel.PLAYERS_STATE_FILE).read_text())
+    assert state == {"git": [], "kept": sorted([UUID_D, UUID_E])}
+    # idempotent: the same state again is no change, still listed as kept, but no second Discord message
+    res = mc_panel.reconcile_players(empty, tmp_path, live=True, rcon=rcon.append, alert=alerts.append)
+    assert res.changes == [] and res.kept == ["Dora_K", "eli"] and len(alerts) == 1 and rcon == []
+    # a newly unmanaged player is announced (with everyone still kept)
+    live(tmp_path, {UUID_D: "Dora_K", UUID_E: "eli", UUID_C: "Felix_2011"})
+    res = mc_panel.reconcile_players(empty, tmp_path, live=False, alert=alerts.append)
+    assert res.changes == [] and alerts[-1] == ["Dora_K", "eli", "Felix_2011"] and len(alerts) == 2
+
+
+def test_guard_keeps_unmanaged_next_to_git_and_applies_pending_adds(tmp_path: Path) -> None:
+    live(tmp_path, {UUID_A: "Em_K", UUID_D: "Dora_K"})
+    pend = [{"op": "add", "name": "Felix_2011", "uuid": UUID_C, "ts": 1}]
+    alerts: list[list[str]] = []
+    res = mc_panel.reconcile_players(desired(pend), tmp_path, live=False, alert=alerts.append)
+    assert whitelist(tmp_path) == {UUID_A: "Em_K", UUID_B: "jonas_r", UUID_C: "Felix_2011", UUID_D: "Dora_K"}
+    assert res.changes[0].startswith("whitelist +2 -0") and res.kept == ["Dora_K"] and alerts == [["Dora_K"]]
+    # once players.yml lists the kept player, it is managed: nothing kept, nothing announced
+    d = desired([])
+    d["whitelist"] += [{"name": "Felix_2011", "uuid": UUID_C}, {"name": "Dora_K", "uuid": UUID_D}]
+    res = mc_panel.reconcile_players(d, tmp_path, live=False, alert=alerts.append)
+    assert res.changes == [] and res.kept == [] and len(alerts) == 1
+
+
+def test_guard_removes_players_taken_out_of_git_on_purpose(tmp_path: Path) -> None:
+    live(tmp_path, {})
+    rcon: list[str] = []
+    assert mc_panel.reconcile_players(desired([]), tmp_path, live=True, rcon=rcon.append).changes
+    # a commit removes jonas_r from players.yml: he was in Git at the last reconcile, so the removal is intended
+    d = desired([])
+    d["whitelist"] = [{"name": "Em_K", "uuid": UUID_A}]
+    alerts: list[list[str]] = []
+    rcon.clear()
+    res = mc_panel.reconcile_players(d, tmp_path, live=True, rcon=rcon.append, alert=alerts.append)
+    assert whitelist(tmp_path) == {UUID_A: "Em_K"} and res.kept == [] and alerts == []
+    assert res.changes[0].startswith("whitelist +0 -1") and rcon == ["whitelist reload"]
+    # a later deploy after someone re-added him on the console: never in Git since -> kept, not removed again
+    live(tmp_path, {UUID_A: "Em_K", UUID_B: "jonas_r"})
+    mc_panel.reconcile_players(d, tmp_path, live=False)  # Git without him was recorded above
+    assert UUID_B in whitelist(tmp_path)
+
+
+def test_guard_applies_pending_removes_of_unmanaged_players(tmp_path: Path) -> None:
+    live(tmp_path, {UUID_A: "Em_K", UUID_D: "Dora_K", UUID_E: "eli"})
+    pend = [{"op": "remove", "name": "Dora_K", "uuid": UUID_D, "ts": 1}]
+    alerts: list[list[str]] = []
+    res = mc_panel.reconcile_players(desired(pend), tmp_path, live=False, alert=alerts.append)
+    assert whitelist(tmp_path) == {UUID_A: "Em_K", UUID_B: "jonas_r", UUID_E: "eli"}
+    assert res.kept == ["eli"] and alerts == [["eli"]] and res.changes[0].startswith("whitelist +1 -1")
+
+
+def test_guard_strict_mode_makes_git_the_only_truth(tmp_path: Path) -> None:
+    live(tmp_path, {UUID_A: "Em_K", UUID_D: "Dora_K"})
+    d = desired([]) | {"strict": True}
+    alerts: list[list[str]] = []
+    res = mc_panel.reconcile_players(d, tmp_path, live=False, alert=alerts.append)
+    assert whitelist(tmp_path) == {UUID_A: "Em_K", UUID_B: "jonas_r"}
+    assert res.kept == [] and alerts == [] and res.changes[0].startswith("whitelist +1 -1")
+    assert mc_panel.reconcile_players(d, tmp_path, live=False, alert=alerts.append).changes == []
+
+
+def test_guard_names_only_and_a_damaged_state_file_counts_as_none(tmp_path: Path) -> None:
+    live(tmp_path, {UUID_D: "not a name!", "junk": "Bob"})
+    (tmp_path / mc_panel.PLAYERS_STATE_FILE).write_text("[not an object")
+    res = mc_panel.reconcile_players({"whitelist": [], "ops": []}, tmp_path, live=False)
+    assert res.kept == [UUID_D]  # no valid name: the UUID instead; an entry without a UUID isn't kept
+    assert whitelist(tmp_path) == {UUID_D: UUID_D}
+
+
+def test_reconcile_cli_prints_kept_and_the_alert_runs_as_a_separate_command(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setattr(mc_panel, "SERVER_DIR", tmp_path)
+    live(tmp_path, {UUID_D: "Dora_K"})
+    path = tmp_path / "desired.json"
+    path.write_text(json.dumps({"whitelist": [], "ops": [], "pending": [], "strict": False}))
+    sent: list[str] = []
+    monkeypatch.setattr(notify, "discord", sent.append)
+    assert mc_panel.main(["reconcile-players", str(path), "--live"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "UNCHANGED" and out[1].startswith("KEPT: Dora_K (") and out[2] == "ALERT-KEPT: Dora_K"
+    assert sent == []  # reconcile runs as minecraft: it never holds the webhook
+    assert mc_panel.main(["reconcile-players", str(path)]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "UNCHANGED" and out[1].startswith("KEPT: Dora_K") and len(out) == 2  # announced once
+    assert mc_panel.main(["alert-kept", "Dora_K", UUID_D]) == 0
+    assert len(sent) == 1 and "Dora_K" in sent[0] and "mcctl players add" in sent[0]
+    assert mc_panel.main(["alert-kept", "--bad name"]) == 2 and mc_panel.main(["alert-kept"]) == 2
+    assert len(sent) == 1
 
 
 # --- the agent's inventory and wiring ---------------------------------------------------------------------------------

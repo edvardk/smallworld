@@ -176,6 +176,7 @@
    "water_ambient": 20,
    "water_animals": 5
   },
+  "mc_strict_whitelist": false,
   "mc_tracking_range": {
    "animals": 48,
    "display": 128,

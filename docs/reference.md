@@ -294,7 +294,7 @@ laptop (on a network with IPv6): `python scripts/smoke_test.py mc.example.com --
 Every command of `mcctl` (the everyday ones are explained in
 [operations.md](operations.md#mcctl-commands)).
 `-C` names the config repo
-(default: the current directory). `init` (on an existing config repo), `plan`, `apply`, `deploy` and `bootstrap` run the product commit the config
+(default: the current directory if it is a config repo, else the remembered one, below). `init` (on an existing config repo), `plan`, `apply`, `deploy` and `bootstrap` run the product commit the config
 repo pins: when the mcctl you started isn't that commit, it re-runs itself from
 `~/.cache/mcctl/<sha>/` (a shallow fetch via `gh auth git-credential`, a venv from
 `requirements/deploy.txt --require-hashes`, the pinned Ansible collections), as `python -P` with that
@@ -309,7 +309,31 @@ rejected (you aren't the admin), mcctl shows how to open a pull request instead.
 release tag only when that commit is tagged; otherwise `vX.Y.Z-N-g<sha>` (N commits after vX.Y.Z, or
 `v0.0.0-N-g<sha>` before the first release), which never auto-merges and is upgraded like vX.Y.Z.
 
+### The home screen and the remembered config repo (v1.3)
+
+`mcctl` with no command, on an interactive terminal, opens the home screen (`mcctl/home.py`); `mcctl -C DIR`
+opens it on DIR. A status header comes first: the deployment, the config repo (and where it came from: `-C`,
+the current directory, or remembered), the pinned product against the installed mcctl, then the server (online,
+players, TPS/MSPT), the last deploy and open panel PRs. The server part is `mcctl status`'s probe (Tailscale SSH
+and `gh`) run in the background with an 8 s budget and cached for 30 s; whatever fails or is slow reads
+"unknown (why)" and never holds up the menu ("Refresh status" asks again). Then an arrow-key menu (questionary)
+grouped Server, Players, Worlds, Config, Publish, Health, Updates, Secrets, Metrics. Each item runs the existing
+command with `-C` added (status, logs, live logs, backup list, players list, validate, config get, doctor, the
+upgrade and lock update dry runs, secrets dashlane, metrics summary), then the menu comes back; items still to
+come in v1.3 are shown disabled ("v1.3, coming"). Esc, Ctrl-C or Quit leave with exit code 0. Without a terminal
+(stdin or stdout), with `--plain`, `MCCTL_PLAIN`, `NO_COLOR`, `CI` or `TERM=dumb`, `mcctl` alone is the usage
+error it always was (exit code 2); every subcommand is unchanged.
+
+mcctl remembers config repos in `~/.config/mcctl/config.toml` (`$XDG_CONFIG_HOME/mcctl/` when set; Windows:
+`%APPDATA%\mcctl\`; `mcctl/homecfg.py`): absolute paths only (`current` and up to 10 `repos`), never a
+credential. A command run with an explicit `-C` naming a config repo makes it the current one once it succeeds
+(not under `CI`); so does the home screen's "Switch config repo" (a picker of the remembered repos, or a path).
+Without `-C`, a command uses the current directory when it is a config repo (server.yml and
+`.github/workflows/server.yml`), else the remembered one (it says so on stderr, and passes `-C` on to a
+re-executed pinned mcctl). A missing or corrupt file means nothing is remembered; the next write replaces it.
+
 ```bash
+python -m mcctl                       # v1.3: the home screen (terminal only; -C DIR to open it on DIR)
 python -m mcctl setup -C $C [--seed F] # = init: the onboarding wizard (Quick start); resumable, --from STEP, --reconfigure STEP
 python -m mcctl product-setup [--check] # the product repo's GitHub settings (owner; GH_TOKEN or `gh auth token`)
 python -m mcctl config get|set PATH [VALUE] -C $C   # one server.yml value: schema-checked, comments kept,
@@ -501,9 +525,24 @@ For a public product repo the Access setting and `PRODUCT_READ_TOKEN` are not ne
 
 ### Releasing
 
-Bump `version` in `pyproject.toml` and `__version__` in `mcctl/__init__.py`, turn `## [Unreleased]` in
-[`CHANGELOG.md`](../CHANGELOG.md) into `## [X.Y.Z] - YYYY-MM-DD`, merge, then push the tag `vX.Y.Z` on that commit.
-`release.yml` runs CI, `scripts/release.py check`, and creates the GitHub release with the changelog section.
+Two steps, with the release PR in between (`scripts/release.py`, stdlib only):
+
+1. On a clean branch: `python3 scripts/release.py bump X.Y.Z [--date YYYY-MM-DD]`. It sets `version` in
+   `pyproject.toml`, `__version__` in `mcctl/__init__.py` and README's `Version **X.Y.Z**` line, turns
+   `## [Unreleased]` in [`CHANGELOG.md`](../CHANGELOG.md) into `## [X.Y.Z] - YYYY-MM-DD` (default: today) and
+   starts a new empty `## [Unreleased]`. Text edits only, formatting kept; nothing is written when it refuses:
+   a version not greater than the current one (semver), an empty Unreleased section, an existing `## [X.Y.Z]`
+   section, a dirty working tree. Commit, open the PR, merge.
+2. On the merged main (`git fetch origin && git switch --detach origin/main`):
+   `python3 scripts/release.py tag [vX.Y.Z] [--remote origin] [--push]` (default: `v` + pyproject's version).
+   It fetches `<remote>/main` and refuses unless HEAD **is** its tip (a tag on the release branch's commit
+   instead of main's merge commit, as happened to v1.2.1, is refused), the tree is clean,
+   `release.py check vX.Y.Z` passes and the tag exists neither locally nor on the remote. It creates the
+   annotated tag `vX.Y.Z` ("Smallworld vX.Y.Z") and prints `git push origin vX.Y.Z`; `--push` pushes it after
+   you type the tag name.
+
+The pushed tag starts `release.yml`: CI, `scripts/release.py check`, and the GitHub release with the changelog
+section.
 Config repos then move their pin to the tag's commit SHA (`mcctl upgrade` / the weekly update, P11–P12).
 
 ## Example deployment

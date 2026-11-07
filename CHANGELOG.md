@@ -8,6 +8,32 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ### Added
 
+- `scripts/release.py bump X.Y.Z [--date YYYY-MM-DD]` sets the version in `pyproject.toml`, `mcctl/__init__.py`
+  and README and dates the CHANGELOG's Unreleased section (refuses a version that isn't greater, an empty
+  Unreleased section, a dirty tree); `scripts/release.py tag [vX.Y.Z] [--remote R] [--push]` creates the annotated
+  release tag only on the fetched tip of `origin/main` with a clean tree, a passing `check` and a new tag name,
+  and prints the push command (`--push` pushes after a typed confirmation). v1.2.1's tag had landed on a branch
+  commit instead of main's merge commit (docs/reference.md "Releasing").
+- Whitelist guard: a deploy no longer silently removes players who are on the live whitelist but were never in
+  `players.yml` (console or Discord adds, panel adds whose pull request expired). They are kept, the deploy's
+  output says `KEPT: <names>`, Discord gets one message per newly kept player (`mcctl players add NAME` to make
+  them permanent) and the panel tags them *not in Git*. Removals still apply: the panel's pending removes, and
+  players a commit took out of `players.yml` since the last deploy (remembered in
+  `/opt/minecraft/server/whitelist-managed.json`; the first deploy with this release keeps everyone not in
+  `players.yml`). docs/operations.md "Players not in Git".
+- `server.yml` `minecraft.strict_whitelist` (default `false`): `true` makes `players.yml` the whole whitelist, as
+  before this release (a deploy removes every live player it doesn't list, apart from pending panel adds).
+- **The home screen:** `mcctl` with no command, on an interactive terminal, shows a status header (deployment,
+  config repo, pinned product vs this mcctl, server online/players/TPS/MSPT, last deploy, open panel PRs; slow
+  or failed parts read "unknown (why)" and never block) and an arrow-key menu grouped Server, Players, Worlds,
+  Config, Publish, Health, Updates, Secrets, Metrics. Its items run the existing read-only commands (status, logs,
+  backup list, players list, validate, config get, doctor, update dry runs, secrets dashlane, metrics); the rest
+  of v1.3's items are shown as coming. `--plain`, CI, `NO_COLOR` and no terminal keep the usage error (exit 2).
+- **Remembered config repo:** `~/.config/mcctl/config.toml` (XDG_CONFIG_HOME; Windows `%APPDATA%\mcctl`)
+  remembers the config repos used with `-C` (paths only, no secrets). Without `-C`, outside a config repo, mcctl
+  uses the remembered one; the home screen's "Switch config repo" picks between them.
+- Dependencies: questionary 2.1.1 (with prompt-toolkit 3.0.53 and wcwidth 0.9.4) in all three requirement sets
+  and `pyproject.toml`.
 - **Friend compass** (mc-brand, vanilla clients): a boss bar that turns with the player, with the cardinal points
   and every online player's name at their bearing. The player faced is centred with ▼, the distance (rounded) and
   ↑/↓ for large height differences. Players in other dimensions are listed after a bar as "name (Nether)", without
@@ -28,6 +54,25 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   above the world spawn instead of explicit `x`/`y`/`z`.
 - `scripts/build_plugin.py` runs a plugin's fixture class (mc-brand: `WayfindingFixtures`, pure logic on the
   pinned JDK, never in the jar) and compares its output, which `tests/test_wayfinding.py` checks independently.
+
+### Changed
+
+- The product's e2e `agent` shard is split in two by its rounds (`agent-a`, `agent-b`: `tests/e2e/agent_check.py
+  --rounds a|b`, each on its own box with its own mock Worker and GitHub API), so e2e's slowest shard drops from
+  16 to about 11 minutes. Every round prints its wall time; without `--rounds` the script still runs every
+  round (docs/ci.md).
+- Golden rendering (`tests/fixtures/full-render.json`): new group var `mc_strict_whitelist` (the example sets it
+  explicitly to `false`); mc-brand's config gains `compass`, `pocket_map` and each hologram's `help` (the example
+  adds a spawn help hologram and explicit compass values).
+
+### Fixed
+
+- Deploys restart mc-agent when its code changes. The server-side scripts were copied into place without restarting
+  the one long-running process that imports them, so an upgrade's agent and panel fixes stayed inactive until the
+  agent restarted for some other reason (v1.2.2's token fix was installed but the old code kept running). The
+  script install now notifies a handler pair that restarts mc-agent only where its unit is installed (a fresh box,
+  where handlers can flush before the agent role ran, and boxes without the panel skip it).
+  `tests/test_playbooks.py` checks that every script mc-agent imports is covered.
 
 ## [1.2.2] - 2026-11-07
 

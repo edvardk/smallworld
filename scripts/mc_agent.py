@@ -882,9 +882,23 @@ def collect_inventory(server_dir: Path | None = None) -> dict[str, Any]:
         with contextlib.suppress(OSError):
             for jar in sorted((sdir / sub).glob("*.jar"))[:INVENTORY_MAX]:
                 plugins.append({"file": jar.name[:200], "name": jar.stem[:100], "enabled": enabled})
+    # v1.3 whitelist guard: the players the last deploy kept although players.yml doesn't list them (the panel
+    # tags them "not in Git"); written as minecraft by the players role, so read like every file in there
+    try:
+        guard = json.loads(mc_rcon.read_untrusted(sdir / mc_panel.PLAYERS_STATE_FILE))
+    except (OSError, ValueError):
+        guard = {}
+    listed = guard.get("kept") if isinstance(guard, dict) else None
+    kept = {u for u in listed if isinstance(u, str)} if isinstance(listed, list) else set()
+    whitelist = []
+    for e in read_json_list(sdir / "whitelist.json"):
+        item = _clip(e, ("name", "uuid"))
+        if isinstance(e.get("uuid"), str) and e["uuid"].lower() in kept:
+            item["unmanaged"] = True
+        whitelist.append(item)
     return {
         "ts": int(time.time() * 1000),
-        "whitelist": [_clip(e, ("name", "uuid")) for e in read_json_list(sdir / "whitelist.json")],
+        "whitelist": whitelist,
         "ops": [_clip(e, ("name", "uuid", "level")) for e in read_json_list(sdir / "ops.json")],
         "bans": [
             _clip(e, ("name", "uuid", "created", "source", "expires", "reason"))
