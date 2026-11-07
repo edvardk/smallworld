@@ -23,6 +23,13 @@ panel and Discord adds never reached `players.yml`, so a deploy removed them. Ad
   could be added. The Worker falls back to `api.minecraftservices.com`'s name lookup; when neither answers, the form
   offers to add the name unverified (the server resolves it itself, as Discord's `/whitelist add` does).
 
+### Changed
+
+- The product's `e2e` CI runs as four parallel shards (core, agent, telemetry-brand, migrate-p16), each on its own
+  freshly deployed box; the required check `e2e` aggregates them (docs/ci.md). Measured: a full run 16 minutes
+  instead of 42.5.
+- Dependencies: ansible-core 2.21.5 -> 2.21.6 (deploy), setuptools 80.9.0 -> 84.1.0 (build backend only).
+
 ## [1.2.1] - 2026-11-06
 
 ### Added

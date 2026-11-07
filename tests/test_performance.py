@@ -162,7 +162,9 @@ def test_ci_runs_the_collector_ab_and_the_p16_deploy() -> None:
     assert "shmem_enabled" in bench  # THP as the base role sets it for zgc
     uses = [s.get("uses", "") for s in wf["jobs"]["bench-gc"]["steps"]]
     assert any(u.startswith("actions/upload-artifact@") for u in uses)
-    e2e = "\n".join(s.get("run", "") for s in wf["jobs"]["e2e"]["steps"])
+    # the migrate shard: P16 runs on the box the migration restored
+    steps = [s for s in wf["jobs"]["e2e-shard"]["steps"] if "migrate-p16" in str(s.get("if"))]
+    e2e = "\n".join(s.get("run", "") for s in steps)
     assert "-e @/src/product/tests/e2e/p16.yml" in e2e and "tests/e2e/perf_check.py" in e2e
     assert 'changed=0 +unreachable=0 +failed=0\' "$RUNNER_TEMP/site-p16-2.log"' in e2e
     assert 'changed=0 +unreachable=0 +failed=1\' "$RUNNER_TEMP/site-p16-refused.log"' in e2e  # pre_tasks

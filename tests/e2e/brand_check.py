@@ -61,7 +61,7 @@ def main() -> int:
            "the plugin read the deploy's settings (4 rules, no Discord, HUD available)")  # fmt: skip
     expect(not re.search(r"Error occurred while enabling mc-brand|mc-brand.*Exception", journal),
            "no mc-brand error in the journal")  # fmt: skip
-    # mode only: the hardening check's restore drill (earlier in the run) restored the tree as minecraft
+    # mode only: a restore (the hardening check's drill, agent_check's round trip) rewrites the tree as minecraft
     st = sh(box, f"stat -c '%a' {SERVER}/plugins/mc-brand/config.yml").stdout.strip()
     conf = sh(box, f"cat {SERVER}/plugins/mc-brand/config.yml").stdout
     expect(st == "640" and "first_join:" in conf, f"plugins/mc-brand/config.yml is the deploy's ({st})")

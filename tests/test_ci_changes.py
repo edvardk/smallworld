@@ -111,6 +111,9 @@ def test_required_checks_always_report() -> None:
             assert re.fullmatch(
                 r"\$\{\{ !cancelled\(\)( && needs\.changes\.outputs\.\w+ != 'false')? \}\}", cond
             )
+    # e2e is an aggregator of the shards: it must wait for all of them and run whenever they may have
+    e2e = load("e2e-mock.yml")["jobs"]
+    assert "e2e-shard" in e2e["e2e"]["needs"] and e2e["e2e-shard"]["if"] == e2e["e2e"]["if"]
     ci = load("ci.yml")["jobs"]
     assert "if" not in ci["gitleaks"] and "if" not in ci["config-repo"] and "if" not in ci["publication"]
     lint = "\n".join(str(s.get("if", "")) for s in ci["lint"]["steps"])
@@ -139,20 +142,54 @@ def test_e2e_triggers_and_benches() -> None:
     assert "else e2e=true; full=true; fi ;;" in decide["run"]
     assert decide["run"].startswith("bench=false\n")
     # the self-hosted runner only for trusted code: never a fork's pull request (H1)
-    assert wf["jobs"]["e2e"]["runs-on"] == (
-        "${{ (github.event_name != 'pull_request' || "
-        "github.event.pull_request.head.repo.full_name == github.repository) "
-        "&& vars.E2E_RUNNER || 'ubuntu-24.04' }}"
+    trusted = (
+        "(github.event_name != 'pull_request' || "
+        "github.event.pull_request.head.repo.full_name == github.repository)"
     )
-    # the heavy half is skipped only on an explicit `false`
-    steps = wf["jobs"]["e2e"]["steps"]
-    heavy = [s for s in steps if s.get("if") == "env.FULL != 'false'"]
-    names = " ".join(s.get("name", s.get("uses", "")) for s in heavy)
-    for part in ("telemetry", "Branding", "Migrate", "P16", "setup-node"):
-        assert part in names, part
+    shard = wf["jobs"]["e2e-shard"]
+    assert shard["runs-on"] == f"${{{{ {trusted} && vars.E2E_RUNNER || 'ubuntu-24.04' }}}}"
+    # parallel shards on GitHub's runners, one at a time on the self-hosted one (host-network ports clash)
+    strategy = shard["strategy"]
+    assert strategy["fail-fast"] is False
+    assert strategy["max-parallel"] == f"${{{{ fromJSON({trusted} && vars.E2E_RUNNER && '1' || '4') }}}}"
+    include = {m["shard"]: m for m in strategy["matrix"]["include"]}
+    assert set(include) == {"core", "agent", "telemetry-brand", "migrate-p16"}
+    assert {s for s, m in include.items() if m["full_only"]} == {"telemetry-brand", "migrate-p16"}
+    assert all(m["timeout"] for m in include.values()) and shard["timeout-minutes"] == "${{ matrix.timeout }}"
+    assert shard["if"] == "${{ !cancelled() && needs.changes.outputs.e2e != 'false' }}"
+    # a heavy shard in an essential run skips everything (its boot too); the other shards always work
+    assert shard["env"]["ACTIVE"] == (
+        "${{ (!matrix.full_only || needs.changes.outputs.full != 'false') && 'true' || 'false' }}"
+    )
+    steps = shard["steps"]
+
+    def where(fragment: str) -> list[str]:
+        return [str(s.get("if")) for s in steps if fragment in s.get("name", s.get("uses", ""))]
+
+    for part in ("checkout", "setup-python", "Start a systemd", "Install Ansible", "site.yml", "status ping"):
+        assert where(part) == ["env.ACTIVE == 'true'"], part
+    for part in ("init again", "stale product pin", "client on", "terraform validate", "Hardening", "Reboot",
+                 "Deploy checks", "Firewall", "P12 dry runs"):  # fmt: skip
+        assert where(part) == ["matrix.shard == 'core'"], part
+    assert where("mc-agent checks") == ["matrix.shard == 'agent'"]
+    # the heavy half is skipped only on an explicit `false`, in its own shards
+    for part in ("telemetry", "Branding", "setup-node"):
+        assert where(part) == ["matrix.shard == 'telemetry-brand' && env.FULL != 'false'"], part
+    for part in ("Migrate", "P16"):  # P16 runs on the migrated box: same shard, after it
+        assert where(part) == ["matrix.shard == 'migrate-p16' && env.FULL != 'false'"], part
+    site = next(s for s in steps if s.get("name", "").startswith("site.yml"))
+    assert site["env"]["RUNS"] == "${{ matrix.shard == 'core' && '1 2' || '1' }}"  # idempotency: core's
+    assert any(s.get("if") == "failure()" and "journalctl" in s["run"] for s in steps)
     for s in steps:
         if "run" in s:  # a hung step fails on its own clock (an e2e hang was seen), not the job's
             assert s.get("timeout-minutes"), s["name"]
+    # the required check: one job however the shards are cut, failing unless every shard passed
+    agg = wf["jobs"]["e2e"]
+    assert agg["needs"] == ["changes", "e2e-shard"] and agg["if"] == shard["if"]
+    assert agg["runs-on"] == "ubuntu-24.04" and agg["timeout-minutes"] == 5
+    (check,) = agg["steps"]
+    assert check["env"]["RESULT"] == "${{ needs.e2e-shard.result }}"
+    assert check["run"].rstrip().endswith('[ "$RESULT" = success ]')  # a skipped shard fails it too
 
 
 def test_update_lock_dispatches_the_full_e2e() -> None:
