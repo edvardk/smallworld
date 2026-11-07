@@ -73,17 +73,25 @@ def connect(token: str, zone: str, name: str, transport: http.Transport) -> D1:
     if not zones:
         raise CloudflareError(f"zone {zone} not found with this token (HTTP {resp.status})")
     account = zones[0]["account"]["id"]
-    db_name = f"{name}-telemetry"
+    return database(
+        token,
+        account,
+        f"{name}-telemetry",
+        transport,
+        "needs experience.enabled, panel.mode cloudflare, apply",
+    )
+
+
+def database(token: str, account: str, db_name: str, transport: http.Transport, hint: str = "apply") -> D1:
+    """A D1 database of the account by name (the TELEMETRY one here; v1.3 doctor: the watchdog's)."""
     resp = http.get(
         transport,
         f"{API}/accounts/{account}/d1/database?{urllib.parse.urlencode({'name': db_name})}",
-        headers,
+        {"Authorization": f"Bearer {token}"},
     )
     dbs = [d for d in ((resp.json() or {}).get("result") or []) if d.get("name") == db_name]
     if resp.status != 200 or not dbs:
-        raise CloudflareError(
-            f"D1 database {db_name} not found (needs experience.enabled, panel.mode cloudflare, apply)"
-        )
+        raise CloudflareError(f"D1 database {db_name} not found ({hint})")
     return D1(token, account, dbs[0]["uuid"], transport)
 
 

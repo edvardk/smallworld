@@ -16,7 +16,7 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
 from mcctl import cli, home, homecfg, remote, ui
-from tests.conftest import make_config_repo
+from tests.conftest import TEST_SHA, make_config_repo
 
 UP, DOWN, ENTER, CTRL_C, ESC = "\x1b[A", "\x1b[B", "\r", "\x03", "\x1b"
 
@@ -428,3 +428,19 @@ def test_a_reexecuted_command_gets_the_remembered_c(
     root = str(config_repo.resolve())
     assert seen[0].argv == ["lock", "update", "-C", root, "--dry-run"]
     assert seen[1].argv == ["logs", "-C", root, "-f"]
+
+
+def test_header_shows_the_deployed_version_against_the_pin(config_repo: Path) -> None:
+    """v1.3: the server's product-version.json (over the same SSH status call) next to the pin."""
+    out = ui.Out(io.StringIO(), rich=False)
+
+    def at(commit: str) -> home.StatusProbe:
+        st = online()
+        st.product = {"version": "0.0.0", "commit": commit}
+        return home.StatusProbe(lambda cfg: st)
+
+    rows = dict(home.header_rows(config_repo, "-C", at(TEST_SHA), out))
+    assert rows["Deployed"] == f"v0.0.0 ({TEST_SHA[:12]}) · as pinned"
+    rows = dict(home.header_rows(config_repo, "-C", at("2" * 40), out))
+    assert rows["Deployed"] == f"v0.0.0 ({'2' * 12}) · deployed {'2' * 12}, pinned {TEST_SHA[:12]}: deploy"
+    assert "Deployed" not in dict(home.header_rows(config_repo, "-C", home.StatusProbe(online), out))

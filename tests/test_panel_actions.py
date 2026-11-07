@@ -98,6 +98,7 @@ class FakeGitHub:
         self.prs: dict[int, dict[str, Any]] = {}
         self.calls: list[tuple[str, str, dict[str, Any] | None]] = []
         self.auth: set[str] = set()
+        self.push = True
         fake = self
 
         class H(http.server.BaseHTTPRequestHandler):
@@ -148,6 +149,11 @@ class FakeGitHub:
             }
         if method == "GET" and path.startswith(f"{repo}/pulls/"):
             return 200, self.prs[int(path.rsplit("/", 1)[1])]
+        # v1.3 self-test: the repository (with the token's permissions) and the open pull request list
+        if method == "GET" and path == repo:
+            return 200, {"full_name": "octocat/mc-config", "permissions": {"pull": True, "push": self.push}}
+        if method == "GET" and path.startswith(f"{repo}/pulls?"):
+            return 200, [{"number": n} for n, p in self.prs.items() if p["state"] == "open"][:1]
         return 404, {"message": "Not Found"}
 
     def merge(self, number: int) -> None:
@@ -1073,3 +1079,114 @@ def test_polkit_allows_the_p10_units_only() -> None:
     apply = (REPO / "ansible/roles/plugins/templates/mc-plugins-apply.service.j2").read_text()
     assert "User=minecraft" in apply and "ReadWritePaths={{ mc_server_dir }}/plugins" in apply
     assert "EnvironmentFile" not in apply
+
+
+# --- v1.3: the Panel -> Git self-test (read-only: token, permissions, repository, main, pulls) -----------------
+
+
+PERMS = {"contents": "write", "pull_requests": "write", "metadata": "read"}
+
+
+def selftest_fetch(reply: Any) -> Any:
+    calls: list[int] = []
+
+    def fetch() -> Any:
+        calls.append(1)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+    fetch.calls = calls  # type: ignore[attr-defined]
+    return fetch
+
+
+def test_selftest_passes_without_creating_anything(github) -> None:
+    gh = gh_for(github)
+    long_token = "ghs_" + "x" * 386  # v1.2.2: 390 characters, as GitHub issues them now
+    fetch = selftest_fetch({"token": long_token, "expires_at": "2099-01-01T00:00:00Z", "permissions": PERMS})
+    r = mc_panel.selftest(fetch, gh, 1000.0)
+    assert r["ok"] is True and r["error"] == "" and r["ts"] == 1_000_000
+    assert [s["step"] for s in r["steps"]] == list(mc_panel.SELFTEST_STEPS)
+    assert all(s["ok"] for s in r["steps"])
+    assert "390 characters" in r["steps"][0]["detail"]
+    assert {m for m, _, _ in github.calls} == {"GET"}, "read-only: no branch, commit or pull request"
+    assert not github.prs and set(github.files) == {"main"}
+    assert github.auth == {f"Bearer {long_token}"}
+    assert long_token not in json.dumps(r)
+    # a second run fetches again: the Worker's answer is checked, not a remembered token
+    mc_panel.selftest(fetch, gh, 1001.0)
+    assert len(fetch.calls) == 2  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    ("reply", "step", "why"),
+    [
+        (OSError("HTTP 502: GitHub App: POST /app/installations/{id}/access_tokens: HTTP 401"),
+         "token", "no GitHub token from the Worker"),
+        ({"token": "ghs_" + "y" * 30 + "!", "expires_at": "2099-01-01T00:00:00Z"}, "token", "unexpected '!'"),
+        ({"error": "no GitHub App for the panel"}, "token", "no token in the reply"),
+        ({"token": "ghs_" + "z" * 36, "permissions": {"contents": "read", "pull_requests": "write"}},
+         "permissions", "the token lacks contents: write"),
+    ],
+)  # fmt: skip
+def test_selftest_names_the_failing_step_and_never_the_token(github, reply: Any, step: str, why: str) -> None:
+    r = mc_panel.selftest(selftest_fetch(reply), gh_for(github), 1000.0)
+    assert r["ok"] is False and r["error"].startswith(f"{step}: ") and why in r["error"]
+    assert r["steps"][-1] == {"step": step, "ok": False, "detail": r["error"].split(": ", 1)[1]}
+    if isinstance(reply, dict) and reply.get("token"):
+        assert reply["token"] not in json.dumps(r)
+    assert not github.calls, "nothing reaches GitHub before the token and its permissions pass"
+
+
+def test_selftest_github_side_failures(github) -> None:
+    gh = gh_for(github)
+    fetch = selftest_fetch({"token": TOKEN, "expires_at": "2099-01-01T00:00:00Z"})
+    github.push = False
+    r = mc_panel.selftest(fetch, gh, 1000.0)
+    assert r["error"] == "repository: octocat/mc-config: the token can't push (permissions.push is false)"
+    assert r["steps"][1] == {"step": "permissions", "ok": True,
+                             "detail": "not reported by this Worker (checked through the repository below)"}  # fmt: skip
+    github.push = True
+    github.files.pop("main")  # players.yml unreadable on main
+    r = mc_panel.selftest(fetch, gh, 1000.0)
+    assert r["error"].startswith("main: ") and TOKEN not in json.dumps(r)
+    other = mc_panel.github_from_env({"CONFIG_REPO": "octocat/gone", "GITHUB_API_URL": github.url}, fetch)
+    r = mc_panel.selftest(fetch, other, 1000.0)
+    assert r["error"] == "repository: GET /repos/octocat/gone: HTTP 404"
+    assert mc_panel.selftest(None, None, 1000.0) | {"ts": 0} == {
+        "ok": False, "ts": 0, "configured": False, "steps": [],
+        "error": "configuration: no config repo for the panel (CONFIG_REPO) or no token source",
+    }  # fmt: skip
+
+
+def test_selftest_state_alerts_after_two_failures_and_once_on_recovery(tmp_path: Path) -> None:
+    st = mc_panel.SelfTestState(tmp_path / "selftest.json")
+    sent: list[str] = []
+    fail = {
+        "ok": False,
+        "ts": 1,
+        "configured": True,
+        "error": "token: no GitHub token from the Worker: x",
+        "steps": [],
+    }
+    st.record(fail, sent.append)
+    assert not sent and st.public()["failures"] == 1  # type: ignore[index]
+    st.record(fail, sent.append)
+    assert len(sent) == 1 and "can't open pull requests" in sent[0] and "at token:" in sent[0]
+    st.record(fail, sent.append)
+    assert len(sent) == 1, "one alert per streak"
+    # survives a restart (the agent's state dir)
+    again = mc_panel.SelfTestState(tmp_path / "selftest.json")
+    again.record({"ok": True, "ts": 2, "configured": True, "error": "", "steps": []}, sent.append)
+    assert len(sent) == 2 and "again" in sent[1]
+    assert again.public() == {"ok": True, "ts": 2, "configured": True, "error": "", "steps": [], "trigger": None,
+                              "failures": 0}  # fmt: skip
+    assert (tmp_path / "selftest.json").stat().st_mode & 0o777 == 0o600
+    # not configured: no streak, no alert
+    again.record(
+        {"ok": False, "ts": 3, "configured": False, "error": "configuration: x", "steps": []}, sent.append
+    )
+    again.record(
+        {"ok": False, "ts": 4, "configured": False, "error": "configuration: x", "steps": []}, sent.append
+    )
+    assert len(sent) == 2

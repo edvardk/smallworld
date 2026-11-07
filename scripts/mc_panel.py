@@ -425,6 +425,172 @@ def github_from_env(
     return GitHub(TokenCache(fetch_token), repo, api, branch)
 
 
+# --- v1.3: the Panel -> Git self-test -----------------------------------------------------------------------
+#
+# Proves the panel can still open a pull request, without opening one (v1.2.2: GitHub's tokens grew to 390
+# characters, TokenCache refused them, and nobody noticed for days): the Worker mints a token, a fresh
+# TokenCache accepts it, the token's permissions are the ones the flow needs, and GitHub answers for the
+# config repo (the repository, main's head and players.yml as open_pr reads them, the pull request list).
+# Read-only: no branch, no commit, no pull request. Every error names the step; no token reaches a message
+# (GitHubError carries the request line and status only, token_shape the length and odd characters).
+
+SELFTEST_STEPS = ("token", "permissions", "repository", "main", "pulls")
+SELFTEST_NEEDS = {"contents": "write", "pull_requests": "write"}  # what the Worker narrows the token to
+SELFTEST_ALERT_AFTER = 2  # consecutive failures before Discord hears about it
+
+
+def _no_token(text: str, token: str) -> str:
+    return text.replace(token, "<token>") if token else text
+
+
+def selftest(
+    fetch_token: Callable[[], Any] | None,
+    gh: GitHub | None,
+    now: float,
+    clock: Callable[[], float] = time.time,
+) -> dict[str, Any]:
+    """One self-test run: {ok, ts, configured, steps: [{step, ok, detail}], error ("<step>: <why>")}."""
+    out: dict[str, Any] = {"ok": False, "ts": int(now * 1000), "configured": gh is not None, "steps": [],
+                           "error": ""}  # fmt: skip
+    if gh is None or fetch_token is None:
+        out["error"] = "configuration: no config repo for the panel (CONFIG_REPO) or no token source"
+        return out
+    token = ""
+    reply: Any = None
+
+    def fetch() -> Any:  # noqa: ANN401 - the Worker's JSON reply, kept for the permissions step
+        nonlocal reply
+        reply = fetch_token()
+        return reply
+
+    def step(name: str, ok: bool, detail: str) -> bool:
+        detail = _no_token(detail, token)[:200]
+        out["steps"].append({"step": name, "ok": ok, "detail": detail})
+        if not ok and not out["error"]:
+            out["error"] = f"{name}: {detail}"
+        return ok
+
+    cache = TokenCache(fetch, clock)  # a fresh cache: the Worker's answer is checked, not a remembered token
+    try:
+        token = cache()
+    except GitHubError as e:
+        step("token", False, str(e))
+        return out
+    step("token", True, f"the Worker minted a token ({len(token)} characters), TokenCache accepted it")
+    perms = reply.get("permissions") if isinstance(reply, dict) else None
+    if isinstance(perms, dict):
+        missing = [f"{k}: {v}" for k, v in SELFTEST_NEEDS.items() if perms.get(k) != v]
+        why = f"the token lacks {', '.join(missing)}" if missing else "contents + pull_requests write"
+        if not step("permissions", not missing, why):
+            return out
+    else:
+        step("permissions", True, "not reported by this Worker (checked through the repository below)")
+    probe = GitHub(lambda: token, gh.repo, gh.api, gh.branch)
+    try:
+        repo = probe.call("GET", f"/repos/{gh.repo}")
+        push = (repo.get("permissions") or {}).get("push") if isinstance(repo, dict) else None
+        if push is False:
+            step("repository", False, f"{gh.repo}: the token can't push (permissions.push is false)")
+            return out
+        step("repository", True, f"{gh.repo} readable" + (", push allowed" if push else ""))
+    except (GitHubError, KeyError, TypeError, ValueError) as e:
+        step("repository", False, str(e) or type(e).__name__)
+        return out
+    try:
+        players, _, head = probe.players_on_main()
+        step("main", True, f"{gh.branch} at {str(head)[:12]}, players.yml has {len(players['whitelist'])} "
+             "whitelisted")  # fmt: skip
+    except (GitHubError, KeyError, TypeError, ValueError) as e:
+        step("main", False, str(e) or type(e).__name__)
+        return out
+    try:
+        prs = probe.call("GET", f"/repos/{gh.repo}/pulls?state=open&per_page=1")
+        if not isinstance(prs, list):
+            raise GitHubError("GET pulls: not a list")
+        step("pulls", True, "pull requests reachable (nothing was created)")
+    except GitHubError as e:
+        step("pulls", False, str(e))
+        return out
+    out["ok"] = True
+    return out
+
+
+class SelfTestState:
+    """The last self-test result and the failure streak, kept in the agent's state dir (survives restarts) so
+    the daily run alerts once after SELFTEST_ALERT_AFTER consecutive failures, and once when it passes
+    again."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.lock = threading.Lock()
+
+    def load(self) -> dict[str, Any]:
+        data = read_json(self.path, {})
+        if not isinstance(data, dict):
+            data = {}
+        last = data.get("last")
+        return {
+            "last": last if isinstance(last, dict) else None,
+            "failures": int(data.get("failures") or 0),
+            "alerted": data.get("alerted") is True,
+        }
+
+    def record(self, result: dict[str, Any], alert: Callable[[str], None] | None = None) -> dict[str, Any]:
+        with self.lock:
+            st = self.load()
+            st["last"] = result
+            if result.get("ok") or not result.get("configured", True):
+                if st["alerted"] and alert and result.get("ok"):
+                    alert(selftest_back_alert(st["failures"]))
+                st["failures"], st["alerted"] = 0, False
+            else:
+                st["failures"] += 1
+                if st["failures"] >= SELFTEST_ALERT_AFTER and not st["alerted"]:
+                    if alert:
+                        alert(selftest_alert(str(result.get("error") or "unknown"), st["failures"]))
+                    st["alerted"] = True
+            atomic_write(self.path, json.dumps(st), 0o600)
+            return st
+
+    def public(self) -> dict[str, Any] | None:
+        st = self.load()
+        last = st["last"]
+        if not last:
+            return None
+        return {k: last.get(k) for k in ("ok", "ts", "configured", "error", "steps", "trigger")} | {
+            "failures": st["failures"]
+        }
+
+
+def selftest_alert(error: str, failures: int) -> str:
+    """The daily Panel -> Git self-test failed twice in a row (docs/operations.md "Alerts")."""
+    return render(
+        Alert(
+            "warning",
+            "The panel can't open pull requests on the config repo",
+            impact="Whitelist and world changes made in the panel stay live but never reach Git; whitelist "
+            "changes are dropped after 24 h, and the next deploy undoes them.",
+            cause=f"The daily Panel -> Git self-test failed {failures} times in a row, at {error}",
+            todo="Run `mcctl doctor`, and the self-test from the panel's Health tab after a fix. Token or "
+            "permissions: the panel's GitHub App (installed on the config repo, Contents + Pull requests); "
+            "a stale Worker: `mcctl render` + `mcctl apply`.",
+            details=f"{failures} consecutive failures; last: {error}",
+        )
+    )
+
+
+def selftest_back_alert(failures: int) -> str:
+    return render(
+        Alert(
+            "recovered",
+            "The panel can open pull requests again",
+            impact="Panel whitelist and world changes reach the config repo again.",
+            cause="The Panel -> Git self-test passed.",
+            details=f"after {failures} failed run(s)",
+        )
+    )
+
+
 def expired_alert(names: str) -> str:
     """Panel whitelist changes that never reached Git within 24 h (docs/operations.md "Alerts")."""
     return render(

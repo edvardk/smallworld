@@ -1047,7 +1047,8 @@ def test_agent_is_wired_into_ansible_and_e2e() -> None:
     assert '"mc-backup.service": ["start"]' in rule
     assert set(mc_agent.ACTIONS) == {"status", "console", "start", "stop", "restart", "backup", "tail",
                                      "cancel", "whitelist", "rejected_dismiss", "moderate", "plugin", "restore",
-                                     "player_message", "world_create", "world_switch", "world_delete"}  # fmt: skip
+                                     "player_message", "world_create", "world_switch", "world_delete",
+                                     "selftest", "lookup"}  # fmt: skip
     js = (repo / "watchdog/worker.js").read_text()
     block = js.split("const COMMAND_ACTIONS = [", 1)[1].split("];", 1)[0]
     assert set(re.findall(r'"([a-z_]+)"', block)) == set(mc_agent.ACTIONS)  # the Worker signs only these
@@ -1203,3 +1204,147 @@ def test_rcon_stats_keeps_one_connection_and_survives_a_restart(fake_server, tmp
     srv.stop()  # the server is gone
     assert mc_agent.rcon_stats(tmp_path)["up"] is False
     mc_agent.stats_rcon(tmp_path).close()
+
+
+# --- v1.3: versions everywhere, the Panel -> Git self-test, the Mojang lookup from the box ------------------------
+
+
+def test_read_product(tmp_path: Path) -> None:
+    f = tmp_path / "product-version.json"
+    assert mc_agent.read_product(f) is None  # deployed before v1.3
+    f.write_text(json.dumps({"product": "smallworld", "version": "1.3.0", "commit": "a" * 40}))
+    assert mc_agent.read_product(f) == {"version": "1.3.0", "commit": "a" * 40}
+    f.write_text(json.dumps({"version": "1.3.0", "commit": "not a sha"}))
+    assert mc_agent.read_product(f) == {"version": "1.3.0", "commit": ""}
+    f.write_text(json.dumps({"version": "<script>"}))
+    assert mc_agent.read_product(f) is None
+    # = the base role's file (ansible mc_product_version_file)
+    gv = (Path(__file__).parent.parent / "ansible/group_vars/all/main.yml").read_text()
+    assert 'mc_product_version_file: "{{ mc_root }}/product-version.json"' in gv
+    assert str(mc_agent.PRODUCT_VERSION_FILE) == "/opt/minecraft/product-version.json"
+
+
+def test_inventory_reports_the_installed_and_the_running_version(tmp_path: Path, monkeypatch) -> None:
+    f = tmp_path / "product-version.json"
+    f.write_text(json.dumps({"version": "1.2.2", "commit": "b" * 40}))
+    monkeypatch.setattr(mc_agent, "PRODUCT_VERSION_FILE", f)
+    agent = mc_agent.Agent(mc_agent.Settings("https://hb.example.invalid", TOKEN, KEY, state_dir=tmp_path))
+    assert agent.product_state() == {"version": "1.2.2", "commit": "b" * 40, "running": "1.2.2",
+                                     "running_commit": "b" * 40}  # fmt: skip
+    # a deploy installed new code but the process kept running (v1.2.3's incident): the inventory shows both
+    f.write_text(json.dumps({"version": "1.3.0", "commit": "c" * 40}))
+    state = agent.panel_state()
+    assert state["product"]["version"] == "1.3.0" and state["product"]["running"] == "1.2.2"
+    assert state["selftest"] is None  # not run yet
+
+
+class FakeResp:
+    def __init__(self, status: int, body: bytes) -> None:
+        self.status, self.body = status, body
+
+    def __enter__(self) -> FakeResp:
+        return self
+
+    def __exit__(self, *a: object) -> None:
+        pass
+
+    def read(self, n: int = -1) -> bytes:
+        return self.body
+
+
+def test_lookup_from_the_box_falls_back_and_caches(monkeypatch) -> None:
+    import urllib.error
+
+    asked: list[tuple[str, float, str]] = []
+    answers: dict[str, Any] = {}
+
+    def opener(req: Any, timeout: float) -> FakeResp:
+        asked.append((req.full_url, timeout, req.get_header("User-agent")))
+        a = answers[req.full_url.split("/")[2]]
+        if isinstance(a, BaseException):
+            raise a
+        if a[0] >= 400:
+            raise urllib.error.HTTPError(req.full_url, a[0], "x", {}, None)  # type: ignore[arg-type]
+        return FakeResp(*a)
+
+    now = [1000.0]
+    look = mc_agent.Lookup(opener=opener, clock=lambda: now[0])
+    profile = json.dumps({"id": "0d61aa00bb0011224455667788997f90", "name": "Felix_2011"}).encode()
+    # api.mojang.com refuses (as it refuses Cloudflare's egress), the fallback answers
+    answers.update({"api.mojang.com": (403, b""), "api.minecraftservices.com": (200, profile)})
+    got = look("felix_2011")
+    assert got == {"found": True, "name": "Felix_2011", "uuid": "0d61aa00-bb00-1122-4455-667788997f90",
+                   "via": "api.minecraftservices.com"}  # fmt: skip
+    assert [a[0] for a in asked] == [
+        mc_agent.MOJANG_LOOKUPS[0] + "felix_2011",
+        mc_agent.MOJANG_LOOKUPS[1] + "felix_2011",
+    ]
+    assert {a[1] for a in asked} == {mc_agent.LOOKUP_TIMEOUT_S} and asked[0][2] == mc_agent.USER_AGENT
+    assert look("FELIX_2011")["cached"] is True and len(asked) == 2
+    answers["api.mojang.com"] = (204, b"")
+    assert look("NoSuchPlayer") == {"found": False, "via": "api.mojang.com"}
+    # neither answers: unverified, not cached
+    answers.update({"api.mojang.com": TimeoutError("timed out"), "api.minecraftservices.com": (503, b"")})
+    out = look("brokenmojang")
+    assert out == {
+        "found": None,
+        "unverified": True,
+        "detail": "api.mojang.com: TimeoutError; api.minecraftservices.com: HTTP 503",
+    }
+    look("brokenmojang")
+    assert sum("brokenmojang" in a[0] for a in asked) == 4
+    with pytest.raises(mc_agent.Rejected, match="Java name"):
+        look("../../etc")
+    # the rate limit (cache hits don't count)
+    answers.update({"api.mojang.com": (204, b"")})
+    for i in range(mc_agent.LOOKUP_PER_MINUTE - 4):
+        look(f"name_{i:03d}")
+    with pytest.raises(mc_agent.Rejected, match="rate limit"):
+        look("one_more")
+    look("FELIX_2011")  # cached: fine
+    now[0] += 61
+    assert look("one_more")["found"] is False
+
+
+def test_lookup_urls_are_https_or_loopback() -> None:
+    assert mc_agent.lookup_urls({}) == mc_agent.MOJANG_LOOKUPS
+    assert mc_agent.lookup_urls({"MOJANG_LOOKUP_URLS": "http://127.0.0.1:8788/a/, http://127.0.0.1:8788/b/"}) == (
+        "http://127.0.0.1:8788/a/", "http://127.0.0.1:8788/b/")  # fmt: skip
+    with pytest.raises(ValueError):
+        mc_agent.lookup_urls({"MOJANG_LOOKUP_URLS": "http://mojang.example/"})
+
+
+def test_selftest_and_lookup_actions(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(mc_agent, "audit", lambda *a, **k: None)
+    sent: list[str] = []
+    monkeypatch.setattr(notify, "discord", sent.append)
+    agent = mc_agent.Agent(mc_agent.Settings("https://hb.example.invalid", TOKEN, KEY, state_dir=tmp_path))
+    assert agent.github is None  # no CONFIG_REPO in the test environment
+    ex = agent.executor
+    out = ex.run({"action": "selftest", "args": {}, "login": "a@x", "id": "1"})
+    assert out == "failed at configuration: no config repo for the panel (CONFIG_REPO) or no token source"
+    assert agent.panel_state()["selftest"]["configured"] is False and not sent
+    # with a config repo: each step through mc_panel.selftest; at most once a minute from the panel
+    runs: list[str] = []
+
+    def fake(fetch: Any, gh: Any, now: float) -> dict[str, Any]:
+        runs.append("run")
+        return {"ok": True, "ts": int(now * 1000), "configured": True, "error": "",
+                "steps": [{"step": s, "ok": True, "detail": "ok"} for s in mc_panel.SELFTEST_STEPS]}  # fmt: skip
+
+    monkeypatch.setattr(mc_panel, "selftest", fake)
+    agent.github = object()  # type: ignore[assignment]
+    (tmp_path / "selftest.json").unlink()
+    assert ex.run({"action": "selftest", "args": {}, "login": "a@x", "id": "2"}) == (
+        "passed: token, permissions, repository, main, pulls"
+    )
+    assert ex.run({"action": "selftest", "args": {}, "login": "a@x", "id": "3"}).startswith(
+        "passed (an earlier run"
+    )
+    assert runs == ["run"]
+    assert agent.run_selftest("daily")["ok"] and runs == ["run", "run"]  # the daily run isn't limited
+    assert agent.panel_state()["selftest"]["trigger"] == "daily"
+    # lookup: the panel's name check through the box
+    agent.panel.lookup = lambda name: {"found": False, "via": "api.mojang.com", "asked": name}
+    assert json.loads(ex.run({"action": "lookup", "args": {"name": "Steve"}, "login": "a@x", "id": "4"})) == {
+        "found": False, "via": "api.mojang.com", "asked": "Steve"}  # fmt: skip

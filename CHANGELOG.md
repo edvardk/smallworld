@@ -52,6 +52,25 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   features and permissions. Vanilla's list stays at `/minecraft:help`.
 - **Help hologram**: `branding.holograms[].help: true` appends the same list, and `at: spawn` places a hologram
   above the world spawn instead of explicit `x`/`y`/`z`.
+- **Versions everywhere:** each deploy writes `/opt/minecraft/product-version.json` (product version and commit),
+  which mc-agent reports with the version its own process runs; `mcctl render` stamps the product version and
+  the config repo's pin into the Worker's static assets (`version.json`, uploaded by `mcctl apply`, never served).
+  The panel header reads "Smallworld vX.Y.Z · Purpur 26.3"; the Health tab's Versions row shows server, Worker and
+  pin, with the fix for a mismatch ("run `mcctl render` + `mcctl apply`", "deploy", "restart mc-agent"). `mcctl
+  doctor` compares them with the config repo's current pin (rows `versions`, read from the watchdog's D1), and
+  `mcctl status` and the home screen show the deployed version against the pin. (v1.2.2 reached the server and
+  the Worker in two separate steps and nothing showed it.)
+- **Panel → Git self-test:** mc-agent proves daily (and 5 minutes after each start) that the panel can open pull
+  requests, without opening one: the Worker mints a token, a fresh token cache accepts it, its permissions are
+  Contents + Pull requests write, and GitHub answers for the config repo (repository, main and `players.yml`,
+  pull requests). The result and each step are in the Health tab (with "Run the self-test now": new agent action
+  `selftest`, at most once a minute) and in `mcctl doctor` (row `panel → git`); two failures in a row post one
+  Discord alert, and recovery one more. Errors name the step and never contain the token. (v1.2.2's 390-character
+  tokens were refused for days unnoticed.)
+- **Mojang lookup from the server:** the panel's whitelist name check asks mc-agent (new action `lookup {name}`:
+  api.mojang.com, then api.minecraftservices.com, from the box; 3 s timeout each, 20 per minute, cached 10
+  minutes) and falls back to the Worker's own lookup when the agent is offline or doesn't answer within 4 s; "add
+  unverified" stays the last resort. SECURITY.md "Panel actions" lists the two new read-only actions.
 - `scripts/build_plugin.py` runs a plugin's fixture class (mc-brand: `WayfindingFixtures`, pure logic on the
   pinned JDK, never in the jar) and compares its output, which `tests/test_wayfinding.py` checks independently.
 
@@ -61,6 +80,10 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   --rounds a|b`, each on its own box with its own mock Worker and GitHub API), so e2e's slowest shard drops from
   16 to about 11 minutes. Every round prints its wall time; without `--rounds` the script still runs every
   round (docs/ci.md).
+- `POST /agent/github-token` also returns the token's granted `permissions` (from GitHub's reply), for the
+  self-test.
+- The e2e `agent-a` shard gains the round `versions` (version file, self-test against the GitHub mock, lookup
+  against a mock Mojang; about 20 s).
 - Golden rendering (`tests/fixtures/full-render.json`): new group var `mc_strict_whitelist` (the example sets it
   explicitly to `false`); mc-brand's config gains `compass`, `pocket_map` and each hologram's `help` (the example
   adds a spawn help hologram and explicit compass values).

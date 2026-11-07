@@ -15,6 +15,9 @@ group_vars. Everything comes from here, written into one directory (default <con
                                       watchdog_assets_dir, an absolute path in the tfvars): the product's
                                       watchdog/panel/ files plus pack/<sha1>.zip, the resource pack built
                                       from the config repo's art (mcctl/brandpack.py; mc_brand_pack_sha1)
+                                      and v1.3's version.json: the product version and the config repo's
+                                      pin, which `mcctl apply` uploads with worker.js (the panel's Versions
+                                      row, `mcctl doctor`)
 
 Only variables today's roles and root module read are rendered. Fields whose consumers arrive in later phases
 (Grafana, automation, overrides) are validated but not rendered yet; the panel's (P9) and gamerules (v1.2)
@@ -33,7 +36,7 @@ from typing import Any
 
 import yaml
 
-from mcctl import brandpack, clientpack
+from mcctl import __version__, brandpack, clientpack
 from mcctl.configrepo import ConfigRepo
 from mcctl.schema import BrandingHologram, Players, ServerConfig, placeholders
 
@@ -44,6 +47,7 @@ GROUP_VARS_FILE = Path("ansible") / "group_vars" / "all.yml"
 FILES = (TFVARS_FILE, BACKEND_FILE, INVENTORY_FILE, GROUP_VARS_FILE)
 ICON_FILE = Path("ansible") / "files" / "server-icon.png"  # only with branding.icon (P17); a binary file
 WATCHDOG_ASSETS_DIR = Path("watchdog")  # v1.2: staged by render() (terraform var watchdog_assets_dir)
+VERSION_STAMP = WATCHDOG_ASSETS_DIR / "version.json"  # v1.3: read by the Worker through ASSETS, never served
 PACK_DIR = WATCHDOG_ASSETS_DIR / "pack"  # the resource pack: pack/<sha1>.zip (only with resource_pack on)
 PRODUCT_ASSETS = brandpack.PRODUCT_ROOT / "watchdog" / "panel"  # copied without a pack/ directory
 DEPLOY_USER = "deploy"  # product constant (ansible/group_vars/all/main.yml deploy_user)
@@ -619,6 +623,7 @@ def render(repo: ConfigRepo, out_dir: Path) -> list[Path]:
         raise RenderError(problems)
     rendered = files(repo, out_dir)
     stage_watchdog_assets(out_dir)  # not in the returned list: product files, copied
+    (out_dir / VERSION_STAMP).write_text(json.dumps(version_stamp(repo), indent=1, sort_keys=True) + "\n")
     written = []
     for rel, content in rendered.items():
         path = out_dir / rel
@@ -629,6 +634,16 @@ def render(repo: ConfigRepo, out_dir: Path) -> list[Path]:
             path.write_text(content)
         written.append(path)
     return written
+
+
+def version_stamp(repo: ConfigRepo) -> dict[str, Any]:
+    """v1.3: what the Worker reports as its version: this product's (the code that renders is the code `mcctl
+    apply` uploads: both run from the pin) and the config repo's pin at render time."""
+    return {
+        "product": __version__,
+        "pin": {"sha": repo.pin.sha, "version": repo.pin.version},
+        "repository": repo.pin.repository,
+    }
 
 
 def stage_watchdog_assets(out_dir: Path) -> None:

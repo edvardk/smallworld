@@ -486,7 +486,7 @@ async function openConfirm(action, args, what) {
   return null;
 }
 
-const LABELS = { restart: "Restart", stop: "Stop", start: "Start", backup: "Backup", cancel: "Cancel", whitelist: "Whitelist", rejected_dismiss: "Dismiss", moderate: "Moderation", plugin: "Plugin switch", restore: "Restore", world_create: "New world", world_switch: "World switch", world_delete: "World delete" };
+const LABELS = { selftest: "Panel → Git self-test", restart: "Restart", stop: "Stop", start: "Start", backup: "Backup", cancel: "Cancel", whitelist: "Whitelist", rejected_dismiss: "Dismiss", moderate: "Moderation", plugin: "Plugin switch", restore: "Restore", world_create: "New world", world_switch: "World switch", world_delete: "World delete" };
 
 // POST /api/action, then wait for the agent's answer. Returns the result ({ok, output|error}) or null.
 async function runAction(action, args, what = LABELS[action] || action) {
@@ -672,7 +672,9 @@ function paintHeader() {
   if (document.title !== title) document.title = title;
   setText($("#title"), o.server.title);
   setText($("#host"), o.server.host || "");
-  setText($("#version"), o.server.version || [o.server.flavour, o.server.minecraft_version].filter(Boolean).join(" ") || "");
+  // v1.3: "Smallworld vX.Y.Z · Purpur 26.3" (the deployed product version, else the Worker's)
+  const mc = o.server.version || [o.server.flavour, o.server.minecraft_version].filter(Boolean).join(" ");
+  setText($("#version"), [o.server.product ? `Smallworld v${o.server.product}` : "", mc].filter(Boolean).join(" · "));
   const [cls, label] = serverState(o);
   setPill($("#statePill"), `pill ${cls}`, label);
   setText($("#uptime"), fresh && s.up ? fmtUp(s.uptime_s) : "–");
@@ -1354,7 +1356,7 @@ function wirePlayers() {
           found = r.name;
           unverified = false;
           out.className = "lookup ok";
-          out.textContent = `✓ Found Java account ${r.name} · UUID ${r.uuid}`;
+          out.textContent = `✓ Found Java account ${r.name} · UUID ${r.uuid}${r.via === "server" ? " · checked by the server" : ""}`;
           btn.disabled = false;
         } else if (r.unverified) {
           // Mojang didn't answer the Worker (it refuses Cloudflare's addresses at times): the server checks the
@@ -1902,8 +1904,51 @@ V.health = () => {
       <header><h2 id="h-hc">Checks now</h2><span class="note">from the latest sample</span></header>
       <ul class="health">${S.o ? healthItems(S.o).map(([n, c, v, d]) => `<li><span>${esc(n)}</span>${pill(c, v)}<span class="d">${esc(d)}</span></li>`).join("") : ""}</ul>
     </section>
-  </div>`;
+  </div>
+  ${S.o ? versionsPanel(S.o) : ""}`;
 };
+
+// --- v1.3: versions everywhere and the Panel -> Git self-test (Health tab) ----------------------------------------
+
+function versionsPanel(o) {
+  const v = o.versions || { server: null, worker: null, problems: [] };
+  const sv = v.server;
+  const wv = v.worker;
+  const short = (c) => (c ? ` · ${c.slice(0, 12)}` : "");
+  const bad = (v.problems || []).some((p) => p.level === "warn");
+  const t = o.selftest;
+  const tPill = !t ? pill("off", "Not run yet") : !t.configured ? pill("off", "Not set up") : t.ok ? pill("ok", "Passed") : pill("bad", "Failing");
+  const steps = t && t.steps ? t.steps.map((x) => `<li><span>${esc(x.step)}</span>${pill(x.ok ? "ok" : "bad", x.ok ? "ok" : "failed")}<span class="d">${esc(x.detail)}</span></li>`).join("") : "";
+  return `<div class="grid2">
+    <section class="panel" aria-labelledby="h-ver">
+      <header><h2 id="h-ver">Versions</h2>${pill(bad ? "warn" : sv && wv ? "ok" : "off", bad ? "Mismatch" : sv && wv ? "In step" : "Partly known")}</header>
+      <div class="body"><dl class="kv">
+        <dt>Server (deployed)</dt><dd class="wrap">${sv ? `v${esc(sv.version)}${esc(short(sv.commit))}` : "unknown (deployed before v1.3, or no agent report yet)"}</dd>
+        <dt>Worker (applied)</dt><dd class="wrap">${wv ? `v${esc(wv.version)}` : "unknown (applied before v1.3: `mcctl render` + `mcctl apply`)"}</dd>
+        <dt>Config repo pin</dt><dd class="wrap">${wv && wv.pin_sha ? `${esc(wv.pin_version || "")}${esc(short(wv.pin_sha))} (at the last apply)` : "unknown"}</dd>
+      </dl>
+      ${(v.problems || []).map((p) => `<p class="note">${pill(p.level === "warn" ? "warn" : "off", p.level === "warn" ? "Fix" : "Note")} ${esc(p.text)}</p>`).join("")}</div>
+    </section>
+    <section class="panel" aria-labelledby="h-st">
+      <header><h2 id="h-st">Panel → Git self-test</h2>${tPill}</header>
+      <div class="body">
+        <p class="note">${t && t.ts ? `Last run ${esc(ago(t.ts))} (${t.trigger === "panel" ? "from the panel" : "daily"})${t.failures ? ` · ${esc(t.failures)} failure(s) in a row` : ""}` : "Runs daily on the server; nothing is created on GitHub."}${t && t.error ? ` · ${esc(t.error)}` : ""}</p>
+        ${steps ? `<ul class="health">${steps}</ul>` : ""}
+        <button class="btn sm" type="button" id="selftestRun">Run the self-test now</button>
+      </div>
+    </section>
+  </div>`;
+}
+
+function selftestDlg() {
+  confirmDlg({
+    title: "Run the Panel → Git self-test?",
+    ok: "Run it",
+    body: `<p>The server asks this Worker for a GitHub token, checks it, and reads the config repo (the repository, main and <code class="mono">players.yml</code>, the pull requests) the way a panel pull request would.</p>
+      <p class="note">Read-only: no branch, commit or pull request is created. At most once a minute; the result appears here.</p>`,
+    onOk: () => runAction("selftest", {}),
+  });
+}
 
 // --- experience (P13): verdicts, remedies, history with annotations, overhead, backlog ------------------------
 
@@ -2260,6 +2305,7 @@ function boot() {
     else if (d.wdel) worldDeleteDlg(d.wdel);
     else if (b.id === "wCreate") worldCreateDlg();
     else if (b.id === "banNew") banNewDlg();
+    else if (b.id === "selftestRun") selftestDlg();
     else if (d.f) {
       CON.filter = d.f;
       $$(".chip").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.f === CON.filter)));

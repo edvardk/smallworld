@@ -230,6 +230,7 @@ GROUP_VARS_CONSTANTS = {
     "mc_worlds_library_file",  # v1.2 world library
     "mc_worlds_state_file",
     "mc_panel_pending_file",
+    "mc_product_version_file",  # v1.3: what each deploy installed (mc-agent reports it)
     "mc_ops_user",
     "mc_reboot_target",  # P11
     "mc_rcon_port",
@@ -584,3 +585,19 @@ def test_profile_renders_its_tuning(profile: str) -> None:
         "display": 128,
         "other": 64,
     }
+
+
+def test_render_stamps_the_product_version_for_the_worker(config_repo, tmp_path) -> None:
+    """v1.3: watchdog/version.json in the staged assets (uploaded by `mcctl apply` with worker.js), never served."""
+    import mcctl
+
+    repo = configrepo.load(config_repo)
+    out = tmp_path / "out"
+    written = render.render(repo, out)
+    assert out / render.VERSION_STAMP not in written  # staged with the product's files, not a rendered input
+    stamp = json.loads((out / render.VERSION_STAMP).read_text())
+    assert stamp == {"product": mcctl.__version__, "pin": {"sha": TEST_SHA, "version": "v0.0.0"},
+                     "repository": configrepo.PRODUCT_REPOSITORY}  # fmt: skip
+    worker = (REPO / "watchdog/worker.js").read_text()
+    assert "version.json" not in worker.split("const ASSET_PATHS = ", 1)[1].split("\n", 1)[0]
+    assert '"https://assets.invalid/version.json"' in worker

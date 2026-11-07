@@ -1,8 +1,9 @@
 """v1.3: plain `mcctl` on an interactive terminal opens a home screen: a status header, an arrow-key menu.
 
 The header is cheap and never blocks: the deployment, the config repo, the pinned product against this mcctl,
-then the server (online, players, TPS/MSPT, last deploy, open panel PRs) from `remote.status` in a background
-thread with a time budget, cached for `StatusProbe.ttl` seconds. Whatever fails reads "unknown (why)".
+then the server (online, players, TPS/MSPT, the deployed product version against the pin (v1.3), last deploy,
+open panel PRs) from `remote.status` in a background thread with a time budget, cached for `StatusProbe.ttl`
+seconds. Whatever fails reads "unknown (why)".
 
 Every menu item runs an existing command through `cli.run` (the same parser, the same `cmd_*` function, `-C`
 added), so subcommands, scripts, CI and tests are unchanged; then the menu comes back. Esc, Ctrl-C or "Quit"
@@ -286,6 +287,11 @@ def header_rows(
     with out.spinner(f"asking {cfg.host.tailscale_name} over the tailnet, and GitHub"):
         st = probe.get(root, cfg, force=force)
     rows.append(("Server", server_summary(st)))
+    if isinstance(st, remote.Status) and st.product:
+        # v1.3: what the last deploy installed against the pin (the panel's Versions row shows the Worker too)
+        drift = remote.product_drift(st.product, pin)
+        note = f" · {drift}" if drift else " · as pinned"
+        rows.append(("Deployed", remote.product_text(st.product) + note))
     if isinstance(st, remote.Status):
         rows.append(("Last deploy", deploy_summary(st)))
         prs = len(st.pending_panel_prs)

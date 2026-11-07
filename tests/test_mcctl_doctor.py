@@ -30,6 +30,7 @@ ALL_OK = (
     "github_product_ok.json",
     "tailscale_ok.json",
     "rdap_ok.json",
+    "cloudflare_d1_watchdog.json",  # v1.3: versions + the Panel -> Git self-test (read after an apply)
 )
 
 
@@ -489,3 +490,78 @@ def test_doctor_warns_about_an_unset_ipv6_the_host_has(repo) -> None:
     tools.ip_json = "[]"
     got = next(r for r in doctor.run(repo, deps=deps(*APPLIED, tools=tools)).results if r.name == "host ipv6")
     assert got.level == "ok"
+
+
+# --- v1.3: versions everywhere and the Panel -> Git self-test (the watchdog's D1, read with the admin token) --------
+
+
+def _without_d1(*extra: str) -> tuple[str, ...]:
+    return (*(f for f in ALL_OK if f != "cloudflare_d1_watchdog.json"), *extra)
+
+
+def test_doctor_versions_and_selftest_in_step(repo) -> None:
+    _applied(repo)
+    d = deps(*ALL_OK, "watchdog_ok.json")
+    report = doctor.run(repo, deps=d)
+    got = {r.name: r for r in report.results}
+    assert got["versions"].level == "ok", report.format()
+    assert got["versions"].detail == "server v0.0.0 (111111111111), Worker v0.0.0, pin v0.0.0 (111111111111)"
+    assert got["panel → git"].level == "ok" and "passed 6 h ago" in got["panel → git"].detail
+    query = next(r for r in d.transport.requests if r.url.endswith("/query"))
+    assert query.headers["Authorization"] == "Bearer cf-secret-1"  # the admin token, only to Cloudflare
+    assert b"FROM watchdog WHERE key IN" in query.body
+
+
+def test_doctor_versions_drift_and_a_failing_selftest(repo) -> None:
+    _applied(repo)
+    report = doctor.run(
+        repo, deps=deps(*_without_d1("watchdog_ok.json", "cloudflare_d1_watchdog_drift.json"))
+    )
+    got = {r.name: r for r in report.results}
+    v = got["versions"]
+    assert v.level == "warn"
+    assert "server: deployed 222222222222, pinned 111111111111: deploy" in v.detail
+    assert (
+        "the Worker was applied for 333333333333, the pin is 111111111111: `mcctl render` + `mcctl apply`"
+        in v.detail
+    )
+    st = got["panel → git"]
+    assert st.level == "fail" and report.failed
+    assert "at token: the Worker returned no usable GitHub token (390 characters" in st.detail
+    assert "(2 in a row)" in st.detail and "ghs_" not in st.detail
+
+
+def test_doctor_versions_before_v13(repo) -> None:
+    _applied(repo)
+    report = doctor.run(repo, deps=deps(*_without_d1("watchdog_ok.json", "cloudflare_d1_watchdog_old.json")))
+    got = {r.name: r for r in report.results}
+    assert got["versions"].level == "warn" and "deployed before v1.3" in got["versions"].detail
+    assert "`mcctl render` + `mcctl apply`" in got["versions"].detail
+    assert got["panel → git"].level == "warn" and "no result yet" in got["panel → git"].detail
+
+
+def test_doctor_selftest_assessment() -> None:
+    now = NOW
+    ms = int(now.timestamp() * 1000)
+    assert doctor.assess_selftest({"configured": False}, now)[0] == "skip"
+    assert doctor.assess_selftest({"ok": True, "ts": ms - 40 * 3600000}, now) == (
+        "warn",
+        "last passed 40 h ago (it runs daily: is mc-agent running?)",
+    )
+    assert doctor.assess_selftest(None, now)[0] == "warn"
+
+
+def test_doctor_versions_unreadable_d1_is_a_warning(repo) -> None:
+    _applied(repo)
+    replay = Replay(*_without_d1("watchdog_ok.json"))
+
+    def transport(req):
+        if "/d1/database?name=example-watchdog" in req.url:
+            raise http.HttpError("api.cloudflare.com: timed out")
+        return replay(req)
+
+    d = deps()
+    d.transport = transport
+    report = doctor.run(repo, deps=d)
+    v = next(r for r in report.results if r.name == "versions")
+    assert v.level == "warn" and "couldn't read the watchdog's D1" in v.detail
