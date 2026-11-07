@@ -28,6 +28,7 @@ CONTROLLER_TESTS = frozenset(
         "test_environments.py",
         "test_gate.py",
         "test_guard.py",
+        "test_home.py",
         "test_mcctl_metrics.py",
         "test_mcctl_providers.py",
         "test_mcctl_render.py",
@@ -205,6 +206,10 @@ def _product_is_this_checkout(
     Ansible collections, mcctl/galaxy.py) is a temporary directory, never the real ~/.cache."""
     monkeypatch.setenv("MCCTL_PRODUCT_DIR", str(REPO))
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path_factory.mktemp("xdg-cache")))
+    # v1.3: the remembered config repos (mcctl/homecfg.py) live in a fresh directory per test, never ~/.config.
+    config_home = tmp_path_factory.mktemp("xdg-config")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+    monkeypatch.setenv("APPDATA", str(config_home))
     # No test reaches Ansible Galaxy: ensure() "installs" the pins with a fake ansible-galaxy.
     monkeypatch.setattr(galaxy, "_find", lambda env: "ansible-galaxy")
     monkeypatch.setattr(galaxy, "_run", fake_galaxy)

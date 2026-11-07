@@ -89,6 +89,7 @@ python3 -m venv .venv && . .venv/bin/activate
 pip install --require-hashes --no-deps -r requirements/deploy.txt
 ansible-galaxy collection install -r ansible/requirements.yml
 python -m mcctl setup -C ~/code/mc-config
+python -m mcctl                        # afterwards: the home screen (status + menu; remembers the config repo)
 ```
 
 `mcctl setup` is a resumable checklist of 17 steps: stop at any point, run the same command again and it

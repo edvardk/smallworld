@@ -1,5 +1,6 @@
 # The reusable workflow's deploy job and mcctl's cached product venv: Ansible + the smoke test.
 PyYAML==6.0.3
+questionary==2.1.1  # mcctl's home screen menus (mcctl/home.py)
 ansible-core==2.21.6
 mcstatus==14.2.0
 rich==15.0.0
