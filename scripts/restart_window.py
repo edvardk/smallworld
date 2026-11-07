@@ -102,8 +102,9 @@ def restarted_alert(window: str, tz: str, since: str) -> str:
 
 
 def apply(pending: Path = PENDING_DIR, server_dir: Path = SERVER_DIR) -> list[str]:
-    """Copy the staged files into the server dir (atomically each, keeping an existing file's mode), then
-    empty the pending directory: the restart it waited for is this start. Returns the copied paths."""
+    """Copy the staged files into the server dir (atomically each, keeping the live file's mode, else the
+    staged copy's), then empty the pending directory: the restart it waited for is this start.
+    Returns the copied paths."""
     files, copied = pending / FILES, []
     if files.is_dir():
         for src in sorted(files.rglob("*")):
@@ -112,7 +113,8 @@ def apply(pending: Path = PENDING_DIR, server_dir: Path = SERVER_DIR) -> list[st
             rel = src.relative_to(files)
             dest = server_dir / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
-            mode = dest.stat().st_mode & 0o777 if dest.is_file() else 0o640
+            # the live file's mode, else the staged copy's (mc_config's; group-readable for mcops' RCON)
+            mode = (dest if dest.is_file() else src).stat().st_mode & 0o777
             fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=".restart-window.")
             try:
                 with os.fdopen(fd, "wb") as out:

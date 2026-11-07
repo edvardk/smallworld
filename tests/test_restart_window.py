@@ -120,6 +120,7 @@ def test_apply_copies_the_staged_files_and_empties_the_pending_dir(tmp_path: Pat
     (pending / "files" / "config").mkdir(parents=True)
     (pending / "files" / "server.properties").write_text("view-distance=8\n")
     (pending / "files" / "config" / "paper-global.yml").write_text("a: 1\n")
+    (pending / "files" / "config" / "paper-global.yml").chmod(0o640)  # as mc_config stages a new file
     (pending / "files" / "link").symlink_to("/etc/passwd")  # never followed
     (pending / "pending.json").write_text('{"since": "2026-11-03T12:00:00Z"}')
     server.mkdir()
@@ -128,7 +129,7 @@ def test_apply_copies_the_staged_files_and_empties_the_pending_dir(tmp_path: Pat
     assert rw.apply(pending, server) == ["config/paper-global.yml", "server.properties"]
     assert (server / "server.properties").read_text() == "view-distance=8\n"
     assert (server / "server.properties").stat().st_mode & 0o777 == 0o600  # the live file's mode kept
-    assert (server / "config" / "paper-global.yml").stat().st_mode & 0o777 == 0o640
+    assert (server / "config" / "paper-global.yml").stat().st_mode & 0o777 == 0o640  # the staged copy's mode
     assert not (server / "link").exists() and not (pending / "files").exists()
     assert not (pending / "pending.json").exists() and pending.is_dir()
     assert rw.apply(pending, server) == []  # nothing pending: a plain start
