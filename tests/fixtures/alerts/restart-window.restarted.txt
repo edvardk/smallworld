@@ -1,0 +1,4 @@
+✅ **The server restarted in the maintenance window: the pending config change is live**
+**Impact:** Players can join again.
+**What to do:** No action needed - informational.
+**Details:** window 04:00-07:00 Europe/Dublin; pending since 2026-11-05T12:00:00Z

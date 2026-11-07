@@ -104,6 +104,8 @@ ENV_ALLOW = frozenset(
     }
 )
 ENV_ALLOW_PREFIXES = ("ANSIBLE_", "LC_")
+# v1.3: `--force-restart` (never inherited from the shell: not in ENV_ALLOW); read by site.yml's pre_tasks.
+FORCE_RESTART_ENV = "MC_FORCE_RESTART"
 
 
 def playbook_env(
@@ -143,6 +145,7 @@ def run(
     product_root: Path,
     *,
     check: bool = False,
+    force_restart: bool = False,
     pinned_collections: Callable[[Path], Path] = collections,
     login: Callable[[ServerConfig], int] = remote.login_check,
 ) -> int:
@@ -166,9 +169,10 @@ def run(
         print(remote.CHECK_NOTE, flush=True)
     if login(repo.server) != 0:
         print(f"(`ssh {remote.target(repo.server)} true` failed; ansible-playbook will say why)", flush=True)
-    rc = subprocess.run(
-        argv, cwd=product_root / "ansible", env=playbook_env(os.environ, env, coll), check=False
-    ).returncode
+    play_env = playbook_env(os.environ, env, coll)
+    if force_restart:  # v1.3: site.yml restarts even outside server.yml maintenance.window
+        play_env[FORCE_RESTART_ENV] = "1"
+    rc = subprocess.run(argv, cwd=product_root / "ansible", env=play_env, check=False).returncode
     if say.rich:
         if rc == 0:
             say.ok("deploy finished (ansible-playbook exit 0)")

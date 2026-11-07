@@ -1931,6 +1931,44 @@
         }
       }
     },
+    "maintenance": {
+      "description": "v1.3: the window in which deploys may restart Minecraft.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "window": {
+          "description": "v1.3: when a deploy may restart Minecraft, HH:MM-HH:MM in `timezone` (may cross midnight, e.g. 23:00-01:00). A deploy outside it applies the files and leaves the restart pending: a timer restarts the server inside the window (see force_after_minutes_before_end; any earlier restart applies it too), and Discord says so. A forced deploy (`mcctl deploy --force-restart`, the workflow's force_restart) restarts at once. null = a deploy restarts whenever it needs to.",
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]$"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "timezone": {
+          "description": "Time zone of the window (zoneinfo name); null = host.timezone.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "force_after_minutes_before_end": {
+          "description": "Inside the window a pending restart waits for an empty server (RCON `list`; unknown counts as occupied); in the window's last this-many minutes it restarts anyway, with the in-game countdown. Shorter than the window; 0 = never forced (the next window tries again).",
+          "type": "integer",
+          "minimum": 0,
+          "default": 30
+        }
+      }
+    },
     "deploy": {
       "description": "CI deploys.",
       "type": "object",

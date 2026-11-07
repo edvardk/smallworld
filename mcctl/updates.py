@@ -205,24 +205,29 @@ def product_body(old: str, tag: str, repository: str, sha: str, patch: bool, aut
     ])  # fmt: skip
 
 
-def latest_release(product: str, token: str, transport: http.Transport) -> tuple[str, str] | None:
-    """(tag, commit sha) of the product's latest release (GitHub REST releases/latest; drafts and pre-releases
-    excluded by GitHub), or None."""
+def latest_tag(
+    product: str, token: str, transport: http.Transport, *, timeout: float | None = None
+) -> str | None:
+    """The tag (vX.Y.Z) of the product's latest release (GitHub REST releases/latest; drafts and pre-releases
+    excluded by GitHub), or None. `timeout`: seconds per socket operation (None: http.TIMEOUT)."""
     headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    resp = http.get(transport, f"{API}/repos/{product}/releases/latest", headers)
+    resp = transport(http.Request("GET", f"{API}/repos/{product}/releases/latest", headers, timeout=timeout))
     data = resp.json()
-    if (
-        resp.status != 200
-        or not isinstance(data, dict)
-        or not RELEASE.fullmatch(str(data.get("tag_name", "")))
-    ):
+    tag = str(data.get("tag_name", "")) if isinstance(data, dict) else ""
+    return tag if resp.status == 200 and RELEASE.fullmatch(tag) else None
+
+
+def latest_release(product: str, token: str, transport: http.Transport) -> tuple[str, str] | None:
+    """(tag, commit sha) of the product's latest release (`latest_tag`, then its commit), or None."""
+    tag = latest_tag(product, token, transport)
+    if tag is None:
         return None
     from mcctl import gate
 
-    sha = gate.tag_sha(product, str(data["tag_name"]), token, transport)
-    return (str(data["tag_name"]), sha) if sha else None
+    sha = gate.tag_sha(product, tag, token, transport)
+    return (tag, sha) if sha else None
 
 
 # A pin comment for an untagged product commit (mcctl/pinmove.py): N commits after release vX.Y.Z

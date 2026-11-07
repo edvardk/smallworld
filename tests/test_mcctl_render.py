@@ -127,6 +127,9 @@ P6_GROUP_VARS = {
     "mc_metrics_interval_s",
     "mc_logs_max_rows_per_day",
     "mc_reboot_window",  # P11
+    "mc_maintenance_window",  # v1.3
+    "mc_maintenance_timezone",
+    "mc_maintenance_force_minutes",
 }
 
 # Every variable `render` must produce (explicit, so a dropped variable fails the test instead of shrinking
@@ -193,6 +196,9 @@ EXPECTED_GROUP_VARS = {
     "mc_metrics_interval_s",
     "mc_logs_max_rows_per_day",
     "mc_reboot_window",
+    "mc_maintenance_window",  # v1.3: deploys restart only inside it
+    "mc_maintenance_timezone",
+    "mc_maintenance_force_minutes",
     "health_mspt_alert",
     "health_mspt_alert_checks",
     "health_heap_alert_pct",
@@ -233,6 +239,7 @@ GROUP_VARS_CONSTANTS = {
     "mc_product_version_file",  # v1.3: what each deploy installed (mc-agent reports it)
     "mc_ops_user",
     "mc_reboot_target",  # P11
+    "mc_restart_pending_dir",  # v1.3: a restart deferred to maintenance.window
     "mc_rcon_port",
     "mc_restart_countdown_seconds",
     "mc_deploy_maintenance_minutes",

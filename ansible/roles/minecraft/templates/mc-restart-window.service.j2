@@ -1,0 +1,35 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Restart Minecraft inside the maintenance window when a deploy left a restart pending (v1.3)
+After=minecraft.service
+# Never on a box `mcctl migrate` fenced: another box owns the world (removed only by mcctl's unfence).
+ConditionPathExists=!{{ mc_state_dir }}/fenced
+# Nothing pending (the usual case): the unit doesn't even start.
+ConditionPathExists={{ mc_restart_pending_dir }}/pending.json
+
+[Service]
+Type=oneshot
+# The ops user, not minecraft: it holds the Discord webhook and the watchdog token (notify.env); the polkit rule
+# (base role, 50-mc-ops.rules) already lets it restart minecraft.service (self-heal). RCON password: group read of
+# server.properties.
+User={{ mc_ops_user }}
+Group={{ mc_ops_user }}
+SupplementaryGroups=minecraft
+EnvironmentFile={{ mc_etc_dir }}/notify.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment="RESTART_WINDOW={{ mc_maintenance_window }}"
+Environment="RESTART_TZ={{ mc_maintenance_timezone }}"
+Environment="RESTART_FORCE_MINUTES={{ mc_maintenance_force_minutes }}"
+Environment="RESTART_COUNTDOWN={{ mc_restart_countdown_seconds }}"
+# The maintenance marker (notify.py), nothing else.
+ReadWritePaths={{ mc_state_dir }}
+ExecStart={{ mc_bin_dir }}/restart_window.py
+# countdown + restart + waiting for RCON (up to 15 minutes on a slow start)
+TimeoutStartSec=30min
+{{ mc_timely_priority | join('\n') }}
+{% if mc_helper_cpus %}
+AllowedCPUs={{ mc_helper_cpus }}
+{% endif %}
+# Sandbox (design §7): the shared set, see ansible/group_vars/all/main.yml.
+{{ mc_systemd_sandbox | join('\n') }}
+MemoryDenyWriteExecute=true

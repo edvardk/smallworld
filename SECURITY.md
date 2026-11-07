@@ -101,7 +101,7 @@ its self-heal), `notify.py`, the fetch half of a restore, every `mc-run`/`mc-res
 | restic cache `/var/cache/mc-restic`, `/var/lib/mc-health` | no access | owner |
 | Reading the world | it owns it | group read; `mc-backup` alone also has `CAP_DAC_READ_SEARCH` (the JVM writes some files 0600, e.g. `level.dat`), read-only in its sandbox with every other secret hidden (`InaccessiblePaths`: password databases, sudoers, `/etc/minecraft` (its own env file is read by systemd first), SSH host keys, Tailscale state, the agent's state, TLS private keys; proven in e2e) |
 | The journal | no | `mc-agent` only (`SupplementaryGroups=systemd-journal`): it ships the product's units (minecraft, mc-*, its audit entries, firewall drops), scrubbed of every secret value the agent can read (its env file's tokens, keys and webhook, the RCON password) and of secret shapes (any `*_KEY`/`*_SECRET`/`*_TOKEN`/`*_PASSWORD` name with a plain, quoted or JSON value, `Bearer`/`Basic` credentials, URL userinfo, GitHub/Tailscale/AWS key shapes, Discord webhooks; P9 review), never the rest of the journal |
-| systemd actions (polkit, `50-mc-ops.rules`) | none | `minecraft.service` restart + kill (self-heal; SIGQUIT thread dump), start + stop (agent: the panel's start/stop/restart), `mc-backup.service` start (agent), `mc-restore-apply.service` start (restore), P10: `mc-plugins-apply.service` start (the plugin switch) and `mc-restore@<8-64 hex>.service` start (the panel's restore; nothing else matches the pattern), P11: `reboot.target` start (`mc-reboot-gate`: only inside the reboot window with nobody online; a reboot is a graceful stop + start of everything), v1.2: `mc-world.service` start (the world library, fixed unit) and `mc-world-apply.service` start (its folder swap, as `minecraft`) |
+| systemd actions (polkit, `50-mc-ops.rules`) | none | `minecraft.service` restart + kill (self-heal; SIGQUIT thread dump), start + stop (agent: the panel's start/stop/restart), `mc-backup.service` start (agent), `mc-restore-apply.service` start (restore), P10: `mc-plugins-apply.service` start (the plugin switch) and `mc-restore@<8-64 hex>.service` start (the panel's restore; nothing else matches the pattern), P11: `reboot.target` start (`mc-reboot-gate`: only inside the reboot window with nobody online; a reboot is a graceful stop + start of everything), v1.2: `mc-world.service` start (the world library, fixed unit) and `mc-world-apply.service` start (its folder swap, as `minecraft`); v1.3: nothing new (`mc-restart-window`, the restart a deploy left for `maintenance.window`, uses the existing `minecraft.service` restart) |
 
 **Restore** keeps the world owned by `minecraft` without giving either user the other's power: `restore.py` (as
 `mcops`, with the restic credentials) fetches the snapshot into `/var/lib/mc-restore/staging` (setgid, group
@@ -331,7 +331,7 @@ shapes, Unicode look-alikes and control characters.
 
 | Item | What | Checked by |
 |---|---|---|
-| systemd sandbox | One shared set (`mc_systemd_sandbox` in `ansible/group_vars/all/main.yml`) on `minecraft`, `mc-backup`, `mc-prune`, `mc-health`, `mc-restore-apply`, `mc-agent`, P10's `mc-plugins-apply` and `mc-restore@`, P11's `mc-reboot-gate`; `MemoryDenyWriteExecute` on all but the JVM (JIT); `mc-run` transient units sandboxed too (`ProtectSystem=full`); THP set by `systemd-tmpfiles` instead of a root helper unit (the old `thp-madvise.service` is stopped, disabled and removed on upgraded hosts) | `systemd-analyze security`: offline in `pytest`, live in e2e (`--threshold`: ≤ 2.5, minecraft ≤ 4.5; e2e also checks the running JVM has `NoNewPrivs`, a seccomp filter and no capabilities, and runs backup + health to success in their sandboxes) |
+| systemd sandbox | One shared set (`mc_systemd_sandbox` in `ansible/group_vars/all/main.yml`) on `minecraft`, `mc-backup`, `mc-prune`, `mc-health`, `mc-restore-apply`, `mc-agent`, P10's `mc-plugins-apply` and `mc-restore@`, P11's `mc-reboot-gate`, v1.3's `mc-restart-window` (as the ops user); `MemoryDenyWriteExecute` on all but the JVM (JIT); `mc-run` transient units sandboxed too (`ProtectSystem=full`); THP set by `systemd-tmpfiles` instead of a root helper unit (the old `thp-madvise.service` is stopped, disabled and removed on upgraded hosts) | `systemd-analyze security`: offline in `pytest`, live in e2e (`--threshold`: ≤ 2.5, minecraft ≤ 4.5; e2e also checks the running JVM has `NoNewPrivs`, a seccomp filter and no capabilities, and runs backup + health to success in their sandboxes) |
 | Sysctls | `hardening_sysctls` (role `hardening`) | e2e reads every value back |
 | Journal | Persistent, `SystemMaxUse=1G` | e2e |
 | OpenSSH | Masked after bootstrap (only when Tailscale SSH is up); break-glass below | e2e (`ssh.service` masked and stopped) |
@@ -404,7 +404,8 @@ What `migrate`, `restore`, `secrets rotate`, `upgrade` and `players` add to the 
   user's one-off API access token (table above), held in memory for one run.
 - **Fencing** (migrate): the old box keeps its env files (credentials) on disk until it is wiped. Its timers and
   `mc-agent` are disabled and the root-written marker `/var/lib/minecraft/fenced` makes it stay that way (P12
-  review): `ConditionPathExists=!` on minecraft, mc-backup, mc-prune, mc-agent, mc-health and mc-reboot-gate;
+  review): `ConditionPathExists=!` on minecraft, mc-backup, mc-prune, mc-agent, mc-health, mc-reboot-gate and (v1.3)
+  mc-restart-window;
   `admin.py start` and mc-agent's start/restart refuse; self-heal and the reboot gate treat it as admin-stopped;
   `site.yml` fails before any role. So neither a reboot nor a stray deploy (CI schedule, panel merge) can bring a
   stale copy back to write backups or answer players. It stays on the tailnet as `<name>-old` until `retire-old`,
@@ -580,6 +581,25 @@ What the mc-telemetry plugin, mc-agent's telemetry and the Worker's experience s
 - **Caches and third-party code:** pip's download cache is used only where every install is `--require-hashes`
   (a poisoned wheel fails the install), never in `update-test` / `boot-test`, and the deploy job caches nothing it
   would reuse unverified (no Ansible collections cache there).
+
+## The maintenance window (v1.3)
+
+What `maintenance.window` and the update notice add:
+
+- **A deferred restart** is staged in `/var/lib/minecraft/restart-pending/` (owned by `minecraft`, mode 0750, group
+  read for the ops user): the marker and the merged config files, written by the deploy as `minecraft` (the same
+  user and contents as the live files, `server.properties` with its RCON password included, mode 0640).
+  `minecraft.service`'s `ExecStartPre` (`restart_window.py apply`, as `minecraft`, `ReadWritePaths` = the server
+  dir and this directory) copies regular files from there into the server dir and empties it: nothing the JVM
+  couldn't write itself, and no symlink is followed. `mc-restart-window.service` runs as `mcops` in the shared
+  sandbox (+ `MemoryDenyWriteExecute`, `ReadWritePaths` = the markers directory only) and restarts
+  `minecraft.service` through the polkit verb self-heal already has: `50-mc-ops.rules` is unchanged.
+- **Force:** `MC_FORCE_RESTART` reaches `ansible-playbook` only from `mcctl deploy --force-restart` (never inherited
+  from the shell: not in the deploy's environment allowlist) or the workflow input; it can only make a restart
+  happen sooner, as every deploy did before v1.3.
+- **The update notice** asks `api.github.com` anonymously (no token, `mcctl.http`, HTTPS only) for the pinned
+  repository's latest release, at most once a day; it learns nothing about the deployment but which product
+  repository it pins, and its answer only selects a line of text.
 
 ## Not covered (v1)
 

@@ -158,7 +158,12 @@ def test_markers_agree_between_scripts_and_ansible() -> None:
 
 
 def test_deploy_restart_opens_and_closes_a_maintenance_window() -> None:
-    tasks = yaml.safe_load((REPO / "ansible/roles/minecraft/tasks/restart.yml").read_text())
+    # v1.3: the restart itself is the "Restart now" block (the other branch defers it to maintenance.window)
+    tasks = next(
+        t["block"]
+        for t in yaml.safe_load((REPO / "ansible/roles/minecraft/tasks/restart.yml").read_text())
+        if t.get("name") == "Restart now"
+    )
     cmds = [t.get("ansible.builtin.command", "") for t in tasks]
     opens = [
         i for i, c in enumerate(cmds) if "notify.py maintenance {{ mc_deploy_maintenance_minutes }}" in c

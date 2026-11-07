@@ -61,6 +61,11 @@ mc_reboot_target: reboot.target
 mc_restart_countdown_seconds: 60
 # A deploy's restart opens a maintenance window this long (closed again once RCON answers).
 mc_deploy_maintenance_minutes: 20
+# v1.3 (server.yml maintenance.window): a restart a deploy left for the window waits here: pending.json (the marker)
+# and files/ (the config overlays, merged, at their paths under the server dir). minecraft.service's ExecStartPre
+# (scripts/restart_window.py apply, as minecraft) copies them into place on the next start of the server, whoever
+# starts it, and empties the directory. = scripts/restart_window.py PENDING_DIR.
+mc_restart_pending_dir: "{{ mc_state_dir }}/restart-pending"
 
 # --- Tail latency (P13, design §8 "TAIL-LATENCY RULE") -----------------------------------------------------
 # The JVM's tick comes first: the minecraft unit gets CPUWeight/IOWeight 1000, every helper of the product less.

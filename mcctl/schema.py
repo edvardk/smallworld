@@ -9,6 +9,7 @@ classes for editor completion; the loader stays authoritative (cross-field rules
 from __future__ import annotations
 
 import dataclasses
+import datetime
 import difflib
 import ipaddress
 import json
@@ -744,6 +745,29 @@ class Automation:
 
 
 @dataclass(frozen=True)
+class Maintenance:
+    window: str | None = opt(
+        doc="v1.3: when a deploy may restart Minecraft, HH:MM-HH:MM in `timezone` (may cross midnight, "
+        "e.g. 23:00-01:00). A deploy outside it applies the files and leaves the restart pending: a timer "
+        "restarts the server inside the window (see force_after_minutes_before_end; any earlier restart "
+        "applies it too), and Discord says "
+        "so. A forced deploy (`mcctl deploy --force-restart`, the workflow's force_restart) restarts at "
+        "once. null = a deploy restarts whenever it needs to.",
+        pattern=WINDOW,
+    )
+    timezone: str | None = opt(
+        doc="Time zone of the window (zoneinfo name); null = host.timezone.", check=_timezone
+    )
+    force_after_minutes_before_end: int = opt(
+        30,
+        doc="Inside the window a pending restart waits for an empty server (RCON `list`; unknown counts as "
+        "occupied); in the window's last this-many minutes it restarts anyway, with the in-game countdown. "
+        "Shorter than the window; 0 = never forced (the next window tries again).",
+        minimum=0,
+    )
+
+
+@dataclass(frozen=True)
 class Deploy:
     enabled: bool = opt(False, doc="Pushes to main deploy (mcctl flips it after bootstrap).")
 
@@ -1187,6 +1211,9 @@ class ServerConfig:
     alerts: AlertChannels = opt(factory=AlertChannels, doc="Alert channels.")
     discord: Discord = opt(factory=Discord, doc="Discord slash commands (P14).")
     automation: Automation = opt(factory=Automation, doc="Unattended updates and reboots.")
+    maintenance: Maintenance = opt(
+        factory=Maintenance, doc="v1.3: the window in which deploys may restart Minecraft."
+    )
     deploy: Deploy = opt(factory=Deploy, doc="CI deploys.")
 
 
@@ -1679,6 +1706,14 @@ def _cross_validate(cfg: ServerConfig, product_root: Path, i_know: bool, errors:
     start, end = cfg.automation.reboot_window.split("-")
     if start == end:
         errors.append("automation.reboot_window: start and end are the same")
+    if cfg.maintenance.window is not None:
+        length = window_minutes(cfg.maintenance.window)
+        if length == 0:
+            errors.append("maintenance.window: start and end are the same")
+        elif cfg.maintenance.force_after_minutes_before_end >= length:
+            errors.append(
+                f"maintenance.force_after_minutes_before_end: must be shorter than the window ({length} min)"
+            )
     if cfg.panel.mode == "cloudflare":
         if cfg.admin.email is None:
             errors.append("admin.email: required when panel.mode is cloudflare (Access identity)")
@@ -1833,6 +1868,38 @@ PLACEHOLDER_DOMAIN = r"@(.+\.)?(example\.(com|org|net)|example|test|invalid|loca
 PLACEHOLDER_ZONE = r"^(.+\.)?(example\.(com|org|net)|example|test|invalid|localhost)$"
 # The template's GitHub names (example-owner / example-mc-config) and anything shaped like them.
 PLACEHOLDER_GITHUB = r"(?i)^example([-_.].*)?$"
+
+
+# --- v1.3 maintenance window -------------------------------------------------------------------------------
+
+
+def in_window(window: str, t: datetime.time) -> bool:
+    """`t` inside `HH:MM-HH:MM` (start included, end excluded; a window may cross midnight). Same rule as
+    scripts/restart_window.py, scripts/reboot_gate.py and the deploy's check (site.yml)."""
+    start, end = window.split("-")
+    now = f"{t.hour:02d}:{t.minute:02d}"
+    return start <= now < end if start <= end else (now >= start or now < end)
+
+
+def window_minutes(window: str) -> int:
+    """Length of `HH:MM-HH:MM` in minutes (crossing midnight counts on; 0 = start equals end)."""
+    (h1, m1), (h2, m2) = (map(int, part.split(":")) for part in window.split("-"))
+    return (h2 * 60 + m2 - h1 * 60 - m1) % 1440
+
+
+def maintenance_timezone(cfg: ServerConfig) -> str:
+    return cfg.maintenance.timezone or cfg.host.timezone
+
+
+def restart_deferred(cfg: ServerConfig, now: datetime.datetime) -> str | None:
+    """v1.3: the window ("04:00-07:00 <time zone>") when a deploy needing a restart at `now` (aware) would
+    leave it to maintenance.window; None when it restarts at once (no window, or inside it)."""
+    window = cfg.maintenance.window
+    if window is None:
+        return None
+    tz = maintenance_timezone(cfg)
+    local = now.astimezone(zoneinfo.ZoneInfo(tz))
+    return None if in_window(window, local.time()) else f"{window} {tz}"
 
 
 def placeholders(cfg: ServerConfig) -> list[str]:

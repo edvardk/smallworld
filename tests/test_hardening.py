@@ -32,6 +32,11 @@ UNITS = {
     "mc-reboot-gate.service": (REPO / "ansible/roles/autoreboot/templates/mc-reboot-gate.service.j2", 2.5),
     # v1.2: the weekly backup test (as mcops; was the config repo's Monday Actions job)
     "mc-backup-check.service": (REPO / "ansible/roles/backups/templates/mc-backup-check.service.j2", 2.5),
+    # v1.3: a restart a deploy left for maintenance.window (as mcops; polkit: minecraft.service restart, as self-heal)
+    "mc-restart-window.service": (
+        REPO / "ansible/roles/minecraft/templates/mc-restart-window.service.j2",
+        2.5,
+    ),
     "minecraft.service": (REPO / "ansible/roles/minecraft/templates/minecraft.service.j2", 4.5),
 }
 HARDENING = yaml.safe_load((REPO / "ansible/roles/hardening/defaults/main.yml").read_text())
@@ -57,6 +62,9 @@ def render(template: Path, **extra: object) -> str:
         "plugins_disabled_file": "/var/lib/minecraft/plugins-disabled.json",
         "mc_reboot_window": "04:30-06:00",
         "timezone": "Europe/Dublin",
+        "mc_maintenance_window": "04:00-07:00",  # v1.3
+        "mc_maintenance_timezone": "Europe/Dublin",
+        "mc_maintenance_force_minutes": 30,
         "mc_helper_cpus": "",  # P13
         "mc_jvm_cpus": "",  # P16 (performance.cpu_affinity off)
         "mc_experience_enabled": True,
@@ -100,7 +108,7 @@ def test_every_unit_gets_the_sandbox(unit: str) -> None:
 
 FENCE_HONOURING = ("minecraft.service", "mc-backup.service", "mc-prune.service", "mc-agent.service",
                    "mc-health.service", "mc-reboot-gate.service", "mc-world.service",
-                   "mc-backup-check.service")  # fmt: skip
+                   "mc-backup-check.service", "mc-restart-window.service")  # fmt: skip
 
 
 @pytest.mark.parametrize("unit", FENCE_HONOURING)
@@ -299,7 +307,7 @@ def test_e2e_exercises_the_hardening() -> None:
 def test_e2e_checks_are_deterministic() -> None:
     """p11-e2e: the live checks pause the product's timers and read only their own unit invocation's journal
     (a timer run joined by `systemctl start`, or another run's lines, made the hardening probe flaky)."""
-    for name in ("hardening_check.py", "agent_check.py", "reboot_check.py"):
+    for name in ("hardening_check.py", "agent_check.py", "reboot_check.py", "restart_window_check.py"):
         text = (REPO / "tests/e2e" / name).read_text()
         assert "with timers_paused()" in text, name
         assert not re.search(r'"journalctl",\s*"-u"', text), f"{name}: journal reads must be per invocation"
@@ -351,7 +359,12 @@ def test_agent_may_write_only_the_markers_directory() -> None:
     assert "ReadWritePaths=/run/mc-verdicts" in client.splitlines()
 
 
-TIMELY_UNITS = ("mc-agent.service", "mc-health.service", "mc-backup.service")  # P13 review M1: deadlines
+TIMELY_UNITS = (
+    "mc-agent.service",
+    "mc-health.service",
+    "mc-backup.service",
+    "mc-restart-window.service",
+)  # P13 review M1: deadlines
 IDLE_UNITS = ("mc-prune.service", "mc-reboot-gate.service", "mc-backup-check.service")
 
 

@@ -1,50 +1,69 @@
 # The Discord URL and the watchdog token come from notify.env (base role) via mc-run, so they never land on a
 # command line. The maintenance window keeps health.py's self-heal and the watchdog's alerts out of the way
 # while the server is deliberately stopped (overlays are applied in between).
-- name: Open a maintenance window (self-heal and watchdog stand down)
-  ansible.builtin.command: >-
-    /usr/local/bin/mc-run -{{ mc_etc_dir }}/notify.env
-    {{ mc_bin_dir }}/notify.py maintenance {{ mc_deploy_maintenance_minutes }} deploy
-  changed_when: false
+# v1.3 (server.yml maintenance.window): outside the window, not forced, and only for a server that was running
+# when the role started (a stopped one has nothing to disconnect), the restart is left for later (tasks/defer.yml).
+- name: Leave the restart for the maintenance window
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/defer.yml"
+  when: mc_restart_deferred | bool
 
-# P10 review: a restore that started after the role's own check must finish first (and leaves the marker as
-# it should be: gone, or the admin's / a failed restore's).
-- name: Wait for a running restore, then read the admin-stopped marker again
-  ansible.builtin.include_tasks: "{{ role_path }}/tasks/restore_guard.yml"
+- name: Restart now
+  when: not (mc_restart_deferred | bool)
+  block:
+    - name: Open a maintenance window (self-heal and watchdog stand down)
+      ansible.builtin.command: >-
+        /usr/local/bin/mc-run -{{ mc_etc_dir }}/notify.env
+        {{ mc_bin_dir }}/notify.py maintenance {{ mc_deploy_maintenance_minutes }} deploy
+      changed_when: false
 
-- name: Announce restart in game (skipped if nobody is online)
-  ansible.builtin.command: >-
-    /usr/local/bin/mc-run -{{ mc_etc_dir }}/notify.env
-    {{ mc_bin_dir }}/mc_rcon.py countdown {{ mc_restart_countdown_seconds }}
-  changed_when: false
-  failed_when: false
+    # P10 review: a restore that started after the role's own check must finish first (and leaves the marker as
+    # it should be: gone, or the admin's / a failed restore's).
+    - name: Wait for a running restore, then read the admin-stopped marker again
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/restore_guard.yml"
 
-- name: Stop the server (ExecStop saves and stops via RCON)
-  ansible.builtin.systemd_service:
-    name: minecraft.service
-    state: stopped
-    daemon_reload: true
+    - name: Announce restart in game (skipped if nobody is online)
+      ansible.builtin.command: >-
+        /usr/local/bin/mc-run -{{ mc_etc_dir }}/notify.env
+        {{ mc_bin_dir }}/mc_rcon.py countdown {{ mc_restart_countdown_seconds }}
+      changed_when: false
+      failed_when: false
 
-- name: Apply config overlays while stopped
-  ansible.builtin.include_tasks: "{{ role_path }}/tasks/overlays.yml"
-  vars:
-    mc_overlay_check: false
+    - name: Stop the server (ExecStop saves and stops via RCON)
+      ansible.builtin.systemd_service:
+        name: minecraft.service
+        state: stopped
+        daemon_reload: true
 
-# Admin-stopped: the changes are applied and the server stays down (stopping it above was a no-op).
-- name: Start the server
-  ansible.builtin.systemd_service:
-    name: minecraft.service
-    state: started
-  when: not (mc_admin_stopped | default(false) | bool)
+    - name: Apply config overlays while stopped
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/overlays.yml"
+      vars:
+        mc_overlay_check: false
 
-- name: Wait for RCON
-  ansible.builtin.wait_for:
-    host: 127.0.0.1
-    port: "{{ mc_rcon_port }}"
-    timeout: 900
-  when: not (mc_admin_stopped | default(false) | bool)
+    # v1.3: everything is applied to the live files now; a staged copy from a restart that waited for the
+    # maintenance window must not be copied over them by the unit's ExecStartPre.
+    - name: Discard a restart that waited for the maintenance window (done now)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ mc_restart_pending_dir }}/files"
+        - "{{ mc_restart_pending_dir }}/pending.json"
 
-- name: Close the maintenance window
-  ansible.builtin.command: >-
-    /usr/local/bin/mc-run -{{ mc_etc_dir }}/notify.env {{ mc_bin_dir }}/notify.py maintenance 0 deploy
-  changed_when: false
+    # Admin-stopped: the changes are applied and the server stays down (stopping it above was a no-op).
+    - name: Start the server
+      ansible.builtin.systemd_service:
+        name: minecraft.service
+        state: started
+      when: not (mc_admin_stopped | default(false) | bool)
+
+    - name: Wait for RCON
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ mc_rcon_port }}"
+        timeout: 900
+      when: not (mc_admin_stopped | default(false) | bool)
+
+    - name: Close the maintenance window
+      ansible.builtin.command: >-
+        /usr/local/bin/mc-run -{{ mc_etc_dir }}/notify.env {{ mc_bin_dir }}/notify.py maintenance 0 deploy
+      changed_when: false

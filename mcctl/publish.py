@@ -27,7 +27,10 @@
    `publish/*` branch pushes to the same pull request. `main`: commit and push to main (the admin), then
    follow the deploy. `deploy`: the emergency route, `mcctl deploy` from here (the pinned product), skipping
    CI and Git (publish it afterwards, or the next CI deploy undoes it).
-4. **Restart awareness.** A restart with players online (or nobody known) asks: deploy now (the deploy's
+4. **Restart awareness.** v1.3: outside server.yml maintenance.window the preview says the restart is deferred
+   to the window (the deploy applies the files, a timer restarts in it: on an empty server, or in its last
+   minutes with the countdown) and nothing is asked.
+   Otherwise a restart with players online (or nobody known) asks: deploy now (the deploy's
    in-game countdown), wait until the server is empty (polled each minute, at most `--max-wait` minutes),
    or cancel. `--wait-empty` answers "wait". Without a terminal the answer is "wait", and a wait that times
    out cancels: unattended, mcctl never restarts a server with players on it.
@@ -250,6 +253,9 @@ class Consequences:
     terraform: list[str] = field(default_factory=list)  # tfvars keys (or watchdog files) that changed
     backend: bool = False
     unknown: str = ""  # why the consequences couldn't be judged
+    deferred: str = (
+        ""  # v1.3: "HH:MM-HH:MM <tz>" when a restart now would wait for server.yml maintenance.window
+    )
 
     @property
     def restarts(self) -> bool:
@@ -431,6 +437,12 @@ def show_preview(ctx: init.Ctx, ch: Changes, c: Consequences, st: remote.Status 
         ui.warn(f"Minecraft restart: yes ({'; '.join(c.restart_why)})")
     else:
         ui.say("  Minecraft restart: no")
+    if c.restarts and c.deferred:
+        ui.say(
+            f"  restart deferred to the maintenance window {c.deferred}: a deploy now applies the files and "
+            "the server restarts in the window: once it is empty, or in its last minutes with the countdown "
+            "(`mcctl deploy --force-restart` restarts at once)"
+        )
     if c.backend:
         ui.warn("Terraform state backend (server.yml state.*) changes: migrate the state by hand first")
     if c.terraform:
@@ -477,6 +489,9 @@ def restart_ok(
     if not c.restarts:
         return True
     ui = ctx.ui
+    if c.deferred:  # v1.3: nobody is disconnected now; the deploy leaves the restart for the window
+        ui.info(f"the restart waits for the maintenance window ({c.deferred}): nobody is disconnected now")
+        return True
     st = tools.online(cfg)
     n = st.players_online if st.reachable else None
     if n == 0:
@@ -843,7 +858,9 @@ def _publish(
     c = consequences(ctx, ch.base, idx)
     st: remote.Status | None = None
     try:
-        st = tools.online(configrepo.load(ctx.root).server)
+        cfg = configrepo.load(ctx.root).server
+        c.deferred = schema.restart_deferred(cfg, ctx.deps.now()) or ""  # the window the change deploys with
+        st = tools.online(cfg)
     except configrepo.ConfigError:
         st = None
     show_preview(ctx, ch, c, st)
@@ -870,7 +887,12 @@ def _publish(
             *([f"- players.yml: {', '.join(c.players)}"] if c.players else []),
             f"- files: {', '.join(ch.files)}",
             f"- Ansible roles: {', '.join(sorted(c.roles)) or 'none'}",
-            f"- Minecraft restart: {'yes' if c.restart else 'unknown' if c.restart is None else 'no'}",
+            f"- Minecraft restart: {'yes' if c.restart else 'unknown' if c.restart is None else 'no'}"
+            + (
+                f" (deferred to the maintenance window {c.deferred} if deployed now)"
+                if c.restarts and c.deferred
+                else ""
+            ),
             f"- Terraform: {'yes (applied before the merge)' if c.terraform else 'no change'}",
             "",
             "`server / gate` leaves a change published by a person to the admin's merge.",

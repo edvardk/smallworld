@@ -1,0 +1,10 @@
+{
+  "_source": "Shaped from the GitHub REST reference (GET /repos/{owner}/{repo}/releases/latest: 404 for a repository without releases, or a private one asked anonymously), 2026-11-07.",
+  "exchanges": [
+    {
+      "request": {"method": "GET", "url": "https://api.github.com/repos/edvardk/smallworld/releases/latest"},
+      "response": {"status": 404, "headers": {"content-type": "application/json"},
+                   "body": {"message": "Not Found", "documentation_url": "https://docs.github.com/rest/releases/releases#get-the-latest-release", "status": "404"}}
+    }
+  ]
+}

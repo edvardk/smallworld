@@ -32,6 +32,10 @@ agent_panel_pr_check_s: 5
 # the polkit rule allows exactly this unit), and its window covers the whole day so the check can run any time.
 mc_reboot_target: mc-e2e-reboot.target
 mc_reboot_window: "00:00-23:59"
+# v1.3: a maintenance window covering the whole day, so the deferred-restart units are installed (hardening_check.py
+# scores mc-restart-window.service, restart_window_check.py runs it) while every deploy still restarts at once.
+mc_maintenance_window: "00:00-23:59"
+mc_maintenance_timezone: UTC
 # P12 review: health.py's Chunky pre-generation would generate the bordered worlds for hours on the runner;
 # tests/e2e/deploy_check.py checks Chunky answers over RCON instead.
 monitoring_pregen_enabled: false

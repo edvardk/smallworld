@@ -51,6 +51,7 @@ THRESHOLDS = {
     "mc-world.service": 2.5,  # v1.2: the world library (scored; agent_check.py runs it)
     "mc-world-apply.service": 2.5,
     "mc-backup-check.service": 2.5,  # v1.2: the weekly backup test (was the config repo's Monday Actions job)
+    "mc-restart-window.service": 2.5,  # v1.3: the deferred restart (installed with maintenance.window: vars.yml)
     "minecraft.service": 4.5,
 }
 SECRET_FILES = (

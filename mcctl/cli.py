@@ -283,7 +283,8 @@ def cmd_deploy(args: argparse.Namespace) -> int:
     root = _pinned(args, repo)
     if isinstance(root, int):
         return root
-    return _guard("deploy", lambda: deploy_mod.run(repo, root, check=args.check))
+    force = getattr(args, "force_restart", False)
+    return _guard("deploy", lambda: deploy_mod.run(repo, root, check=args.check, force_restart=force))
 
 
 def _plan_or_apply(args: argparse.Namespace, apply: bool) -> int:
@@ -970,6 +971,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("deploy", help="run site.yml from here, secrets from `terraform output` (same as CI)")
     with_config(sp)
     sp.add_argument("--check", action="store_true", help="dry run (ansible-playbook --check --diff)")
+    sp.add_argument(
+        "--force-restart",
+        action="store_true",
+        help="v1.3: restart Minecraft now if needed, even outside server.yml maintenance.window",
+    )
     sp.set_defaults(func=cmd_deploy)
 
     sp = sub.add_parser("doctor", help="check tools, .env, credentials (writes expiry.yml), DNS, tailnet")
@@ -1347,14 +1353,22 @@ def remember_config_dir(args: argparse.Namespace) -> None:
         print(f"mcctl: couldn't remember {root}: {e}", file=sys.stderr)
 
 
-def run(argv: list[str]) -> int:
-    """Parse and run one command (argv without --plain): `main` and the home screen's items."""
+def run(argv: list[str], *, update_notice: bool = False) -> int:
+    """Parse and run one command (argv without --plain): `main` and the home screen's items. `update_notice`
+    (main only; the home screen has its own row): v1.3, say when a newer minor/major release is out."""
     args = build_parser().parse_args(argv)
     args.argv = list(argv)  # without --plain: an older pinned product doesn't know the flag
     resolve_config_dir(args)
+    check = None
+    if update_notice and getattr(args, "config_dir", None) is not None:
+        from mcctl import notice
+
+        check = notice.start(args.command, Path(args.config_dir).expanduser())
     code = int(args.func(args))
     if code == 0:
         remember_config_dir(args)
+    if check is not None:
+        check.finish()
     return code
 
 
@@ -1370,7 +1384,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if (opened := home.wanted(argv)) is not None:  # v1.3: plain `mcctl` on a terminal opens the home screen
         return home.main(opened)
-    return run(argv)
+    return run(argv, update_notice=True)
 
 
 if __name__ == "__main__":

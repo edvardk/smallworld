@@ -38,7 +38,7 @@ import yaml
 
 from mcctl import __version__, brandpack, clientpack
 from mcctl.configrepo import ConfigRepo
-from mcctl.schema import BrandingHologram, Players, ServerConfig, placeholders
+from mcctl.schema import BrandingHologram, Players, ServerConfig, maintenance_timezone, placeholders
 
 TFVARS_FILE = Path("terraform") / "terraform.tfvars.json"
 BACKEND_FILE = Path("terraform") / "state.tfbackend"
@@ -445,6 +445,10 @@ def group_vars(cfg: ServerConfig) -> dict[str, Any]:
         "mc_metrics_interval_s": cfg.monitoring.metrics_interval_s,
         "mc_logs_max_rows_per_day": cfg.monitoring.logs.max_rows_per_day,
         "mc_reboot_window": cfg.automation.reboot_window,  # P11: mc-reboot-gate (local time = timezone)
+        # v1.3: deploys restart Minecraft only inside this window ("" = any time), in this time zone
+        "mc_maintenance_window": cfg.maintenance.window or "",
+        "mc_maintenance_timezone": maintenance_timezone(cfg),
+        "mc_maintenance_force_minutes": cfg.maintenance.force_after_minutes_before_end,
         # P13: the mc-telemetry plugin and mc-agent's telemetry; helpers' CPUs
         "mc_experience_enabled": exp.enabled,
         "mc_experience_snapshot_seconds": exp.snapshot_seconds,

@@ -17,6 +17,13 @@ options:
   format: {description: File format., type: str, choices: [yaml, properties], required: true}
   settings: {description: Nested dict (yaml) or flat dict (properties) of values to enforce., type: dict, required: true}
   create: {description: Create the file if missing (otherwise no-op until the server generates it)., type: bool, default: false}
+  stage:
+    description: >-
+      v1.3 deferred restart. A staged copy of the file, outside the server dir. When it exists it is compared
+      (and merged) instead of path; without check mode the merged result is written there, never to path. A
+      file that already has the settings is not staged. Applied while the server is stopped by
+      scripts/restart_window.py apply (minecraft.service ExecStartPre).
+    type: path
 extends_documentation_fragment: [files]
 """
 
@@ -182,6 +189,39 @@ def write_atomic(path, content):
         raise
 
 
+def staged(fmt, live, staged_text, settings):
+    """(changed, content to stage, keys) for the deferred restart: the staged copy is the base when there is
+    one; a live file that already has the settings needs no staged copy (changed False)."""
+    base = staged_text if staged_text is not None else live
+    return apply_yaml(base, settings) if fmt == "yaml" else apply_properties(base, settings)
+
+
+def stage(module, path, stage_path):
+    """Compare against / write the staged copy (see `stage` in DOCUMENTATION); never touches path."""
+    p = module.params
+    staged_text = None
+    if os.path.exists(stage_path):
+        with open(stage_path, encoding="utf-8") as f:
+            staged_text = f.read()
+    exists = os.path.exists(path)
+    if staged_text is None and not exists and not p["create"]:
+        module.exit_json(changed=False, skipped_missing=True, msg=f"{path} does not exist yet")
+    live = ""
+    if exists:
+        with open(path, encoding="utf-8") as f:
+            live = f.read()
+    try:
+        changed, content, keys = staged(p["format"], live, staged_text, p["settings"])
+    except Exception as e:
+        module.fail_json(msg=f"failed to parse {stage_path if staged_text is not None else path}: {e}")
+    if changed and not module.check_mode:
+        os.makedirs(os.path.dirname(stage_path), mode=0o750, exist_ok=True)
+        write_atomic(stage_path, content)
+    module.exit_json(
+        changed=changed, path=stage_path, changed_keys=keys, diff={"before": "", "after": "\n".join(keys)}
+    )
+
+
 def main():
     module = AnsibleModule(
         argument_spec={
@@ -189,6 +229,7 @@ def main():
             "format": {"type": "str", "required": True, "choices": ["yaml", "properties"]},
             "settings": {"type": "dict", "required": True, "no_log": True},  # may hold the RCON password
             "create": {"type": "bool", "default": False},
+            "stage": {"type": "path", "default": None},
         },
         add_file_common_args=True,
         supports_check_mode=True,
@@ -197,6 +238,8 @@ def main():
     path = p["path"]
     if p["format"] == "yaml" and not HAS_YAML:
         module.fail_json(msg="PyYAML is required on the target (python3-yaml)")
+    if p["stage"]:
+        stage(module, path, p["stage"])
 
     exists = os.path.exists(path)
     if not exists and not p["create"]:

@@ -1,0 +1,5 @@
+ℹ️ **A config change waits for the maintenance window (04:00-07:00 Europe/Dublin)**
+**Impact:** Nothing for players now: the server keeps running the old settings until it restarts.
+**Likely cause:** A deploy needed a Minecraft restart outside server.yml maintenance.window, so it applied the files and left the restart for later.
+**What to do:** No action needed: the server restarts from 04:00 Europe/Dublin, once nobody is online or in the window's last minutes (any earlier restart applies the change too). To restart now: `mcctl deploy --force-restart`, or run the workflow with force_restart.
+**Details:** pending restart in /var/lib/minecraft/restart-pending

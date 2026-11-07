@@ -124,6 +124,20 @@ def test_deploy_passes_secrets_only_through_env(tmp_path, monkeypatch, capsys, c
     assert "Tailscale SSH check" in out.out
 
 
+def test_force_restart_reaches_site_yml_only_by_the_flag(tmp_path, monkeypatch, config_repo) -> None:
+    """v1.3: `mcctl deploy --force-restart` sets MC_FORCE_RESTART=1 for ansible-playbook (site.yml then restarts
+    even outside server.yml maintenance.window); a value left in the shell never gets through."""
+    record = fake_tools(tmp_path, monkeypatch, VALUES)
+    monkeypatch.setenv(deploy.FORCE_RESTART_ENV, "1")
+    assert cli.main(["deploy", "-C", str(config_repo)]) == 0
+    assert deploy.FORCE_RESTART_ENV not in json.loads(record.read_text())["env"]
+    assert cli.main(["deploy", "-C", str(config_repo), "--force-restart"]) == 0
+    rec = json.loads(record.read_text())
+    assert rec["env"][deploy.FORCE_RESTART_ENV] == "1" and rec["argv"][-1] == "site.yml"
+    site = (cli.schema.PRODUCT_ROOT / "ansible/site.yml").read_text()
+    assert f"lookup('ansible.builtin.env', '{deploy.FORCE_RESTART_ENV}')" in site
+
+
 def test_playbook_env_allowlist() -> None:
     shell = {
         "PATH": "/bin",
