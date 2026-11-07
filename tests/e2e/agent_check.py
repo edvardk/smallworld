@@ -16,7 +16,8 @@ failing to reach it since: this script now starts a mock of the Worker there and
     in for the config repo):
       whitelist add -> live in whitelist.json -> pending.json -> a deploy (`site.yml --tags players`) keeps it
       although Git doesn't have it yet -> a pull request (branch panel/*, canonical players.yml) -> merged -> the
-      entry leaves pending.json; then the same for a remove;
+      entry leaves pending.json; then the same for a remove; (v1.3) a player on the live whitelist that was never
+      in players.yml survives a deploy (KEPT in its output, no change on a second deploy);
       restart with a 10 s countdown (job reports: countdown -> running -> done, the JVM really restarted);
       plugin disable -> the jar moves to plugins/disabled/ (mc-plugins-apply.service, as minecraft) -> the server
       restarts without it -> enable brings it back;
@@ -557,6 +558,39 @@ def _whitelist_round() -> None:
         wait_for("pending.json to clear again", lambda: not pending(), 90)
 
 
+UNMANAGED_NAME, UNMANAGED_UUID = "E2EUnmanaged", "4e2e0000-0000-4000-8000-0000000000e2"
+
+
+def unmanaged_round() -> None:
+    """v1.3 whitelist guard: a player on the live whitelist that was never in players.yml (whitelisted outside
+    Git and the panel) survives a deploy, which says KEPT and remembers it; a second deploy changes nothing."""
+    path = SERVER / "whitelist.json"
+    entries = json.loads(path.read_text())
+    path.write_text(json.dumps([*entries, {"uuid": UNMANAGED_UUID, "name": UNMANAGED_NAME}], indent=2))
+    rcon("whitelist reload")
+    try:
+        run = players_role()
+        expect(run.returncode == 0, f"site.yml --tags players ran ({run.stdout[-400:]}{run.stderr[-400:]})")
+        expect(whitelisted().get(UNMANAGED_NAME) == UNMANAGED_UUID, "the deploy kept the player never in Git")
+        expect(f"KEPT: {UNMANAGED_NAME} (" in run.stdout, "the deploy's output names the kept player")
+        guard = json.loads((SERVER / "whitelist-managed.json").read_text())
+        expect(UNMANAGED_UUID in guard.get("kept", []), f"the guard remembers whom it kept ({guard})")
+        again = players_role()
+        recap = again.stdout[again.stdout.rfind("PLAY RECAP") :]
+        expect(
+            again.returncode == 0 and "changed=0" in recap and f"KEPT: {UNMANAGED_NAME}" in again.stdout,
+            f"a second deploy keeps it without a change ({recap.strip()[:300]})",
+        )
+        expect(
+            whitelisted().get(UNMANAGED_NAME) == UNMANAGED_UUID, "still whitelisted after the second deploy"
+        )
+    finally:  # back to what Git says, for the rounds after this one
+        path.write_text(
+            json.dumps([e for e in json.loads(path.read_text()) if e.get("uuid") != UNMANAGED_UUID])
+        )
+        rcon("whitelist reload")
+
+
 def restart_round() -> None:
     before = show("minecraft.service", "MainPID")["MainPID"]
     r = send("restart", {"countdown": 10, "skip_if_empty": False}, "e2e-restart")
@@ -842,6 +876,7 @@ ROUNDS: dict[str, Callable[[], None]] = {
     "client-code": client_code_round,
     "stop-start": stop_start_round,
     "whitelist": whitelist_round,
+    "unmanaged": unmanaged_round,  # v1.3 whitelist guard
     "restart": restart_round,
     "plugin": plugin_round,
     "backup-restore": backup_and_restore_round,
@@ -850,7 +885,7 @@ ROUNDS: dict[str, Callable[[], None]] = {
 }
 GROUPS: dict[str, tuple[str, ...]] = {
     "a": ("rcon", "client-code", "stop-start", "whitelist", "restart", "plugin", "restore-guard"),
-    "b": ("backup-restore", "world"),
+    "b": ("unmanaged", "backup-restore", "world"),  # unmanaged: two players-only deploys, ~30 s
 }
 NEEDS: dict[str, str] = {"whitelist": "stop-start"}
 

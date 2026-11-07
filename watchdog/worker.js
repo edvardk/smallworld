@@ -820,7 +820,7 @@ function cleanSample(s) {
 const PLAYER_NAME = /^[A-Za-z0-9_]{1,16}$/;
 const PLUGIN_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/; // plugins.lock.yml names (mcctl schema), no leading dot
 const INVENTORY_LISTS = {
-  whitelist: ["name", "uuid"],
+  whitelist: ["name", "uuid", "unmanaged"], // v1.3: unmanaged = kept by the last deploy, not in players.yml
   ops: ["name", "uuid", "level"],
   bans: ["name", "uuid", "created", "source", "expires", "reason"],
   ip_bans: ["ip", "created", "source", "expires", "reason"],
@@ -889,6 +889,7 @@ function cleanInventory(inv) {
         }
         // P9 review: flags are booleans, whatever the agent sent (the UI puts them in attributes).
         if (list === "plugins") o.enabled = e.enabled === true;
+        if (list === "whitelist") o.unmanaged = e.unmanaged === true;
         if (list === "pending") o.op = e.op === "remove" ? "remove" : "add";
         return o;
       });

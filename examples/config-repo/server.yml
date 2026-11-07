@@ -17,4 +17,6 @@ dns: {zone: example.com, hostname: mc}
 host:
   # ipv4 / ipv6: set once the host exists (one address from its IPv6 prefix for ipv6).
   timezone: UTC
+# minecraft.strict_whitelist: true makes players.yml the whole whitelist; by default a deploy keeps (and
+# announces) players who were never in it (docs/operations.md "Players not in Git").
 minecraft: {version: "26.3", accept_eula: true}
