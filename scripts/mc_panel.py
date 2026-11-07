@@ -95,13 +95,15 @@ class ActionError(Exception):
 
 
 def atomic_write(path: Path, text: str, mode: int = 0o644) -> None:
-    """A temporary file next to `path`, created with `mode` (never wider while it is written), then renamed
-    over it: a reader sees the old file or the new one, never half of it."""
+    """A temporary file next to `path`, created owner-only (0600) and written, then given `mode` and renamed
+    over it: a reader sees the old file or the new one, never half of it, and never a wider mode mid-write."""
     tmp = path.with_name(path.name + ".tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_CLOEXEC, mode)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_CLOEXEC, 0o600)
     with os.fdopen(fd, "w") as f:
-        os.fchmod(f.fileno(), mode)  # an existing tmp (or the umask) can't leave other bits
+        os.fchmod(f.fileno(), 0o600)  # an existing tmp can't keep other bits while it is written
         f.write(text)
+        f.flush()
+        os.fchmod(f.fileno(), mode)  # the file's intended mode (e.g. 0640 for files the JVM reads)
     os.replace(tmp, path)
 
 
