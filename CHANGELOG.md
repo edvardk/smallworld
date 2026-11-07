@@ -6,6 +6,13 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Changed
+
+- The product's e2e `agent` shard is split in two by its rounds (`agent-a`, `agent-b`: `tests/e2e/agent_check.py
+  --rounds a|b`, each on its own box with its own mock Worker and GitHub API), so e2e's slowest shard drops from
+  16 to about 11 minutes. Every round prints its wall time; without `--rounds` the script still runs every
+  round (docs/ci.md).
+
 ## [1.2.2] - 2026-11-07
 
 Panel whitelist fixes. A deploy sets the whitelist to `players.yml` plus the panel's pending adds; with both bugs,

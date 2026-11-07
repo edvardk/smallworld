@@ -151,9 +151,11 @@ def test_e2e_triggers_and_benches() -> None:
     # parallel shards on GitHub's runners, one at a time on the self-hosted one (host-network ports clash)
     strategy = shard["strategy"]
     assert strategy["fail-fast"] is False
-    assert strategy["max-parallel"] == f"${{{{ fromJSON({trusted} && vars.E2E_RUNNER && '1' || '4') }}}}"
+    assert strategy["max-parallel"] == f"${{{{ fromJSON({trusted} && vars.E2E_RUNNER && '1' || '5') }}}}"
     include = {m["shard"]: m for m in strategy["matrix"]["include"]}
-    assert set(include) == {"core", "agent", "telemetry-brand", "migrate-p16"}
+    assert set(include) == {"core", "agent-a", "agent-b", "telemetry-brand", "migrate-p16"}
+    # GitHub's runners take every shard at once
+    assert strategy["max-parallel"].endswith(f"'{len(include)}') }}}}")
     assert {s for s, m in include.items() if m["full_only"]} == {"telemetry-brand", "migrate-p16"}
     assert all(m["timeout"] for m in include.values()) and shard["timeout-minutes"] == "${{ matrix.timeout }}"
     assert shard["if"] == "${{ !cancelled() && needs.changes.outputs.e2e != 'false' }}"
@@ -171,7 +173,11 @@ def test_e2e_triggers_and_benches() -> None:
     for part in ("init again", "stale product pin", "client on", "terraform validate", "Hardening", "Reboot",
                  "Deploy checks", "Firewall", "P12 dry runs"):  # fmt: skip
         assert where(part) == ["matrix.shard == 'core'"], part
-    assert where("mc-agent checks") == ["matrix.shard == 'agent'"]
+    # the agent check's rounds in two shards that always run, each passing its group (agent_check.GROUPS)
+    assert where("mc-agent checks") == ["startsWith(matrix.shard, 'agent-')"]
+    agent = next(s for s in steps if s.get("name", "").startswith("mc-agent checks"))
+    assert agent["env"]["ROUNDS"] == "${{ matrix.shard == 'agent-a' && 'a' || 'b' }}"
+    assert agent["run"].rstrip().endswith('agent_check.py --rounds "$ROUNDS"')
     # the heavy half is skipped only on an explicit `false`, in its own shards
     for part in ("telemetry", "Branding", "setup-node"):
         assert where(part) == ["matrix.shard == 'telemetry-brand' && env.FULL != 'false'"], part

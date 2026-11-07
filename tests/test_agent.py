@@ -1008,6 +1008,32 @@ def test_signature_vector_shared_with_the_worker_tests() -> None:
     assert want in (Path(__file__).parent.parent / "watchdog/test/monitoring.test.mjs").read_text()
 
 
+def test_the_e2e_agent_check_splits_its_rounds_into_two_shards(monkeypatch: pytest.MonkeyPatch) -> None:
+    """v1.3: agent_check.py's rounds as two CI shards (--rounds a / b): together every round once, each with what
+    its rounds need; without --rounds, every round in the full run's order."""
+    import importlib
+
+    repo = Path(__file__).parent.parent
+    monkeypatch.syspath_prepend(str(repo / "tests/e2e"))
+    monkeypatch.setenv("MC_SECRET_AGENT_TOKEN", "t")
+    monkeypatch.setenv("MC_SECRET_COMMAND_HMAC_KEY", "k")
+    check = importlib.import_module("agent_check")
+    a, b = check.select_rounds("a"), check.select_rounds("b")
+    assert sorted(a + b) == sorted(check.ROUNDS) and not set(a) & set(b)
+    every = list(check.ROUNDS)
+    assert check.select_rounds(None) == check.select_rounds("all") == check.select_rounds("a,b") == every
+    for group in (a, b):  # a round's precondition from another round is in the same group, before it
+        for r, needs in check.NEEDS.items():
+            assert r not in group or group.index(needs) < group.index(r)
+    assert check.select_rounds("whitelist") == ["stop-start", "whitelist"]
+    with pytest.raises(SystemExit, match="unknown"):
+        check.select_rounds("a,nope")
+    # the one round of each group that drives the GitHub mock (the world round seeds players.yml itself)
+    assert "whitelist" in a and "world" in b
+    wf = (repo / ".github/workflows/e2e-mock.yml").read_text()
+    assert "{shard: agent-a," in wf and "{shard: agent-b," in wf and "{shard: agent," not in wf
+
+
 def test_agent_is_wired_into_ansible_and_e2e() -> None:
     repo = Path(__file__).parent.parent
     wf = (repo / ".github/workflows/e2e-mock.yml").read_text()

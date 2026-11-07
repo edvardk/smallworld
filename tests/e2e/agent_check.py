@@ -33,12 +33,21 @@ failing to reach it since: this script now starts a mock of the Worker there and
     directory -> the agent asks the Worker (POST /agent/client-code, bearer token) -> the code file in the verdict
     directory, which minecraft can read but not write; the code never reaches the journal.
 
+Rounds (v1.3): the shared part always runs (the agent's sandbox, the buffered and live metrics, the journal, the
+first poll's status/console/denied/replay, the final checks); `--rounds` picks the rest, so CI runs them as two
+shards on two boxes (docs/ci.md): `a` = rcon, client-code, stop-start, whitelist, restart, plugin, restore-guard;
+`b` = backup-restore, world. Round names (comma-separated) work too; whitelist brings stop-start along (it seeds
+the profile cache). Without `--rounds`, every round, in the order above with backup-restore before restore-guard.
+Each round prints its wall time (`round <name>: N s`).
+
     MC_SECRET_AGENT_TOKEN=... MC_SECRET_COMMAND_HMAC_KEY=... [all MC_SECRET_* for the players role run] \
-      python3 tests/e2e/agent_check.py
+      python3 tests/e2e/agent_check.py [--rounds a|b|<round>,...]
 """
 
 from __future__ import annotations
 
+import argparse
+import contextlib
 import gzip
 import hashlib
 import hmac
@@ -51,6 +60,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -66,6 +76,7 @@ CLIENT_CODE = "424242"  # v1.1: the mock Worker's one-time code
 served_commands = threading.Event()
 queued: list[dict[str, str]] = []  # later phases: commands the main thread hands to the next poll
 queue_lock = threading.Lock()
+served = [0]  # signed commands the mock handed to the agent (each must be in its audit journal)
 failures: list[str] = []
 
 
@@ -118,6 +129,7 @@ class Mock(http.server.BaseHTTPRequestHandler):
             with queue_lock:
                 cmds += queued
                 queued.clear()
+                served[0] += len(cmds)
             self.reply(200, {"commands": cmds})
             return
         self.reply(404, {"error": "not found"})
@@ -472,58 +484,77 @@ def players_role() -> subprocess.CompletedProcess[str]:
     )  # fmt: skip
 
 
-def whitelist_round() -> None:
+def seed_github_files() -> None:
+    """players.yml on the mock's main: the live whitelist and ops, as Git has them after a deploy."""
     wl, ops = whitelisted(), json.loads((SERVER / "ops.json").read_text())
     GitHubMock.files = {"main": canonical([{"name": n, "uuid": u} for n, u in wl.items()],
                                           [{"name": o["name"], "uuid": o["uuid"], "level": o["level"]} for o in ops])}  # fmt: skip
+
+
+@contextlib.contextmanager
+def github_mock() -> Iterator[None]:
+    """The mock GitHub API on 127.0.0.1:8788 for one round (each round that opens pull requests starts its own and
+    shuts it down; its repository state and pull request numbers carry over between rounds of one run)."""
+    if "main" not in GitHubMock.files:  # the world round without the whitelist round (group b)
+        seed_github_files()
     gh = http.server.ThreadingHTTPServer(("127.0.0.1", 8788), GitHubMock)
     threading.Thread(target=gh.serve_forever, daemon=True).start()
     try:
-        name, uuid = PANEL_NAME, PANEL_UUID
-        r = send("whitelist", {"op": "add", "name": name}, "e2e-wl-add")
-        if not r.get("ok"):  # the profile cache didn't resolve it: a real account through Mojang
-            name, uuid = "Notch", "069a79f4-44e9-4726-a5be-fca90e38aaf5"
-            print(f"     (cached name refused: {r.get('error')}; trying {name} via Mojang)")
-            r = send("whitelist", {"op": "add", "name": name}, "e2e-wl-add-2")
-        expect(r.get("ok") is True, f"signed whitelist add ran ({r})")
-        expect(whitelisted().get(name) == uuid, f"{name} is live in whitelist.json with its UUID")
-        entry = next((e for e in pending() if e["uuid"] == uuid), {})
-        expect(
-            entry.get("op") == "add" and entry.get("login") == "e2e@tests",
-            f"recorded in pending.json ({entry})",
-        )
-        # a deploy before the PR is merged must not undo it (Git doesn't have the player yet)
-        run = players_role()
-        expect(run.returncode == 0, f"site.yml --tags players ran ({run.stdout[-400:]}{run.stderr[-400:]})")
-        expect(whitelisted().get(name) == uuid, "the deploy kept the pending add (Git + pending)")
-        pr = wait_for("the whitelist pull request", lambda: GitHubMock.prs.get(1), 120)
-        if pr:
-            text = GitHubMock.files.get(pr["head"], "")
-            expect(pr["head"].startswith("panel/") and pr["base"] == "main", f"PR from {pr['head']} to main")
-            expect(
-                f'{{name: "{name}", uuid: "{uuid}"}}' in text and text.endswith("\n"),
-                "canonical players.yml in the PR",
-            )
-            expect(
-                GitHubMock.tokens == {f"Bearer {INSTALLATION_TOKEN}"} and len(seen["github_token"]) >= 1,
-                "the installation token minted by the Worker, nothing else (no GitHub credential on the box)",
-            )
-            merge_pr(1)
-            wait_for(
-                "pending.json to clear after the merge",
-                lambda: not any(e["uuid"] == uuid for e in pending()),
-                90,
-            )
-        r = send("whitelist", {"op": "remove", "name": name}, "e2e-wl-remove")
-        expect(r.get("ok") is True and name not in whitelisted(), f"signed whitelist remove ran ({r})")
-        pr2 = wait_for("the second pull request", lambda: GitHubMock.prs.get(2), 120)
-        if pr2:
-            expect(name not in GitHubMock.files.get(pr2["head"], name), "the remove is in the second PR")
-            merge_pr(2)
-            wait_for("pending.json to clear again", lambda: not pending(), 90)
+        yield
     finally:
         gh.shutdown()
-        gh.server_close()  # world_round binds 8788 again
+        gh.server_close()  # the next round binds 8788 again
+
+
+def whitelist_round() -> None:
+    seed_github_files()
+    with github_mock():
+        _whitelist_round()
+
+
+def _whitelist_round() -> None:
+    name, uuid = PANEL_NAME, PANEL_UUID
+    r = send("whitelist", {"op": "add", "name": name}, "e2e-wl-add")
+    if not r.get("ok"):  # the profile cache didn't resolve it: a real account through Mojang
+        name, uuid = "Notch", "069a79f4-44e9-4726-a5be-fca90e38aaf5"
+        print(f"     (cached name refused: {r.get('error')}; trying {name} via Mojang)")
+        r = send("whitelist", {"op": "add", "name": name}, "e2e-wl-add-2")
+    expect(r.get("ok") is True, f"signed whitelist add ran ({r})")
+    expect(whitelisted().get(name) == uuid, f"{name} is live in whitelist.json with its UUID")
+    entry = next((e for e in pending() if e["uuid"] == uuid), {})
+    expect(
+        entry.get("op") == "add" and entry.get("login") == "e2e@tests",
+        f"recorded in pending.json ({entry})",
+    )
+    # a deploy before the PR is merged must not undo it (Git doesn't have the player yet)
+    run = players_role()
+    expect(run.returncode == 0, f"site.yml --tags players ran ({run.stdout[-400:]}{run.stderr[-400:]})")
+    expect(whitelisted().get(name) == uuid, "the deploy kept the pending add (Git + pending)")
+    pr = wait_for("the whitelist pull request", lambda: GitHubMock.prs.get(1), 120)
+    if pr:
+        text = GitHubMock.files.get(pr["head"], "")
+        expect(pr["head"].startswith("panel/") and pr["base"] == "main", f"PR from {pr['head']} to main")
+        expect(
+            f'{{name: "{name}", uuid: "{uuid}"}}' in text and text.endswith("\n"),
+            "canonical players.yml in the PR",
+        )
+        expect(
+            GitHubMock.tokens == {f"Bearer {INSTALLATION_TOKEN}"} and len(seen["github_token"]) >= 1,
+            "the installation token minted by the Worker, nothing else (no GitHub credential on the box)",
+        )
+        merge_pr(1)
+        wait_for(
+            "pending.json to clear after the merge",
+            lambda: not any(e["uuid"] == uuid for e in pending()),
+            90,
+        )
+    r = send("whitelist", {"op": "remove", "name": name}, "e2e-wl-remove")
+    expect(r.get("ok") is True and name not in whitelisted(), f"signed whitelist remove ran ({r})")
+    pr2 = wait_for("the second pull request", lambda: GitHubMock.prs.get(2), 120)
+    if pr2:
+        expect(name not in GitHubMock.files.get(pr2["head"], name), "the remove is in the second PR")
+        merge_pr(2)
+        wait_for("pending.json to clear again", lambda: not pending(), 90)
 
 
 def restart_round() -> None:
@@ -700,14 +731,9 @@ def pending_world() -> dict[str, Any] | None:
 
 
 def world_round() -> None:
-    """The world round needs the GitHub mock too (whitelist_round shuts its own down when it ends)."""
-    gh = http.server.ThreadingHTTPServer(("127.0.0.1", 8788), GitHubMock)
-    threading.Thread(target=gh.serve_forever, daemon=True).start()
-    try:
+    """The world round opens pull requests too: its own GitHub mock (seeded from the live lists if it runs alone)."""
+    with github_mock():
         _world_round()
-    finally:
-        gh.shutdown()
-        gh.server_close()
 
 
 def _world_round() -> None:
@@ -807,14 +833,90 @@ def done() -> bool:
     )  # fmt: skip
 
 
-def main() -> int:
+# Every round, in the order a full run takes them. A round sets up what it needs on a freshly deployed box; the
+# one exception is in NEEDS (whitelist resolves the name stop-start put into the profile cache while the server
+# was down). The groups are CI's two agent shards (e2e-mock.yml), balanced by measured time: the full run of
+# 2026-11-06 took ~4.4 min for rcon..plugin, ~6.2 for backup-restore + restore-guard, ~1.8 for world.
+ROUNDS: dict[str, Callable[[], None]] = {
+    "rcon": rcon_quiet_round,
+    "client-code": client_code_round,
+    "stop-start": stop_start_round,
+    "whitelist": whitelist_round,
+    "restart": restart_round,
+    "plugin": plugin_round,
+    "backup-restore": backup_and_restore_round,
+    "restore-guard": restore_guard_round,
+    "world": world_round,  # v1.2
+}
+GROUPS: dict[str, tuple[str, ...]] = {
+    "a": ("rcon", "client-code", "stop-start", "whitelist", "restart", "plugin", "restore-guard"),
+    "b": ("backup-restore", "world"),
+}
+NEEDS: dict[str, str] = {"whitelist": "stop-start"}
+
+
+def select_rounds(spec: str | None) -> list[str]:
+    """`--rounds`: a group (a, b), round names, or both, comma-separated; none (or `all`) = every round. In ROUNDS'
+    order, with what a picked round needs."""
+    if spec is None or spec.strip() == "all":
+        return list(ROUNDS)
+    picked: set[str] = set()
+    for word in filter(None, (w.strip() for w in spec.split(","))):
+        if word in GROUPS:
+            picked.update(GROUPS[word])
+        elif word in ROUNDS:
+            picked.add(word)
+        else:
+            raise SystemExit(f"--rounds: unknown {word!r} (groups {sorted(GROUPS)}, rounds {list(ROUNDS)})")
+    if not picked:
+        raise SystemExit("--rounds: nothing picked")
+    picked.update(NEEDS[r] for r in list(picked) if r in NEEDS)
+    return [r for r in ROUNDS if r in picked]
+
+
+def timed(name: str, step: Callable[[], None], took: dict[str, float]) -> None:
+    started = time.monotonic()
+    try:
+        step()
+    finally:
+        took[name] = time.monotonic() - started
+        print(f"round {name}: {took[name]:.0f} s")
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(
+        description="P8/P10 acceptance in the e2e box: mc-agent and the panel actions"
+    )
+    ap.add_argument("--rounds", help="a, b, or round names, comma-separated (default: every round)")
+    rounds = select_rounds(ap.parse_args(argv).rounds)
+    sys.stdout.reconfigure(line_buffering=True)  # type: ignore[union-attr]  # progress in the CI log as it happens
+    print(f"rounds: {', '.join(rounds)}")
     # No timer-driven backup/health/reboot-gate run in the middle of the rounds (a self-heal start while the
     # restore-guard round keeps the server down on purpose, a backup snapshot taken for the panel's, ...).
     with timers_paused():
-        return checks()
+        return checks(rounds)
 
 
-def checks() -> int:
+def checks(rounds: list[str]) -> int:
+    took: dict[str, float] = {}
+    timed("setup", setup, took)
+    for name in rounds:
+        timed(name, ROUNDS[name], took)
+    timed("final", final_checks, took)
+    print(
+        "timings: "
+        + ", ".join(f"{n} {t:.0f} s" for n, t in took.items())
+        + f"; total {sum(took.values()):.0f} s"
+    )
+    print(f"{len(failures)} failure(s)")
+    return 1 if failures else 0
+
+
+MOCK: list[http.server.ThreadingHTTPServer] = []
+
+
+def setup() -> None:
+    """The agent's sandbox and its buffer, then the mock Worker, until the first pushes and commands arrived."""
     props = show("mc-agent.service", "ActiveState", "User", "MainPID")
     expect(
         props.get("ActiveState") == "active" and props.get("User") == "mcops",
@@ -833,23 +935,18 @@ def checks() -> int:
     expect(buffered > 0, f"while the Worker was unreachable the agent buffered {buffered} sample(s) on disk")
 
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 8787), Mock)
+    MOCK.append(srv)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     deadline = time.monotonic() + 240
     while time.monotonic() < deadline and not done():
         time.sleep(3)
     time.sleep(2)
-    rcon_quiet_round()
-    client_code_round()
-    stop_start_round()
-    # P10
-    whitelist_round()
-    restart_round()
-    plugin_round()
-    backup_and_restore_round()
-    restore_guard_round()
-    world_round()  # v1.2
-    srv.shutdown()
 
+
+def final_checks() -> None:
+    """What every run produced: the shared part's pushes and first commands, and each served command audited."""
+    for srv in MOCK:
+        srv.shutdown()
     old = [s for s in seen["metrics"] if s["ts"] < STARTED_MS]
     live = [s for s in seen["metrics"] if s["ts"] > STARTED_MS and s.get("up")]
     expect(len(old) >= 1, f"buffered samples were delivered once the Worker answered ({len(old)})")
@@ -896,9 +993,12 @@ def checks() -> int:
     expect(show("minecraft.service", "ActiveState")["ActiveState"] == "active", "the server is still running")
     audit = subprocess.run(["journalctl", "SYSLOG_IDENTIFIER=mc-agent", "MC_AUDIT=1", "-o", "json", "--no-pager"],
                            capture_output=True, text=True).stdout.splitlines()  # fmt: skip
-    expect(len(audit) >= 15, f"every command is in the local journal with MC_AUDIT=1 ({len(audit)})")
-    print(f"{len(failures)} failure(s)")
-    return 1 if failures else 0
+    # one "agent action=..." entry per command, refused and replayed ones included (the rest: PRs, client codes);
+    # served counts this run's commands, so each shard checks the ones its rounds sent
+    actions = [ln for ln in audit if str(json.loads(ln).get("MESSAGE", "")).startswith("agent action=")]
+    expect(served[0] >= 4 and len(actions) >= served[0],
+           f"every command is in the local journal with MC_AUDIT=1 ({len(actions)} commands of {served[0]} "
+           f"served; {len(audit)} audit entries)")  # fmt: skip
 
 
 if __name__ == "__main__":
