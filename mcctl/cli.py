@@ -832,8 +832,7 @@ def cmd_players(args: argparse.Namespace) -> int:
         rem = _remote(args)
         return actions.guarded(rem, lambda: actions.moderate(rem, args.action, args.name, args.reason))
     ctx = _ctx(args)
-    if args.merge is not None:  # the merge question answered up front (the dashboard); nothing is asked
-        _conversation(ctx, args)
+    _conversation(ctx, args)  # unattended: the pull request is left unmerged unless --merge
     return _p12(
         "players",
         lambda: players.change(
@@ -849,10 +848,10 @@ def cmd_players(args: argparse.Namespace) -> int:
 
 
 def _conversation(ctx: init.Ctx, args: argparse.Namespace) -> None:
-    """Without a terminal on stdin, publish's questions take their defaults (the safe answers: wait for an
-    empty server, no Terraform apply); with one, it asks. `--merge`/`--no-merge` and `--restart` answer the
-    merge and the players-online questions up front (the dashboard collects them first): then nothing is
-    asked and the other questions take their safe defaults too."""
+    """Without a terminal on stdin, publish's (and players') questions take their defaults (the safe answers:
+    don't merge, wait for an empty server, no Terraform apply); with one, it asks. `--merge`/`--no-merge` and
+    `--restart` answer the merge and the players-online questions up front (the dashboard collects them
+    first): then nothing is asked and the other questions take their safe defaults too."""
     from mcctl import ui as ui_mod
 
     preset: dict[str, object] = {}
@@ -1085,7 +1084,7 @@ def build_parser() -> argparse.ArgumentParser:
     confirm_help = "the typed confirmation (scripts); without it a terminal asks, anything else refuses"
     merge_help = (
         "answer the merge question up front: --merge merges once the checks pass (that deploys), --no-merge "
-        "leaves the pull request to you"
+        "leaves the pull request to you (the default without a terminal)"
     )
     sp = sub.add_parser("worlds", help="the world library (like the panel): list, create, switch, delete")
     wsub = sp.add_subparsers(dest="action", required=True, metavar="ACTION")

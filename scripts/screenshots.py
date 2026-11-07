@@ -12,8 +12,9 @@ Sources, all against the neutral fixtures ("Lighthouse"):
     brand   scripts/brand_art.py build (brand-server-icon.png, brand-drink.png; it also rebuilds the
             committed art, byte-reproducibly: a no-op unless a pixel grid changed)
     setup   scripts/setup_screenshot.py (setup-mock.svg: `mcctl setup --mock` with tests/e2e/answers.yml)
-    dashboard  scripts/dashboard_screenshot.py (mcctl-dashboard-<tab>.svg: the terminal dashboard at 120x36
-            against the tests' fakes, tests/dashboard_fakes.py)
+    dashboard  scripts/dashboard_screenshot.py (mcctl-dashboard-{overview,confirm,palette}.svg: the terminal
+            dashboard at 120x36 against the tests' fakes, tests/dashboard_fakes.py; every tab on demand with
+            `scripts/dashboard_screenshot.py --all -o DIR`)
 """
 
 from __future__ import annotations

@@ -10,7 +10,7 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 - **The dashboard:** `mcctl` with no command, on an interactive terminal, opens a full-screen dashboard
   (Textual): the web panel in the terminal. A header (deployment, Smallworld and server versions, an online
-  badge), tabs on keys 1-9 (Overview with live status cards, TPS/MSPT sparklines, backups, deploys, versions
+  badge), tabs on keys 1-9 (alt+1-9 from anywhere) (Overview with live status cards, TPS/MSPT sparklines, backups, deploys, versions
   and what needs attention, plus restart/stop/start/back up; Players; Worlds; Plugins; Backups; Logs (live
   tail); Console (RCON); Publish; Health (doctor as a table)), the keys in the footer and every action in the
   command palette (ctrl+p). The status refreshes every 10 s in the background and never blocks the screen.
@@ -49,6 +49,10 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 - The v1.3 home screen (a questionary menu whose output scrolled away behind it) is replaced by the
   dashboard; the rules for when it opens (a terminal, no `--plain`/`NO_COLOR`/`CI`/`TERM=dumb`), `-C DIR`, the
   remembered config repo and switching it are unchanged.
+- Unattended `mcctl publish` and `mcctl players add|remove|op|deop` (no terminal on stdin) no longer merge
+  the pull request by default: it is opened, its checks followed, and left for a person. `--merge` merges once
+  the checks pass, as before. The other unattended answers are unchanged (wait for an empty server, no
+  Terraform apply).
 - Dependencies: `textual==8.2.8` added (with linkify-it-py, mdit-py-plugins, platformdirs, typing-extensions);
   `questionary`, `prompt-toolkit` and `wcwidth` dropped (nothing else used them). rich stays at 15.0.0
   (Textual 8.2.8 needs rich >= 14.2.0).

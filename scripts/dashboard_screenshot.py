@@ -5,7 +5,10 @@ Runs the real dashboard (mcctl/dashboard.py) headless at 120x36 against a tempor
 tests' fakes (tests/dashboard_fakes.py: a fixed status, lists, a doctor report, canned command output), so
 nothing real is contacted and no credential exists.
 
-    python scripts/dashboard_screenshot.py [-o docs/images]
+    python scripts/dashboard_screenshot.py [-o docs/images]       # the committed ones (COMMITTED)
+    python scripts/dashboard_screenshot.py --all -o /tmp/shots     # every tab, the confirmation, the palette
+
+Only COMMITTED live in docs/images; the others are generated on demand (`--all`).
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ from tests.conftest import RENDERABLE, example_server, make_config_repo
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT = ROOT / "docs" / "images"
 SIZE = (120, 36)
+COMMITTED = ("overview", "confirm", "palette")
 TPS = [19.9, 20.0, 19.97, 19.8, 19.95, 18.7, 17.9, 19.2, 19.9, 20.0, 19.99, 19.94] * 3
 MSPT = [11.8, 12.0, 12.9, 14.2, 13.1, 31.5, 44.8, 22.0, 12.6, 12.1, 11.9, 12.3] * 3
 
@@ -39,7 +43,7 @@ class Shot(dashboard.Dashboard):
         self.query_one("#repo", Static).update("~/lighthouse (remembered)")
 
 
-async def shoot(out: Path, root: Path) -> list[Path]:
+async def shoot(out: Path, root: Path, wanted: tuple[str, ...] | None = None) -> list[Path]:
     spawn = fakes.FakeSpawn(hold={"logs"})
     services = fakes.services(
         spawn, update=lambda pin: "Smallworld v1.4.0 is out (this config repo pins v0.0.0): `mcctl upgrade`"
@@ -55,6 +59,8 @@ async def shoot(out: Path, root: Path) -> list[Path]:
             await pilot.pause(0.3)
 
         def save(name: str) -> None:
+            if wanted is not None and name not in wanted:
+                return
             path = out / f"mcctl-dashboard-{name}.svg"
             path.write_text(app.export_screenshot(title=f"mcctl: {name}"), encoding="utf-8")
             written.append(path)
@@ -133,13 +139,14 @@ async def shoot(out: Path, root: Path) -> list[Path]:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("-o", "--out", type=Path, default=DEFAULT_OUT, help="output directory")
+    ap.add_argument("--all", action="store_true", help=f"every screenshot, not only {', '.join(COMMITTED)}")
     args = ap.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         server = example_server() | RENDERABLE | {"name": "lighthouse"}
         root = make_config_repo(Path(tmp) / "lighthouse", server)
         fakes.write_players(root)
-        for path in asyncio.run(shoot(args.out, root)):
+        for path in asyncio.run(shoot(args.out, root, None if args.all else COMMITTED)):
             print(path)
     return 0
 

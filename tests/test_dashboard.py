@@ -244,6 +244,24 @@ def test_console_sends_each_line_over_rcon(repo: Path) -> None:
     assert spawn.calls == [["rcon", "say", "hi", "there", "-C", root], ["rcon", "list", "-C", root]]
 
 
+def test_alt_digits_switch_tabs_even_from_the_console_input(repo: Path) -> None:
+    async def body(app: dashboard.Dashboard, pilot: Any) -> None:
+        await pilot.press("7")
+        await settle(app, pilot)
+        prompt = app.query_one("#console-input", Input)
+        assert app.focused is prompt
+        await pilot.press("3")  # a plain digit is typed into the prompt
+        assert app.query_one(TabbedContent).active == "console" and prompt.value == "3"
+        await pilot.press("alt+3")
+        await settle(app, pilot)
+        assert app.query_one(TabbedContent).active == "worlds" and prompt.value == "3"
+        await pilot.press("alt+1")
+        await settle(app, pilot)
+        assert app.query_one(TabbedContent).active == "overview"
+
+    drive(repo, body)
+
+
 def test_player_changes_pass_the_merge_answer(repo: Path) -> None:
     spawn = fakes.FakeSpawn()
 

@@ -887,7 +887,7 @@ class LogsPane(Pane):
 
 
 class ConsolePane(Pane):
-    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "leave", "Leave the prompt (1-9 switch tabs)")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "leave", "Leave the prompt (then 1-9)")]
 
     def action_leave(self) -> None:
         self.output.log_widget.focus()
@@ -1100,6 +1100,18 @@ class Dashboard(App[int]):
     """
     BINDINGS: ClassVar[list[BindingType]] = [
         *(Binding(str(i), f"tab('{tid}')", label, show=False) for i, (tid, label) in enumerate(TABS, 1)),
+        # alt+1-9 work from anywhere, a focused input (the console) too: priority, and no input uses them
+        *(
+            Binding(
+                f"alt+{i}",
+                f"tab('{tid}')",
+                "Tabs" if i == 1 else label,
+                show=i == 1,
+                key_display="alt+1-9" if i == 1 else None,
+                priority=True,
+            )
+            for i, (tid, label) in enumerate(TABS, 1)
+        ),
         Binding("ctrl+r", "act('refresh')", "Refresh"),
         Binding("ctrl+o", "act('switch-repo')", "Config repo"),
         Binding("q", "quit", "Quit"),

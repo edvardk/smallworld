@@ -319,7 +319,7 @@ had a questionary menu here); `mcctl -C DIR` opens it on DIR. It is the web pane
 - **Header:** the deployment, "Smallworld <pin> · Purpur <version> (build N) · mcctl <version>", the config repo
   (and where it came from: `-C`, the current directory, or remembered) and a badge: ONLINE, STOPPED (by an
   admin), UNREACHABLE or the unit's state.
-- **Tabs** (keys 1-9, or a click): **Overview** (server state and who is online; TPS and MSPT with sparklines of
+- **Tabs** (keys 1-9; alt+1-9 from anywhere, the console's prompt too; or a click): **Overview** (server state and who is online; TPS and MSPT with sparklines of
   the last ten minutes; last backup; last deploy and its result; versions: the pin, the deployed product, the
   Worker's stamp from the last doctor run, this mcctl, a mismatch flagged with its fix; "needs attention": open
   panel PRs, disabled plugins, credentials that expire within 30 days (expiry.yml), the update notice; and the
@@ -328,7 +328,7 @@ had a questionary menu here); `mcctl -C DIR` opens it on DIR. It is the web pane
   `mcctl players` does; kick, ban and pardon act live), **Worlds** (the active world, archives, the library;
   create, switch, delete), **Plugins** (enable, disable: a countdown restart), **Backups** (restic's snapshots
   newest first; back up now; restore), **Logs** (`mcctl logs --follow`, Stop ends it), **Console** (an RCON
-  prompt: each line is `mcctl rcon …`; Esc leaves the prompt so 1-9 switch tabs again), **Publish** (the preview
+  prompt: each line is `mcctl rcon …`; alt+1-9, or Esc and then 1-9, switch tabs), **Publish** (the preview
   of uncommitted and unpushed changes, run when the tab opens; validate; publish as a pull request, publish
   restarting only on an empty server, revert the last deploy) and **Health** (`mcctl doctor` as a table, ok /
   warn / fail coloured like the panel).
@@ -357,7 +357,8 @@ prompt, `secrets rotate`, `secrets show-restic`, `doctor --fix`, interactive `pu
 and run in the terminal itself, so a credential only ever goes through getpass there, never into argv, a log or
 a widget. Without a terminal (stdin or stdout), with `--plain`, `MCCTL_PLAIN`, `NO_COLOR`, `CI` or `TERM=dumb`,
 `mcctl` alone is the usage error it always was (exit code 2); every subcommand is unchanged. Screenshots:
-`docs/images/mcctl-dashboard-*.svg` (`scripts/screenshots.py --only dashboard`).
+`docs/images/mcctl-dashboard-{overview,confirm,palette}.svg` (`scripts/screenshots.py --only dashboard`;
+every tab on demand: `scripts/dashboard_screenshot.py --all -o DIR`).
 
 mcctl remembers config repos in `~/.config/mcctl/config.toml` (`$XDG_CONFIG_HOME/mcctl/` when set; Windows:
 `%APPDATA%\mcctl\`; `mcctl/homecfg.py`): absolute paths only (`current` and up to 10 `repos`), never a
@@ -471,8 +472,10 @@ terminal (the dashboard's rule), never for `update-prs`, `expiry-check`, `panel-
 4. **Restart awareness:** when the deploy restarts Minecraft and players are online (or nobody knows), mcctl
    asks: deploy now (the deploy's own in-game countdown), wait until the server is empty (checked every minute,
    at most `--max-wait` minutes, default 120), or cancel. `--wait-empty` answers "wait". Without a terminal
-   on stdin every question takes its default: wait (a wait that times out cancels), merge when green, no
-   Terraform apply. Unattended, mcctl never restarts a server with players on it.
+   on stdin every question takes its default: wait (a wait that times out cancels), **don't merge** (the pull
+   request is opened, its checks followed, and left for you), no Terraform apply. Unattended, mcctl never
+   merges, deploys or restarts a server with players on it by default. `--merge`/`--no-merge` and `--restart
+   now|wait|cancel` answer the merge and players-online questions up front (scripts, the dashboard).
 5. `--revert` opens a pull request (`publish/revert-<timestamp>`) reverting the last deploy: the first-parent
    commits between the two newest workflow runs on main whose deploy job succeeded (`gh run list`/`gh run
    view`), newest first, merge commits with `-m 1`. A conflict aborts the revert and leaves main alone.
@@ -484,8 +487,9 @@ preview), no `gh` for the pull request routes, a state-backend change, and (`--r
 `mcctl players add|remove|op|deop` goes the same way: the edited `players.yml` alone on `players/<action>-<name>-
 <timestamp>`, a pull request, its checks, the admin's merge when green, the deploy (a whitelist change never
 restarts). `server / gate` is unchanged: it merges whitelist-only changes by itself only from `panel/*` by the
-panel App; a person's whitelist change waits for the admin's merge, which mcctl offers. `--push` keeps the old
-behaviour (commit and push to main), `--no-push` only commits.
+panel App; a person's whitelist change waits for the admin's merge, which mcctl offers (without a terminal:
+not merged unless `--merge`). `--push` keeps the old behaviour (commit and push to main), `--no-push` only
+commits.
 
 ### Server actions over Tailscale SSH (v1.3)
 
