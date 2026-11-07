@@ -749,13 +749,21 @@ class Maintenance:
     window: str | None = opt(
         doc="v1.3: when a deploy may restart Minecraft, HH:MM-HH:MM in `timezone` (may cross midnight, "
         "e.g. 23:00-01:00). A deploy outside it applies the files and leaves the restart pending: a timer "
-        "restarts the server at the window's start (any earlier restart applies it too), and Discord says "
+        "restarts the server inside the window (see force_after_minutes_before_end; any earlier restart "
+        "applies it too), and Discord says "
         "so. A forced deploy (`mcctl deploy --force-restart`, the workflow's force_restart) restarts at "
         "once. null = a deploy restarts whenever it needs to.",
         pattern=WINDOW,
     )
     timezone: str | None = opt(
         doc="Time zone of the window (zoneinfo name); null = host.timezone.", check=_timezone
+    )
+    force_after_minutes_before_end: int = opt(
+        30,
+        doc="Inside the window a pending restart waits for an empty server (RCON `list`; unknown counts as "
+        "occupied); in the window's last this-many minutes it restarts anyway, with the in-game countdown. "
+        "Shorter than the window; 0 = never forced (the next window tries again).",
+        minimum=0,
     )
 
 
@@ -1698,8 +1706,14 @@ def _cross_validate(cfg: ServerConfig, product_root: Path, i_know: bool, errors:
     start, end = cfg.automation.reboot_window.split("-")
     if start == end:
         errors.append("automation.reboot_window: start and end are the same")
-    if cfg.maintenance.window is not None and len(set(cfg.maintenance.window.split("-"))) == 1:
-        errors.append("maintenance.window: start and end are the same")
+    if cfg.maintenance.window is not None:
+        length = window_minutes(cfg.maintenance.window)
+        if length == 0:
+            errors.append("maintenance.window: start and end are the same")
+        elif cfg.maintenance.force_after_minutes_before_end >= length:
+            errors.append(
+                f"maintenance.force_after_minutes_before_end: must be shorter than the window ({length} min)"
+            )
     if cfg.panel.mode == "cloudflare":
         if cfg.admin.email is None:
             errors.append("admin.email: required when panel.mode is cloudflare (Access identity)")
@@ -1865,6 +1879,12 @@ def in_window(window: str, t: datetime.time) -> bool:
     start, end = window.split("-")
     now = f"{t.hour:02d}:{t.minute:02d}"
     return start <= now < end if start <= end else (now >= start or now < end)
+
+
+def window_minutes(window: str) -> int:
+    """Length of `HH:MM-HH:MM` in minutes (crossing midnight counts on; 0 = start equals end)."""
+    (h1, m1), (h2, m2) = (map(int, part.split(":")) for part in window.split("-"))
+    return (h2 * 60 + m2 - h1 * 60 - m1) % 1440
 
 
 def maintenance_timezone(cfg: ServerConfig) -> str:

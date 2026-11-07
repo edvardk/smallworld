@@ -2,7 +2,7 @@
 # and JRE changes are on disk already and take effect at the next start; the config overlays are merged into staged
 # copies (mc_config `stage`, as minecraft) that the unit's ExecStartPre (scripts/restart_window.py apply) copies into
 # place while the server is stopped, as the immediate restart would. The marker makes mc-restart-window.timer
-# restart the server at the window's start; any earlier start (panel, `mcctl restart`, self-heal, a reboot) applies
+# restart the server inside the window (empty, or in its last minutes); any earlier start (panel, `mcctl restart`, self-heal, a reboot) applies
 # it too. Idempotent: a second deploy finds the staged copies right and the marker present (force: false).
 - name: Stage the config overlays for the deferred restart
   mc_config:
@@ -36,7 +36,7 @@
   ansible.builtin.debug:
     msg: >-
       RESTART DEFERRED to the maintenance window {{ mc_maintenance_window }} ({{ mc_maintenance_timezone }}): the
-      files are applied, Minecraft restarts at {{ mc_maintenance_window.split('-')[0] }} (mc-restart-window.timer;
+      files are applied, Minecraft restarts in the window, once empty or in its last {{ mc_maintenance_force_minutes }} min (mc-restart-window.timer;
       any earlier restart applies it too). To restart now: `mcctl deploy --force-restart`, or run the workflow with
       force_restart.
 

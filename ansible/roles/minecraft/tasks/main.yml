@@ -263,15 +263,39 @@
     path: "{{ mc_restart_pending_dir }}/pending.json"
   register: mc_pending_restart
 
+# Inside the window the timer's rule applies (restart_window.py decide): only an empty server restarts now, or
+# any in the window's last maintenance.force_after_minutes_before_end minutes; else the marker stays for the timer.
+# Forced, or no window any more: now.
+- name: May the waiting restart happen now (nobody online, or the window's last minutes)?
+  ansible.builtin.command: >-
+    /usr/local/bin/mc-run -{{ mc_etc_dir }}/notify.env {{ mc_bin_dir }}/restart_window.py decide
+    {{ mc_maintenance_window }} {{ mc_maintenance_timezone }} {{ mc_maintenance_force_minutes }}
+  register: mc_pending_decision
+  changed_when: false
+  failed_when: false
+  check_mode: false   # read-only (RCON `list`), so --check shows the real decision
+  when:
+    - mc_pending_restart.stat.exists
+    - not (mc_restart_defer | default(false) | bool)
+    - not mc_admin_stopped
+    - mc_maintenance_window | length > 0
+    - not (mc_force_restart | default(false) | bool)
+
+- name: Say why the waiting restart stays with the timer
+  ansible.builtin.debug:
+    msg: "A restart is waiting for the maintenance window and stays pending: {{ mc_pending_decision.stdout | default('') }}"
+  when: mc_pending_decision.stdout is defined and not mc_pending_decision.stdout.startswith('restart')
+
 - name: Do the restart that waited for the maintenance window now
   ansible.builtin.debug:
-    msg: "A restart was waiting for the maintenance window: {{ 'forced' if mc_force_restart | bool else 'the window is open' }}, restarting now."
+    msg: "A restart was waiting for the maintenance window: {{ mc_pending_decision.stdout | default('forced, or no window any more') }}; restarting now."
   changed_when: true
   notify: restart minecraft
   when:
     - mc_pending_restart.stat.exists
     - not (mc_restart_defer | default(false) | bool)
     - not mc_admin_stopped
+    - mc_pending_decision.stdout is not defined or mc_pending_decision.stdout.startswith('restart')
 
 - name: Restart now if anything changed (so world border etc. apply to the new config)
   ansible.builtin.meta: flush_handlers
@@ -303,7 +327,7 @@
     label: "{{ item.key }}={{ item.value }}"
   when: not mc_admin_stopped
 
-# v1.3 (server.yml maintenance.window): the timer that does a deferred restart at the window's start (and every
+# v1.3 (server.yml maintenance.window): the timer that does a deferred restart inside the window (its start, its force point and every
 # 15 minutes inside it, until it could). Only with a window; without one a deploy always restarts at once (and does
 # a restart an earlier deploy left pending, above), so the units are removed.
 - name: Install the maintenance-window restart units

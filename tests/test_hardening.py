@@ -64,6 +64,7 @@ def render(template: Path, **extra: object) -> str:
         "timezone": "Europe/Dublin",
         "mc_maintenance_window": "04:00-07:00",  # v1.3
         "mc_maintenance_timezone": "Europe/Dublin",
+        "mc_maintenance_force_minutes": 30,
         "mc_helper_cpus": "",  # P13
         "mc_jvm_cpus": "",  # P16 (performance.cpu_affinity off)
         "mc_experience_enabled": True,

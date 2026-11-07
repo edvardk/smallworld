@@ -1,12 +1,20 @@
 # {{ ansible_managed }}
 [Unit]
-Description=Restart Minecraft at the maintenance window's start if a deploy left a restart pending (v1.3)
+Description=Restart Minecraft inside the maintenance window if a deploy left a restart pending (v1.3)
 
 [Timer]
 # The window's start in its own time zone, then every 15 minutes (restart_window.py decides: inside the window,
-# nothing in the way); the service's ConditionPathExists skips it when nothing is pending.
+# nothing in the way, nobody online or the window's last minutes); the service's ConditionPathExists skips it
+# when nothing is pending.
 OnCalendar=*-*-* {{ mc_maintenance_window.split('-')[0] }}:00 {{ mc_maintenance_timezone }}
 OnCalendar=*-*-* *:00/15:00
+{% if mc_maintenance_force_minutes | int > 0 %}
+{% set end = mc_maintenance_window.split('-')[1].split(':') %}
+{% set force_at = ((end[0] | int) * 60 + (end[1] | int) - (mc_maintenance_force_minutes | int)) % 1440 %}
+# The start of the window's last {{ mc_maintenance_force_minutes }} minutes (maintenance.force_after_minutes_before_end):
+# players still online -> the restart with the countdown, even in a window too short for the 15-minute cadence.
+OnCalendar=*-*-* {{ '%02d:%02d' | format(force_at // 60, force_at % 60) }}:00 {{ mc_maintenance_timezone }}
+{% endif %}
 AccuracySec=1min
 
 [Install]

@@ -63,6 +63,58 @@ def test_the_timer_restarts_only_inside_the_window_with_nothing_in_the_way() -> 
         assert action == "wait" and why in reason, (kw, reason)
 
 
+def test_inside_the_window_it_waits_for_an_empty_server_until_the_last_minutes() -> None:
+    """Maintainer decision (v1.3): empty -> now; players online or unknown (RCON unreachable) -> wait, until the
+    window's last force_after_minutes_before_end minutes, then the countdown restart; 0 -> never forced."""
+    assert rw.decide(facts(players=0), WINDOW, 30) == (
+        "restart",
+        f"inside the maintenance window ({WINDOW}), nobody online",
+    )
+    for players, who in ((3, "3 player(s) online"), (None, "unknown (RCON unreachable)")):
+        action, why = rw.decide(facts(now=at(5, 0), players=players), WINDOW, 30)
+        assert action == "wait" and who in why and "last 30 min" in why, why
+        action, why = rw.decide(facts(now=at(6, 29), players=players), WINDOW, 30)
+        assert action == "wait", why  # 31 min left
+        action, why = rw.decide(facts(now=at(6, 30), players=players), WINDOW, 30)
+        assert action == "restart" and "only 30 min" in why and "countdown" in why, why
+        assert rw.decide(facts(now=at(6, 59), players=players), WINDOW, 30)[0] == "restart"
+        action, why = rw.decide(facts(now=at(6, 59), players=players), WINDOW, 0)
+        assert action == "wait" and "never forced" in why, why
+    # a short window crossing midnight: 23:50-00:20, force 20 -> from 00:00
+    short = "23:50-00:20"
+    assert rw.minutes_left(short, at(23, 50)) == 30 and rw.minutes_left(short, at(0, 0)) == 20
+    assert rw.decide(facts(now=at(23, 55), players=2), short, 20)[0] == "wait"
+    assert rw.decide(facts(now=at(0, 0), players=2), short, 20)[0] == "restart"
+    assert rw.decide(facts(now=at(0, 20), players=2), short, 20)[0] == "wait"  # outside again
+
+
+def test_players_online_reads_rcon_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Rcon:
+        def __init__(self, reply: str) -> None:
+            self.reply = reply
+
+        def __enter__(self) -> Rcon:
+            return self
+
+        def __exit__(self, *a: object) -> None:
+            return None
+
+        def command(self, cmd: str) -> str:
+            assert cmd == "list"
+            return self.reply
+
+    monkeypatch.setattr(
+        rw.mc_rcon, "connect", lambda timeout: Rcon("There are 2 of a max of 20 players online: a, b")
+    )
+    assert rw.players_online(True) == 2 and rw.players_online(False) == 0
+
+    def down(timeout: float) -> None:
+        raise OSError("refused")
+
+    monkeypatch.setattr(rw.mc_rcon, "connect", down)
+    assert rw.players_online(True) is None
+
+
 def test_apply_copies_the_staged_files_and_empties_the_pending_dir(tmp_path: Path) -> None:
     pending, server = tmp_path / "pending", tmp_path / "server"
     (pending / "files" / "config").mkdir(parents=True)
@@ -98,6 +150,15 @@ def test_main_dispatch(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFi
     calls: list[tuple] = []
     monkeypatch.setattr(rw, "restart", lambda *a: calls.append(a) or 0)
     assert rw.main([]) == 0 and calls == [(WINDOW, "Europe/Dublin", 60)]
+    # the deploy's question: the same rule from its arguments, never acting
+    capsys.readouterr()
+    monkeypatch.setattr(rw, "gather", lambda tz: facts(now=at(5, 0), players=4))
+    monkeypatch.setattr(rw, "restart", lambda *a: pytest.fail("the deploy's decide restarted"))
+    assert rw.main(["decide", WINDOW, "Europe/Dublin", "30"]) == 0
+    assert capsys.readouterr().out.startswith("wait: 4 player(s) online")
+    monkeypatch.setattr(rw, "gather", lambda tz: facts(now=at(6, 45), players=4))
+    assert rw.main(["decide", WINDOW, "Europe/Dublin", "30"]) == 0
+    assert capsys.readouterr().out.startswith("restart:")
 
 
 def test_restart_opens_and_closes_maintenance_and_reports(
@@ -138,7 +199,19 @@ def test_server_yml_maintenance_field() -> None:
     assert schema.restart_deferred(cfg, datetime.datetime(2026, 11, 3, 0, 30, tzinfo=datetime.UTC)) is None
     data.pop("maintenance")
     assert schema.restart_deferred(schema.load_server(data), inside.replace(hour=12)) is None
-    for bad, why in [({"window": "4:00-07:00"}, "maintenance.window"), ({"window": "05:00-05:00"}, "same"),
+    short = {"window": "23:50-00:20", "force_after_minutes_before_end": 20}  # a 30-min window still works
+    assert schema.load_server(data | {"maintenance": short}).maintenance.force_after_minutes_before_end == 20
+    assert schema.window_minutes("23:50-00:20") == 30 and schema.window_minutes("04:00-07:00") == 180
+    assert (
+        schema.load_server(
+            data | {"maintenance": {"window": "04:00-07:00"}}
+        ).maintenance.force_after_minutes_before_end
+        == 30
+    )
+    for bad, why in [({"window": "04:00-04:30"}, "shorter than the window \\(30 min\\)"),
+                     ({"window": "23:50-00:20", "force_after_minutes_before_end": 30}, "shorter than the window"),
+                     ({"window": "04:00-07:00", "force_after_minutes_before_end": -1}, "force_after"),
+                     ({"window": "4:00-07:00"}, "maintenance.window"), ({"window": "05:00-05:00"}, "same"),
                      ({"timezone": "Mars/Base"}, "time zone")]:  # fmt: skip
         data["maintenance"] = bad
         with pytest.raises(schema.SchemaError, match=why):
@@ -232,6 +305,19 @@ def test_a_pending_restart_happens_at_the_next_deploy_inside_the_window() -> Non
     assert (
         do["notify"] == "restart minecraft" and "not (mc_restart_defer | default(false) | bool)" in do["when"]
     )
+    ask = main[
+        names.index("May the waiting restart happen now (nobody online, or the window's last minutes)?")
+    ]
+    assert "restart_window.py decide" in ask["ansible.builtin.command"]
+    assert (
+        "{{ mc_maintenance_force_minutes }}" in ask["ansible.builtin.command"] and ask["check_mode"] is False
+    )
+    assert "not (mc_force_restart | default(false) | bool)" in ask["when"]  # forced: no question
+    assert (
+        "mc_pending_decision.stdout is not defined or mc_pending_decision.stdout.startswith('restart')"
+        in do["when"]
+    )
+    assert names.index(ask["name"]) < names.index(do["name"])
     assert names.index(do["name"]) < names.index(
         "Restart now if anything changed (so world border etc. apply to the new config)"
     )
@@ -251,6 +337,19 @@ def test_units_apply_at_every_start_and_the_timer_fires_at_the_window_start() ->
     assert "ReadWritePaths=-/var/lib/minecraft/restart-pending" in unit.splitlines()
     timer = render(REPO / "ansible/roles/minecraft/templates/mc-restart-window.timer.j2").splitlines()
     assert "OnCalendar=*-*-* 04:00:00 Europe/Dublin" in timer and "OnCalendar=*-*-* *:00/15:00" in timer
+    assert (
+        "OnCalendar=*-*-* 06:30:00 Europe/Dublin" in timer
+    )  # the force period's start (30 min before 07:00)
+    short = render(REPO / "ansible/roles/minecraft/templates/mc-restart-window.timer.j2",
+                   mc_maintenance_window="23:50-00:20", mc_maintenance_force_minutes=20).splitlines()  # fmt: skip
+    assert (
+        "OnCalendar=*-*-* 23:50:00 Europe/Dublin" in short
+        and "OnCalendar=*-*-* 00:00:00 Europe/Dublin" in short
+    )
+    never = render(
+        REPO / "ansible/roles/minecraft/templates/mc-restart-window.timer.j2", mc_maintenance_force_minutes=0
+    )
+    assert sum(line.startswith("OnCalendar=") for line in never.splitlines()) == 2
     svc = render(REPO / "ansible/roles/minecraft/templates/mc-restart-window.service.j2").splitlines()
     assert "ConditionPathExists=/var/lib/minecraft/restart-pending/pending.json" in svc
     assert (

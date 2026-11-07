@@ -19,6 +19,7 @@ EnvironmentFile={{ mc_etc_dir }}/notify.env
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment="RESTART_WINDOW={{ mc_maintenance_window }}"
 Environment="RESTART_TZ={{ mc_maintenance_timezone }}"
+Environment="RESTART_FORCE_MINUTES={{ mc_maintenance_force_minutes }}"
 Environment="RESTART_COUNTDOWN={{ mc_restart_countdown_seconds }}"
 # The maintenance marker (notify.py), nothing else.
 ReadWritePaths={{ mc_state_dir }}

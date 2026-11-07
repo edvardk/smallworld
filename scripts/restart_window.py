@@ -15,10 +15,15 @@ plugin, unit and JRE changes are already on disk; they take effect at the next s
                                           nothing in the way, the deploy's restart (maintenance window,
                                           in-game countdown if anyone is online, `systemctl restart`)
     restart_window.py --status            what it would do now (no action)
+    restart_window.py decide W TZ N       --status for the deploy: window, time zone, force minutes
     restart_window.py deferred WINDOW TZ  the Discord note that a restart is pending (the deploy, via mc-run)
 
-Env (the timer's unit): RESTART_WINDOW (HH:MM-HH:MM, may cross midnight), RESTART_TZ, RESTART_COUNTDOWN
-(seconds), DISCORD_WEBHOOK_URL + WATCHDOG_URL + HEARTBEAT_TOKEN (notify.env).
+Inside the window an empty server restarts at once; with players online (or unknown: RCON unreachable) it
+waits for the last RESTART_FORCE_MINUTES of the window (maintenance.force_after_minutes_before_end; the timer
+also fires then), then restarts with the in-game countdown; 0 = never forced (the next window tries again).
+
+Env (the timer's unit): RESTART_WINDOW (HH:MM-HH:MM, may cross midnight), RESTART_TZ, RESTART_FORCE_MINUTES,
+RESTART_COUNTDOWN (seconds), DISCORD_WEBHOOK_URL + WATCHDOG_URL + HEARTBEAT_TOKEN (notify.env).
 """
 
 from __future__ import annotations
@@ -73,7 +78,8 @@ def deferred_alert(window: str, tz: str) -> str:
             impact="Nothing for players now: the server keeps running the old settings until it restarts.",
             cause="A deploy needed a Minecraft restart outside server.yml maintenance.window, so it applied "
             "the files and left the restart for later.",
-            todo=f"No action needed: the server restarts at {start} {tz} (any earlier restart applies the "
+            todo=f"No action needed: the server restarts from {start} {tz}, once nobody is online or in the "
+            "window's last minutes (any earlier restart applies the "
             "change too). To restart now: `mcctl deploy --force-restart`, or run the workflow with "
             "force_restart.",
             details=f"pending restart in {PENDING_DIR}",
@@ -134,10 +140,20 @@ class Facts:
     restore_running: bool
     backup_running: bool
     maintenance: str | None  # an open maintenance window's reason (a deploy, a restore, the reboot gate)
+    players: int | None = 0  # online now (RCON `list`); None = unknown (RCON unreachable while it runs)
 
 
-def decide(facts: Facts, window: str) -> tuple[str, str]:
-    """(none | wait | restart, why): the timer's whole policy, pure."""
+def minutes_left(window: str, now: datetime.datetime) -> int:
+    """Whole minutes from `now` (inside the window) to its end."""
+    end_h, end_m = map(int, window.split("-")[1].split(":"))
+    return (end_h * 60 + end_m - (now.hour * 60 + now.minute)) % 1440
+
+
+def decide(facts: Facts, window: str, force_minutes: int = 30) -> tuple[str, str]:
+    """(none | wait | restart, why): the timer's whole policy, pure. Inside the window it restarts an empty
+    server; with players online (or nobody known: RCON unreachable) it waits, until the last `force_minutes`
+    of the window, when it restarts anyway (the in-game countdown). force_minutes 0: never forced, the next
+    window tries again."""
     if not facts.pending:
         return "none", "no restart is pending"
     reasons = [
@@ -151,7 +167,25 @@ def decide(facts: Facts, window: str) -> tuple[str, str]:
     for blocked, why in reasons:
         if blocked:
             return "wait", why
-    return "restart", f"inside the maintenance window ({window})"
+    if facts.players == 0:
+        return "restart", f"inside the maintenance window ({window}), nobody online"
+    who = (
+        "who is online is unknown (RCON unreachable)"
+        if facts.players is None
+        else f"{facts.players} player(s) online"
+    )
+    left = minutes_left(window, facts.now)
+    if force_minutes > 0 and left <= force_minutes:
+        return (
+            "restart",
+            f"{who}, but only {left} min of the window ({window}) left: restart with the countdown",
+        )
+    when = (
+        f"until the last {force_minutes} min of the window"
+        if force_minutes > 0
+        else "for the next window (never forced)"
+    )
+    return "wait", f"{who}: waiting {when}"
 
 
 def unit_active(unit: str) -> bool:
@@ -162,15 +196,30 @@ def unit_active(unit: str) -> bool:
 
 
 def gather(tz: ZoneInfo, pending: Path = PENDING_DIR) -> Facts:
+    active = unit_active(UNIT)
     return Facts(
         now=datetime.datetime.now(tz),
         pending=(pending / MARKER).exists(),
-        server_active=unit_active(UNIT),
+        server_active=active,
         admin_stopped=notify.admin_stopped() or notify.fenced(),
         restore_running=notify.restore_running(),
         backup_running=unit_active(BACKUP_UNIT),
         maintenance=notify.maintenance_active(),
+        players=players_online(active),
     )
+
+
+def players_online(active: bool) -> int | None:
+    """RCON `list` (the reboot gate's and the countdown's source); None when it can't be asked."""
+    if not active:
+        return 0
+    try:
+        with mc_rcon.connect(timeout=10.0) as r:
+            text = mc_rcon.strip_formatting(r.command("list"))
+    except (OSError, mc_rcon.RconError, KeyError, ValueError):
+        return None
+    m = re.search(r"There are (\d+) of a max", text)
+    return int(m.group(1)) if m else None
 
 
 def since(pending: Path | None = None) -> str:
@@ -220,13 +269,17 @@ def main(argv: list[str] | None = None) -> int:
     if len(args) == 3 and args[0] == "deferred":
         notify.discord(deferred_alert(parse_window(args[1]), args[2]))
         return 0
+    env = dict(os.environ)
+    if len(args) == 4 and args[0] == "decide":  # the deploy (via mc-run): RESTART_* from its arguments
+        env |= {"RESTART_WINDOW": args[1], "RESTART_TZ": args[2], "RESTART_FORCE_MINUTES": args[3]}
+        args = ["--status"]
     if args not in ([], ["--status"]):
         print(__doc__, file=sys.stderr)
         return 2
-    env = os.environ
     window = parse_window(env.get("RESTART_WINDOW", ""))
     tz_name = env.get("RESTART_TZ") or "UTC"
-    action, why = decide(gather(ZoneInfo(tz_name)), window)
+    force = int(env.get("RESTART_FORCE_MINUTES", "30"))
+    action, why = decide(gather(ZoneInfo(tz_name)), window, force)
     print(f"{action}: {why}", flush=True)
     if action != "restart" or args == ["--status"]:
         return 0

@@ -111,10 +111,12 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   that needs a Minecraft restart outside the window, with the server running, no longer restarts it: it applies
   the files (jar, plugins, unit, JRE), stages the merged config overlays in `/var/lib/minecraft/restart-pending/`
   and Discord says a restart is pending. `mc-restart-window.timer` (as `mcops`, sandboxed; the existing polkit
-  rule) restarts the server at the window's start (and retries every 15 minutes inside it while a backup, a
-  restore or a maintenance window is in the way); any earlier start (the panel, `mcctl restart`, self-heal, a
+  rule) restarts it inside the window once the server is empty (RCON `list`; checked at the window's start and
+  every 15 minutes), or, with players still online or RCON unreachable, in the window's last
+  `maintenance.force_after_minutes_before_end` minutes (default 30, the timer fires then too; `0` = never forced,
+  wait for the next window) with the 60-second in-game countdown; any earlier start (the panel, `mcctl restart`, self-heal, a
   reboot) applies the staged change through `minecraft.service`'s new `ExecStartPre` (`restart_window.py apply`,
-  as `minecraft`), and the next deploy inside the window does the pending restart itself. Forced: `mcctl deploy
+  as `minecraft`), and a deploy inside the window does the pending restart by the same rule. Forced: `mcctl deploy
   --force-restart`, the reusable workflow's new optional input `force_restart`, or the config repo template's new
   dispatch input `force_restart`. A second deploy outside the window changes nothing. `mcctl publish`'s preview
   says "restart deferred to the maintenance window HH:MM-HH:MM <tz>" and then doesn't ask about players online

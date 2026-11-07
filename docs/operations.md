@@ -47,12 +47,17 @@ defaults to `host.timezone`; no `maintenance` = a deploy restarts whenever it ne
   `/var/lib/minecraft/restart-pending/` and says `RESTART DEFERRED to the maintenance window ...` in its output;
   Discord gets one note ("A config change waits for the maintenance window"). Deploying again outside the window
   changes nothing more (the second run reports no changes).
-- **The restart then happens** at the window's start: `mc-restart-window.timer` (the start, then every 15 minutes
-  inside the window while a backup, a restore or a maintenance window is in the way) runs the deploy's restart:
-  in-game countdown if anyone is online, restart, Discord "the pending config change is live". **Any earlier
+- **The restart then happens inside the window, preferably on an empty server:** `mc-restart-window.timer`
+  checks at the window's start and every 15 minutes. Nobody online (RCON `list`): it restarts at once. Players
+  online, or nobody can tell (RCON unreachable): it waits, until the window's last
+  `maintenance.force_after_minutes_before_end` minutes (default 30; the timer also fires at that moment, so a short
+  window works too), and then restarts anyway with the 60-second in-game countdown. `0` never forces: the
+  restart waits for an empty server in the next window. A backup, a restore or an open maintenance window also
+  makes it wait. Afterwards Discord says "the pending config change is live". **Any earlier
   start applies it too** (a panel or `mcctl restart`, self-heal, a reboot): `minecraft.service` copies the staged
-  files into place before the JVM starts (`restart_window.py apply`), and the next deploy inside the window does
-  the pending restart itself. An admin-stopped server stays stopped; its next start applies the change.
+  files into place before the JVM starts (`restart_window.py apply`), and a deploy inside the window does the
+  pending restart itself by the same rule (now if the server is empty or the window is in its last minutes; else
+  it leaves it to the timer). An admin-stopped server stays stopped; its next start applies the change.
 - **Restart now anyway:** `mcctl deploy -C $C --force-restart`, or run the config repo's workflow by hand
   (Actions > server > Run workflow, task `deploy`, tick `force_restart`).
 - `mcctl publish` says `restart deferred to the maintenance window HH:MM-HH:MM <tz>` in its preview when the

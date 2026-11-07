@@ -28,7 +28,8 @@
    follow the deploy. `deploy`: the emergency route, `mcctl deploy` from here (the pinned product), skipping
    CI and Git (publish it afterwards, or the next CI deploy undoes it).
 4. **Restart awareness.** v1.3: outside server.yml maintenance.window the preview says the restart is deferred
-   to the window (the deploy applies the files, a timer restarts at the window's start) and nothing is asked.
+   to the window (the deploy applies the files, a timer restarts in it: on an empty server, or in its last
+   minutes with the countdown) and nothing is asked.
    Otherwise a restart with players online (or nobody known) asks: deploy now (the deploy's
    in-game countdown), wait until the server is empty (polled each minute, at most `--max-wait` minutes),
    or cancel. `--wait-empty` answers "wait". Without a terminal the answer is "wait", and a wait that times
@@ -439,7 +440,8 @@ def show_preview(ctx: init.Ctx, ch: Changes, c: Consequences, st: remote.Status 
     if c.restarts and c.deferred:
         ui.say(
             f"  restart deferred to the maintenance window {c.deferred}: a deploy now applies the files and "
-            "the server restarts at the window's start (`mcctl deploy --force-restart` restarts at once)"
+            "the server restarts in the window: once it is empty, or in its last minutes with the countdown "
+            "(`mcctl deploy --force-restart` restarts at once)"
         )
     if c.backend:
         ui.warn("Terraform state backend (server.yml state.*) changes: migrate the state by hand first")
