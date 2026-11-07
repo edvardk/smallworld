@@ -53,6 +53,17 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 - Dependencies: questionary 2.1.1 (with prompt-toolkit 3.0.53 and wcwidth 0.9.4) in all three requirement sets
   and `pyproject.toml`.
 
+## [1.2.3] - 2026-11-07
+
+### Fixed
+
+- Deploys restart mc-agent when its code changes. The server-side scripts were copied into place without restarting
+  the one long-running process that imports them, so an upgrade's agent and panel fixes stayed inactive until the
+  agent restarted for some other reason (v1.2.2's token fix was installed but the old code kept running). The
+  script install now notifies a handler pair that restarts mc-agent only where its unit is installed (a fresh box,
+  where handlers can flush before the agent role ran, and boxes without the panel skip it).
+  `tests/test_playbooks.py` checks that every script mc-agent imports is covered.
+
 ## [1.2.2] - 2026-11-07
 
 Panel whitelist fixes. A deploy sets the whitelist to `players.yml` plus the panel's pending adds; with both bugs,

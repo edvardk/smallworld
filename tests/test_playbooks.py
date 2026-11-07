@@ -271,3 +271,44 @@ def test_tailscale_role_refuses_a_node_without_the_server_tag(tmp_path) -> None:
     proc, st = tailscale_play(tmp_path, starting_reads=0, tags=[])
     assert proc.returncode != 0 and "not Running as tag:mc-server" in proc.stdout
     assert not any(c[0] == "up" for c in st["calls"])
+
+
+def test_deploys_restart_mc_agent_when_its_code_changes() -> None:
+    """v1.2.3: v1.2.2's agent fix was installed but never ran: the scripts were copied without restarting the one
+    long-running process that imports them. Every server-side script mc-agent imports (transitively) must be
+    installed by a task that notifies `Restart mc-agent`, and that handler must only run where mc-agent exists."""
+    import ast
+
+    import yaml
+
+    def local_imports(name: str) -> set[str]:
+        tree = ast.parse((REPO / "scripts" / name).read_text())
+        mods = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
+        mods |= {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
+        return {f"{m}.py" for m in mods if (REPO / "scripts" / f"{m}.py").exists()}
+
+    needed, todo = set(), ["mc_agent.py"]
+    while todo:
+        name = todo.pop()
+        if name not in needed:
+            needed.add(name)
+            todo.extend(local_imports(name))
+    assert {"mc_agent.py", "mc_panel.py", "mc_rcon.py", "notify.py"} <= needed
+
+    tasks = yaml.safe_load((REPO / "ansible/roles/base/tasks/main.yml").read_text())
+    install = next(t for t in tasks if t.get("name") == "Install server-side scripts")
+    assert needed <= set(install["loop"]), sorted(needed - set(install["loop"]))
+    assert install.get("notify") == "mc-agent code changed"
+
+    # A flush can run the handlers before the agent role installed the unit (fresh box), and boxes without the
+    # panel never have it: the listeners stat the unit first and restart only an installed agent.
+    handlers = yaml.safe_load((REPO / "ansible/roles/agent/handlers/main.yml").read_text())
+    listening = [h for h in handlers if h.get("listen") == "mc-agent code changed"]
+    assert [next(iter(k for k in h if k.startswith("ansible.builtin."))) for h in listening] == [
+        "ansible.builtin.stat",
+        "ansible.builtin.systemd_service",
+    ]
+    stat, restart = listening
+    assert stat["ansible.builtin.stat"]["path"] == "/etc/systemd/system/mc-agent.service"
+    assert restart["ansible.builtin.systemd_service"]["state"] == "restarted"
+    assert restart["when"] == f"{stat['register']}.stat.exists"

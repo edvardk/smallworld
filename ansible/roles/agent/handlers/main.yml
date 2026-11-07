@@ -3,3 +3,20 @@
     name: mc-agent.service
     state: restarted
     daemon_reload: true
+
+# v1.2.3: the base role's script install notifies this pair. A handler flush can run it before the agent role
+# installed the unit (a fresh box: the minecraft role flushes handlers mid-play), and boxes without the panel
+# (panel.mode other than cloudflare) never have it: restart only an installed mc-agent.
+- name: Is mc-agent installed (its code changed)?
+  ansible.builtin.stat:
+    path: /etc/systemd/system/mc-agent.service
+  register: agent_unit_for_code_change
+  listen: mc-agent code changed
+
+- name: Restart mc-agent (its code changed)
+  ansible.builtin.systemd_service:
+    name: mc-agent.service
+    state: restarted
+    daemon_reload: true
+  when: agent_unit_for_code_change.stat.exists
+  listen: mc-agent code changed
