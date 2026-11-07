@@ -29,6 +29,13 @@ plugin, restore a backup, search the server's journal, and see the watchdog's vi
 
 ![The players tab: online players, rejected logins, the whitelist](images/panel-after-players-desktop.png)
 
+**Versions and the Panel → Git self-test** (v1.3): the header names the Smallworld version and the server
+build ("Smallworld v1.3.0 · Purpur 26.3"); the Health tab compares what the server runs, what the Worker runs and
+the config repo's pin, and says how to fix a mismatch ("run `mcctl render` + `mcctl apply`", "deploy"). A daily
+self-test proves the panel can still open pull requests on the config repo, without opening one, and says which
+step failed (Discord after two failures); run it from the Health tab any time. Whitelist names are checked with
+Mojang from the server itself, so Mojang's refusals of Cloudflare's addresses no longer get in the way.
+
 Destructive actions (restore, world switch, plugin changes) are confirmed in a separate window, signed in again
 with a one-time PIN, by typing a phrase. [SECURITY: Panel actions](../SECURITY.md#panel-actions-p10-what-the-panel-can-change).
 

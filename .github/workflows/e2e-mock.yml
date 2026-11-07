@@ -109,7 +109,8 @@ jobs:
   #   core:            mcctl init's re-runs and stale pin, the client switch, terraform validate, the second
   #                    site.yml (changed=0), hardening, reboot gate, deploy checks, firewall, P12 dry runs;
   #   agent-a/agent-b: mc-agent and the P10 panel actions, split by rounds (agent_check.py --rounds a|b: a = rcon,
-  #                    client code, stop/start, whitelist, restart, plugin, restore guard; b = backup/restore, world);
+  #                    client code, stop/start, whitelist, restart, plugin, restore guard, versions; b = backup/restore,
+  #                    world);
   #   telemetry-brand: telemetry, then branding (heavy half only);
   #   migrate-p16:     migrate container -> container, then P16 on the migrated box (heavy half only).
   # A heavy shard in an essential run skips every step (done in seconds); the matrix stays static. Each check

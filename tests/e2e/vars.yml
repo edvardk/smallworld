@@ -22,6 +22,9 @@ mc_metrics_interval_s: 30
 # P10: the agent opens the panel's whitelist pull requests against a mock of the GitHub API that agent_check.py
 # serves in the container (http:// is accepted for loopback only).
 agent_github_api_url: http://127.0.0.1:8788
+# v1.3: the agent's Mojang name lookup goes to agent_check.py's mock too: the first endpoint answers 403 (what
+# api.mojang.com answers Cloudflare's egress), the second the profile, so the fallback order is exercised.
+agent_mojang_lookup_urls: "http://127.0.0.1:8788/mojang/a/,http://127.0.0.1:8788/mojang/b/"
 agent_panel_sync_s: 3
 agent_panel_batch_s: 5
 agent_panel_pr_check_s: 5

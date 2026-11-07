@@ -116,6 +116,10 @@ def _box_other() -> dict[str, str]:
         "mc_panel.whitelist-rejected": mc_panel.rejected_alert(7, ["remove Player_One"], []),
         "mc_panel.whitelist-rejected-partly": mc_panel.rejected_alert(8, [], ["add Player_Two"]),
         "mc_panel.whitelist-kept": mc_panel.kept_alert(["Player_One", "Player_Two"]),
+        "mc_panel.selftest-failing": mc_panel.selftest_alert(
+            "token: the Worker returned no usable GitHub token (390 characters, unexpected '!')", 2
+        ),
+        "mc_panel.selftest-back": mc_panel.selftest_back_alert(3),
         "backup_check.failed": backup_check.alert(
             "restore", "latest snapshot 1a2b3c4d is 30.0 h old (> 2 h): backups have stopped"
         ),

@@ -27,7 +27,12 @@ mc-agent.service. Outbound HTTPS only; every request carries `Authorization: Bea
 Allowlist: status, console {command}, start, stop {reason, countdown, backup}, restart {countdown, backup},
 backup, tail (P8/P9); P10 (mc_panel.py): cancel, whitelist {op, name}, rejected_dismiss {name}, moderate
 {verb, target, reason}, plugin {name, enabled, countdown}, restore {snapshot, countdown}; P13 (telemetry.py):
-player_message {to, kind, text, hover, id} (re-checked rate limits, queued for the mc-telemetry plugin).
+player_message {to, kind, text, hover, id} (re-checked rate limits, queued for the mc-telemetry plugin);
+v1.3: selftest (the Panel -> Git self-test: mc_panel.selftest, read-only, at most once a minute on demand,
+daily on its own, Discord after two failures in a row), lookup {name} (Java name -> UUID from this box:
+api.mojang.com, then api.minecraftservices.com, 3 s timeout each, 20 per minute, cached 10 min; only the name
+is sent). The inventory carries the installed product version (PRODUCT_VERSION_FILE, written by each deploy)
+and the one this process started with.
 Systemd actions go through polkit (base role: 50-mc-ops.rules): minecraft start/stop/restart, mc-backup,
 mc-plugins-apply and mc-restore@<snapshot> start. Nothing runs as root.
 
@@ -122,7 +127,23 @@ ACTIONS = (
     "cancel", "whitelist", "rejected_dismiss", "moderate", "plugin", "restore",
     "player_message",
     "world_create", "world_switch", "world_delete",
+    "selftest", "lookup",
 )  # fmt: skip
+# v1.3 "versions everywhere": what the last deploy installed (base role, root-owned, world-readable)
+PRODUCT_VERSION_FILE = Path("/opt/minecraft/product-version.json")  # = ansible mc_product_version_file
+# v1.3 Panel -> Git self-test: daily (first run a few minutes after start), at most once a minute on demand
+SELFTEST_S = 86400
+SELFTEST_FIRST_S = 300
+SELFTEST_MIN_GAP_S = 60
+# v1.3 Mojang lookup from the box (api.mojang.com refuses Cloudflare Workers' egress): the endpoints the
+# Worker tries (watchdog/worker.js MOJANG_LOOKUPS), each with a short timeout; cached like the Worker's
+MOJANG_LOOKUPS = (
+    "https://api.mojang.com/users/profiles/minecraft/",
+    "https://api.minecraftservices.com/minecraft/profile/lookup/name/",
+)
+LOOKUP_TIMEOUT_S = 3.0
+LOOKUP_TTL_S = 600
+LOOKUP_PER_MINUTE = 20  # lookups that reach Mojang per minute (cache hits don't count)
 INVENTORY_MIN_GAP_S = 5  # a state change pushes the inventory at once, but not more often than this
 RESTORE_TIMEOUT_S = 7200
 
@@ -984,6 +1005,105 @@ class ConsoleTail:
         return None
 
 
+def read_product(path: Path | None = None) -> dict[str, str] | None:
+    """v1.3: the product version the last deploy installed ({version, commit}), or None (no file yet: a box
+    deployed before v1.3, or not deployed by the product)."""
+    data = read_json_obj(path or PRODUCT_VERSION_FILE)
+    version = data.get("version")
+    if not isinstance(version, str) or not re.fullmatch(r"[0-9A-Za-z.+-]{1,40}", version):
+        return None
+    commit = data.get("commit")
+    commit = commit if isinstance(commit, str) and re.fullmatch(r"[0-9a-f]{40}", commit) else ""
+    return {"version": version, "commit": commit}
+
+
+def lookup_urls(env: dict[str, str] | None = None) -> tuple[str, ...]:
+    """MOJANG_LOOKUPS, or MOJANG_LOOKUP_URLS (comma-separated; the e2e run's loopback mock, http:// for
+    loopback only, like INGEST_URL)."""
+    raw = (os.environ if env is None else env).get("MOJANG_LOOKUP_URLS", "")
+    if not raw:
+        return MOJANG_LOOKUPS
+    urls = tuple(u.strip() for u in raw.split(",") if u.strip())
+    for u in urls:
+        check_url(u)
+    return urls
+
+
+class Lookup:
+    """`lookup {name}` (v1.3): a Java name -> UUID from this box, not the Worker (Mojang answers Cloudflare's
+    shared egress with 403). Only the name leaves the box; answers cached for LOOKUP_TTL_S, at most
+    LOOKUP_PER_MINUTE requests to Mojang per minute; no answer from either endpoint is "unverified", never an
+    error."""
+
+    def __init__(
+        self,
+        urls: Iterable[str] = MOJANG_LOOKUPS,
+        opener: Callable[[urllib.request.Request, float], Any] | None = None,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.urls = tuple(urls)
+        self.opener = opener or (lambda req, timeout: urllib.request.urlopen(req, timeout=timeout))  # noqa: S310
+        self.clock = clock
+        self.cache: dict[str, tuple[float, dict[str, Any]]] = {}
+        self.recent: list[float] = []
+        self.lock = threading.Lock()
+
+    def _get(self, url: str) -> tuple[int, bytes]:
+        req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": USER_AGENT})  # noqa: S310
+        try:
+            with self.opener(req, LOOKUP_TIMEOUT_S) as resp:
+                return int(getattr(resp, "status", 200)), resp.read(65536)
+        except urllib.error.HTTPError as e:
+            return e.code, b""
+
+    def __call__(self, name: str) -> dict[str, Any]:
+        if not isinstance(name, str) or not re.fullmatch(NAME, name):
+            raise Rejected("lookup: a Java name is 3-16 letters, digits or _")
+        key, now = name.lower(), self.clock()
+        with self.lock:
+            hit = self.cache.get(key)
+            if hit and now - hit[0] < LOOKUP_TTL_S:
+                return hit[1] | {"cached": True}
+            self.recent = [t for t in self.recent if now - t < 60]
+            if len(self.recent) >= LOOKUP_PER_MINUTE:
+                raise Rejected(f"lookup: rate limit ({LOOKUP_PER_MINUTE} per minute)")
+            self.recent.append(now)
+        result: dict[str, Any] | None = None
+        failures = []
+        for base in self.urls:
+            host = urllib.parse.urlsplit(base).hostname or "?"
+            try:
+                status, body = self._get(base + urllib.parse.quote(name))
+            except (OSError, ValueError) as e:  # URLError, timeouts
+                failures.append(f"{host}: {type(e).__name__}")
+                continue
+            if status in (204, 404):
+                result = {"found": False, "via": host}
+                break
+            if status == 200:
+                try:
+                    data = json.loads(body or b"{}")
+                except ValueError:
+                    data = None
+                pid = str(data.get("id") or "").lower() if isinstance(data, dict) else ""
+                if re.fullmatch(r"[0-9a-f]{32}", pid):
+                    uuid = f"{pid[:8]}-{pid[8:12]}-{pid[12:16]}-{pid[16:20]}-{pid[20:]}"
+                    got = data.get("name") if isinstance(data, dict) else None
+                    shown = got if isinstance(got, str) and re.fullmatch(NAME, got) else name
+                    result = {"found": True, "name": shown, "uuid": uuid, "via": host}
+                    break
+                failures.append(f"{host}: unexpected answer")
+                continue
+            failures.append(f"{host}: HTTP {status}")
+        if result is None:  # not cached: the next try may get through
+            return {"found": None, "unverified": True, "detail": "; ".join(failures)[:160]}
+        with self.lock:
+            if len(self.cache) > 200:
+                self.cache.pop(next(iter(self.cache)))
+            self.cache[key] = (now, result)
+        return result
+
+
 def push_inventory(s: Settings, server_dir: Path | None = None, extra: dict[str, Any] | None = None) -> None:
     inventory = collect_inventory(server_dir) | (extra or {})
     post_json(s, "/ingest/inventory", {"agent": VERSION, "inventory": inventory})
@@ -1240,6 +1360,9 @@ class Panel:
     )
     world_request: Path | None = None  # v1.2: /var/lib/minecraft/world-request.json (for mc-world.service)
     clock: Callable[[], float] = time.time
+    # v1.3: the Panel -> Git self-test (runs it, returns the result) and the box-side Mojang lookup
+    selftest: Callable[[str], dict[str, Any]] | None = None
+    lookup: Callable[[str], dict[str, Any]] | None = None
 
 
 def _flag(args: dict[str, Any], key: str, default: bool) -> bool:
@@ -1300,6 +1423,28 @@ class Executor:
 
     def do_status(self, args: dict[str, Any]) -> str:
         return json.dumps(self.sample(), separators=(",", ":"))
+
+    # --- v1.3: Panel -> Git self-test, Mojang lookup from the box ------------------------------------------
+
+    def do_selftest(self, args: dict[str, Any]) -> str:
+        """The Panel -> Git self-test now (at most once per SELFTEST_MIN_GAP_S; a sooner request gets the last
+        result). The full result goes into the inventory; the output is one line for the panel's toast."""
+        panel = self.need_panel("selftest")
+        if panel.selftest is None:
+            raise Rejected("selftest: not available in this agent")
+        r = panel.selftest("panel")
+        panel.changed()
+        if r.get("ok"):
+            steps = ", ".join(s["step"] for s in r.get("steps") or [])
+            return ("passed (an earlier run: one per minute)" if r.get("cached") else "passed") + f": {steps}"
+        return f"failed at {r.get('error') or 'an unknown step'}"
+
+    def do_lookup(self, args: dict[str, Any]) -> str:
+        """A Java name -> UUID through Mojang, from this box (the panel's name check, v1.3); JSON output."""
+        panel = self.need_panel("lookup")
+        if panel.lookup is None:
+            raise Rejected("lookup: not available in this agent")
+        return json.dumps(panel.lookup(args.get("name")), separators=(",", ":"))
 
     def do_console(self, args: dict[str, Any]) -> str:
         line = check_console(args.get("command"))
@@ -2138,11 +2283,18 @@ class Agent:
         self.tail = ConsoleTail(self)
         self.inventory_due = threading.Event()  # P10: a state change pushes the inventory now
         self.github = mc_panel.github_from_env(fetch_token=self.github_token)
+        # v1.3: the code this process runs (read once at start; a deploy that installs new code restarts the
+        # agent, so a difference from the file means it didn't), the self-test's state, the Mojang lookup
+        self.product_started = read_product()
+        self.selftest_state = mc_panel.SelfTestState(s.state_dir / "selftest.json")
+        self.selftest_lock = threading.Lock()
         self.panel = Panel(
             jobs=mc_panel.Jobs(self.report_job, lock_path=mc_panel.JOB_LOCK_FILE),
             pending=mc_panel.Pending(s.state_dir / "pending.json"),
             rejected=mc_panel.RejectedLogins(s.state_dir / "rejected.json"),
             changed=self.inventory_due.set,
+            selftest=self.run_selftest,
+            lookup=Lookup(lookup_urls()),
         )
         self.telemetry = self.make_telemetry() if s.experience else None
         self.overhead_seen: Callable[[list[dict[str, Any]]], None] | None = (
@@ -2195,6 +2347,50 @@ class Agent:
         the App's private key) for this agent's bearer token. Kept in memory only (mc_panel.TokenCache)."""
         return post_json(self.s, "/agent/github-token", {"agent": VERSION})
 
+    def run_selftest(self, trigger: str = "daily") -> dict[str, Any]:
+        """v1.3: the Panel -> Git self-test (mc_panel.selftest), recorded in selftest.json; two failures in a
+        row alert on Discord once (and once when it passes again). On demand at most once per
+        SELFTEST_MIN_GAP_S."""
+        with self.selftest_lock:
+            last = self.selftest_state.load()["last"]
+            if trigger == "panel" and last and last.get("trigger") == "panel":
+                ts = last.get("ts")
+                if isinstance(ts, int) and time.time() * 1000 - ts < SELFTEST_MIN_GAP_S * 1000:
+                    return last | {"cached": True}
+            gh = self.github
+            result = mc_panel.selftest(self.github_token if gh else None, gh, time.time())
+            result["trigger"] = trigger
+            self.selftest_state.record(result, alert=notify.discord)
+            audit(
+                f"panel selftest ok={result['ok']} trigger={trigger}",
+                action="selftest",
+                result="ok" if result["ok"] else str(result["error"])[:300],
+            )
+        return result
+
+    def selftest_loop(self) -> None:
+        """Daily, the first run SELFTEST_FIRST_S after the agent starts (a deploy restarts it: a broken
+        release shows within minutes); only when the panel has a config repo (CONFIG_REPO)."""
+        wait = SELFTEST_FIRST_S
+        while not self.stop.wait(wait):
+            wait = SELFTEST_S
+            if self.github is None:
+                continue
+            try:
+                self.run_selftest("daily")
+                self.inventory_due.set()
+            except Exception as e:  # the loop must outlive one bad round
+                print(f"selftest failed: {type(e).__name__}: {e}", file=sys.stderr)
+
+    def product_state(self) -> dict[str, Any] | None:
+        """v1.3: the installed product version (the deploy's file) and the one this process started with."""
+        installed = read_product()
+        if installed is None:
+            return None
+        started = self.product_started or {}
+        return installed | {"running": str(started.get("version") or ""),
+                            "running_commit": str(started.get("commit") or "")}  # fmt: skip
+
     def report_job(self, job: dict[str, Any]) -> None:
         """A job's state for the panel (countdown, steps, result); failures are only logged (the inventory
         carries the job too)."""
@@ -2230,6 +2426,8 @@ class Agent:
             ],
             "job": job.public() if job else None,
             "worlds": worlds_inventory(p, self.executor),
+            "product": self.product_state(),
+            "selftest": self.selftest_state.public(),
         }
 
     def panel_loop(self) -> None:
@@ -2374,6 +2572,7 @@ class Agent:
             threading.Thread(target=self.control_loop, name="control", daemon=True),
             threading.Thread(target=self.inventory_loop, name="inventory", daemon=True),
             threading.Thread(target=self.panel_loop, name="panel", daemon=True),
+            threading.Thread(target=self.selftest_loop, name="selftest", daemon=True),
         ]
         if self.telemetry:
             self.telemetry.stop = self.stop

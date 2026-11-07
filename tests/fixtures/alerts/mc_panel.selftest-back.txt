@@ -1,0 +1,5 @@
+✅ **The panel can open pull requests again**
+**Impact:** Panel whitelist and world changes reach the config repo again.
+**Likely cause:** The Panel -> Git self-test passed.
+**What to do:** No action needed - informational.
+**Details:** after 3 failed run(s)

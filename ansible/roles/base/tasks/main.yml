@@ -300,6 +300,36 @@
   # agent role (handlers are play-wide) and restarts it only where it's installed.
   notify: mc-agent code changed
 
+# v1.3 "versions everywhere": what this deploy installed, for mc-agent's inventory (the panel's Versions row,
+# `mcctl doctor`, `mcctl status`). The version is the product checkout's own (mcctl/__init__.py = pyproject.toml,
+# scripts/release.py), the commit its git HEAD: the config repo's pin in CI and for `mcctl deploy` (which
+# re-executes from the pin); "" when the checkout isn't a git repository or git is missing. No timestamp: a second
+# run changes nothing.
+- name: Read the product commit this deploy runs from
+  ansible.builtin.command:
+    argv: [git, -c, "safe.directory={{ playbook_dir | dirname }}", -C, "{{ playbook_dir | dirname }}", rev-parse, HEAD]
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  register: base_product_commit
+
+- name: Record the installed product version
+  ansible.builtin.copy:
+    dest: "{{ mc_product_version_file }}"
+    content: "{{ {'product': 'smallworld', 'version': base_product_version, 'commit': base_commit} | to_nice_json }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    base_product_version: >-
+      {{ lookup('ansible.builtin.file', playbook_dir ~ '/../mcctl/__init__.py')
+         | regex_search('^__version__ = \"([^\"]+)\"', '\1', multiline=True) | first }}
+    base_head: "{{ (base_product_commit.stdout | default('')) | trim }}"
+    base_commit: "{{ base_head if base_head is match('^[0-9a-f]{40}$') else '' }}"
+
 - name: Install `mc-run` helper (runs a command as the ops user with secrets from an env file)
   ansible.builtin.copy:
     dest: /usr/local/bin/mc-run

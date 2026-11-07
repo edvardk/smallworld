@@ -72,7 +72,7 @@ Light and dark theme, works on a phone.
 | Backups | restic's snapshots | back up now, **restore** a snapshot |
 | Worlds (v1.2) | the active world, the archived worlds (size, version), what Git still has to follow | **create** a world, **switch** to an archived one, **delete** one ([below](#world-library)) |
 | Logs | journal lines in D1 (search by text, unit, level), the R2 archives | |
-| Health | 2 h to 90 d history, watchdog state | |
+| Health | 2 h to 90 d history, watchdog state, **Versions** (v1.3: server, Worker, the pin) and the **Panel → Git self-test** | run the self-test now |
 | Audit log | every action with the Access identity | |
 
 How actions work: every action opens a confirmation dialog, goes to the Worker, is audit-logged, signed for the
@@ -84,7 +84,42 @@ takes a **safety snapshot** of the current world first (tag `pre-restore`).
 
 Whitelist changes from the panel apply at once and are also written to `players.yml` through a pull request from
 the panel's GitHub App, which merges by itself when only the whitelist changed. Until it merges, deploys keep the
-change; if you close the pull request without merging, the change is reverted on the server.
+change; if you close the pull request without merging, the change is reverted on the server. The name check in
+the whitelist form (v1.3) asks Mojang **from the server** (mc-agent's `lookup`: api.mojang.com refuses
+Cloudflare's addresses); when the agent is offline or slow (4 s) the Worker asks itself, and if nobody gets an
+answer the form offers to add the name unverified (the server refuses a name with no Java account).
+
+### Versions (v1.3)
+
+The header reads "Smallworld vX.Y.Z · Purpur 26.3". The Health tab's **Versions** row shows three things that
+used to drift apart silently (v1.2.2 reached the server and the Worker in separate steps):
+
+- **Server (deployed):** each deploy writes `/opt/minecraft/product-version.json` (product version and commit,
+  root-owned, world-readable); mc-agent reports it, and the version its own process runs.
+- **Worker (applied):** `mcctl render` stamps the product version and the config repo's pin into the Worker's
+  static assets (`version.json`, not served), which `mcctl apply` uploads with `worker.js`.
+- **Config repo pin:** as of the last apply.
+
+| Warning | Fix |
+|---|---|
+| The Worker is older than the server | `mcctl render` + `mcctl apply` |
+| The server is older than the Worker | deploy (push to main, or `mcctl deploy`) |
+| mc-agent runs older code than installed | restart it (a deploy does) |
+
+`mcctl doctor` checks the same against the config repo's pin as it is now (rows `versions` and `panel → git`,
+read from the watchdog's D1 with the Cloudflare token), and the home screen and `mcctl status` show the deployed
+version over SSH.
+
+### The Panel → Git self-test (v1.3)
+
+Proves the panel can still open pull requests without opening one (v1.2.2: GitHub's longer tokens were refused
+for days unnoticed). mc-agent asks the Worker for a token, checks it with a fresh token cache (shape, expiry) and
+its permissions (Contents + Pull requests write), then reads the config repo with it: the repository, main's head
+and `players.yml`, the open pull requests. Nothing is created. It runs 5 minutes after the agent starts (so after
+every deploy) and then daily, and from the Health tab ("Run the self-test now", at most once a minute). The result
+and each step are in the Health tab and in `mcctl doctor`; two failures in a row post one Discord alert, and one
+more when it passes again. Errors name the step (`token`, `permissions`, `repository`, `main`, `pulls`) and never
+contain the token.
 
 ## World library
 
@@ -666,6 +701,7 @@ ever appear in an alert (a CI alert carries the run's link only). Every alert's 
 | ℹ️ The server restarts in N s for a config deploy | mc_rcon (deploy) | a deploy restart while players are online (they get an in-game countdown) | - |
 | ⚠️ A deploy kept whitelisted players that aren't in players.yml | players role (deploy) | live players never in `players.yml` were kept, not removed ([Players not in Git](#players-not-in-git)); once per newly kept player | `mcctl players add NAME`, or remove them in the panel |
 | ⚠️ Whitelist changes made in the panel were dropped | mc_panel (agent) | panel whitelist changes didn't reach Git within 24 h; the next deploy undoes them | re-do in the panel or edit `players.yml`; `mcctl doctor` |
+| ⚠️ The panel can't open pull requests on the config repo / ✅ can again (v1.3) | mc_panel (agent) | the Panel → Git self-test failed twice in a row (the step and why) / passed again | `mcctl doctor`; the panel's GitHub App (installed, Contents + Pull requests); a stale Worker: `mcctl render` + `mcctl apply`; then the Health tab's self-test |
 | ℹ️ A panel whitelist change was turned down | mc_panel (agent) | its pull request was closed unmerged; reverted live (or at the next deploy) | nothing if intended |
 | 🔴 Players can't reach the server over IPv4/IPv6 / ✅ again | Worker | 2 failed status pings; says whether the host still reports in | DNS/firewall (`mcctl doctor`) or the host's console |
 | 🔴 The backup failed / hasn't run / ⚠️ is taking much longer / ✅ works again | Worker | the backup heartbeat failed, is late (period + 30 min) or runs longer than 60 min | `mcctl backup now`, `journalctl -u mc-backup -n 100` |

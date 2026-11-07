@@ -34,9 +34,16 @@ failing to reach it since: this script now starts a mock of the Worker there and
     directory -> the agent asks the Worker (POST /agent/client-code, bearer token) -> the code file in the verdict
     directory, which minecraft can read but not write; the code never reaches the journal.
 
+  - v1.3, versions everywhere: the deploy's /opt/minecraft/product-version.json (root, 0644, the product version)
+    and the agent's report of it in the inventory (installed = running); the Panel -> Git self-test (`selftest`)
+    against the GitHub mock, read-only, its steps in the inventory, one run a minute from the panel; `lookup` of a
+    Java name from the box against a mock Mojang (first endpoint 403, the fallback answers; unknown and malformed
+    names).
+
 Rounds (v1.3): the shared part always runs (the agent's sandbox, the buffered and live metrics, the journal, the
 first poll's status/console/denied/replay, the final checks); `--rounds` picks the rest, so CI runs them as two
-shards on two boxes (docs/ci.md): `a` = rcon, client-code, stop-start, whitelist, restart, plugin, restore-guard;
+shards on two boxes (docs/ci.md): `a` = rcon, client-code, stop-start, whitelist, restart, plugin, restore-guard,
+versions;
 `b` = backup-restore, world. Round names (comma-separated) work too; whitelist brings stop-start along (it seeds
 the profile cache). Without `--rounds`, every round, in the order above with backup-restore before restore-guard.
 Each round prints its wall time (`round <name>: N s`).
@@ -158,7 +165,8 @@ class Mock(http.server.BaseHTTPRequestHandler):
             return
         elif self.path == "/agent/github-token":  # P10 review: the Worker mints the panel App's tokens
             seen["github_token"].append(1)
-            self.reply(200, {"token": INSTALLATION_TOKEN, "expires_at": "2099-01-01T00:00:00Z"})
+            self.reply(200, {"token": INSTALLATION_TOKEN, "expires_at": "2099-01-01T00:00:00Z",
+                             "permissions": {"contents": "write", "pull_requests": "write", "metadata": "read"}})  # fmt: skip
             return
         else:
             self.reply(404, {"error": "not found"})
@@ -368,6 +376,8 @@ class GitHubMock(http.server.BaseHTTPRequestHandler):
     server: ClassVar[dict[str, str]] = {"main": "name: e2e\n"}  # v1.2: server.yml per branch (world PRs)
     prs: ClassVar[dict[int, dict[str, Any]]] = {}
     tokens: ClassVar[set[str]] = set()
+    mojang: ClassVar[list[str]] = []  # v1.3: the agent's lookups
+    listed: ClassVar[int] = 0
 
     def log_message(self, *a: object) -> None:
         pass
@@ -385,8 +395,20 @@ class GitHubMock(http.server.BaseHTTPRequestHandler):
 
         n = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(n)) if n else None
-        GitHubMock.tokens.add(self.headers.get("Authorization", ""))
         path, m = self.path.split("?")[0], self.command
+        if path.startswith(
+            "/mojang/"
+        ):  # v1.3: the agent's name lookup (MOJANG_LOOKUP_URLS, tests/e2e/vars.yml)
+            GitHubMock.mojang.append(path)
+            _, _, endpoint, name = path.split("/", 3)
+            if endpoint == "a":  # what api.mojang.com answers Cloudflare's egress
+                return self.reply(403, {"error": "forbidden"})
+            if name.lower() == LOOKUP_NAME.lower():
+                return self.reply(200, {"id": LOOKUP_ID, "name": LOOKUP_NAME})
+            return self.reply(404, {})
+        GitHubMock.tokens.add(self.headers.get("Authorization", ""))
+        if m == "GET" and path == f"/repos/{CONFIG_REPO}":  # v1.3 self-test: the repository
+            return self.reply(200, {"full_name": CONFIG_REPO, "permissions": {"pull": True, "push": True}})
         if not path.startswith(f"/repos/{CONFIG_REPO}/"):
             return self.reply(404, {"message": "Not Found"})
         rest = path[len(f"/repos/{CONFIG_REPO}/") :]
@@ -414,6 +436,11 @@ class GitHubMock(http.server.BaseHTTPRequestHandler):
             return self.reply(
                 201, {"number": number, "html_url": f"https://github.com/{CONFIG_REPO}/pull/{number}"}
             )
+        if m == "GET" and rest == "pulls":  # v1.3 self-test: the open pull requests
+            GitHubMock.listed += 1
+            return self.reply(
+                200, [{"number": n} for n, p in GitHubMock.prs.items() if p["state"] == "open"][:1]
+            )
         if m == "GET" and rest.startswith("pulls/"):
             return self.reply(200, GitHubMock.prs[int(rest.split("/")[1])])
         return self.reply(404, {"message": "Not Found"})
@@ -422,6 +449,10 @@ class GitHubMock(http.server.BaseHTTPRequestHandler):
 
 
 CONFIG_REPO = "mcctl-e2e/e2e-mc-config"  # tests/e2e/answers.yml repo
+LOOKUP_NAME, LOOKUP_ID = (
+    "E2E_Lookup",
+    "0d61aa00bb0011224455667788997f90",
+)  # v1.3: the mock Mojang's one account
 
 
 def merge_pr(number: int) -> None:
@@ -886,6 +917,62 @@ def _world_round() -> None:
     marker.unlink(missing_ok=True)
 
 
+def versions_round() -> None:
+    """v1.3: the deploy's version file and the agent's report of it; the Panel -> Git self-test against the GitHub
+    mock (read-only: no branch, no pull request); the Mojang lookup from the box against a mock Mojang whose first
+    endpoint refuses (403, as api.mojang.com refuses Cloudflare) and whose second answers."""
+    import re
+
+    path = Path("/opt/minecraft/product-version.json")
+    want = re.search(r'^__version__ = "([^"]+)"', Path("/src/product/mcctl/__init__.py").read_text(), re.M)
+    st = path.stat() if path.exists() else None
+    expect(st is not None and st.st_uid == 0 and st.st_mode & 0o777 == 0o644,
+           f"the deploy wrote {path} (root, 0644): {oct(st.st_mode) if st else 'missing'}")  # fmt: skip
+    data = json.loads(path.read_text()) if st else {}
+    expect(bool(want) and data.get("version") == want.group(1), f"it names the product version ({data})")  # type: ignore[union-attr]
+    expect(as_minecraft_read(str(path)) == 0, "anyone may read it (nothing secret)")
+    inv = wait_for("an inventory push with the product version",
+                   lambda: next((i for i in reversed(seen["inventory"]) if (i.get("product") or {}).get("version")), None), 120)  # fmt: skip
+    prod = (inv or {}).get("product") or {}
+    expect(prod.get("version") == data.get("version") and prod.get("running") == data.get("version"),
+           f"mc-agent reports it, and runs that version's code ({prod})")  # fmt: skip
+    with github_mock():
+        before = (len(GitHubMock.prs), sorted(GitHubMock.files), GitHubMock.listed)
+        r = send("selftest", {}, "e2e-selftest")
+        expect(r.get("ok") is True and str(r.get("output", "")).startswith("passed: token, permissions, repository"),
+               f"the self-test passed ({r})")  # fmt: skip
+        expect(INSTALLATION_TOKEN not in json.dumps(r), "its result never carries the token")
+        expect((len(GitHubMock.prs), sorted(GitHubMock.files)) == before[:2] and GitHubMock.listed > before[2],
+               "it read the pull requests and created nothing")  # fmt: skip
+        again = send("selftest", {}, "e2e-selftest-2")
+        expect("an earlier run" in str(again.get("output", "")), f"at most one run a minute ({again})")
+        inv = wait_for("an inventory push with the self-test",
+                       lambda: next((i for i in reversed(seen["inventory"]) if (i.get("selftest") or {}).get("ok")), None), 60)  # fmt: skip
+        steps = [x.get("step") for x in ((inv or {}).get("selftest") or {}).get("steps", [])]
+        expect(
+            steps == ["token", "permissions", "repository", "main", "pulls"],
+            f"the inventory has its steps ({steps})",
+        )
+        found = send("lookup", {"name": LOOKUP_NAME.lower()}, "e2e-lookup")
+        out = json.loads(found.get("output") or "{}")
+        expect(out.get("found") is True and out.get("name") == LOOKUP_NAME and out.get("uuid", "").startswith("0d61aa00-"),
+               f"lookup resolved the name from the box ({found})")  # fmt: skip
+        expect(
+            [p.split("/")[2] for p in GitHubMock.mojang[:2]] == ["a", "b"],
+            f"first endpoint, then the fallback ({GitHubMock.mojang})",
+        )
+        missing = json.loads(send("lookup", {"name": "No_Such_Name"}, "e2e-lookup-2").get("output") or "{}")
+        expect(missing.get("found") is False, f"an unknown name is 'not found' ({missing})")
+        bad = send("lookup", {"name": "../etc"}, "e2e-lookup-bad")
+        expect(
+            bad.get("ok") is False and "Java name" in bad.get("error", ""),
+            f"a malformed name is refused ({bad})",
+        )
+    audit = subprocess.run(["journalctl", "SYSLOG_IDENTIFIER=mc-agent", "-o", "cat", "--no-pager"],
+                           capture_output=True, text=True).stdout  # fmt: skip
+    expect(INSTALLATION_TOKEN not in audit, "the token never reaches the journal")
+
+
 def done() -> bool:
     return bool(
         seen["results"] and seen["archive"] and seen["logs"] and seen["inventory"]
@@ -909,9 +996,10 @@ ROUNDS: dict[str, Callable[[], None]] = {
     "backup-restore": backup_and_restore_round,
     "restore-guard": restore_guard_round,
     "world": world_round,  # v1.2
+    "versions": versions_round,  # v1.3: version file, self-test, lookup (~20 s)
 }
 GROUPS: dict[str, tuple[str, ...]] = {
-    "a": ("rcon", "client-code", "stop-start", "whitelist", "restart", "plugin", "restore-guard"),
+    "a": ("rcon", "client-code", "stop-start", "whitelist", "restart", "plugin", "restore-guard", "versions"),
     "b": ("unmanaged", "backup-restore", "world"),  # unmanaged: two players-only deploys, ~30 s
 }
 NEEDS: dict[str, str] = {"whitelist": "stop-start"}

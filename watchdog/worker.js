@@ -80,6 +80,9 @@ const COMMAND_ACTIONS = [
   "player_message",
   // v1.2 world library (panel only, confirmation host; scripts/worlds.py does the work as the ops user)
   "world_create", "world_switch", "world_delete",
+  // v1.3: the Panel -> Git self-test (panel, Health tab) and the name check's Mojang lookup from the box (GET
+  // /api/mojang asks the agent first: Mojang refuses Cloudflare's egress; never through POST /api/action)
+  "selftest", "lookup",
 ];
 
 const SCHEMA =
@@ -618,6 +621,10 @@ async function runChecks(env, now, rt) {
   }
 
   updates.run = { last_run: now, targets: cfg.targets.length };
+  // v1.3: this Worker's version (mcctl render's stamp) in the key/value table, written only when it changes, for
+  // `mcctl doctor` (which reads D1, not the panel)
+  const stamp = await workerStamp(env);
+  if (stamp && JSON.stringify(state.worker || null) !== JSON.stringify(stamp)) updates.worker = stamp;
   const { lines } = await persistAndAlert(rt, env, cfg, raw, updates, alerts, now);
   return lines;
 }
@@ -898,7 +905,38 @@ function cleanInventory(inv) {
   out.whitelist_sync = cleanSync(inv.whitelist_sync);
   out.job = cleanJob(inv.job);
   out.worlds = cleanWorlds(inv.worlds);
+  out.product = cleanProduct(inv.product);
+  out.selftest = cleanSelftest(inv.selftest);
   return out;
+}
+
+// v1.3 "versions everywhere": what the last deploy installed on the box (its version file) and the version the agent
+// process runs (a difference: it wasn't restarted after the deploy).
+const VERSION_TEXT = /^[0-9A-Za-z.+-]{1,40}$/;
+const COMMIT = /^[0-9a-f]{40}$/;
+function cleanProduct(p) {
+  if (!p || typeof p !== "object" || !VERSION_TEXT.test(str(p.version))) return null;
+  return {
+    version: p.version,
+    commit: COMMIT.test(str(p.commit)) ? p.commit : "",
+    running: VERSION_TEXT.test(str(p.running)) ? p.running : "",
+    running_commit: COMMIT.test(str(p.running_commit)) ? p.running_commit : "",
+  };
+}
+
+// v1.3: the agent's last Panel -> Git self-test (the steps it passed, the one that failed; never a token).
+const SELFTEST_STEPS = ["configuration", "token", "permissions", "repository", "main", "pulls"];
+function cleanSelftest(t) {
+  if (!t || typeof t !== "object") return null;
+  return {
+    ok: t.ok === true,
+    ts: numOrNull(t.ts),
+    configured: t.configured !== false,
+    error: str(t.error, 300),
+    trigger: t.trigger === "panel" ? "panel" : "daily",
+    failures: Number.isInteger(t.failures) && t.failures >= 0 ? t.failures : 0,
+    steps: (Array.isArray(t.steps) ? t.steps : []).slice(0, 10).filter((x) => x && SELFTEST_STEPS.includes(x.step)).map((x) => ({ step: x.step, ok: x.ok === true, detail: str(x.detail, 200) })),
+  };
 }
 
 // v1.2: the agent's world library (worlds.json + the library + the pending change), for the Worlds tab.
@@ -1170,6 +1208,11 @@ export class Control {
       return this.live(data, now);
     }
     if (url.pathname === "/state") return json({ agent_connected: this.ctx.getWebSockets("agent").length > 0 });
+    if (url.pathname === "/ask") {
+      const { data, error } = await readJson(request, 4096);
+      if (error) return error;
+      return this.ask(data, now);
+    }
     // P10: the agent's current job (countdown, steps, result), kept in this object's storage (no D1 rows).
     if (url.pathname === "/job" && request.method === "POST") {
       const { data, error } = await readJson(request, 16384);
@@ -1221,6 +1264,25 @@ export class Control {
     if (r.status !== 200) return r;
     this.liveUntil = now + CONSOLE_TAIL_S * 1000;
     return json({ ok: true, live: true });
+  }
+
+  // v1.3: a command whose answer the caller waits for (the name check's `lookup`): only while the agent holds its
+  // WebSocket (a polling agent answers within 15 s: too slow, the caller falls back), at most wait_ms (<= 5 s).
+  async ask(data, now) {
+    if (!this.ctx.getWebSockets("agent").length) return json({ ok: false, reason: "agent not connected" });
+    const wait = Math.min(5000, Math.max(50, Number(data && data.wait_ms) || 4000));
+    const r = await this.enqueue(data, now);
+    if (r.status !== 200) return r;
+    const { id } = await r.json();
+    if (!this.waiters) this.waiters = new Map();
+    let timer;
+    const result = await new Promise((resolve) => {
+      this.waiters.set(id, resolve);
+      timer = setTimeout(() => resolve(null), wait);
+    });
+    clearTimeout(timer);
+    this.waiters.delete(id);
+    return json(result ? { ok: true, id, result } : { ok: false, id, reason: `no answer within ${wait} ms` });
   }
 
   accept() {
@@ -1299,13 +1361,11 @@ export class Control {
       const id = r && typeof r.id === "string" ? r.id : "";
       if (!/^[0-9a-f]{24}$/.test(id) || !(await this.ctx.storage.get(`cmd:${id}`))) continue;
       if (await this.ctx.storage.get(`result:${id}`)) continue; // first result wins (a replay can't overwrite)
-      await this.ctx.storage.put(`result:${id}`, {
-        ok: r.ok === true,
-        output: String(r.output || "").slice(0, 4000),
-        error: String(r.error || "").slice(0, 500),
-        at: now,
-      });
+      const stored_ = { ok: r.ok === true, output: String(r.output || "").slice(0, 4000), error: String(r.error || "").slice(0, 500), at: now };
+      await this.ctx.storage.put(`result:${id}`, stored_);
       await this.ctx.storage.delete(`cmd:${id}`);
+      const waiter = this.waiters && this.waiters.get(id);
+      if (waiter) waiter(stored_);
       stored += 1;
     }
     return stored;
@@ -1404,7 +1464,7 @@ async function githubToken(env, now, rt) {
   if (!cfg) return json({ error: "no GitHub App for the panel (panel_github_app_id / _private_key)" }, 404);
   const cacheKey = `${cfg.appId}/${cfg.repository}`;
   if (githubCache.key === cacheKey && githubCache.token && githubCache.expires - now > 600000) {
-    return json({ token: githubCache.token, expires_at: new Date(githubCache.expires).toISOString() });
+    return json({ token: githubCache.token, expires_at: new Date(githubCache.expires).toISOString(), permissions: githubCache.permissions || null });
   }
   try {
     const jwt = `Bearer ${await githubAppJwt(env.GITHUB_APP_KEY, cfg.appId, now)}`;
@@ -1418,8 +1478,10 @@ async function githubToken(env, now, rt) {
     });
     const expires = Date.parse(minted.expires_at);
     if (typeof minted.token !== "string" || !Number.isFinite(expires)) throw new Error("unexpected token reply");
-    githubCache = { key: cacheKey, token: minted.token, expires, installation };
-    return json({ token: minted.token, expires_at: new Date(expires).toISOString() });
+    // v1.3: the granted permissions go along (the agent's Panel -> Git self-test checks them; no secret)
+    const permissions = minted.permissions && typeof minted.permissions === "object" ? Object.fromEntries(Object.entries(minted.permissions).filter(([k, v]) => /^[a-z_]{1,40}$/.test(k) && typeof v === "string").map(([k, v]) => [k, v.slice(0, 10)])) : null;
+    githubCache = { key: cacheKey, token: minted.token, expires, installation, permissions };
+    return json({ token: minted.token, expires_at: new Date(expires).toISOString(), permissions });
   } catch (err) {
     githubCache = { key: "", token: "", expires: 0, installation: null };
     // never the key or a token: the request line and status only
@@ -2843,6 +2905,72 @@ function warnings(sample, history, watchdog, now, inv = null) {
   return out;
 }
 
+// --- v1.3: versions everywhere ------------------------------------------------------------------------------------
+//
+// `mcctl render` stamps the product version (and the config repo's pin) into the Worker's static assets as
+// version.json, which `mcctl apply` uploads with worker.js: what this Worker runs. The box's version comes from the
+// agent's inventory (each deploy writes it). Read through the ASSETS binding only (never served: ASSET_PATHS),
+// cached per isolate (a new upload is a new isolate).
+let workerStampCache = null;
+
+async function workerStamp(env) {
+  if (workerStampCache) return workerStampCache.stamp;
+  let stamp = null;
+  try {
+    if (env.ASSETS) {
+      const resp = await env.ASSETS.fetch(new Request("https://assets.invalid/version.json"));
+      const d = resp.ok ? await resp.json() : null;
+      if (d && VERSION_TEXT.test(str(d.product))) {
+        const pin = d.pin && typeof d.pin === "object" ? d.pin : {};
+        stamp = {
+          version: d.product,
+          pin_sha: COMMIT.test(str(pin.sha)) ? pin.sha : "",
+          pin_version: /^v?[0-9A-Za-z.+-]{1,40}$/.test(str(pin.version)) ? pin.version : "",
+          repository: /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(str(d.repository)) ? d.repository : "",
+        };
+      }
+    }
+  } catch {
+    stamp = null; // an older upload without version.json, or no assets: "unknown"
+  }
+  workerStampCache = { stamp };
+  return stamp;
+}
+
+// "1.2.10" vs "v1.2.9": -1, 0, 1 (numeric parts; anything after them compares as text), null if either is empty.
+function cmpVersion(a, b) {
+  if (!a || !b) return null;
+  const parts = (v) => String(v).replace(/^v/, "").split(/[.+-]/);
+  const x = parts(a);
+  const y = parts(b);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const p = x[i] ?? "";
+    const q = y[i] ?? "";
+    if (p === q) continue;
+    if (/^\d+$/.test(p) && /^\d+$/.test(q)) return Number(p) < Number(q) ? -1 : 1;
+    return p < q ? -1 : 1;
+  }
+  return 0;
+}
+
+// The panel's Versions row: server (deployed), Worker (applied), the pin the Worker was applied with; each mismatch
+// with its fix.
+function versions(product, stamp) {
+  const out = { server: product || null, worker: stamp || null, problems: [] };
+  const sv = product && product.version;
+  const wv = stamp && stamp.version;
+  const c = cmpVersion(wv, sv);
+  if (c === -1) out.problems.push({ level: "warn", text: `The Worker is v${wv}, the server is v${sv}: run \`mcctl render\` + \`mcctl apply\` to update the Worker.` });
+  if (c === 1) out.problems.push({ level: "warn", text: `The server is v${sv}, the Worker is v${wv}: deploy (push to the config repo's main, or \`mcctl deploy\`) to update the server.` });
+  if (c === 0 && product.commit && stamp.pin_sha && product.commit !== stamp.pin_sha) {
+    out.problems.push({ level: "info", text: `The server runs commit ${product.commit.slice(0, 12)}, the Worker was applied for the pin ${stamp.pin_sha.slice(0, 12)} (same version v${sv}).` });
+  }
+  if (product && product.running && cmpVersion(product.running, product.version) !== 0) {
+    out.problems.push({ level: "warn", text: `mc-agent still runs v${product.running} code although v${product.version} is installed: restart it (a deploy does: \`mcctl deploy\`).` });
+  }
+  return out;
+}
+
 async function overview(env, pcfg, now, identity) {
   const cfg = config(env);
   const [sample, hist, watchdog, state, audit] = await Promise.all([
@@ -2854,6 +2982,11 @@ async function overview(env, pcfg, now, identity) {
   ]);
   const inv = state.inventory || null;
   const version = Object.values(watchdog.probes).map((p) => p.version).find(Boolean) || null;
+  const vers = versions(inv && inv.product, await workerStamp(env));
+  const warns = warnings(sample, hist.points, watchdog, now, inv);
+  warns.push(...vers.problems.filter((p) => p.level === "warn"));
+  const st = inv && inv.selftest;
+  if (st && st.configured && !st.ok) warns.push({ level: "warn", text: `Panel -> Git self-test failed at ${st.error || "an unknown step"}: panel changes can't reach the config repo (Health tab).`, ts: st.ts || undefined });
   return {
     server: {
       title: pcfg.title,
@@ -2863,7 +2996,10 @@ async function overview(env, pcfg, now, identity) {
       version,
       max_players: pcfg.max_players,
       backup_schedule: pcfg.backup_schedule,
+      product: (vers.server && vers.server.version) || (vers.worker && vers.worker.version) || null,
     },
+    versions: vers,
+    selftest: st || null,
     me: identity,
     now,
     sample,
@@ -2885,7 +3021,7 @@ async function overview(env, pcfg, now, identity) {
       : null,
     audit,
     job: (inv && inv.job) || null,
-    warnings: warnings(sample, hist.points, watchdog, now, inv),
+    warnings: warns,
     experience: env.TELEMETRY ? await experienceSummary(env, now).catch(() => null) : null,
   };
 }
@@ -2957,7 +3093,11 @@ function actionArgs(action, a) {
     case "start":
     case "cancel":
     case "backup":
+    case "selftest": // v1.3: read-only (mints a token, reads the config repo); the agent limits it to one a minute
       return {};
+    case "lookup": // v1.3: the name check's (GET /api/mojang), refused by postAction
+      need(typeof a.name === "string" && JAVA_NAME.test(a.name), "a Java name is 3-16 letters, digits or _");
+      return { name: a.name };
     case "whitelist":
       need(a.op === "add" || a.op === "remove", "op must be add or remove");
       need(typeof a.name === "string" && JAVA_NAME.test(a.name), "a Java name is 3-16 letters, digits or _");
@@ -3031,6 +3171,34 @@ const MOJANG_LOOKUPS = [
   "https://api.mojang.com/users/profiles/minecraft/",
   "https://api.minecraftservices.com/minecraft/profile/lookup/name/",
 ];
+
+// v1.3: `lookup {name}` through the agent (signed like every command, answered over its WebSocket within
+// AGENT_LOOKUP_WAIT_MS). A definite answer (found / not found) is cached like the Worker's own; anything else
+// (agent offline, polling, slow, Mojang unreachable from the box too) returns null and the caller falls back.
+const AGENT_LOOKUP_WAIT_MS = 4000;
+
+async function agentLookup(env, name, login, now, waitMs = AGENT_LOOKUP_WAIT_MS) {
+  const key = name.toLowerCase();
+  const hit = mojangCache.get(key);
+  if (hit && now - hit.at < MOJANG_TTL_MS) return hit.result;
+  try {
+    const resp = await controlStub(env).fetch(new Request("https://control/ask", { method: "POST", body: JSON.stringify({ action: "lookup", args: { name }, login, wait_ms: waitMs }) }));
+    const r = await resp.json();
+    if (!r || !r.ok || !r.result || !r.result.ok) return null;
+    const d = JSON.parse(r.result.output || "null");
+    let result = null;
+    if (d && d.found === false) result = { found: false, via: "server" };
+    if (d && d.found === true && typeof d.uuid === "string" && UUID_RE.test(d.uuid)) {
+      result = { found: true, name: typeof d.name === "string" && JAVA_NAME.test(d.name) ? d.name : name, uuid: d.uuid, via: "server" };
+    }
+    if (!result) return null;
+    if (mojangCache.size > 200) mojangCache.delete(mojangCache.keys().next().value);
+    mojangCache.set(key, { at: now, result });
+    return result;
+  } catch {
+    return null;
+  }
+}
 
 async function mojangLookup(name, now, rt) {
   const key = name.toLowerCase();
@@ -3129,6 +3297,10 @@ async function panelApi(request, env, now, url, pcfg, identity, rt) {
   if (route === "GET /api/mojang") {
     const name = url.searchParams.get("name") || "";
     if (!JAVA_NAME.test(name)) return json({ error: "a Java name is 3-16 letters, digits or _" }, 400);
+    // v1.3: the box asks Mojang first (Mojang refuses Cloudflare's shared egress); this Worker's own lookup when
+    // the agent is offline, slow or can't tell; "unverified" stays the last resort.
+    const viaAgent = hasControl ? await agentLookup(env, name, identity.email, now) : null;
+    if (viaAgent) return json(viaAgent);
     try {
       return json(await mojangLookup(name, now, rt));
     } catch (err) {
@@ -3193,6 +3365,7 @@ async function postAction(request, env, now, identity, pcfg, onConfirmHost) {
     if (!(err instanceof ActionInputError)) throw err;
     return json({ error: err.message }, 400);
   }
+  if (action === "lookup") return json({ error: "lookup is the name check's (GET /api/mojang), not an action" }, 400);
   if (DESTRUCTIVE.has(action) && !onConfirmHost) {
     await recordAudit(env, now, identity.email, action, args, null, "refused: destructive actions are confirmed on the confirmation host", 0);
     return json(
@@ -4623,6 +4796,11 @@ export default {
     crc32,
     maintainClient,
     CLIENT_DEFAULTS,
+    // v1.3
+    versions,
+    cmpVersion,
+    workerStamp,
+    agentLookup,
     resetIsolate: () => {
       clientSchemaReady = null;
       discordKey = { hex: "", key: null };
@@ -4630,6 +4808,8 @@ export default {
       lastCronErrorAlert = 0;
       lastMaintAlert.clear();
       githubCache = { key: "", token: "", expires: 0, installation: null };
+      mojangCache.clear();
+      workerStampCache = null;
       jwksCache = { team: "", keys: new Map(), fetched: 0, failed: 0 };
     },
   },

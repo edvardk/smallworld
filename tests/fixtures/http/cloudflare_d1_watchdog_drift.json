@@ -1,0 +1,63 @@
+{
+  "_source": "Shaped from the Cloudflare API v4 reference: list D1 databases (GET /accounts/{account_id}/d1/database?name=) and query (POST .../d1/database/{id}/query, {sql} -> result[0].results), 2026-11-07; ids are fake. The rows are the watchdog's key/value table: the agent's inventory (v1.3 product + selftest) and the Worker's version stamp. Drift: the server and the Worker are on other commits than the pin, and the self-test fails.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/d1/database?name=example-watchdog"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "success": true,
+          "errors": [],
+          "messages": [],
+          "result": [
+            {
+              "name": "example-watchdog",
+              "uuid": "7a9e8d1c-0000-4000-8000-00000000d1d1",
+              "created_at": "2026-11-01T00:00:00Z",
+              "version": "production"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/d1/database/7a9e8d1c-0000-4000-8000-00000000d1d1/query"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "success": true,
+          "errors": [],
+          "messages": [],
+          "result": [
+            {
+              "results": [
+                {
+                  "key": "inventory",
+                  "value": "{\"ts\": 1793426400000, \"whitelist\": [], \"product\": {\"version\": \"0.0.0\", \"commit\": \"2222222222222222222222222222222222222222\", \"running\": \"0.0.0\", \"running_commit\": \"\"}, \"selftest\": {\"ok\": false, \"ts\": 1793426400000, \"configured\": true, \"error\": \"token: the Worker returned no usable GitHub token (390 characters, unexpected '!')\", \"trigger\": \"daily\", \"failures\": 2, \"steps\": [{\"step\": \"token\", \"ok\": true, \"detail\": \"ok\"}, {\"step\": \"permissions\", \"ok\": true, \"detail\": \"ok\"}, {\"step\": \"repository\", \"ok\": true, \"detail\": \"ok\"}, {\"step\": \"main\", \"ok\": true, \"detail\": \"ok\"}, {\"step\": \"pulls\", \"ok\": true, \"detail\": \"ok\"}]}}"
+                },
+                {
+                  "key": "worker",
+                  "value": "{\"version\": \"0.0.0\", \"pin_sha\": \"3333333333333333333333333333333333333333\", \"pin_version\": \"v0.0.0\", \"repository\": \"edvardk/smallworld\"}"
+                }
+              ],
+              "success": true,
+              "meta": {}
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

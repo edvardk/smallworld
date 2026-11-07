@@ -44,6 +44,7 @@ mc_restore_dir: /var/lib/mc-restore   # = scripts/restore.py STAGING_ROOT (fetch
 mc_worlds_library_file: "{{ mc_root }}/worlds-library.json"   # = scripts/worlds.py LIBRARY_FILE (v1.2)
 mc_worlds_state_file: /var/lib/mc-snapshots/worlds.json   # = scripts/worlds.py WORLDS_FILE (archives, active)
 mc_panel_pending_file: /var/lib/mc-agent/pending.json   # mc-agent's pending whitelist/world changes (P10, v1.2)
+mc_product_version_file: "{{ mc_root }}/product-version.json"   # = scripts/mc_agent.py PRODUCT_VERSION_FILE (v1.3)
 mc_rcon_port: 25575
 
 # --- Users (SECURITY.md "Privilege separation") ------------------------------------------------------

@@ -1,0 +1,5 @@
+⚠️ **The panel can't open pull requests on the config repo**
+**Impact:** Whitelist and world changes made in the panel stay live but never reach Git; whitelist changes are dropped after 24 h, and the next deploy undoes them.
+**Likely cause:** The daily Panel -> Git self-test failed 2 times in a row, at token: the Worker returned no usable GitHub token (390 characters, unexpected '!')
+**What to do:** Run `mcctl doctor`, and the self-test from the panel's Health tab after a fix. Token or permissions: the panel's GitHub App (installed on the config repo, Contents + Pull requests); a stale Worker: `mcctl render` + `mcctl apply`.
+**Details:** 2 consecutive failures; last: token: the Worker returned no usable GitHub token (390 characters, unexpected '!')

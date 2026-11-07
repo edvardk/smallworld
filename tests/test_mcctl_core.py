@@ -512,3 +512,28 @@ def test_admin_script_path_matches_ansible() -> None:
     gv = yaml.safe_load((REPO / "ansible/group_vars/all/main.yml").read_text())
     assert remote.ADMIN_SCRIPT == gv["mc_root"] + "/bin/admin.py"
     assert "admin.py" in (REPO / "ansible/roles/base/tasks/main.yml").read_text()
+
+
+def test_status_reads_the_deployed_product_version() -> None:
+    """v1.3: the box's product-version.json (each deploy writes it) in `mcctl status` and against the pin."""
+    assert "cat /opt/minecraft/product-version.json" in remote.STATUS_SCRIPT
+    assert remote.parse_status(STATUS_OUT).product is None  # deployed before v1.3
+    text = (
+        STATUS_OUT
+        + '@@mcctl:product\n{"product": "smallworld", "version": "1.3.0", "commit": "'
+        + "a" * 40
+        + '"}\n'
+    )
+    st = remote.parse_status(text)
+    assert st.product == {"version": "1.3.0", "commit": "a" * 40}
+    assert ("product", f"v1.3.0 ({'a' * 12})") in remote.status_rows(st)
+    pin = configrepo.Pin("edvardk/smallworld", "a" * 40, "v1.3.0")
+    assert remote.product_drift(st.product, pin) is None
+    assert remote.product_drift(st.product, configrepo.Pin("o/r", "b" * 40, "v1.3.1")) == (
+        f"deployed {'a' * 12}, pinned {'b' * 12}: deploy"
+    )
+    assert (
+        remote.product_drift({"version": "1.2.2", "commit": ""}, pin)
+        == "deployed v1.2.2, pinned v1.3.0: deploy"
+    )
+    assert remote.parse_product("not json") is None and remote.parse_product('{"version": "x y"}') is None

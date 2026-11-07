@@ -285,7 +285,7 @@ test("POST /agent/github-token mints a narrowed installation token with an RS256
     if (fail) return new Response("{}", { status: 500 });
     if (url === "https://api.github.com/repos/octocat/mc-config/installation") return new Response(JSON.stringify({ id: 4242 }), { status: 200 });
     if (url === "https://api.github.com/app/installations/4242/access_tokens") {
-      return new Response(JSON.stringify({ token: MINTED, expires_at: "2026-10-31T15:13:00Z" }), { status: 201 });
+      return new Response(JSON.stringify({ token: MINTED, expires_at: "2026-10-31T15:13:00Z", permissions: { contents: "write", pull_requests: "write", metadata: "read" } }), { status: 201 });
     }
     throw new Error(`unexpected fetch ${url}`);
   });
@@ -298,7 +298,9 @@ test("POST /agent/github-token mints a narrowed installation token with an RS256
     assert.equal((await ask("Bearer nope")).status, 401);
     const r = await ask();
     assert.equal(r.status, 200);
-    assert.deepEqual(await r.json(), { token: MINTED, expires_at: "2026-10-31T15:13:00.000Z" });
+    // v1.3: the granted permissions go along for the agent's Panel -> Git self-test (cached with the token)
+    const perms = { contents: "write", pull_requests: "write", metadata: "read" };
+    assert.deepEqual(await r.json(), { token: MINTED, expires_at: "2026-10-31T15:13:00.000Z", permissions: perms });
     assert.deepEqual(calls.map((c) => c.method), ["GET", "POST"]);
     assert.deepEqual(calls[1].body, { repositories: ["mc-config"], permissions: { contents: "write", pull_requests: "write" } });
     const jwt = calls[0].auth.replace("Bearer ", "");
@@ -309,7 +311,7 @@ test("POST /agent/github-token mints a narrowed installation token with an RS256
     assert.deepEqual(claims, { iat: t - 60, exp: t + 540, iss: "123456" });
     assert.ok(createVerify("RSA-SHA256").update(`${h}.${p}`).verify(publicKey, Buffer.from(sig, "base64url")));
     // cached: no more GitHub calls within the token's life (minus 10 minutes)
-    assert.equal((await ask()).status, 200);
+    assert.deepEqual((await (await ask()).json()).permissions, perms);
     assert.equal(calls.length, 2);
   }
   W.resetIsolate();
@@ -408,4 +410,148 @@ test("the agent's world library inventory is cleaned for the Worlds tab", async 
   assert.equal(w.storage_note, false);
   assert.equal(w.pending.url, "");
   assert.equal(w.pending.pr, 9);
+});
+
+// --- v1.3: the name check through the box, the Panel -> Git self-test, versions everywhere ---------------------
+
+// An agent on the WebSocket that answers each command (answer(payload) -> {ok, output|error}, or null: silent).
+function answeringAgent(env, answer) {
+  const ws = {
+    sent: [],
+    send(text) {
+      const m = JSON.parse(text);
+      ws.sent.push(m);
+      if (m.type !== "command") return;
+      const p = JSON.parse(m.payload);
+      const out = answer(p);
+      if (out) setTimeout(() => env.control.webSocketMessage(ws, JSON.stringify({ type: "result", id: p.id, ...out })), 5);
+    },
+    close() {},
+  };
+  env.ctx.acceptWebSocket(ws, ["agent"]);
+  return ws;
+}
+
+test("v1.3 name check: the agent resolves the name from the box first; the Worker's lookup is the fallback", async () => {
+  W.resetIsolate();
+  const env = makePanelEnv();
+  const asked = [];
+  const agent = answeringAgent(env, (p) => {
+    asked.push([p.action, p.args.name, p.login]);
+    const n = p.args.name.toLowerCase();
+    if (n === "felix_2011") return { ok: true, output: JSON.stringify({ found: true, name: "Felix_2011", uuid: "0d61aa00-bb00-1122-4455-667788997f90", via: "api.mojang.com" }) };
+    if (n === "nosuchplayer") return { ok: true, output: JSON.stringify({ found: false, via: "api.mojang.com" }) };
+    if (n === "boxcantreach") return { ok: true, output: JSON.stringify({ found: null, unverified: true, detail: "api.mojang.com: URLError" }) };
+    if (n === "refused") return { ok: false, error: "lookup: rate limit (20 per minute)" };
+    return null; // silent: the Worker gives up after the wait
+  });
+  mojangCalls = 0;
+  fallbackCalls = 0;
+  const found = await call(env, "/api/mojang?name=felix_2011");
+  assert.deepEqual(found.body, { found: true, name: "Felix_2011", uuid: "0d61aa00-bb00-1122-4455-667788997f90", via: "server" });
+  assert.deepEqual(asked, [["lookup", "felix_2011", EMAIL]]);
+  assert.equal(mojangCalls + fallbackCalls, 0, "the Worker didn't ask Mojang itself");
+  const cmd = agent.sent.find((m) => m.type === "command");
+  assert.equal(cmd.sig, createHmac("sha256", env.COMMAND_HMAC_KEY).update(cmd.payload).digest("hex"), "signed like every command");
+  await call(env, "/api/mojang?name=FELIX_2011");
+  assert.equal(asked.length, 1, "a definite answer is cached");
+  assert.deepEqual((await call(env, "/api/mojang?name=NoSuchPlayer")).body, { found: false, via: "server" });
+  // the box couldn't tell, or refused: the Worker's own lookup (v1.2.2 code) answers
+  assert.deepEqual((await call(env, "/api/mojang?name=boxcantreach")).body.found, false);
+  assert.equal(mojangCalls, 1);
+  assert.deepEqual((await call(env, "/api/mojang?name=refused")).body.found, false);
+  assert.equal(mojangCalls, 2);
+  // a silent agent: null after the wait, then the Worker's lookup
+  assert.equal(await W.agentLookup(env, "Silent_One", EMAIL, NOW, 50), null);
+  // lookup is never a panel action
+  assert.equal((await act(env, "lookup", { name: "felix_2011" })).status, 400);
+  // no agent on the WebSocket: straight to the Worker's lookup, no command queued
+  W.resetIsolate();
+  const offline = makePanelEnv();
+  mojangCalls = 0;
+  assert.equal((await call(offline, "/api/mojang?name=felix_2011")).body.found, true);
+  assert.equal(mojangCalls, 1);
+  assert.equal([...offline.ctx.storage.map.keys()].filter((k) => k.startsWith("cmd:")).length, 0);
+});
+
+test("v1.3 selftest: a non-destructive panel action, signed with no arguments; its result is cleaned into the inventory", async () => {
+  W.resetIsolate();
+  const env = makePanelEnv();
+  await seed(env, NOW);
+  const agent = connectAgent(env);
+  const r = await act(env, "selftest", { anything: "dropped" });
+  assert.equal(r.status, 200);
+  const payload = JSON.parse(agent.sent.find((m) => m.type === "command").payload);
+  assert.deepEqual([payload.action, payload.args, payload.login], ["selftest", {}, EMAIL]);
+  const inv = (await kvInventory(env)) || {};
+  const post = (inventory) =>
+    W.handle(new Request("https://hb.mc.example.com/ingest/inventory", { method: "POST", headers: { Authorization: `Bearer ${env.AGENT_TOKEN}` }, body: JSON.stringify({ inventory }) }), env, NOW, rt);
+  const selftest = {
+    ok: false, ts: NOW - 60000, configured: true, trigger: "daily", failures: 2, error: "token: the Worker returned no usable GitHub token (390 characters, unexpected '!')",
+    steps: [{ step: "token", ok: false, detail: "the Worker returned no usable GitHub token (390 characters, unexpected '!')", token: "ghs_secret" }, { step: "evil", ok: true }],
+  };
+  assert.equal((await post({ ...inv, selftest, product: { version: "1.3.0", commit: "a".repeat(40), running: "1.2.2", evil: "x" } })).status, 200);
+  const o = (await call(env, "/api/overview")).body;
+  assert.equal(o.selftest.ok, false);
+  assert.deepEqual(o.selftest.steps, [{ step: "token", ok: false, detail: "the Worker returned no usable GitHub token (390 characters, unexpected '!')" }]);
+  assert.equal(o.selftest.failures, 2);
+  assert.ok(o.warnings.some((w) => /Panel -> Git self-test failed at token:/.test(w.text)));
+  assert.deepEqual(o.versions.server, { version: "1.3.0", commit: "a".repeat(40), running: "1.2.2", running_commit: "" });
+  assert.ok(o.warnings.some((w) => /mc-agent still runs v1\.2\.2 code although v1\.3\.0 is installed/.test(w.text)));
+  assert.equal(o.server.product, "1.3.0");
+  assert.equal(o.versions.worker, null, "no version.json in the product's own assets: unknown");
+});
+
+async function kvInventory(env) {
+  const { results } = await env.DB.prepare("SELECT value FROM watchdog WHERE key = 'inventory'").all();
+  return results.length ? JSON.parse(results[0].value) : null;
+}
+
+function withStamp(env, stamp) {
+  const assets = env.ASSETS;
+  env.ASSETS = {
+    fetch: async (req) => (new URL(req.url).pathname === "/version.json" ? new Response(JSON.stringify(stamp)) : assets.fetch(req)),
+  };
+  return env;
+}
+
+test("v1.3 versions: the Worker's stamp against the server's version, each mismatch with its fix", async () => {
+  assert.equal(W.cmpVersion("1.2.10", "v1.2.9"), 1);
+  assert.equal(W.cmpVersion("v1.3.0", "1.3.0"), 0);
+  assert.equal(W.cmpVersion("1.2.2", "1.3.0"), -1);
+  assert.equal(W.cmpVersion("", "1.3.0"), null);
+  const pin = "b".repeat(40);
+  const stamp = { version: "1.2.1", pin_sha: pin, pin_version: "v1.2.1", repository: "edvardk/smallworld" };
+  const stale = W.versions({ version: "1.2.2", commit: "c".repeat(40), running: "1.2.2" }, stamp);
+  assert.deepEqual(stale.problems.map((p) => p.text), ["The Worker is v1.2.1, the server is v1.2.2: run `mcctl render` + `mcctl apply` to update the Worker."]);
+  const behind = W.versions({ version: "1.2.1", commit: "c".repeat(40), running: "1.2.1" }, { ...stamp, version: "1.2.2" });
+  assert.match(behind.problems[0].text, /The server is v1\.2\.1, the Worker is v1\.2\.2: deploy/);
+  const commit = W.versions({ version: "1.2.1", commit: "c".repeat(40), running: "1.2.1" }, stamp);
+  assert.deepEqual(commit.problems.map((p) => p.level), ["info"]);
+  assert.deepEqual(W.versions({ version: "1.2.1", commit: pin, running: "1.2.1" }, stamp).problems, []);
+  assert.deepEqual(W.versions(null, null).problems, []);
+
+  // through the panel: the stamp from the staged assets (version.json, never served), the header's product version
+  W.resetIsolate();
+  const env = withStamp(makePanelEnv(), { product: "1.2.1", pin: { sha: pin, version: "v1.2.1" }, repository: "edvardk/smallworld" });
+  await seed(env, NOW);
+  const inv = await kvInventory(env);
+  await W.handle(new Request("https://hb.mc.example.com/ingest/inventory", { method: "POST", headers: { Authorization: `Bearer ${env.AGENT_TOKEN}` }, body: JSON.stringify({ inventory: { ...inv, product: { version: "1.2.2", commit: "c".repeat(40), running: "1.2.2" } } }) }), env, NOW, rt);
+  const o = (await call(env, "/api/overview")).body;
+  assert.deepEqual(o.versions.worker, stamp);
+  assert.equal(o.server.product, "1.2.2");
+  assert.ok(o.warnings.some((w) => w.text.includes("run `mcctl render` + `mcctl apply`")));
+  assert.equal((await call(env, "/version.json")).status, 404, "the stamp isn't served");
+
+  // the cron keeps the stamp in the key/value table for `mcctl doctor`, written only when it changes
+  W.resetIsolate();
+  const cronEnv = withStamp(makePanelEnv({ TARGET: JSON.stringify({ targets: [] }) }), { product: "1.2.1", pin: { sha: pin, version: "v1.2.1" } });
+  const worker = async () => {
+    const { results } = await cronEnv.DB.prepare("SELECT value, updated_at FROM watchdog WHERE key = 'worker'").all();
+    return results[0] || null;
+  };
+  await W.runChecks(cronEnv, NOW, rt);
+  assert.deepEqual(JSON.parse((await worker()).value), { version: "1.2.1", pin_sha: pin, pin_version: "v1.2.1", repository: "" });
+  await W.runChecks(cronEnv, NOW + 300000, rt);
+  assert.equal((await worker()).updated_at, NOW, "unchanged: not written again");
 });
