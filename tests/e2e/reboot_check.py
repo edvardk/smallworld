@@ -1,4 +1,4 @@
-"""P11 acceptance inside the e2e-mock container (run as root after agent_check.py; stdlib only): the reboot gate.
+"""P11 acceptance inside the e2e-mock container (run as root after hardening_check.py; stdlib only): the reboot gate.
 
 site.yml installed mc-reboot-gate (as mcops, sandboxed) with REBOOT_TARGET=mc-e2e-reboot.target and a whole-day
 window (tests/e2e/vars.yml): starting that target is the "reboot". Checks, through the real unit and polkit:

@@ -15,12 +15,22 @@ const team = await makeTeam();
 const ORIGIN = { Origin: `https://${PANEL_HOST}`, "Sec-Fetch-Site": "same-origin" };
 const mojang = new Map([["felix_2011", { status: 200, body: { id: "0d61aa00bb0011224455667788997f90", name: "Felix_2011" } }]]);
 let mojangCalls = 0;
+let fallbackCalls = 0;
 const rt = runtimeFor(team, async (url) => {
   const m = /^https:\/\/api\.mojang\.com\/users\/profiles\/minecraft\/(.+)$/.exec(url);
-  if (!m) throw new Error(`unexpected fetch ${url}`);
+  const f = /^https:\/\/api\.minecraftservices\.com\/minecraft\/profile\/lookup\/name\/(.+)$/.exec(url);
+  if (!m && !f) throw new Error(`unexpected fetch ${url}`);
+  const name = decodeURIComponent((m || f)[1]).toLowerCase();
+  if (f) {
+    // the fallback: answers unless the test says it's down too
+    fallbackCalls += 1;
+    if (name === "brokenmojang") return new Response("down", { status: 503 });
+    const hit = mojang.get(name.replace(/^blk_/, ""));
+    return hit ? new Response(JSON.stringify(hit.body), { status: 200 }) : new Response("{}", { status: 404 });
+  }
   mojangCalls += 1;
-  const name = decodeURIComponent(m[1]).toLowerCase();
   if (name === "brokenmojang") return new Response("oops", { status: 500 });
+  if (name.startsWith("blk_")) return new Response("forbidden", { status: 403 }); // Cloudflare egress, v1.2.2
   const hit = mojang.get(name);
   return hit ? new Response(JSON.stringify(hit.body), { status: hit.status }) : new Response(null, { status: 204 });
 });
@@ -203,7 +213,20 @@ test("Mojang lookup: found, not found, failure, cached, and only for valid names
   await call(env, "/api/mojang?name=FELIX_2011");
   assert.equal(mojangCalls, 1, "cached per isolate");
   assert.deepEqual((await call(env, "/api/mojang?name=NoSuchPlayer")).body, { found: false });
-  assert.equal((await call(env, "/api/mojang?name=brokenmojang")).status, 502);
+  assert.equal(fallbackCalls, 0, "the fallback only when api.mojang.com doesn't answer");
+  // v1.2.2: api.mojang.com refuses the Worker (403): the fallback answers
+  const viaFallback = await call(env, "/api/mojang?name=blk_felix_2011");
+  assert.equal(viaFallback.status, 200);
+  assert.deepEqual(viaFallback.body, { found: true, name: "Felix_2011", uuid: "0d61aa00-bb00-1122-4455-667788997f90" });
+  assert.equal(fallbackCalls, 1);
+  // neither answers: not an error, the form may add it unverified (the server resolves the name)
+  const down = await call(env, "/api/mojang?name=brokenmojang");
+  assert.equal(down.status, 200);
+  assert.equal(down.body.found, null);
+  assert.equal(down.body.unverified, true);
+  assert.match(down.body.detail, /api\.mojang\.com: HTTP 500; api\.minecraftservices\.com: HTTP 503/);
+  await call(env, "/api/mojang?name=brokenmojang");
+  assert.equal(fallbackCalls, 3, "an unverified answer isn't cached");
   for (const bad of ["ab", "has space", "x".repeat(17), "../../x"]) {
     assert.equal((await call(env, `/api/mojang?name=${encodeURIComponent(bad)}`)).status, 400, bad);
   }

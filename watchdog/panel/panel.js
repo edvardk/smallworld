@@ -1322,6 +1322,7 @@ function wirePlayers() {
   const btn = $("#wlAdd");
   let timer;
   let found = null;
+  let unverified = false;
   inp.addEventListener("input", () => {
     clearTimeout(timer);
     found = null;
@@ -1351,8 +1352,17 @@ function wirePlayers() {
         if (inp.value.trim() !== v) return;
         if (r.found) {
           found = r.name;
+          unverified = false;
           out.className = "lookup ok";
           out.textContent = `✓ Found Java account ${r.name} · UUID ${r.uuid}`;
+          btn.disabled = false;
+        } else if (r.unverified) {
+          // Mojang didn't answer the Worker (it refuses Cloudflare's addresses at times): the server checks the
+          // name itself when it adds it, as Discord's /whitelist add does.
+          found = v;
+          unverified = true;
+          out.className = "lookup";
+          out.textContent = `Couldn't check "${v}" with Mojang from here. You can still add it: the server looks the name up itself and refuses one that doesn't exist.`;
           btn.disabled = false;
         } else {
           out.className = "lookup bad";
@@ -1371,7 +1381,7 @@ function wirePlayers() {
     confirmDlg({
       title: `Whitelist ${name}?`,
       ok: "Add to whitelist",
-      body: `<p>${esc(name)} can join right away (<code class="mono">whitelist add ${esc(name)}</code>). The change is recorded in <code class="mono">players.yml</code> through a pull request that merges by itself; until then deploys keep it.</p>`,
+      body: `<p>${esc(name)} can join right away (<code class="mono">whitelist add ${esc(name)}</code>). The change is recorded in <code class="mono">players.yml</code> through a pull request that merges by itself; until then deploys keep it.</p>${unverified ? '<p class="note">Not checked with Mojang: the server refuses the add if no Java account has this name.</p>' : ""}`,
       onOk: async () => {
         inp.value = "";
         btn.disabled = true;

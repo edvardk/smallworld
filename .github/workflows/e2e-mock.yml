@@ -17,6 +17,10 @@ name: e2e-mock
 # Nothing here has a secret: the MC_SECRET_* values below are fixed fakes for a throwaway container, and the
 # restic repository is a local directory inside it.
 #
+# The checks run as parallel shards of job `e2e-shard` (core, agent, telemetry-brand, migrate-p16), each on its
+# own runner with its own freshly deployed box; job `e2e` (the required check) passes when every shard did.
+# Wall time is the agent shard's (~20 min) instead of the sum (~42 min).
+#
 # What runs when (docs/ci.md; the product repo is public, so GitHub's runners cost no minutes here):
 #   - every pull request to main: `e2e` (a required check). The essential half (1-5, reboot gate, deploy checks,
 #     firewall, 6's dry runs) always; the heavy half (telemetry, branding, migrate container -> container, P16
@@ -99,7 +103,18 @@ jobs:
           echo "e2e=$e2e full=$full bench=$bench"
           { echo "e2e=$e2e"; echo "full=$full"; echo "bench=$bench"; } >> "$GITHUB_OUTPUT"
 
-  e2e:
+  # The checks run in parallel shards, each on its own runner with its own box (they can't share one: the host
+  # network's ports 8787/8788 and 25565/25575, restarts, restores, world switches, paused timers). Every shard
+  # builds the config repo, boots a container and deploys it (the first site.yml run); then
+  #   core:            mcctl init's re-runs and stale pin, the client switch, terraform validate, the second
+  #                    site.yml (changed=0), hardening, reboot gate, deploy checks, firewall, P12 dry runs;
+  #   agent:           mc-agent and the P10 panel actions (the longest shard, ~20 min);
+  #   telemetry-brand: telemetry, then branding (heavy half only);
+  #   migrate-p16:     migrate container -> container, then P16 on the migrated box (heavy half only).
+  # A heavy shard in an essential run skips every step (done in seconds); the matrix stays static. Each check
+  # sets up its own preconditions, so none depends on another shard. The required check is `e2e` below.
+  e2e-shard:
+    name: e2e-shard (${{ matrix.shard }})
     needs: changes
     # If `changes` failed its outputs are empty: everything runs (never a silently skipped required check).
     if: ${{ !cancelled() && needs.changes.outputs.e2e != 'false' }}
@@ -109,7 +124,20 @@ jobs:
     runs-on: >-
       ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
       && vars.E2E_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: ${{ needs.changes.outputs.full == 'false' && 50 || 80 }}
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      # On the self-hosted runner the shards run one after another: every box uses the host's network (the
+      # ports above) and the same container names, so two on one machine would clash.
+      max-parallel: >-
+        ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        && vars.E2E_RUNNER && '1' || '4') }}
+      matrix:
+        include:
+          - {shard: core, full_only: false, timeout: 45}
+          - {shard: agent, full_only: false, timeout: 45}
+          - {shard: telemetry-brand, full_only: true, timeout: 45}
+          - {shard: migrate-p16, full_only: true, timeout: 60}
     env:
       CONFIG: ${{ github.workspace }}/../e2e-config
       MC_SECRET_RCON_PASSWORD: e2e-not-a-secret-rcon-password-0001
@@ -125,38 +153,54 @@ jobs:
       MC_SECRET_DISCORD_WEBHOOK_URL: ""
       # the heavy half (header); empty (= run it) if `changes` failed
       FULL: ${{ needs.changes.outputs.full }}
+      # this shard has work in this run (a heavy shard only with the heavy half)
+      ACTIVE: ${{ (!matrix.full_only || needs.changes.outputs.full != 'false') && 'true' || 'false' }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: env.ACTIVE == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 2 # P15: the stale-pin run below pins HEAD~1, an ancestor of this checkout
 
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      - if: env.ACTIVE == 'true'
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
           cache: pip
           cache-dependency-path: requirements/validate.txt
 
-      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+      - if: env.ACTIVE == 'true'
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: 1.17.1
 
       # mcctl itself needs PyYAML only.
       - name: Install mcctl's dependencies
+        if: env.ACTIVE == 'true'
         timeout-minutes: 5
         run: pip install --require-hashes --no-deps -r requirements/validate.txt
 
-      # The pinned product commit is this checkout's (clean at github.sha). A second run must skip every step.
-      - name: mcctl init (answers file, mock providers), twice
+      # The pinned product commit is this checkout's (clean at github.sha). A self-hosted runner keeps the
+      # workspace's parent between jobs: start from an empty config repo.
+      - name: mcctl init (answers file, mock providers)
+        if: env.ACTIVE == 'true'
         timeout-minutes: 10
         run: |
+          rm -rf "$CONFIG"
           python -m mcctl init -C "$CONFIG" --answers tests/e2e/answers.yml --non-interactive --mock
+
+      # A second run must skip every step.
+      - name: mcctl init again (every step done earlier)
+        if: matrix.shard == 'core'
+        timeout-minutes: 10
+        run: |
           python -m mcctl init -C "$CONFIG" --answers tests/e2e/answers.yml --non-interactive --mock | tee "$RUNNER_TEMP/init2.log"
           test "$(grep -c 'done earlier (skipped)' "$RUNNER_TEMP/init2.log")" -eq 12
 
       # P15: a config repo pinned behind this checkout (HEAD~1) is offered a move first; the answers file
       # types yes (allowed with --mock only), so the pin moves forward to HEAD in one committed change.
       - name: mcctl init moves a stale product pin forward
+        if: matrix.shard == 'core'
         timeout-minutes: 10
         run: |
           old="$(git rev-parse HEAD~1)"
@@ -170,6 +214,7 @@ jobs:
 
       # v1.2: the drink under its own command name (mc-brand registers it next to /drink: brand_check.py).
       - name: mcctl validate + render the new config repo
+        if: env.ACTIVE == 'true'
         timeout-minutes: 5
         run: |
           GIT_AUTHOR_NAME=e2e GIT_AUTHOR_EMAIL=e2e@e2e.test GIT_COMMITTER_NAME=e2e GIT_COMMITTER_EMAIL=e2e@e2e.test \
@@ -181,6 +226,7 @@ jobs:
       # one command: `config set` writes the first lock (real Modrinth), commits both files and says an apply
       # is needed. On a copy, so the deploy below keeps the client off.
       - name: Turn the client on in a repo without a client lock or the publish secret
+        if: matrix.shard == 'core'
         timeout-minutes: 10
         run: |
           copy="$RUNNER_TEMP/client-config"
@@ -194,7 +240,7 @@ jobs:
           git -C "$copy" show --name-only --format= HEAD | grep -qx client.lock.yml
           test -z "$(git -C "$copy" status --porcelain)"
           python -m mcctl validate -C "$copy"
-          # ... and a workflow that doesn't pass ARTIFACT_PUBLISH_TOKEN (mc-config before its PR #2) fails the
+          # ... and a workflow that doesn't pass ARTIFACT_PUBLISH_TOKEN (a config repo made before v1.1) fails the
           # deploy's client-publish instead of warning; the target release's schema-migrate adds the line.
           sed -i '/ARTIFACT_PUBLISH_TOKEN:/d' "$copy/.github/workflows/server.yml"
           if ARTIFACT_PUBLISH_TOKEN="" python -m mcctl client-publish -C "$copy"; then
@@ -203,13 +249,15 @@ jobs:
           python -m mcctl schema-migrate -C "$copy" --from 1.1.0 | grep -q "passes ARTIFACT_PUBLISH_TOKEN"
           grep -qE '^ +ARTIFACT_PUBLISH_TOKEN: .+ARTIFACT_PUBLISH_TOKEN' "$copy/.github/workflows/server.yml"
 
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - if: matrix.shard == 'core'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.terraform.d/plugin-cache
           key: terraform-providers-${{ runner.os }}-${{ hashFiles('terraform/.terraform.lock.hcl') }}
 
       # Providers from the cache shared with ci.yml's lint job (terraform checks them against the lock file).
       - name: terraform validate
+        if: matrix.shard == 'core'
         timeout-minutes: 10
         run: |
           mkdir -p "$HOME/.terraform.d/plugin-cache"
@@ -217,9 +265,12 @@ jobs:
           terraform -chdir=terraform init -backend=false -input=false
           terraform -chdir=terraform validate
 
+      # A self-hosted runner may still have a previous shard's boxes: removed first (and again at the end).
       - name: Start a systemd Debian 13 container
+        if: env.ACTIVE == 'true'
         timeout-minutes: 15
         run: |
+          docker rm -f mc-e2e mc-e2e-new >/dev/null 2>&1 || true
           sudo modprobe tcp_bbr   # the base role loads it; the container shares the runner's kernel
           docker build -t mc-e2e -f tests/e2e/Containerfile tests/e2e
           docker run -d --name mc-e2e --hostname e2e --privileged --cgroupns=host --network host \
@@ -228,6 +279,7 @@ jobs:
           timeout 120 sh -c 'until docker exec mc-e2e systemctl is-system-running 2>/dev/null | grep -Eq "running|degraded"; do sleep 2; done'
 
       - name: Install Ansible in the container (hash-pinned)
+        if: env.ACTIVE == 'true'
         timeout-minutes: 10
         run: |
           docker exec mc-e2e python3 -m venv /opt/ansible
@@ -240,12 +292,15 @@ jobs:
       # Tailscale and the nftables firewall are skipped: the first needs a real tailnet auth key (skipping the
       # `tailscale` tag also skips the guards that refuse to close SSH without it), and the firewall's ruleset
       # would be loaded into the runner's own network namespace (--network host; it is checked in a
-      # namespace below instead).
-      - name: site.yml (first run, then a second that must change nothing)
+      # namespace below instead). Every shard deploys its box; the second run (idempotency) is core's.
+      - name: site.yml (first run; in core a second that must change nothing)
+        if: env.ACTIVE == 'true'
         timeout-minutes: 35
+        env:
+          RUNS: ${{ matrix.shard == 'core' && '1 2' || '1' }}
         run: |
           set -o pipefail
-          for run in 1 2; do
+          for run in $RUNS; do
             docker exec -w /src/product/ansible \
               -e MC_SECRET_RCON_PASSWORD -e MC_SECRET_RESTIC_PASSWORD -e MC_SECRET_RESTIC_REPOSITORY \
               -e MC_SECRET_R2_ACCESS_KEY_ID -e MC_SECRET_R2_SECRET_ACCESS_KEY -e MC_SECRET_HEARTBEAT_TOKEN \
@@ -254,9 +309,10 @@ jobs:
                 --skip-tags tailscale,firewall -e @/src/product/tests/e2e/vars.yml \
               | tee "$RUNNER_TEMP/site-$run.log"
           done
-          grep -Eq 'changed=0 +unreachable=0 +failed=0' "$RUNNER_TEMP/site-2.log"
+          if [ "$RUNS" = "1 2" ]; then grep -Eq 'changed=0 +unreachable=0 +failed=0' "$RUNNER_TEMP/site-2.log"; fi
 
       - name: The real server answers a status ping
+        if: env.ACTIVE == 'true'
         timeout-minutes: 5
         run: |
           python - <<'PY'
@@ -276,6 +332,7 @@ jobs:
 
       # P7 acceptance: the hardening is exercised on the live box, not just rendered.
       - name: Hardening checks (systemd-analyze gate, sandboxed units, sysctls, journal, sshd, admin-stopped)
+        if: matrix.shard == 'core'
         timeout-minutes: 15
         run: docker exec mc-e2e /opt/ansible/bin/python /src/product/tests/e2e/hardening_check.py /src/product
 
@@ -286,6 +343,7 @@ jobs:
       # deploy's players role keeps it, PR to a mock GitHub API, merged), restart with a countdown, plugin disable
       # -> restart without it -> enable, backup now -> snapshot list, restore round trip with a safety snapshot.
       - name: mc-agent checks (pushes to a mock Worker, signed commands, P10 panel actions)
+        if: matrix.shard == 'agent'
         timeout-minutes: 25
         run: |
           docker exec \
@@ -297,13 +355,13 @@ jobs:
       # P13 acceptance: the mc-telemetry plugin on the real Purpur, snapshots on tmpfs, mc-agent shipping minute rows
       # and segments to the real Worker code (node, node:sqlite as D1, on 127.0.0.1:8787), verdicts back to the
       # plugin (/lag over RCON), a signed in-game message, and an outage -> quiet-time backfill without gaps/dups.
-      - if: env.FULL != 'false'
+      - if: matrix.shard == 'telemetry-brand' && env.FULL != 'false'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22.22.0"
 
       - name: Experience telemetry checks (plugin, agent, Worker, verdicts, /lag, backfill)
-        if: env.FULL != 'false'
+        if: matrix.shard == 'telemetry-brand' && env.FULL != 'false'
         timeout-minutes: 25
         run: python tests/e2e/telemetry_check.py mc-e2e
 
@@ -311,7 +369,7 @@ jobs:
       # icon, the icon in the status ping), its commands over RCON (/rules, /discord, /mcbrand selftest: greetings,
       # title, tab list, sidebar, the drink read back through the API, /drink and its own name) and its task's time.
       - name: Branding checks (mc-brand plugin, server icon, commands over RCON)
-        if: env.FULL != 'false'
+        if: matrix.shard == 'telemetry-brand' && env.FULL != 'false'
         timeout-minutes: 15
         run: python tests/e2e/brand_check.py mc-e2e
 
@@ -320,14 +378,17 @@ jobs:
       # pending + window + nobody online -> the "reboot" (maintenance window, audit, state); a new boot id ->
       # "back"; admin-stopped and outside the window -> it waits.
       - name: Reboot gate checks (mock reboot)
+        if: matrix.shard == 'core'
         timeout-minutes: 15
         run: docker exec mc-e2e python3 /src/product/tests/e2e/reboot_check.py
 
       - name: Deploy checks (restic password rotated by any deploy, pre-upgrade backup on a version change)
+        if: matrix.shard == 'core'
         timeout-minutes: 25
         run: python tests/e2e/deploy_check.py mc-e2e
 
       - name: Firewall checks (ruleset in a network namespace; rate and concurrency limits)
+        if: matrix.shard == 'core'
         timeout-minutes: 10
         run: |
           docker exec -w /src/product/ansible mc-e2e /opt/ansible/bin/ansible-playbook \
@@ -337,6 +398,7 @@ jobs:
       # P12 acceptance: the `--dry-run` rehearsals print the exact sequence and change nothing (no provider, no
       # host); the config repo is unchanged afterwards.
       - name: P12 dry runs (migrate, rollback, retire-old, upgrade, lock update, secrets rotate, restore)
+        if: matrix.shard == 'core'
         timeout-minutes: 10
         run: |
           set -o pipefail
@@ -358,7 +420,7 @@ jobs:
       # old box is powered off (host network: its ports). site.yml on the new box with world.expected restores
       # the latest snapshot; then `.restored-from`, a status ping, and the `mcctl restore` wrapper (--to, --live).
       - name: Migrate container -> container (fence, final backup, restore on a fresh box, restore wrapper)
-        if: env.FULL != 'false'
+        if: matrix.shard == 'migrate-p16' && env.FULL != 'false'
         timeout-minutes: 35
         run: |
           set -o pipefail
@@ -394,7 +456,7 @@ jobs:
       # fewer than 3 CPUs the split must be refused (site.yml pre_tasks, before any role); the rest then runs with
       # it off. Then mc_noatime on real mounts, and a run back on g1 that reverts the shmem THP advise live.
       - name: P16 knobs (ZGC, CPU split, noatime, chunk threads), then a second run that changes nothing
-        if: env.FULL != 'false'
+        if: matrix.shard == 'migrate-p16' && env.FULL != 'false'
         timeout-minutes: 40
         run: |
           set -o pipefail
@@ -438,6 +500,30 @@ jobs:
             docker exec "$box" journalctl -u minecraft -u mc-backup -u mc-health -u mc-agent -u mc-restore-apply \
               -u 'mc-restore@*' -u mc-plugins-apply -u mc-reboot-gate --no-pager -n 600 || true
           done
+
+      # GitHub's runner is thrown away; a self-hosted one keeps containers, and the next shard reuses the names.
+      - name: Remove the boxes
+        if: always() && env.ACTIVE == 'true'
+        timeout-minutes: 5
+        run: docker rm -f mc-e2e mc-e2e-new >/dev/null 2>&1 || true
+
+  # The required check (main's ruleset, mcctl/productsetup.py REQUIRED_CHECKS): one name however the shards are
+  # cut. It fails unless every shard passed (a heavy shard in an essential run passes in seconds); skipped only
+  # when the whole e2e is (scope none, the monthly benches), which reports as success like before.
+  e2e:
+    needs: [changes, e2e-shard]
+    if: ${{ !cancelled() && needs.changes.outputs.e2e != 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Every e2e shard passed
+        timeout-minutes: 2
+        env:
+          RESULT: ${{ needs.e2e-shard.result }}
+        run: |
+          echo "e2e-shard: $RESULT"
+          # Only success: the shards share this job's if:, so a skipped shard here means something went wrong.
+          [ "$RESULT" = success ]
 
   # The benches (report-only or with wide noise bands, ~2 h of runner time together) run only on
   # workflow_dispatch with `bench: true` and monthly (when the month's commits touched what they measure),

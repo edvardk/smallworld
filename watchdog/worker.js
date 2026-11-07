@@ -3021,27 +3021,52 @@ function actionArgs(action, a) {
 const mojangCache = new Map(); // per isolate: lower-case name -> {at, result}
 const MOJANG_TTL_MS = 600000;
 
+// Name -> profile endpoints, tried in order. [V, secondary] api.mojang.com/users/profiles/minecraft/<name>: 200
+// {id, name}; 204/404 = no such account (the endpoint mcctl init uses, mcctl/providers/mojang.py). It answers
+// Cloudflare Workers' shared egress with 403 (v1.2.2: seen live), so the newer
+// api.minecraftservices.com/minecraft/profile/lookup/name/<name> (same answers, 404 = no such account) is the
+// fallback. Unauthenticated; only the name is sent.
+const MOJANG_LOOKUPS = [
+  "https://api.mojang.com/users/profiles/minecraft/",
+  "https://api.minecraftservices.com/minecraft/profile/lookup/name/",
+];
+
 async function mojangLookup(name, now, rt) {
   const key = name.toLowerCase();
   const hit = mojangCache.get(key);
   if (hit && now - hit.at < MOJANG_TTL_MS) return hit.result;
-  // [V, secondary] api.mojang.com/users/profiles/minecraft/<name>: 200 {id, name}; 204/404 = no such account
-  // (the same endpoint mcctl init uses, mcctl/providers/mojang.py). Unauthenticated; only the name is sent.
-  const resp = await rt.fetch(`https://api.mojang.com/users/profiles/minecraft/${encodeURIComponent(name)}`, {
-    headers: { Accept: "application/json", "User-Agent": "smallworld panel" },
-  });
-  let result;
-  if (resp.status === 204 || resp.status === 404) {
-    result = { found: false };
-  } else if (resp.ok) {
-    const data = await resp.json().catch(() => null);
-    const id = data && typeof data.id === "string" ? data.id.toLowerCase() : "";
-    if (!/^[0-9a-f]{32}$/.test(id)) throw new Error("unexpected answer");
-    const uuid = `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20)}`;
-    result = { found: true, name: typeof data.name === "string" && JAVA_NAME.test(data.name) ? data.name : name, uuid };
-  } else {
-    throw new Error(`HTTP ${resp.status}`);
+  let result = null;
+  const failures = [];
+  for (const base of MOJANG_LOOKUPS) {
+    let resp;
+    try {
+      resp = await rt.fetch(`${base}${encodeURIComponent(name)}`, {
+        headers: { Accept: "application/json", "User-Agent": "smallworld panel" },
+      });
+    } catch (err) {
+      failures.push(`${new URL(base).host}: ${String((err && err.message) || err).slice(0, 40)}`);
+      continue;
+    }
+    if (resp.status === 204 || resp.status === 404) {
+      result = { found: false };
+      break;
+    }
+    if (resp.ok) {
+      const data = await resp.json().catch(() => null);
+      const id = data && typeof data.id === "string" ? data.id.toLowerCase() : "";
+      if (/^[0-9a-f]{32}$/.test(id)) {
+        const uuid = `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20)}`;
+        result = { found: true, name: typeof data.name === "string" && JAVA_NAME.test(data.name) ? data.name : name, uuid };
+        break;
+      }
+      failures.push(`${new URL(base).host}: unexpected answer`);
+      continue;
+    }
+    failures.push(`${new URL(base).host}: HTTP ${resp.status}`);
   }
+  // Neither answered: not an error for the panel. The whitelist add still works (the server resolves the name
+  // itself, as for Discord's /whitelist add), so the form offers to add it unverified. Not cached.
+  if (!result) return { found: null, unverified: true, detail: failures.join("; ").slice(0, 160) };
   if (mojangCache.size > 200) mojangCache.delete(mojangCache.keys().next().value);
   mojangCache.set(key, { at: now, result });
   return result;

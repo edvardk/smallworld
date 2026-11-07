@@ -6,6 +6,30 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-11-07
+
+Panel whitelist fixes. A deploy sets the whitelist to `players.yml` plus the panel's pending adds; with both bugs,
+panel and Discord adds never reached `players.yml`, so a deploy removed them. Add lasting players with
+`mcctl players add` (or the panel, from this release on).
+
+### Fixed
+
+- Panel whitelist changes reach `players.yml` again: GitHub's installation tokens grew past 255 characters (390
+  seen live) and `mc_panel`'s format check refused them ("the Worker returned no usable GitHub token"), so the
+  pull request was never opened and pending adds expired after 24 h. The check now accepts up to 4096 characters
+  of the same character set, and a refusal says why (the reply's keys, the length, unexpected characters; never
+  the token).
+- Panel whitelist form: Mojang answers the Worker's lookup with HTTP 403 (Cloudflare's shared egress), so no name
+  could be added. The Worker falls back to `api.minecraftservices.com`'s name lookup; when neither answers, the form
+  offers to add the name unverified (the server resolves it itself, as Discord's `/whitelist add` does).
+
+### Changed
+
+- The product's `e2e` CI runs as four parallel shards (core, agent, telemetry-brand, migrate-p16), each on its own
+  freshly deployed box; the required check `e2e` aggregates them (docs/ci.md). Measured: a full run 16 minutes
+  instead of 42.5.
+- Dependencies: ansible-core 2.21.5 -> 2.21.6 (deploy), setuptools 80.9.0 -> 84.1.0 (build backend only).
+
 ## [1.2.1] - 2026-11-06
 
 ### Added

@@ -6,7 +6,7 @@ import sys
 
 # The product version. Releases tag `v<__version__>`; pyproject.toml and CHANGELOG.md must agree
 # (scripts/release.py check, tests/test_release.py).
-__version__ = "1.2.1"
+__version__ = "1.2.2"
 
 # The controller (mcctl, Terraform/Ansible driver) needs Python >= 3.12: the hash-pinned ansible-core in
 # requirements/deploy.txt requires it, and mcctl builds the pinned product's venv with its own interpreter.
