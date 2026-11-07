@@ -14,8 +14,8 @@ Runs on the runner, drives the container with `docker exec` (RCON through the bo
     /minecraft:help is still vanilla's list; /compass and /map are per player; selftest renders the compass line
     for a fixed scene (= plugin/mc-brand/src/test/wayfinding-fixtures.json, which tests/test_wayfinding.py checks
     independently), vanilla's map-cursor arithmetic and the help hologram's text; the e2e config's `at: spawn,
-    help: true` hologram is live once the spawn chunk is loaded (forceload from the console, which sits at the
-    world spawn).
+    help: true` hologram is live once its chunk is loaded (selftest reports where the plugin put it; the check
+    force-loads exactly that chunk and waits up to 30 s).
 The join flow itself (title, greeting, sound, the first drink, the compass boss bar, the /map tip) needs a
 logged-in client: online-mode is on and the whitelist is enforced in the e2e, and the e2e has no client bot, so it
 is checked through selftest's rendering, not with a real client.
@@ -211,15 +211,26 @@ def main() -> int:
     journal2 = sh(box, "journalctl -u minecraft --no-pager -o cat --since '-2min'").stdout
     expect("Exception" not in journal2, "no exception after the commands")
     # v1.3: the e2e config's spawn help hologram (e2e-mock.yml: branding.holograms [{at: spawn, help: true}]).
-    # No player keeps the spawn chunk loaded, so load it from the console (its position is the world spawn).
+    # No player keeps its chunk loaded, so force-load exactly the chunk the plugin resolved ("help at [x y z]":
+    # Bukkit's World.getSpawnLocation). Not the console's `~ ~`: that is vanilla's server-wide respawn data
+    # (RconConsoleSource), which on the e2e world pointed elsewhere (v1.3-next CI: "spawned 0" after forceload).
     if any(h.get("help") for h in plugin_conf.get("holograms", [])):
-        rcon(box, "forceload add ~ ~")
-        time.sleep(3)
-        live = re.search(r"help live (\d+)", rcon(box, "mcbrand selftest"))
-        count = rcon(box, "execute if entity @e[type=minecraft:text_display]")
-        expect(live is not None and int(live.group(1)) >= 1 and "Test passed" in count,
-               f"v1.3: the spawn help hologram is live ({live.group(0) if live else None}; {count.strip()!r})")  # fmt: skip
-        rcon(box, "forceload remove ~ ~")
+        at = re.search(r"help at \[(-?\d+) (-?\d+) (-?\d+)", self_test)
+        expect(at is not None, f"v1.3: selftest reports the help hologram's position ({self_test[-200:]!r})")
+        if at:
+            x, z = at.group(1), at.group(3)
+            print("  " + rcon(box, f"forceload add {x} {z}").strip(), flush=True)
+            live, count, deadline = None, "", time.monotonic() + 30
+            while time.monotonic() < deadline:  # the chunk loads asynchronously; the HUD task heals in <= 5 s
+                live = re.search(r"help live (\d+)", rcon(box, "mcbrand selftest"))
+                count = rcon(box, "execute if entity @e[type=minecraft:text_display]")
+                if live and int(live.group(1)) >= 1 and "Test passed" in count:
+                    break
+                time.sleep(1)
+            expect(live is not None and int(live.group(1)) >= 1 and "Test passed" in count,
+                   f"v1.3: the spawn help hologram is live at {x} {z} "
+                   f"({live.group(0) if live else None}; {count.strip()!r})")  # fmt: skip
+            rcon(box, f"forceload remove {x} {z}")
     else:
         expect(False, "v1.3: the e2e config has a help hologram (e2e-mock.yml sets branding.holograms)")
     for f in failures:

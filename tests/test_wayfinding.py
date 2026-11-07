@@ -345,3 +345,20 @@ def test_full_example_has_a_spawn_help_board() -> None:
     cfg = schema.load_server(yaml.safe_load((REPO / "examples/full/server.yml").read_text()))
     assert any(h.at == "spawn" and h.help for h in cfg.branding.holograms)
     assert cfg.branding.compass.max_range == 2000
+
+
+def test_spawn_hologram_heals_and_reports_where_it_is() -> None:
+    """v1.3-next CI: after `forceload add ~ ~` the spawn help hologram never spawned ("spawned 0"): the console's
+    `~ ~` is vanilla's server-wide respawn data (RconConsoleSource -> MinecraftServer.getRespawnData), the
+    plugin's spawn is Bukkit's World.getSpawnLocation (Paper's per-world PaperLevelOverrides), so the e2e
+    force-loaded a chunk the plugin didn't use. The plugin reports its own position and heals from the HUD task."""
+    holo = (BRAND / "Holograms.java").read_text()
+    tick = holo.split("void tick(Msg.Speed speed, int players)", 1)[1].split("\n    }\n")[0]
+    assert "ensure(i);" in tick  # not only on EntitiesLoadEvent
+    ensure = holo.split("private void ensure(int i)", 1)[1].split("\n    }\n")[0]
+    assert ensure.index("if (!missing)") < ensure.index("Msg.Speed.of(")  # cheap when the display exists
+    assert '", help at [" + helpAt() + "]"' in holo
+    check = (REPO / "tests/e2e/brand_check.py").read_text()
+    assert 'r"help at \\[(-?\\d+) (-?\\d+) (-?\\d+)"' in check
+    assert 'rcon(box, f"forceload add {x} {z}")' in check and "forceload add ~ ~" not in check
+    assert "time.monotonic() + 30" in check

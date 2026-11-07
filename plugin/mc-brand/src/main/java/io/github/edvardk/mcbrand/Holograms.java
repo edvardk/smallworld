@@ -35,6 +35,8 @@ import org.bukkit.persistence.PersistentDataType;
  *   <li>v1.3: {@code help: true} appends /help's list for everyone ({@link Help#hologram}: the same source as
  *       /help); {@code at: spawn} places the hologram {@link #ABOVE_SPAWN} blocks above the world spawn of its
  *       dimension (World.getSpawnLocation, read whenever it spawns; the HUD task moves it if the spawn moved).
+ *       The HUD task also spawns any hologram whose chunk is loaded but whose display is missing (not only
+ *       EntitiesLoadEvent), so a missed event or a moved spawn heals within one run.
  * </ul>
  */
 final class Holograms {
@@ -196,6 +198,11 @@ final class Holograms {
     private void ensure(int i) {
         Spec spec = s.holograms().get(i);
         Live l = live.get(i);
+        boolean missing = l.plain == null || !l.plain.isValid()
+                || spec.glyph() && (l.glyph == null || !l.glyph.isValid());
+        if (!missing) {
+            return;
+        }
         World w = Bukkit.getWorld(NamespacedKey.fromString(spec.world()));
         if (w == null) {
             return;
@@ -257,6 +264,7 @@ final class Holograms {
         for (int i = 0; i < live.size(); i++) {
             Spec spec = s.holograms().get(i);
             Live l = live.get(i);
+            ensure(i); // v1.3: also here, not only on EntitiesLoadEvent (a chunk loaded another way, a spawn moved)
             if (spec.spawn()) {
                 follow(spec, l);
             }
@@ -291,6 +299,25 @@ final class Holograms {
         }
     }
 
+    /**
+     * Where each help hologram is (block x y z, or "-" without its world), for tests/e2e/brand_check.py: it
+     * force-loads exactly that chunk. An {@code at: spawn} one uses Bukkit's World.getSpawnLocation (Paper's
+     * per-world respawn data), which need not be where the console's {@code ~ ~} points (vanilla's server-wide
+     * respawn data: RconConsoleSource), checked in the pinned jar.
+     */
+    String helpAt() {
+        List<String> out = new ArrayList<>();
+        for (Spec spec : s.holograms()) {
+            if (!spec.help()) {
+                continue;
+            }
+            World w = Bukkit.getWorld(NamespacedKey.fromString(spec.world()));
+            Location at = w == null ? null : where(spec, w);
+            out.add(at == null ? "-" : at.getBlockX() + " " + at.getBlockY() + " " + at.getBlockZ());
+        }
+        return String.join(", ", out);
+    }
+
     /** Live displays of help holograms (tests/e2e/brand_check.py, with the spawn chunk force-loaded). */
     int helpLive() {
         int n = 0;
@@ -314,6 +341,6 @@ final class Holograms {
         return "holograms " + plain.replace("\n", " | ") + ", glyph " + withGlyph.contains(Texts.GLYPH_CHAR)
                 + "/" + !plain.contains(Texts.GLYPH_CHAR) + ", configured " + live.size() + " spawned "
                 + spawned + " swept " + swept + " updates " + updates + ", help hologram "
-                + helpText.replace("\n", " | ") + ", help live " + helpLive();
+                + helpText.replace("\n", " | ") + ", help live " + helpLive() + ", help at [" + helpAt() + "]";
     }
 }
