@@ -6,6 +6,20 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Added
+
+- **The home screen:** `mcctl` with no command, on an interactive terminal, shows a status header (deployment,
+  config repo, pinned product vs this mcctl, server online/players/TPS/MSPT, last deploy, open panel PRs; slow
+  or failed parts read "unknown (why)" and never block) and an arrow-key menu grouped Server, Players, Worlds,
+  Config, Publish, Health, Updates, Secrets, Metrics. Its items run the existing read-only commands (status, logs,
+  backup list, players list, validate, config get, doctor, update dry runs, secrets dashlane, metrics); the rest
+  of v1.3's items are shown as coming. `--plain`, CI, `NO_COLOR` and no terminal keep the usage error (exit 2).
+- **Remembered config repo:** `~/.config/mcctl/config.toml` (XDG_CONFIG_HOME; Windows `%APPDATA%\mcctl`)
+  remembers the config repos used with `-C` (paths only, no secrets). Without `-C`, outside a config repo, mcctl
+  uses the remembered one; the home screen's "Switch config repo" picks between them.
+- Dependencies: questionary 2.1.1 (with prompt-toolkit 3.0.53 and wcwidth 0.9.4) in all three requirement sets
+  and `pyproject.toml`.
+
 ## [1.2.2] - 2026-11-07
 
 Panel whitelist fixes. A deploy sets the whitelist to `players.yml` plus the panel's pending adds; with both bugs,

@@ -175,6 +175,7 @@ The ones you will use (all take `-C $C`; the complete list is in [reference.md](
 
 | Command | What it does |
 |---|---|
+| `mcctl` | v1.3: on a terminal, the home screen: a status header and a menu of these commands ([reference](reference.md#the-home-screen-and-the-remembered-config-repo-v13)); remembers the config repo, so `-C` is optional |
 | `mcctl doctor` | checks tools, `.env`, every credential live (writes `expiry.yml`: commit it), the product pin, DNS, the tailnet, the watchdog; `--fix` repairs what it can (file mode, a stale product pin after a typed `yes`) |
 | `mcctl status [--json]` | server state, players, TPS/MSPT, last backup, last deploy run, drift (disabled plugins, open panel PRs) |
 | `mcctl deploy [--check]` | deploy from your computer (the same playbook and secrets as CI; `--check` is a dry run with a diff) |
