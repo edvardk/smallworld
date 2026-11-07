@@ -589,7 +589,7 @@ def next_steps(dest: Path, version: str, old: str, repo: str = PUBLIC_REPOSITORY
         f"git -C {d} remote add origin https://github.com/{repo}.git",
         f"git -C {d} push -u origin main",
         f"git -C {d} push origin v{version}",
-        f"python -m mcctl product-setup --repo {repo}",
+        f"python3 -m mcctl product-setup --repo {repo}",
         f"gh repo archive {old} --yes",
     ]
 

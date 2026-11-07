@@ -108,9 +108,15 @@ mkdir -p ~/code && cd ~/code
 gh repo clone edvardk/smallworld && cd smallworld
 python3 -m venv .venv && . .venv/bin/activate
 pip install --require-hashes --no-deps -r requirements/deploy.txt
+pip install --no-deps -e .           # the `mcctl` command in this venv (else: python3 -m mcctl)
 ansible-galaxy collection install -r ansible/requirements.yml
-python -m mcctl --version
+mcctl --version
 ```
+
+`pip install --no-deps -e .` adds the `mcctl` command to the venv: an editable install, so the command always
+runs this checkout (and mcctl's re-execution of the pinned product works as before); pip fetches the build
+backend `pyproject.toml` pins (setuptools). Without it, `python3 -m mcctl ...` is the same command. Inside the
+active venv `python` works too, but many systems have no `python` outside one: the docs write `mcctl`.
 
 Run mcctl from a **clean** checkout of a commit that is pushed to GitHub: your config repo will pin that commit,
 and its CI fetches the product by that SHA. Later, after `git pull` in the product, `mcctl setup` and `mcctl
@@ -134,7 +140,7 @@ Do these once, before or during setup (setup tells you when it needs each):
 
 ```bash
 cd ~/code/smallworld && . .venv/bin/activate
-python -m mcctl setup -C ~/code/mc-config
+mcctl setup -C ~/code/mc-config
 ```
 
 `-C` is the local folder for your config repo (created if missing). `--seed <file>` starts `server.yml` from an

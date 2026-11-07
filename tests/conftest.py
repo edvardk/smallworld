@@ -31,6 +31,7 @@ CONTROLLER_TESTS = frozenset(
         "test_home.py",
         "test_mcctl_metrics.py",
         "test_mcctl_providers.py",
+        "test_mcctl_actions.py",
         "test_mcctl_render.py",
         "test_mcctl_schema.py",
         "test_panelpr.py",
