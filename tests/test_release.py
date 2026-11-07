@@ -149,7 +149,7 @@ def test_bump_keeps_crlf(tmp_path) -> None:
         path = work / name
         # normalise first: write_text already wrote CRLF on Windows (a second replace would give \r\r\n)
         path.write_bytes(path.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
-    must(work, "commit", "-qam", "crlf")
+    must(work, "commit", "-qam", "crlf", "--allow-empty")  # on Windows the files were CRLF already
     assert release.bump("1.2.3", work, "2026-11-08", git) == []
     raw = (work / "CHANGELOG.md").read_bytes()
     assert b"## [Unreleased]\r\n\r\n## [1.2.3] - 2026-11-08\r\n\r\n- Added a thing." in raw
