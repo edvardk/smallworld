@@ -90,7 +90,8 @@ NEW_WORLD = (
     COUNTDOWN,
 )
 
-# Phase 1: read-only items; phase 2: server, player, world and plugin actions; the rest are shown disabled.
+# Phase 1: read-only items; phase 2: server, player, world and plugin actions; Part B: publish and
+# players.yml; the rest are shown disabled.
 MENU: tuple[tuple[str, tuple[Item, ...]], ...] = (
     (
         "Server",
@@ -119,7 +120,20 @@ MENU: tuple[tuple[str, tuple[Item, ...]], ...] = (
             Item("kick", "Kick a player", ("players", "kick"), asks=(PLAYER, REASON)),
             Item("ban", "Ban a player", ("players", "ban"), asks=(PLAYER, REASON)),
             Item("pardon", "Pardon (unban) a player", ("players", "pardon"), asks=(PLAYER,)),
-            _coming("players-edit", "Add, remove, op (players.yml)"),
+            Item("player-add", "Whitelist a player (players.yml, a PR)", ("players", "add"), asks=(PLAYER,)),
+            Item(
+                "player-remove",
+                "Remove from the whitelist (players.yml, pull request)",
+                ("players", "remove"),
+                asks=(PLAYER,),
+            ),
+            Item(
+                "player-op",
+                "Make operator (players.yml, pull request)",
+                ("players", "op"),
+                asks=(PLAYER, Ask("Level", "--level", choices=("4", "3", "2", "1"), default="4")),
+            ),
+            Item("player-deop", "Remove operator (players.yml, a PR)", ("players", "deop"), asks=(PLAYER,)),
         ),
     ),
     (
@@ -178,7 +192,19 @@ MENU: tuple[tuple[str, tuple[Item, ...]], ...] = (
             Item("switch", "Switch config repo"),
         ),
     ),
-    ("Publish", (_coming("publish", "Publish changes (preview, pull request)"),)),
+    (
+        "Publish",
+        (
+            Item("publish-preview", "Preview changes (restart? Terraform?)", ("publish", "--dry-run")),
+            Item("publish", "Publish changes (preview, pull request, your merge)", ("publish",)),
+            Item(
+                "publish-wait",
+                "Publish, restart only when the server is empty",
+                ("publish", "--wait-empty"),
+            ),
+            Item("publish-revert", "Undo the last deploy (a revert pull request)", ("publish", "--revert")),
+        ),
+    ),
     ("Health", (Item("doctor", "Doctor: tools, credentials, DNS, tailnet, watchdog", ("doctor",)),)),
     (
         "Updates",

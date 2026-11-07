@@ -414,17 +414,19 @@ def test_restic_rekey_script(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 def test_players_add_op_deop_remove(deployed: Path, tmp_path: Path) -> None:
     ctx, out = fresh(deployed, tmp_path)
     path = ctx.root / "players.yml"
-    assert players.change(ctx, "add", "NewPal", push=False) == 0
+    assert players.change(ctx, "add", "NewPal", route="commit") == 0
     repo = configrepo.load(ctx.root)  # canonical (validate requires the exact dump)
     assert "NewPal" in [p.name for p in repo.players.whitelist]
     assert git(ctx.root, "log", "-1", "--format=%s").strip() == "mcctl players add NewPal"
-    assert players.change(ctx, "add", "newpal", push=False) == 0 and "nothing to do" in out.getvalue()
-    assert players.change(ctx, "op", "NewPal", level=2, push=False) == 0
+    assert players.change(ctx, "add", "newpal", route="commit") == 0 and "nothing to do" in out.getvalue()
+    assert players.change(ctx, "op", "NewPal", level=2, route="commit") == 0
     assert ("NewPal", 2) in [(o.name, o.level) for o in configrepo.load(ctx.root).players.ops]
-    assert players.change(ctx, "deop", "NewPal", push=False) == 0
+    assert players.change(ctx, "deop", "NewPal", route="commit") == 0
     assert "NewPal" not in [o.name for o in configrepo.load(ctx.root).players.ops]
-    assert players.change(ctx, "op", "Fresh", uuid="00000000-0000-4000-8000-0000000000f1") == 0  # pushes
-    assert players.change(ctx, "remove", "Fresh", push=False) == 0
+    assert (
+        players.change(ctx, "op", "Fresh", uuid="00000000-0000-4000-8000-0000000000f1", route="push") == 0
+    )  # pushes
+    assert players.change(ctx, "remove", "Fresh", route="commit") == 0
     names = [p.name for p in configrepo.load(ctx.root).players.whitelist]
     assert "Fresh" not in names and "Fresh" not in path.read_text()
     with pytest.raises(init.StepError, match="UUID"):

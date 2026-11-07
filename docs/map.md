@@ -43,7 +43,8 @@ All commands are parsed in `mcctl/cli.py` (`build_parser`); the `cmd_*` function
 | `mcctl migrate`, `mcctl retire-old` | `mcctl/migrate.py`, `mcctl/serverops.py` | **`tests/test_mcctl_p12.py`**, `tests/e2e/migrate_check.py` |
 | `mcctl upgrade`, `mcctl lock` (update), `mcctl schema-migrate` | `mcctl/upgrade.py`, `mcctl/migrations.py`, `mcctl/wfsecrets.py` | **`tests/test_mcctl_p12.py`**, `tests/test_wfsecrets.py` |
 | `mcctl secrets` (rotate, dashlane, show-restic) | `mcctl/rotate.py`, `mcctl/integrations.py`, `mcctl/dashlane.py` | **`tests/test_mcctl_p12.py`** (rotate), `tests/test_dashlane.py` |
-| `mcctl players` | `mcctl/players.py`, `mcctl/providers/mojang.py`; `kick`/`ban`/`pardon`: `mcctl/actions.py` | **`tests/test_mcctl_p12.py`**, `tests/test_mcctl_actions.py` |
+| `mcctl players` | `mcctl/players.py`, `mcctl/providers/mojang.py`, `mcctl/publish.py` (v1.3 PR route); `kick`/`ban`/`pardon`: `mcctl/actions.py` | **`tests/test_mcctl_p12.py`**, `tests/test_mcctl_actions.py`, `tests/test_publish.py` |
+| `mcctl publish` (v1.3: preview, PR / main / deploy, revert) | `mcctl/publish.py` (+ `mcctl/render.py`, `mcctl/upgrade.py` for the pinned `apply`/`deploy`) | **`tests/test_publish.py`** |
 | `mcctl restore` | `mcctl/restorecmd.py` → `scripts/restore.py` on the box | **`tests/test_mcctl_p12.py`** |
 | `mcctl discord` (sync) | `mcctl/integrations.py`, `mcctl/providers/discord.py` | `tests/test_discord.py` |
 | `mcctl update-prs` (CI) | `mcctl/updates.py` | `tests/test_updates.py` |
