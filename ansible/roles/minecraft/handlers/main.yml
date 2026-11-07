@@ -1,4 +1,10 @@
 # Fired by: jar/plugin/unit/JRE changes, or a config overlay that differs from the live files.
-- name: Restart minecraft (announced)
+- name: Restart minecraft (announced, or left for the maintenance window)
   ansible.builtin.include_tasks: "{{ role_path }}/tasks/restart.yml"
+  vars:
+    # v1.3: site.yml's mc_restart_defer (outside maintenance.window, not forced), for a server that was running at
+    # the start of the role (mc_active; undefined with --tags that skip the role: restart now, as before).
+    mc_restart_deferred: >-
+      {{ (mc_restart_defer | default(false) | bool)
+         and (mc_active.status.ActiveState | default('inactive')) == 'active' }}
   listen: restart minecraft

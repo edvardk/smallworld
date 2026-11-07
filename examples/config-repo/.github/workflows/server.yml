@@ -18,6 +18,10 @@ on:
         type: choice
         options: [deploy, update, backup-check, expiry-check]
         default: deploy
+      force_restart:
+        description: "deploy: restart Minecraft now, even outside server.yml maintenance.window"
+        type: boolean
+        default: false
   schedule:
     - cron: "17 4 * * 2"   # update + deploy (automation.update_day, Tue; 04:17 UTC)
     - cron: "41 9 * * 1"   # expiry-check (Mon)

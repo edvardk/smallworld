@@ -14,12 +14,16 @@ asks for the typed confirmation its command requires (`worlds switch NAME` -> "s
 it as `--confirm`: empty or Esc changes nothing, a wrong one is refused by the command (`restore` asks
 its own).
 
+v1.3: when a newer Smallworld minor/major release than the pin is out, the header says so ("Update" row,
+mcctl/notice.py: cached a day, silent on failure; `MCCTL_NO_UPDATE_NOTICE=1` turns it off).
+
 Anything non-interactive keeps today's behaviour (an argparse usage error, exit code 2): `--plain`,
 MCCTL_PLAIN, NO_COLOR, CI, TERM=dumb, stdin or stdout not a terminal, or questionary not importable.
 """
 
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 import sys
@@ -373,7 +377,13 @@ def _pin_text(root: Path) -> tuple[configrepo.Pin | None, str]:
 
 
 def header_rows(
-    root: Path | None, source: str, probe: StatusProbe, out: ui.Out, *, force: bool = False
+    root: Path | None,
+    source: str,
+    probe: StatusProbe,
+    out: ui.Out,
+    *,
+    force: bool = False,
+    update: Callable[[configrepo.Pin | None], str | None] | None = None,
 ) -> list[tuple[str, str]]:
     if root is None:
         return [
@@ -395,6 +405,8 @@ def header_rows(
     if pin is not None and pin.version and pin.version.lstrip("v") != __version__:
         product += " (commands that deploy run the pinned version)"
     rows.append(("Product", product))
+    if update is not None and (newer := update(pin)):  # v1.3: a newer minor/major release (mcctl/notice.py)
+        rows.append(("Update", newer))
     if cfg is None:
         rows.append(("Server", "unknown (the config repo doesn't load)"))
         return rows
@@ -485,6 +497,7 @@ class Home:
         runner: Callable[[list[str]], int] | None = None,
         probe: StatusProbe | None = None,
         cwd: Path | None = None,
+        update: Callable[[configrepo.Pin | None], str | None] | None = None,
     ) -> None:
         if runner is None:
             from mcctl import cli
@@ -494,10 +507,11 @@ class Home:
         self.prompter = prompter or Prompter()
         self.runner = runner
         self.probe = probe or StatusProbe()
+        self.update = update  # None: no "Update" row (tests); main() passes notice.for_pin
         self.root, self.source = _initial(launch, cwd or Path.cwd())
 
     def show_header(self, *, force: bool = False) -> None:
-        rows = header_rows(self.root, self.source, self.probe, self.out, force=force)
+        rows = header_rows(self.root, self.source, self.probe, self.out, force=force, update=self.update)
         self.out.say()
         self.out.kv(rows, title=f"mcctl {__version__}: home")
         self.out.say()
@@ -601,7 +615,13 @@ class Home:
 
 
 def main(launch: Launch) -> int:
+    from mcctl import notice
+
+    # v1.3: the header's "Update" row (unless turned off); the items' commands, and pinned mcctls they
+    # re-execute, stay quiet
+    update = None if os.environ.get(notice.OPT_OUT_ENV) else notice.for_pin
+    os.environ[notice.OPT_OUT_ENV] = "1"
     try:
-        return Home(launch).loop()
+        return Home(launch, update=update).loop()
     except (KeyboardInterrupt, EOFError):
         return 0

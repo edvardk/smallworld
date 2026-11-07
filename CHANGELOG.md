@@ -100,6 +100,27 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   screen's Publish items run it.
 - Home screen: Players "Whitelist a player", "Remove from the whitelist", "Make operator", "Remove operator".
 
+- **Update notice:** interactive mcctl commands (and the home screen's new "Update" row) say when a newer
+  Smallworld **minor or major** release than the config repo's pin is out, with the fix (`mcctl upgrade`).
+  Patch releases stay quiet (the weekly update pull request brings them). GitHub's releases/latest, asked
+  anonymously with a 3 s timeout at most once a day (cached in `~/.cache/mcctl/update-notice.json`), silent on
+  any failure, never in CI, without a terminal, with `--plain`/`NO_COLOR`, in a re-executed pinned mcctl or for
+  the CI commands; `MCCTL_NO_UPDATE_NOTICE=1` turns it off (docs/reference.md "The update notice").
+- **Maintenance window:** `server.yml` `maintenance: {window: "HH:MM-HH:MM", timezone: ...}` (optional; the time
+  zone defaults to `host.timezone`; a window may cross midnight; unset = restarts any time, as before). A deploy
+  that needs a Minecraft restart outside the window, with the server running, no longer restarts it: it applies
+  the files (jar, plugins, unit, JRE), stages the merged config overlays in `/var/lib/minecraft/restart-pending/`
+  and Discord says a restart is pending. `mc-restart-window.timer` (as `mcops`, sandboxed; the existing polkit
+  rule) restarts the server at the window's start (and retries every 15 minutes inside it while a backup, a
+  restore or a maintenance window is in the way); any earlier start (the panel, `mcctl restart`, self-heal, a
+  reboot) applies the staged change through `minecraft.service`'s new `ExecStartPre` (`restart_window.py apply`,
+  as `minecraft`), and the next deploy inside the window does the pending restart itself. Forced: `mcctl deploy
+  --force-restart`, the reusable workflow's new optional input `force_restart`, or the config repo template's new
+  dispatch input `force_restart`. A second deploy outside the window changes nothing. `mcctl publish`'s preview
+  says "restart deferred to the maintenance window HH:MM-HH:MM <tz>" and then doesn't ask about players online
+  (docs/operations.md "Maintenance window"). The first deploy with this release restarts Minecraft once (the
+  unit changed).
+
 ### Changed
 
 - `mcctl players add|remove|op|deop` opens a pull request (`players/*`), merges it when green (the admin's merge;

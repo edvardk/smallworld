@@ -43,3 +43,18 @@ def test_properties_unicode_roundtrip() -> None:
     _, out, _ = mc_config.apply_properties("", {"motd": "Café"})
     assert "motd=Caf\\u00e9" in out
     assert mc_config.apply_properties(out, {"motd": "Café"})[0] is False
+
+
+def test_stage_merges_onto_the_staged_copy_and_skips_files_already_right() -> None:
+    """v1.3 deferred restart: the staged copy is the base once it exists (a second deploy compares against it,
+    so it reports no change); a live file that already has the settings needs no staged copy."""
+    live = "view-distance=10\nmotd=Old\n"
+    changed, staged, keys = mc_config.staged("properties", live, None, {"view-distance": 8})
+    assert changed and keys == ["view-distance"] and "view-distance=8" in staged and "motd=Old" in staged
+    assert mc_config.staged("properties", live, staged, {"view-distance": 8})[0] is False
+    # a later deploy changes another key: merged onto the staged copy, the first change kept
+    changed, again, keys = mc_config.staged("properties", live, staged, {"view-distance": 8, "motd": "New"})
+    assert changed and keys == ["motd"] and "view-distance=8" in again and "motd=New" in again
+    assert mc_config.staged("properties", "view-distance=8\n", None, {"view-distance": 8})[0] is False
+    changed, out, _ = mc_config.staged("yaml", "a:\n  b: 1\n", None, {"a": {"b": 2}})
+    assert changed and yaml.safe_load(out) == {"a": {"b": 2}}

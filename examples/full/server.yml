@@ -42,6 +42,8 @@ discord:
   user_ids: ["100000000000000004"]
   helper_user_ids: ["100000000000000005"]
 deploy: {enabled: true}
+# v1.3: deploys restart Minecraft only 04:00-07:00 (Dublin time); outside it the restart waits for 04:00.
+maintenance: {window: "04:00-07:00", timezone: Europe/Dublin}
 branding:
   name: Lighthouse
   # explicit colours (not the product defaults): navy, signal red, foam

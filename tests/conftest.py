@@ -207,6 +207,9 @@ def _product_is_this_checkout(
     Ansible collections, mcctl/galaxy.py) is a temporary directory, never the real ~/.cache."""
     monkeypatch.setenv("MCCTL_PRODUCT_DIR", str(REPO))
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path_factory.mktemp("xdg-cache")))
+    # v1.3: the "newer release" notice (mcctl/notice.py) never asks GitHub from a test that happens to look like a
+    # terminal; tests/test_notice.py switches it back on with a recorded transport.
+    monkeypatch.setenv("MCCTL_NO_UPDATE_NOTICE", "1")
     # v1.3: the remembered config repos (mcctl/homecfg.py) live in a fresh directory per test, never ~/.config.
     config_home = tmp_path_factory.mktemp("xdg-config")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))

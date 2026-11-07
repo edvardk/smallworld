@@ -12,6 +12,9 @@ User=minecraft
 Group=minecraft
 WorkingDirectory={{ mc_server_dir }}
 UMask=0027
+# v1.3: a restart a deploy left for the maintenance window: copy its staged config files into place while the server is
+# stopped, whoever starts it (scripts/restart_window.py apply; "-": a failure never keeps the server down).
+ExecStartPre=-{{ mc_bin_dir }}/restart_window.py apply
 ExecStart={{ mc_java_bin }} -Xms{{ mc_heap_mb }}M -Xmx{{ mc_heap_mb }}M {{ mc_jvm_flags | join(' ') }} -Dlog4j.configurationFile={{ mc_root }}/log4j2.xml -jar server.jar --nogui
 # Graceful: save-all flush + stop over RCON, then wait for the JVM ($MAINPID) to exit.
 ExecStop={{ mc_bin_dir }}/mc_rcon.py stop
@@ -23,6 +26,8 @@ RestartSec=10
 LimitNOFILE=65535
 
 ReadWritePaths={{ mc_server_dir }}
+# v1.3: the staged files and marker ExecStartPre consumes ("-": no error before the first deploy made it).
+ReadWritePaths=-{{ mc_restart_pending_dir }}
 # P13: tmpfs hand-off to mc-agent (the mc-telemetry plugin's snapshots) and the GC log: no telemetry disk IO.
 # Kept across restarts (mc-agent reads the last snapshots; the JVM's -Xlog needs the directory at start).
 RuntimeDirectory=mc-telemetry

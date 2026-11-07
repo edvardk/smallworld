@@ -68,6 +68,44 @@
       when: mc_cpu_affinity == 'split'
       tags: [always]
 
+    # v1.3 (server.yml maintenance.window): may this deploy restart Minecraft now? The host's clock in the window's
+    # time zone (`date` honours TZ), compared as HH:MM like scripts/restart_window.py and mcctl.schema.in_window
+    # (start included, end excluded, may cross midnight). Outside it, and not forced (MC_FORCE_RESTART), the
+    # minecraft role's restart handler stages the change instead (tasks/defer.yml). Decided once, here, so a
+    # handler notified by any role sees it.
+    # `mcctl deploy --force-restart` / the workflow's force_restart input: restart now even outside the window. Read
+    # on the controller (ansible-playbook's environment), never from server.yml.
+    - name: Is this deploy forced to restart now?
+      ansible.builtin.set_fact:
+        mc_force_restart: "{{ lookup('ansible.builtin.env', 'MC_FORCE_RESTART') in ['1', 'true'] }}"
+      tags: [always]
+
+    - name: Read the clock in the maintenance window's time zone
+      ansible.builtin.command:
+        argv: [date, "+%H:%M"]
+      environment:
+        TZ: "{{ mc_maintenance_timezone }}"
+      register: mc_window_clock
+      changed_when: false
+      check_mode: false
+      when: mc_maintenance_window | length > 0 and not (mc_force_restart | bool)
+      tags: [always]
+
+    - name: Read the maintenance window's bounds and the time
+      ansible.builtin.set_fact:
+        mc_window_now: "{{ mc_window_clock.stdout | default('') | trim }}"
+        mc_window_bounds: "{{ mc_maintenance_window.split('-') if mc_maintenance_window else ['', ''] }}"
+      tags: [always]
+
+    - name: Decide whether a restart has to wait for the maintenance window
+      ansible.builtin.set_fact:
+        mc_restart_defer: >-
+          {{ mc_window_now != '' and not (
+               (mc_window_bounds[0] <= mc_window_now and mc_window_now < mc_window_bounds[1])
+               if mc_window_bounds[0] <= mc_window_bounds[1]
+               else (mc_window_now >= mc_window_bounds[0] or mc_window_now < mc_window_bounds[1])) }}
+      tags: [always]
+
   roles:
     - role: access
       tags: [access]

@@ -32,6 +32,12 @@ on:
           own CI passes examples/config-repo and then only validates.
         type: string
         default: "."
+      force_restart:
+        description: >-
+          v1.3: a deploy restarts Minecraft even outside server.yml maintenance.window. Optional (default false);
+          a config repo's manual run can also set it with its own workflow_dispatch input `force_restart`.
+        type: boolean
+        default: false
     secrets:
       TS_OAUTH_CLIENT_ID:
         required: false
@@ -458,6 +464,8 @@ jobs:
       - name: ansible-playbook site.yml
         working-directory: product/ansible
         env:
+          # v1.3: restart even outside maintenance.window (the input, or the config repo's dispatch input)
+          MC_FORCE_RESTART: ${{ (inputs.force_restart || github.event.inputs.force_restart == 'true') && '1' || '' }}
           MC_SECRET_RCON_PASSWORD: ${{ secrets.RCON_PASSWORD }}
           MC_SECRET_RESTIC_PASSWORD: ${{ secrets.RESTIC_PASSWORD }}
           MC_SECRET_RESTIC_REPOSITORY: ${{ secrets.RESTIC_REPOSITORY }}

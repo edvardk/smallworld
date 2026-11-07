@@ -3,7 +3,7 @@
 Each alert is built from fixed inputs (no network, no clock) and compared with
 `tests/fixtures/alerts/<source>.<name>.txt`. A wording change is deliberate: regenerate with
 `UPDATE_ALERT_SNAPSHOTS=1 pytest tests/test_alert_texts.py` and review the diff. Sources: the box's scripts
-(health.py, the reboot gate, mc_rcon's deploy restart, mc_panel's whitelist -> Git flow), CI (ci_alert.py,
+(health.py, the reboot gate, mc_rcon's deploy restart, the maintenance-window restart, mc_panel's whitelist -> Git flow), CI (ci_alert.py,
 `mcctl expiry-check`, the update pull requests) and the watchdog Worker (`WORKER_ALERTS`, through node).
 """
 
@@ -26,6 +26,7 @@ import mc_panel
 import mc_rcon
 import pytest
 import reboot_gate as rg
+import restart_window
 from alerts import Verdict
 from conftest import REPO
 from health import Ctx, GcStats, HostStats, ServiceState, State
@@ -112,6 +113,10 @@ def _box_other() -> dict[str, str]:
         "reboot-gate.rebooting": rg.rebooting_alert("in the reboot window (04:30-06:00), nobody online"),
         "reboot-gate.back": rg.back_alert("0123456789abcdef"),
         "mc_rcon.deploy-restart": mc_rcon.restart_alert(60, 3),
+        "restart-window.deferred": restart_window.deferred_alert("04:00-07:00", "Europe/Dublin"),
+        "restart-window.restarted": restart_window.restarted_alert(
+            "04:00-07:00", "Europe/Dublin", "2026-11-05T12:00:00Z"
+        ),
         "mc_panel.whitelist-expired": mc_panel.expired_alert("add Player_One, remove Player_Two"),
         "mc_panel.whitelist-rejected": mc_panel.rejected_alert(7, ["remove Player_One"], []),
         "mc_panel.whitelist-rejected-partly": mc_panel.rejected_alert(8, [], ["add Player_Two"]),

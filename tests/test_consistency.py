@@ -44,6 +44,7 @@ SERVER_SCRIPTS = [
     "worlds.py",  # v1.2 world library
     "world_info.py",
     "backup_check.py",
+    "restart_window.py",  # v1.3 maintenance window
 ]
 
 

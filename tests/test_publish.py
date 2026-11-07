@@ -435,6 +435,32 @@ def test_no_restart_needs_no_question(env: dict[str, Any]) -> None:
     assert "player(s) online" not in out.getvalue()
 
 
+def test_restart_outside_the_maintenance_window_is_deferred_not_asked(env: dict[str, Any]) -> None:
+    """v1.3: the clock says 12:00 UTC; a 04:00-07:00 window defers the restart: the preview says so, the PR body
+    too, and nobody online is asked about (nobody is disconnected now)."""
+    ctx, fake, tools, out = make(env, online=[3])
+    edit(env["root"], {"performance.view_distance": 8, "maintenance.window": "04:00-07:00",
+                       "maintenance.timezone": "UTC"})  # fmt: skip
+    assert go(ctx, tools, dry_run=True) == 0
+    text = out.getvalue()
+    assert "Minecraft restart: yes" in text
+    assert "restart deferred to the maintenance window 04:00-07:00 UTC" in text
+    assert go(ctx, tools) == 0 and fake.gh_calls("pr", "merge")
+    assert "waits for the maintenance window (04:00-07:00 UTC)" in out.getvalue()
+    assert "Deploy now, wait until the server is empty" not in out.getvalue()
+    body = next(c for c in fake.gh_calls("pr", "create"))
+    assert any("deferred to the maintenance window 04:00-07:00 UTC" in a for a in body)
+
+
+def test_restart_inside_the_maintenance_window_is_not_deferred(env: dict[str, Any]) -> None:
+    ctx, _, tools, out = make(env)
+    edit(
+        env["root"], {"performance.view_distance": 8, "maintenance.window": "11:00-13:00"}
+    )  # host.timezone UTC
+    assert go(ctx, tools, dry_run=True) == 0
+    assert "Minecraft restart: yes" in out.getvalue() and "deferred" not in out.getvalue()
+
+
 # --- terraform -------------------------------------------------------------------------------------------
 
 

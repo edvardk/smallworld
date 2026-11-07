@@ -1,0 +1,48 @@
+# v1.3 (server.yml maintenance.window): the restart handler outside the window. Nothing stops: the jar, plugin, unit
+# and JRE changes are on disk already and take effect at the next start; the config overlays are merged into staged
+# copies (mc_config `stage`, as minecraft) that the unit's ExecStartPre (scripts/restart_window.py apply) copies into
+# place while the server is stopped, as the immediate restart would. The marker makes mc-restart-window.timer
+# restart the server at the window's start; any earlier start (panel, `mcctl restart`, self-heal, a reboot) applies
+# it too. Idempotent: a second deploy finds the staged copies right and the marker present (force: false).
+- name: Stage the config overlays for the deferred restart
+  mc_config:
+    path: "{{ mc_server_dir }}/{{ item.path }}"
+    format: "{{ item.format }}"
+    settings: "{{ lookup('ansible.builtin.template', mc_config_dir ~ '/' ~ item.template) | from_yaml }}"
+    create: "{{ item.create | default(false) }}"
+    stage: "{{ mc_restart_pending_dir }}/files/{{ item.path }}"
+  become: true
+  become_user: minecraft
+  loop: "{{ mc_overlays }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Is a restart pending already?
+  ansible.builtin.stat:
+    path: "{{ mc_restart_pending_dir }}/pending.json"
+  register: mc_pending_before
+
+- name: Mark the restart as pending
+  ansible.builtin.copy:
+    dest: "{{ mc_restart_pending_dir }}/pending.json"
+    content: "{{ {'since': now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ'), 'window': mc_maintenance_window,
+                 'timezone': mc_maintenance_timezone} | to_json }}\n"
+    force: false   # first deferral's time kept: a second deploy changes nothing
+    owner: minecraft
+    group: minecraft
+    mode: "0640"
+
+- name: Say the restart waits for the maintenance window
+  ansible.builtin.debug:
+    msg: >-
+      RESTART DEFERRED to the maintenance window {{ mc_maintenance_window }} ({{ mc_maintenance_timezone }}): the
+      files are applied, Minecraft restarts at {{ mc_maintenance_window.split('-')[0] }} (mc-restart-window.timer;
+      any earlier restart applies it too). To restart now: `mcctl deploy --force-restart`, or run the workflow with
+      force_restart.
+
+- name: Tell Discord a restart is pending
+  ansible.builtin.command: >-
+    /usr/local/bin/mc-run -{{ mc_etc_dir }}/notify.env
+    {{ mc_bin_dir }}/restart_window.py deferred {{ mc_maintenance_window }} {{ mc_maintenance_timezone }}
+  changed_when: false
+  when: not mc_pending_before.stat.exists   # the first deferral only

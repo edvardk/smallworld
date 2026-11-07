@@ -36,6 +36,31 @@ kept, committed), and `mcctl players -C $C add NAME` edits the whitelist. The pr
 only when the pin in `.github/workflows/server.yml` moves (patch releases do that weekly by themselves; see
 [What runs by itself](#what-runs-by-itself)).
 
+### Maintenance window (v1.3)
+
+Restarts can be kept to quiet hours: `maintenance: {window: "04:00-07:00", timezone: Europe/Dublin}` in
+`server.yml` (`HH:MM-HH:MM`, start included, end excluded, may cross midnight like `23:00-01:00`; `timezone`
+defaults to `host.timezone`; no `maintenance` = a deploy restarts whenever it needs to, as before).
+
+- A deploy that needs a restart **outside** the window, with the server running, restarts nothing. It installs the
+  new jar, plugins, unit or Java (they take effect at the next start), stages the merged config files in
+  `/var/lib/minecraft/restart-pending/` and says `RESTART DEFERRED to the maintenance window ...` in its output;
+  Discord gets one note ("A config change waits for the maintenance window"). Deploying again outside the window
+  changes nothing more (the second run reports no changes).
+- **The restart then happens** at the window's start: `mc-restart-window.timer` (the start, then every 15 minutes
+  inside the window while a backup, a restore or a maintenance window is in the way) runs the deploy's restart:
+  in-game countdown if anyone is online, restart, Discord "the pending config change is live". **Any earlier
+  start applies it too** (a panel or `mcctl restart`, self-heal, a reboot): `minecraft.service` copies the staged
+  files into place before the JVM starts (`restart_window.py apply`), and the next deploy inside the window does
+  the pending restart itself. An admin-stopped server stays stopped; its next start applies the change.
+- **Restart now anyway:** `mcctl deploy -C $C --force-restart`, or run the config repo's workflow by hand
+  (Actions > server > Run workflow, task `deploy`, tick `force_restart`).
+- `mcctl publish` says `restart deferred to the maintenance window HH:MM-HH:MM <tz>` in its preview when the
+  change would deploy outside it, and then doesn't ask about players online (nobody is disconnected now).
+- On the box: `sudo -u mcops /opt/minecraft/bin/restart_window.py --status` (with the unit's environment:
+  `systemctl show mc-restart-window.service -p Environment`) or `journalctl -u mc-restart-window` show what it
+  does; `ls /var/lib/minecraft/restart-pending` shows what is staged.
+
 ### Players not in Git
 
 A deploy sets the whitelist to `players.yml` plus the panel's pending adds, minus its pending removes. Since
@@ -238,7 +263,7 @@ The ones you will use (all take `-C $C`; the complete list is in [reference.md](
 | `mcctl` | v1.3: on a terminal, the home screen: a status header and a menu of these commands ([reference](reference.md#the-home-screen-and-the-remembered-config-repo-v13)); remembers the config repo, so `-C` is optional |
 | `mcctl doctor` | checks tools, `.env`, every credential live (writes `expiry.yml`: commit it), the product pin, DNS, the tailnet, the watchdog; `--fix` repairs what it can (file mode, a stale product pin after a typed `yes`) |
 | `mcctl status [--json]` | server state, players, TPS/MSPT, last backup, last deploy run, drift (disabled plugins, open panel PRs) |
-| `mcctl deploy [--check]` | deploy from your computer (the same playbook and secrets as CI; `--check` is a dry run with a diff) |
+| `mcctl deploy [--check] [--force-restart]` | deploy from your computer (the same playbook and secrets as CI; `--check` is a dry run with a diff; `--force-restart`: restart now even outside `maintenance.window`) |
 | `mcctl publish [--route pr\|main\|deploy] [--dry-run] [--revert] [--wait-empty]` | v1.3: preview what your config change does (roles, restart, Terraform, who is online), validate, then a pull request, its checks, your merge and the deploy ([reference](reference.md#publishing-a-config-change-v13)) |
 | `mcctl players list\|add\|remove\|op\|deop NAME` | edit `players.yml` (UUID from Mojang); v1.3: as a pull request you merge when green (`--push`: straight to main) |
 | `mcctl rcon CMD`, `mcctl ssh`, `mcctl logs [unit] [-f]` | a console command, a shell as `deploy`, the journal (over Tailscale SSH) |
@@ -271,6 +296,7 @@ the *target* release's schema migration and validation itself. When the checkout
 | Server build and plugin updates | weekly, `automation.update_day` (Tuesday) 04:17 UTC | the newest builds of the same Minecraft version are boot-tested in CI, then the updater App opens a pull request that merges itself once `server / gate` re-verified every hash |
 | Weekly deploy | the same slot | deploys `main` as it is; restarts only if something changed |
 | Product updates | the same slot | a newer **patch** release moves the pin by itself; minor and major releases open a pull request for you |
+| A restart a deploy left for the maintenance window | `maintenance.window`'s start (then every 15 minutes inside it) | only with a window and a pending restart ([Maintenance window](#maintenance-window-v13)); any earlier start of the server applies it too |
 | Reboots for OS updates | checked every 30 minutes | only inside `automation.reboot_window` (04:30-06:00 local), with nobody online, no backup or restore running and the server not stopped on purpose; **never forced**: still pending after 3 days, Discord reminds you daily |
 | Backup check + expiry check | Mondays | `restic check` on 5 % of the data and a restore of the newest snapshot (must be < 2 h old); credential expiry (`expiry.yml`), domain expiry (RDAP) and the watchdog's freshness. Problems go to Discord and the run turns red |
 | Security updates on the box | daily (Debian unattended upgrades) | Tailscale is held at its pinned version (bump the pin for Tailscale security fixes: [reference.md](reference.md#bumping-versions)) |
@@ -703,6 +729,7 @@ ever appear in an alert (a CI alert carries the run's link only). Every alert's 
 | ⚠️ The outside watchdog can't be reached / has stopped checking / ✅ again | health.py | heartbeats fail 3 checks in a row, or the Worker's cron is 15 min stale | cloudflarestatus.com, the Worker's cron trigger and logs |
 | ⚠️ Security updates are waiting for a reboot / ℹ️ rebooting / ✅ back | reboot gate | pending 3+ days because the window never found the server empty (daily reminder), or it reboots now | `sudo systemctl reboot` on the box when convenient |
 | ℹ️ The server restarts in N s for a config deploy | mc_rcon (deploy) | a deploy restart while players are online (they get an in-game countdown) | - |
+| ℹ️ A config change waits for the maintenance window / ✅ the pending config change is live | restart_window (v1.3) | a deploy outside `maintenance.window` left the restart for the window; then the restart at the window's start | - (`mcctl deploy --force-restart` to restart now) |
 | ⚠️ A deploy kept whitelisted players that aren't in players.yml | players role (deploy) | live players never in `players.yml` were kept, not removed ([Players not in Git](#players-not-in-git)); once per newly kept player | `mcctl players add NAME`, or remove them in the panel |
 | ⚠️ Whitelist changes made in the panel were dropped | mc_panel (agent) | panel whitelist changes didn't reach Git within 24 h; the next deploy undoes them | re-do in the panel or edit `players.yml`; `mcctl doctor` |
 | ⚠️ The panel can't open pull requests on the config repo / ✅ can again (v1.3) | mc_panel (agent) | the Panel → Git self-test failed twice in a row (the step and why) / passed again | `mcctl doctor`; the panel's GitHub App (installed, Contents + Pull requests); a stale Worker: `mcctl render` + `mcctl apply`; then the Health tab's self-test |

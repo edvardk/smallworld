@@ -1,4 +1,6 @@
-# mc_overlay_check=true: compare only (check mode); any difference notifies the restart handler.
+# mc_overlay_check=true: compare only (check mode); any difference notifies the restart handler. v1.3: against the
+# staged copy when a restart waits for the maintenance window (tasks/defer.yml), so a second deploy outside the
+# window reports no change for what is already staged.
 # mc_overlay_check=false: write changes (only while the server is stopped).
 - name: Check config overlays
   mc_config:
@@ -6,6 +8,7 @@
     format: "{{ item.format }}"
     settings: "{{ lookup('ansible.builtin.template', mc_config_dir ~ '/' ~ item.template) | from_yaml }}"
     create: "{{ item.create | default(false) }}"
+    stage: "{{ mc_restart_pending_dir }}/files/{{ item.path }}"
   become: true
   become_user: minecraft
   check_mode: true

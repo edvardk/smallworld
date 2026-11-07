@@ -392,6 +392,19 @@ there (no AAAA record). It writes
 `expiry.yml` (names and dates only; commit it) and warns 30 days ahead. `.mcctl/state.json` records
 `apply`, `bootstrap`, `doctor` and every `init` step (`init` resumes from it).
 
+### The update notice (v1.3)
+
+On a terminal, every mcctl command (and the home screen's header, row "Update") says when the product has a
+newer **minor or major** release than the config repo's pin: `Smallworld v1.4.0 is out (this config repo pins
+v1.3.2): `mcctl upgrade` opens the pull request`. Patch releases stay quiet: the weekly update task moves the pin
+for them. `mcctl/notice.py`: GitHub's `releases/latest` of the pinned repository (`updates.latest_tag`, the
+lookup `mcctl upgrade` starts from), anonymous, 3 s timeout, in a background thread while the command runs, cached
+for 24 hours in `${XDG_CACHE_HOME:-~/.cache}/mcctl/update-notice.json` (failures too: a private product asks
+once a day and says nothing). Never with `--plain`/`MCCTL_PLAIN`, `NO_COLOR`, `CI`, `TERM=dumb` or without a
+terminal (the home screen's rule), never for `update-prs`, `expiry-check`, `panel-pr-check`, `pr-gate`,
+`client-publish`, `schema`, `schema-migrate`, `render` and `upgrade`, never in a re-executed pinned mcctl.
+`MCCTL_NO_UPDATE_NOTICE=1` turns it off.
+
 ### Publishing a config change (v1.3)
 
 `mcctl publish` (`mcctl/publish.py`) lands what you changed in the config repo, and says first what it will do:
@@ -579,6 +592,7 @@ Hands-off by default (design §6; `automation.*` in server.yml):
 | Weekly deploy | the same slot | main as it stands (`deploy.enabled`): restarts only if something changed |
 | Product updates | the same slot | the product's latest release newer than the pin → `update/product-vX.Y.Z` moving the `uses:` line; **patch releases auto-merge** (`builds+patch`), minor/major wait for you (`mcctl upgrade`, P12) |
 | Minecraft version | never automatic | `mcctl lock update --minecraft-version X` / `update_lock.py --minecraft-version` (needs a product release with `keys/X/`) |
+| Restarts | when a deploy needs one; with `maintenance.window` (v1.3) only inside it | outside the window the deploy stages the change and `mc-restart-window.timer` restarts at the window's start (any earlier start applies it: `minecraft.service` `ExecStartPre=restart_window.py apply`); forced: `mcctl deploy --force-restart`, the workflow's `force_restart` ([operations.md](operations.md#maintenance-window-v13)) |
 | Reboots | every 30 min (`mc-reboot-gate.timer`) | see [operations.md](operations.md#day-to-day) "Reboot for updates": only inside `automation.reboot_window`, nobody online, never forced, Discord after 3 days |
 | Expiry check | Mondays 09:41 UTC (`expiry-check`) | `mcctl expiry-check`: `expiry.yml` (≤ 30 days to expiry, or not re-checked for 45 days: run `mcctl doctor` and commit), RDAP for `dns.zone` (≤ 30 days), the watchdog's `/status` freshness; problems → Discord + a red run. No admin token in CI |
 | Dependabot (product repo) | weekly | GitHub Actions pins + hash-pinned Python requirements; `dependabot-automerge.yml` auto-merges semver minor/patch once CI is green; majors wait |

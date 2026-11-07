@@ -391,6 +391,14 @@ jobs:
         timeout-minutes: 15
         run: docker exec mc-e2e python3 /src/product/tests/e2e/reboot_check.py
 
+      # v1.3: the restart a deploy left for the maintenance window (a whole-day window in tests/e2e/vars.yml: the units
+      # are installed, deploys still restart at once): nothing pending -> skipped; a staged file + the marker -> mcops
+      # restarts minecraft.service, its ExecStartPre copies the file into place and empties the pending directory.
+      - name: Maintenance-window restart checks
+        if: matrix.shard == 'core'
+        timeout-minutes: 10
+        run: docker exec mc-e2e python3 /src/product/tests/e2e/restart_window_check.py
+
       - name: Deploy checks (restic password rotated by any deploy, pre-upgrade backup on a version change)
         if: matrix.shard == 'core'
         timeout-minutes: 25
