@@ -501,9 +501,24 @@ For a public product repo the Access setting and `PRODUCT_READ_TOKEN` are not ne
 
 ### Releasing
 
-Bump `version` in `pyproject.toml` and `__version__` in `mcctl/__init__.py`, turn `## [Unreleased]` in
-[`CHANGELOG.md`](../CHANGELOG.md) into `## [X.Y.Z] - YYYY-MM-DD`, merge, then push the tag `vX.Y.Z` on that commit.
-`release.yml` runs CI, `scripts/release.py check`, and creates the GitHub release with the changelog section.
+Two steps, with the release PR in between (`scripts/release.py`, stdlib only):
+
+1. On a clean branch: `python3 scripts/release.py bump X.Y.Z [--date YYYY-MM-DD]`. It sets `version` in
+   `pyproject.toml`, `__version__` in `mcctl/__init__.py` and README's `Version **X.Y.Z**` line, turns
+   `## [Unreleased]` in [`CHANGELOG.md`](../CHANGELOG.md) into `## [X.Y.Z] - YYYY-MM-DD` (default: today) and
+   starts a new empty `## [Unreleased]`. Text edits only, formatting kept; nothing is written when it refuses:
+   a version not greater than the current one (semver), an empty Unreleased section, an existing `## [X.Y.Z]`
+   section, a dirty working tree. Commit, open the PR, merge.
+2. On the merged main (`git fetch origin && git switch --detach origin/main`):
+   `python3 scripts/release.py tag [vX.Y.Z] [--remote origin] [--push]` (default: `v` + pyproject's version).
+   It fetches `<remote>/main` and refuses unless HEAD **is** its tip (a tag on the release branch's commit
+   instead of main's merge commit, as happened to v1.2.1, is refused), the tree is clean,
+   `release.py check vX.Y.Z` passes and the tag exists neither locally nor on the remote. It creates the
+   annotated tag `vX.Y.Z` ("Smallworld vX.Y.Z") and prints `git push origin vX.Y.Z`; `--push` pushes it after
+   you type the tag name.
+
+The pushed tag starts `release.yml`: CI, `scripts/release.py check`, and the GitHub release with the changelog
+section.
 Config repos then move their pin to the tag's commit SHA (`mcctl upgrade` / the weekly update, P11–P12).
 
 ## Example deployment
