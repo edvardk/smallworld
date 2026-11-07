@@ -240,9 +240,17 @@ def test_deploys_restart_mc_agent_when_its_code_changes() -> None:
     tasks = yaml.safe_load((REPO / "ansible/roles/base/tasks/main.yml").read_text())
     install = next(t for t in tasks if t.get("name") == "Install server-side scripts")
     assert needed <= set(install["loop"]), sorted(needed - set(install["loop"]))
-    assert install.get("notify") == "Restart mc-agent"
+    assert install.get("notify") == "mc-agent code changed"
 
+    # A flush can run the handlers before the agent role installed the unit (fresh box), and boxes without the
+    # panel never have it: the listeners stat the unit first and restart only an installed agent.
     handlers = yaml.safe_load((REPO / "ansible/roles/agent/handlers/main.yml").read_text())
-    restart = next(h for h in handlers if h["name"] == "Restart mc-agent")
+    listening = [h for h in handlers if h.get("listen") == "mc-agent code changed"]
+    assert [next(iter(k for k in h if k.startswith("ansible.builtin."))) for h in listening] == [
+        "ansible.builtin.stat",
+        "ansible.builtin.systemd_service",
+    ]
+    stat, restart = listening
+    assert stat["ansible.builtin.stat"]["path"] == "/etc/systemd/system/mc-agent.service"
     assert restart["ansible.builtin.systemd_service"]["state"] == "restarted"
-    assert restart.get("when") == "mc_panel_mode == 'cloudflare'"
+    assert restart["when"] == f"{stat['register']}.stat.exists"
