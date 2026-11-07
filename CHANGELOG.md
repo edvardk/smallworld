@@ -73,6 +73,11 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   script install now notifies a handler pair that restarts mc-agent only where its unit is installed (a fresh box,
   where handlers can flush before the agent role ran, and boxes without the panel skip it).
   `tests/test_playbooks.py` checks that every script mc-agent imports is covered.
+- e2e (test only): the restore-guard round's stand-in restore no longer outlives its kill. Killing `runuser`
+  left `flock` and its `sleep 300` running, still holding `restore.lock`, so the round's next deploy correctly
+  waited ~285 s for a restore that the test had already "ended" (the round took 319 s). The holder now runs in its
+  own session and its whole process group is killed; the round checks the lock is free and that the deploy takes
+  < 60 s. The product's restore guard was right throughout (it waits only while the lock is really held).
 
 ## [1.2.2] - 2026-11-07
 

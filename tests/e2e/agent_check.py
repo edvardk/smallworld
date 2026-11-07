@@ -57,6 +57,7 @@ import json
 import os
 import pwd
 import secrets
+import signal
 import subprocess
 import sys
 import threading
@@ -714,6 +715,31 @@ def deploy_minecraft(*extra: str) -> subprocess.CompletedProcess[str]:
     )  # fmt: skip
 
 
+RESTORE_LOCK = "/var/lib/minecraft/restore.lock"
+
+
+def lock_held(lock: str) -> bool:
+    """The restore guard's own probe (restore_guard.yml): a shared flock that conflicts with a restore's."""
+    probe = ["flock", "--nonblock", "--shared", "--conflict-exit-code", "75", lock, "true"]
+    return subprocess.run(probe, check=False).returncode == 75
+
+
+@contextlib.contextmanager
+def holding_lock(lock: str, script: str, user: str | None = None) -> Iterator[subprocess.Popen[bytes]]:
+    """Run `script` under an exclusive flock on `lock` (as `user`) until the block ends, then release it for sure.
+    Killing only runuser would orphan flock and its command, and the command inherits the locked fd, so the lock
+    stayed held until the script ended (the restore-guard round's next deploy waited ~285 s for a `sleep 300`):
+    the holder gets its own session and the whole process group is killed."""
+    argv = (["runuser", "-u", user, "--"] if user else []) + ["flock", lock, "sh", "-c", script]
+    holder = subprocess.Popen(argv, start_new_session=True)
+    try:
+        yield holder
+    finally:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(holder.pid, signal.SIGKILL)
+        holder.wait()
+
+
 def restore_guard_round() -> None:
     """P10 review: a deploy during a restore must not start the server. Mid-restore state (as restore.py --panel
     leaves it between its stop and its start): restore.lock held by mcops, the server stopped, the admin-stopped
@@ -721,10 +747,9 @@ def restore_guard_round() -> None:
     released but the marker still there (a failed apply) it deploys and leaves the server down."""
     marker = Path("/var/lib/minecraft/admin-stopped")
     subprocess.run(["systemctl", "stop", "minecraft.service"], check=True)
-    holder = subprocess.Popen(["runuser", "-u", "mcops", "--", "flock", "/var/lib/minecraft/restore.lock",
-                               "sh", "-c", "echo '{\"by\": \"restore\", \"reason\": \"e2e restore in progress\"}' "
-                               "> /var/lib/minecraft/admin-stopped && sleep 300"])  # fmt: skip
-    try:
+    script = ("echo '{\"by\": \"restore\", \"reason\": \"e2e restore in progress\"}' > /var/lib/minecraft/admin-stopped"
+              " && sleep 300")  # fmt: skip
+    with holding_lock(RESTORE_LOCK, script, user="mcops"):
         wait_for("the restore lock to be held", marker.exists, 30, 1)
         run = deploy_minecraft("-e", "mc_restore_wait_s=20")
         out = run.stdout + run.stderr
@@ -734,13 +759,15 @@ def restore_guard_round() -> None:
         expect(
             state not in ("active", "activating"), f"the deploy didn't start the server mid-restore ({state})"
         )
-    finally:
-        holder.kill()
-        holder.wait()
+    expect(not lock_held(RESTORE_LOCK), "the restore lock is released once its holder is gone")
+    started = time.monotonic()
     run = deploy_minecraft()
+    took = time.monotonic() - started
     out = run.stdout + run.stderr
     expect(run.returncode == 0 and "admin-stopped exists" in out,
            f"lock released, marker kept: the deploy runs and warns ({out[-300:]})")  # fmt: skip
+    # A released lock must not be waited for (mc_restore_wait_s is 1800 s): this deploy changes nothing.
+    expect(took < 60, f"the deploy after the restore didn't wait for the lock ({took:.0f} s)")
     state = show("minecraft.service", "ActiveState")["ActiveState"]
     expect(
         state not in ("active", "activating"), f"a marker left by a restore keeps the server down ({state})"

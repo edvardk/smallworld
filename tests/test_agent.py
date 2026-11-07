@@ -11,6 +11,7 @@ import hashlib
 import http.server
 import json
 import re
+import shutil
 import socket
 import struct
 import sys
@@ -1033,6 +1034,31 @@ def test_the_e2e_agent_check_splits_its_rounds_into_two_shards(monkeypatch: pyte
     assert "whitelist" in a and "world" in b
     wf = (repo / ".github/workflows/e2e-mock.yml").read_text()
     assert "{shard: agent-a," in wf and "{shard: agent-b," in wf and "{shard: agent," not in wf
+
+
+@pytest.mark.skipif(not shutil.which("flock"), reason="needs util-linux flock")
+def test_the_e2e_restore_lock_holder_releases_the_lock_when_done(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """v1.3: the restore-guard round's lock holder (flock + a sleeping script that inherits the locked fd) must
+    release restore.lock as soon as its block ends; it used to outlive the kill and hold the lock until its
+    `sleep 300` ended, so the round's next deploy waited ~285 s for a restore that wasn't running."""
+    import importlib
+
+    repo = Path(__file__).parent.parent
+    monkeypatch.syspath_prepend(str(repo / "tests/e2e"))
+    monkeypatch.setenv("MC_SECRET_AGENT_TOKEN", "t")
+    monkeypatch.setenv("MC_SECRET_COMMAND_HMAC_KEY", "k")
+    check = importlib.import_module("agent_check")
+    lock, ready = tmp_path / "restore.lock", tmp_path / "ready"
+    with check.holding_lock(str(lock), f"touch {ready} && sleep 60"):
+        deadline = time.monotonic() + 10
+        while not ready.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert check.lock_held(str(lock))
+    started = time.monotonic()
+    assert not check.lock_held(str(lock))
+    assert time.monotonic() - started < 5
 
 
 def test_agent_is_wired_into_ansible_and_e2e() -> None:
