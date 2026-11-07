@@ -163,7 +163,7 @@ in [`mcctl/secrets.py`](../mcctl/secrets.py). Each `NAME` is a Terraform output 
 (`NAME`; the optional Discord one only exists when set) and, for Ansible, an environment
 variable `MC_SECRET_NAME` that `ansible/group_vars/all/secrets.yml` reads. The config repo's workflow passes the
 Actions secrets explicitly to the reusable workflow, which maps them onto its two `ansible-playbook` steps only.
-Locally, `python -m mcctl deploy -C <config repo>` reads `terraform output -json`
+Locally, `mcctl deploy -C <config repo>` reads `terraform output -json`
 and starts `ansible-playbook` with the same variables (never on a command line). Tasks that write them
 use `no_log`; on the server they live in root-only env files read by `mc-run`/systemd.
 
@@ -188,14 +188,14 @@ the backend state lives in `<config>/.mcctl/terraform`, and the code is the **pi
 
 ```bash
 C=~/mc-config                          # the config repo (made by `mcctl init`)
-python -m mcctl doctor -C $C              # tools, .env mode, every token (writes expiry.yml), DNS, tailnet
-python -m mcctl plan -C $C                # terraform plan with the rendered inputs (nothing is applied)
-python -m mcctl apply -C $C               # plan, summary, then type the deployment name (server.yml `name`)
+mcctl doctor -C $C                        # tools, .env mode, every token (writes expiry.yml), DNS, tailnet
+mcctl plan -C $C                          # terraform plan with the rendered inputs (nothing is applied)
+mcctl apply -C $C                         # plan, summary, then type the deployment name (server.yml `name`)
 ```
 
 `plan`/`apply` take `--target ADDR` and `--replace ADDR` (repeatable). `apply` has no `--yes`: it always shows
 the plan and asks; the plan file (it can hold secrets) is mode 0600 under `.mcctl/` and deleted afterwards.
-The restic password: `python -m mcctl secrets show-restic -C $C` (prints it once, only to a terminal; it
+The restic password: `mcctl secrets show-restic -C $C` (prints it once, only to a terminal; it
 refuses a pipe or a redirect). By hand (e.g. `terraform state list`), from a product checkout at the pinned
 commit (`source .env` exports `dl://` references as they are, not the values: with Dashlane references in
 `.env`, export those variables yourself, e.g. `export TF_VAR_x="$(dcli read 'dl://...')"`, or use the mcctl
@@ -203,7 +203,7 @@ commands, which resolve them):
 
 ```bash
 R=$C/.mcctl/rendered; export TF_DATA_DIR=$C/.mcctl/terraform
-set -a; source $C/.env; set +a; python -m mcctl render -C $C
+set -a; source $C/.env; set +a; mcctl render -C $C
 terraform -chdir=terraform init -backend-config=$R/terraform/state.tfbackend
 terraform -chdir=terraform state list
 ```
@@ -233,7 +233,7 @@ manages no devices).
 file is what Terraform writes. So the very first apply of the ACL uses a short-lived API key:
 
 1. Admin console → Settings → Keys → generate an **API access token** (1-day expiry is enough).
-2. `TAILSCALE_API_KEY=<token> python -m mcctl apply -C $C --target tailscale_acl.this` (typed in your
+2. `TAILSCALE_API_KEY=<token> mcctl apply -C $C --target tailscale_acl.this` (typed in your
    shell, not saved in `.env`; mcctl drops `TAILSCALE_OAUTH_CLIENT_*` for this run: the provider rejects
    both at once).
 3. Create the OAuth client above (the tags now exist; init does this through the API), put its ID/secret in
@@ -259,12 +259,12 @@ config repo's `.env.example` ([`template/.env.example`](../template/.env.example
 5. Nothing to set up for monitoring: `apply` deploys the watchdog Worker (`hb.<hostname>.<zone>`).
 
 ```bash
-python -m venv .venv && . .venv/bin/activate && pip install --require-hashes --no-deps -r requirements/dev.txt
+python3 -m venv .venv && . .venv/bin/activate && pip install --require-hashes --no-deps -r requirements/dev.txt
 cp $C/.env.example $C/.env && chmod 600 $C/.env   # fill in
-python -m mcctl doctor -C $C                      # every check ok (or a warning you understand)
+mcctl doctor -C $C                                # every check ok (or a warning you understand)
 
 # 1. Cloud resources (after the one-off ACL apply above)
-python -m mcctl apply -C $C
+mcctl apply -C $C
 
 # 2. Nothing to generate for Ansible: the deploy reads its secrets from Terraform outputs (CI: Actions
 #    secrets that Terraform just created). Store the restic password in a password manager now
@@ -276,7 +276,7 @@ python -m mcctl apply -C $C
 #    and mcctl then verifies `ssh deploy@<host.tailscale_name> true` and that public 22 no longer answers.
 #    It stops if the node isn't named <host.tailscale_name>.<tailnet> (an old machine still holds the
 #    name: delete it in the admin console).
-python -m mcctl bootstrap -C $C
+mcctl bootstrap -C $C
 nmap -Pn -p 1-65535 <vps-ipv4>                # only 25565 open
 nmap -6 -Pn -p 1-65535 <vps-ipv6>             # same over IPv6 (from a host with IPv6)
 
@@ -318,9 +318,12 @@ players, TPS/MSPT), the last deploy and open panel PRs. The server part is `mcct
 and `gh`) run in the background with an 8 s budget and cached for 30 s; whatever fails or is slow reads
 "unknown (why)" and never holds up the menu ("Refresh status" asks again). Then an arrow-key menu (questionary)
 grouped Server, Players, Worlds, Config, Publish, Health, Updates, Secrets, Metrics. Each item runs the existing
-command with `-C` added (status, logs, live logs, backup list, players list, validate, config get, doctor, the
-upgrade and lock update dry runs, secrets dashlane, metrics summary), then the menu comes back; items still to
-come in v1.3 are shown disabled ("v1.3, coming"). Esc, Ctrl-C or Quit leave with exit code 0. Without a terminal
+command with `-C` added (status, logs, live logs, console, restart, stop, start, backup now/list, restore, players
+list/kick/ban/pardon, worlds list/create/switch/delete, plugins list/enable/disable, validate, config get, doctor,
+the upgrade and lock update dry runs, secrets dashlane, metrics summary), then the menu comes back; items still to
+come in v1.3 are shown disabled ("v1.3, coming"). An item's questions (a name, a countdown, a world type) become
+the command's arguments; a destructive item then asks for the command's typed confirmation and passes it as
+`--confirm` (empty or Esc changes nothing; `restore` asks its own). Esc, Ctrl-C or Quit leave with exit code 0. Without a terminal
 (stdin or stdout), with `--plain`, `MCCTL_PLAIN`, `NO_COLOR`, `CI` or `TERM=dumb`, `mcctl` alone is the usage
 error it always was (exit code 2); every subcommand is unchanged.
 
@@ -333,40 +336,45 @@ Without `-C`, a command uses the current directory when it is a config repo (ser
 re-executed pinned mcctl). A missing or corrupt file means nothing is remembered; the next write replaces it.
 
 ```bash
-python -m mcctl                       # v1.3: the home screen (terminal only; -C DIR to open it on DIR)
-python -m mcctl setup -C $C [--seed F] # = init: the onboarding wizard (Quick start); resumable, --from STEP, --reconfigure STEP
-python -m mcctl product-setup [--check] # the product repo's GitHub settings (owner; GH_TOKEN or `gh auth token`)
-python -m mcctl config get|set PATH [VALUE] -C $C   # one server.yml value: schema-checked, comments kept,
+mcctl                                 # v1.3: the home screen (terminal only; -C DIR to open it on DIR)
+mcctl setup -C $C [--seed F] # = init: the onboarding wizard (Quick start); resumable, --from STEP, --reconfigure STEP
+mcctl product-setup [--check] # the product repo's GitHub settings (owner; GH_TOKEN or `gh auth token`)
+mcctl config get|set PATH [VALUE] -C $C             # one server.yml value: schema-checked, comments kept,
                                       # whole repo re-validated, committed (push to deploy)
-python -m mcctl expiry-check -C $C    # P11: expiry.yml + RDAP + watchdog freshness (no admin token; CI, Mondays)
-python -m mcctl validate -C $C        # server.yml, players.yml (canonical), lock files vs server.yml, expiry.yml,
+mcctl expiry-check -C $C              # P11: expiry.yml + RDAP + watchdog freshness (no admin token; CI, Mondays)
+mcctl validate -C $C                  # server.yml, players.yml (canonical), lock files vs server.yml, expiry.yml,
                                       # the pinned `uses:` line; placeholders are warnings
-python -m mcctl render -C $C          # -> $C/.mcctl/rendered/{terraform/{terraform.tfvars.json,state.tfbackend},
+mcctl render -C $C                    # -> $C/.mcctl/rendered/{terraform/{terraform.tfvars.json,state.tfbackend},
                                       #    ansible/{inventory.yml,group_vars/all.yml}}; refuses placeholders
-python -m mcctl doctor -C $C [--fix]  # tools, .env (0600; --fix), config, pin, tokens live -> expiry.yml,
+mcctl doctor -C $C [--fix]            # tools, .env (0600; --fix), config, pin, tokens live -> expiry.yml,
                                       # domain expiry (RDAP), DNS vs host.*, the host's IPv6 vs host.ipv6,
                                       # tailnet ping, a clean read-only `terraform plan` (no drift)
-python -m mcctl doctor -C $C --cloudflare-permissions  # the token form's exact group names for mcctl's rows,
+mcctl doctor -C $C --cloudflare-permissions            # the token form's exact group names for mcctl's rows,
                                       # look-alikes, and the admin token's policies against them (read-only)
-python -m mcctl status -C $C [--json] # server, players, TPS/MSPT, last backup/deploy, drift (tailnet + gh)
-python -m mcctl plan|apply -C $C [--target A] [--replace A]   # apply: typed confirmation, never --yes
-python -m mcctl bootstrap -C $C       # fresh server key (apply), bootstrap.yml, verify SSH + closed 22
+mcctl status -C $C [--json] # server, players, TPS/MSPT, last backup/deploy, drift (tailnet + gh)
+mcctl plan|apply -C $C [--target A] [--replace A]             # apply: typed confirmation, never --yes
+mcctl bootstrap -C $C                 # fresh server key (apply), bootstrap.yml, verify SSH + closed 22
                                       # (skips when already done; --force re-runs it)
-python -m mcctl deploy -C $C [--check]  # render, terraform init + output, site.yml with MC_SECRET_*
-python -m mcctl rcon|ssh|logs|backup -C $C ...   # over Tailscale SSH as deploy@<host.tailscale_name>
-python -m mcctl stop|start -C $C [--reason T]    # admin-stopped marker + stop / start (scripts/admin.py)
-python -m mcctl migrate -C $C --to IP [--ipv6 IP] [--dry-run] | --rollback   # P12: move to a new machine
-python -m mcctl retire-old -C $C      # after a migration: delete the old box's tailnet node (typed)
-python -m mcctl upgrade -C $C [--to vX.Y.Z] | --minecraft-version V [--dry-run]   # PRs: product pin / MC version
-python -m mcctl lock update -C $C     # newest builds of the current Minecraft version (a PR)
-python -m mcctl secrets rotate -C $C NAME [--dry-run]   # apply -replace (typed) + deploy
-python -m mcctl secrets dashlane -C $C [--convert]  # P14: Dashlane items for .env; --convert: values -> dl:// refs
-python -m mcctl secrets show-restic -C $C         # the restic password, once, to a terminal only
-python -m mcctl discord sync -C $C [--endpoint-only]  # P14: register the slash commands, point them at the Worker
-python -m mcctl players -C $C add|remove|op|deop|list NAME   # players.yml (canonical), commit, push
-python -m mcctl restore -C $C --list | --to DIR | --live ID  # live: typed, safety snapshot first
-python -m mcctl schema                # regenerate ./schema/server.schema.json after editing mcctl/schema.py
-python -m mcctl --version
+mcctl deploy -C $C [--check]            # render, terraform init + output, site.yml with MC_SECRET_*
+mcctl rcon|ssh|logs|backup -C $C ...             # over Tailscale SSH as deploy@<host.tailscale_name>
+mcctl stop|start -C $C [--reason T]              # admin-stopped marker + stop / start (scripts/admin.py)
+mcctl restart -C $C [--countdown 0|10|60|300] [--backup] [--wait]   # v1.3: the panel's restart (countdown)
+mcctl console -C $C [COMMAND...]                 # v1.3: an RCON prompt (exit/Ctrl-D leaves), or one command
+mcctl worlds list|create|switch|delete -C $C [NAME] [--confirm T]   # v1.3: the world library (typed)
+mcctl plugins list|enable|disable -C $C [NAME] [--confirm T]        # v1.3: plugin switch + countdown restart
+mcctl migrate -C $C --to IP [--ipv6 IP] [--dry-run] | --rollback             # P12: move to a new machine
+mcctl retire-old -C $C                # after a migration: delete the old box's tailnet node (typed)
+mcctl upgrade -C $C [--to vX.Y.Z] | --minecraft-version V [--dry-run]             # PRs: product pin / MC version
+mcctl lock update -C $C               # newest builds of the current Minecraft version (a PR)
+mcctl secrets rotate -C $C NAME [--dry-run]             # apply -replace (typed) + deploy
+mcctl secrets dashlane -C $C [--convert]            # P14: Dashlane items for .env; --convert: values -> dl:// refs
+mcctl secrets show-restic -C $C                   # the restic password, once, to a terminal only
+mcctl discord sync -C $C [--endpoint-only]            # P14: register the slash commands, point them at the Worker
+mcctl players -C $C add|remove|op|deop|list NAME             # players.yml (canonical), commit, push
+mcctl players -C $C kick|ban|pardon NAME [--reason T]        # v1.3: live over RCON, never players.yml
+mcctl restore -C $C --list | --to DIR | --live ID            # live: typed, safety snapshot first
+mcctl schema                          # regenerate ./schema/server.schema.json after editing mcctl/schema.py
+mcctl --version
 ```
 
 `doctor` checks: Cloudflare `GET /user/tokens/verify` (active, `expires_on`) + the zone + R2 + Workers + D1 +
@@ -383,6 +391,30 @@ there (no AAAA record). It writes
 `expiry.yml` (names and dates only; commit it) and warns 30 days ahead. `.mcctl/state.json` records
 `apply`, `bootstrap`, `doctor` and every `init` step (`init` resumes from it).
 
+### Server actions over Tailscale SSH (v1.3)
+
+`restart`, `worlds`, `plugins` and `players kick|ban|pardon` run the panel's own actions on the server
+(`mcctl/actions.py`): over Tailscale SSH as the deploy user, `sudo mc-run -/etc/minecraft/notify.env
+/opt/minecraft/bin/mc_agent.py cli mcctl:<local user> ACTION ARGS_JSON` runs mc-agent's Executor once, as the ops
+user in mc-run's sandbox, so every systemd action is one of the fixed units `50-mc-ops.rules` allows (never a
+generic `systemctl` as root). The checks are the agent's (a known archived world, the DataVersion, a plugin in the
+deployed lock, the console shapes for moderation), the long ones run as `mc_panel.Jobs` in the foreground (the
+in-game countdown at 5/4/3/2/1 min, 30, 10, 5..1 s, skipped when nobody is online unless `--wait`; progress lines
+stream back), and one job runs at a time across the agent and mcctl (`/var/lib/minecraft/job.lock`: the second
+is refused as busy). Ending the session (Ctrl-C, ssh gone) during the countdown cancels it; a job already running
+finishes on the server. Each action writes the panel's audit entry to the journal (`SYSLOG_IDENTIFIER=mc-agent`,
+`MC_AUDIT=1`, `MC_ACTION`, `MC_ARGS`, `MC_RESULT`, `MC_VIA=mcctl`) with `MC_LOGIN=mcctl:<local user>`; mc-agent
+ships audit entries to the panel's logs like its own. World changes are recorded in mc-agent's `pending.json`,
+so its pull request carries them to `server.yml` as for the panel (they need `panel.mode: cloudflare`; without
+mc-agent the world actions refuse).
+
+Typed confirmations: `worlds create NAME` → `create NAME`, `switch NAME` → `switch to NAME`, `delete NAME` →
+`delete NAME` (the panel's phrases), `plugins enable|disable NAME` → `enable NAME` / `disable NAME`. mcctl
+checks them before sending anything, and the server checks them again. Give one with `--confirm TEXT`, or type it
+when asked on a terminal; without a terminal and without `--confirm` the command refuses (exit 2). `console` is
+`rcon`, one line at a time (no audit entry, as before); `stop`, `start`, `backup now` and `restore --live` are
+unchanged (restore has its own typed `restore <id>`).
+
 Exit codes: 0 ok, 1 invalid input or a failed step, 2 usage error.
 Fields whose consumers come in later phases (panel, monitoring transport, automation, gamerules, overrides) are
 validated but not rendered yet. `mcctl validate` warns about placeholders (RFC 2606 domains such as
@@ -397,7 +429,7 @@ refuse them: they would end up in the tailnet ACL, Cloudflare Access, DNS or the
   The workflow dispatches `ci` on the PR branch itself (PRs opened by `GITHUB_TOKEN` don't trigger it).
   It uses the newest *successful* Purpur build and fails if there is none; switching to Paper needs
   `--allow-paper` (workflow input `allow_paper`), and Purpur-only settings then don't apply.
-- **Minecraft version (the admin's call, must be ≥ the world):** `python -m mcctl upgrade -C $C --minecraft-version X`
+- **Minecraft version (the admin's call, must be ≥ the world):** `mcctl upgrade -C $C --minecraft-version X`
   (P12; `--dry-run` first). It needs a pinned product with `server-config/keys/X/` (else: upgrade the product), a
   typed `X`, runs the pinned
   `update_lock.py --minecraft-version X` (fails if any plugin lacks a release for X: nothing is written), sets
@@ -406,13 +438,13 @@ refuse them: they would end up in the tailnet ACL, Cloudflare Access, DNS or the
   **pre-upgrade backup** right before the new jar starts (log line `PRE-UPGRADE SNAPSHOT <id>`,
   `/var/lib/minecraft/pre-upgrade.json`, marked in `mcctl restore --list`). Rollback after the deploy: revert the
   merge **and** `mcctl restore --live <pre-upgrade snapshot>` (the world was converted).
-  `python -m mcctl lock update -C $C` does the same for the newest builds of the current version. Adding X to the product:
+  `mcctl lock update -C $C` does the same for the newest builds of the current version. Adding X to the product:
   - `python scripts/update_lock.py --minecraft-version X`, set `minecraft.version` in `template/server.yml`, run `python scripts/sync_example.py`.
   - Run `python scripts/config_keys.py --javap <jdk>/bin/javap` to list the new keys, and `pytest` to check the overlays still validate.
   - If `java_major` changed, bump `temurin_version`.
 - **Tailscale / Temurin / restic:** bump the pins in `ansible/group_vars/all/main.yml`. For restic and Tailscale, also bump `.github/workflows/server.yml` (backup-check / deploy jobs; `pytest` checks they match); the Tailscale upgrade runs detached on the server and Ansible reconnects, since the deploy itself goes over Tailscale SSH.
   Tailscale is held at its pin, so **security fixes need this manual bump**.
-- **Product (config repos):** `python -m mcctl upgrade -C $C [--to vX.Y.Z] [--dry-run]` (P12): moves the
+- **Product (config repos):** `mcctl upgrade -C $C [--to vX.Y.Z] [--dry-run]` (P12): moves the
   `uses:` pin to the release's commit on `upgrade/product-vX.Y.Z`, runs that release's `mcctl schema-migrate`
   (server.yml migrations, `mcctl/migrations.py`) and `validate`, and opens a PR. Only a **pure patch bump** (just
   the `uses:` line changed, `auto_merge: builds+patch`) goes on `update/product-vX.Y.Z` with auto-merge on, where
@@ -428,7 +460,7 @@ refuse them: they would end up in the tailnet ACL, Cloudflare Access, DNS or the
 
 ## Move to a new VPS
 
-`python -m mcctl migrate -C $C --to <new IPv4> [--ipv6 <new IPv6>]` (P12) does the whole move, resumably
+`mcctl migrate -C $C --to <new IPv4> [--ipv6 <new IPv6>]` (P12) does the whole move, resumably
 (`.mcctl/state.json`); `--dry-run` prints the exact sequence first and changes nothing. Order the new VPS
 first ([setup.md, step 13](setup.md#step-13-the-server-machine), your SSH key for root). Each run picks up at the first step not done yet:
 
@@ -452,12 +484,12 @@ first ([setup.md, step 13](setup.md#step-13-the-server-machine), your SSH key fo
 8. **smoke**: Minecraft status ping on IPv4 and IPv6 from your laptop, and the watchdog.
 
 The old box stays fenced, intact and on the tailnet as `<name>-old`. When players confirm,
-`python -m mcctl retire-old -C $C` (type `<name>-old`) deletes its tailnet node; then wipe and cancel the old
+`mcctl retire-old -C $C` (type `<name>-old`) deletes its tailnet node; then wipe and cancel the old
 VPS at its provider. Also check both families by hand once: `nmap -Pn -p 1-65535 <new-ipv4>` (only 25565 open).
 
 ### Rollback (until `retire-old`)
 
-`python -m mcctl migrate -C $C --rollback` (`--dry-run` shows the plan) undoes whatever ran, each sub-step recorded
+`mcctl migrate -C $C --rollback` (`--dry-run` shows the plan) undoes whatever ran, each sub-step recorded
 so a re-run after a failure resumes (it never fences `<name>` again once that is the old box): once the new box
 was bootstrapped it is fenced first (its final backup becomes the latest snapshot; if it can't be reached, only a
 typed "`<ip> is off`" lets the rollback go on), the new tailnet node is deleted, the old one renamed back,

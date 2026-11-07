@@ -1,6 +1,6 @@
 # Full server configuration over the tailnet. Run by the config repo's workflow (the product's reusable
 # .github/workflows/server.yml, deploy job), or locally from a product checkout:
-#   python -m mcctl deploy -C <config repo>   # renders, then secrets from `terraform output -json`
+#   mcctl deploy -C <config repo>   # renders, then secrets from `terraform output -json`
 # Deployment values come from the rendered inventory and its group_vars (server.yml + the lock files);
 # secrets only through MC_SECRET_* environment variables (group_vars/all/secrets.yml).
 # Must be idempotent: a second run reports zero changes.
@@ -16,7 +16,7 @@
           - mc_level_name is defined
         fail_msg: >-
           No deployment values: run with the inventory `mcctl render` writes
-          (-i <config>/.mcctl/rendered/ansible/inventory.yml), or use `python -m mcctl deploy -C <config repo>`.
+          (-i <config>/.mcctl/rendered/ansible/inventory.yml), or use `mcctl deploy -C <config repo>`.
         quiet: true
       tags: [always]
 
@@ -32,7 +32,7 @@
           - mc_secret_agent_token | length > 0
           - mc_secret_command_hmac_key | length > 0
         fail_msg: >-
-          Required MC_SECRET_* environment variables are empty. Locally run `python -m mcctl deploy`
+          Required MC_SECRET_* environment variables are empty. Locally run `mcctl deploy`
           (reads them from `terraform output -json`); in CI they come from Actions secrets set by Terraform.
         quiet: true
       tags: [always]

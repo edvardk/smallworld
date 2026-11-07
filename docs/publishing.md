@@ -120,7 +120,7 @@ gh repo create edvardk/smallworld --public --description '...'   # empty: no REA
 git -C ../smallworld-publish remote add origin https://github.com/edvardk/smallworld.git
 git -C ../smallworld-publish push -u origin main
 git -C ../smallworld-publish push origin vX.Y.Z                   # runs release.yml: CI + the GitHub release
-python -m mcctl product-setup --repo edvardk/smallworld
+python3 -m mcctl product-setup --repo edvardk/smallworld
 gh repo archive <old owner/name> --yes                            # stays private
 ```
 

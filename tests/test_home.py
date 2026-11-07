@@ -150,7 +150,9 @@ def test_header_and_groups(config_repo: Path) -> None:
         "Metrics",
     ]
     disabled = {c.value: c.disabled for c in choices if getattr(c, "disabled", None)}
-    assert disabled["publish"] == disabled["worlds"] == "v1.3, coming"
+    assert disabled["publish"] == disabled["settings"] == "v1.3, coming"
+    for key in ("console", "restart", "worlds", "world-switch", "kick", "plugins", "restore", "backup-now"):
+        assert key not in disabled, key  # phase 2: live
     assert "status" not in disabled and "quit" not in disabled
 
 
@@ -428,3 +430,81 @@ def test_a_reexecuted_command_gets_the_remembered_c(
     root = str(config_repo.resolve())
     assert seen[0].argv == ["lock", "update", "-C", root, "--dry-run"]
     assert seen[1].argv == ["logs", "-C", root, "-f"]
+
+
+# --- phase 2: actions with questions and typed confirmations ------------------------------------------------
+
+
+def run_keys(config_repo: Path, key: str, keys: list[str]) -> tuple[list[list[str]], str]:
+    calls: list[list[str]] = []
+    with create_pipe_input() as inp:
+        h, buf = make_home(config_repo, keys, inp, runner=lambda a: calls.append(a) or 0)
+        h.run_item(home.ITEMS[key])
+    return calls, buf.getvalue()
+
+
+def test_world_switch_asks_name_countdown_then_the_typed_confirmation(config_repo: Path) -> None:
+    calls, _ = run_keys(
+        config_repo, "world-switch", ["creative" + ENTER, ENTER, "switch to creative" + ENTER]
+    )
+    root = str(config_repo.resolve())
+    assert calls == [
+        ["worlds", "switch", "creative", "--countdown", "60", "--confirm", "switch to creative", "-C", root]
+    ]
+
+
+@pytest.mark.parametrize("last", [ESC, ENTER])  # Esc or nothing typed at the confirmation
+def test_an_unconfirmed_destructive_item_runs_nothing(config_repo: Path, last: str) -> None:
+    calls, text = run_keys(config_repo, "world-delete", ["creative" + ENTER, last])
+    assert calls == [] and "not confirmed: nothing was changed" in text
+
+
+def test_esc_at_a_question_returns_to_the_menu(config_repo: Path) -> None:
+    calls, _ = run_keys(config_repo, "world-switch", [ESC])
+    assert calls == []
+
+
+def test_world_create_picks_type_preset_and_countdown(config_repo: Path) -> None:
+    keys = ["farm" + ENTER, DOWN + ENTER, ENTER, "-5" + ENTER, DOWN + ENTER, "create farm" + ENTER]
+    calls, _ = run_keys(config_repo, "world-create", keys)
+    assert calls[0][:-2] == [
+        "worlds", "create", "farm", "--type", "large_biomes", "--preset", "survival_smp", "--seed", "-5",
+        "--countdown", "10", "--confirm", "create farm",
+    ]  # fmt: skip
+
+
+def test_kick_without_a_reason_and_restart_with_a_countdown(config_repo: Path) -> None:
+    root = str(config_repo.resolve())
+    calls, text = run_keys(config_repo, "kick", ["jonas_r" + ENTER, ENTER])
+    assert calls == [["players", "kick", "jonas_r", "-C", root]] and "$ mcctl players kick jonas_r" in text
+    calls, _ = run_keys(config_repo, "ban", ["griefer_99" + ENTER, "griefing again" + ENTER])
+    assert calls == [["players", "ban", "griefer_99", "--reason", "griefing again", "-C", root]]
+    calls, _ = run_keys(config_repo, "restart", [UP + ENTER])  # 60 is first: up wraps to 0
+    assert calls == [["restart", "--countdown", "0", "-C", root]]
+
+
+def test_plugin_and_restore_items(config_repo: Path) -> None:
+    root = str(config_repo.resolve())
+    calls, _ = run_keys(config_repo, "plugin-disable", ["chunky" + ENTER, ENTER, "disable chunky" + ENTER])
+    assert calls == [
+        ["plugins", "disable", "chunky", "--countdown", "60", "--confirm", "disable chunky", "-C", root]
+    ]
+    calls, _ = run_keys(
+        config_repo, "restore", ["abcd1234" + ENTER]
+    )  # restore asks its own typed confirmation
+    assert calls == [["restore", "--live", "abcd1234", "-C", root]]
+    calls, _ = run_keys(config_repo, "console", [])
+    assert calls == [["console", "-C", root]]
+
+
+def test_every_action_item_names_a_real_command() -> None:
+    parser = cli.build_parser()
+    for _, items in home.MENU:
+        for item in items:
+            if item.coming or not item.argv:
+                continue
+            argv = list(item.argv) + ["x" for ask in item.asks if not ask.flag]
+            if item.ask:
+                argv.append("x")
+            args = parser.parse_args(argv)
+            assert callable(args.func), item.key

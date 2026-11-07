@@ -31,6 +31,10 @@ player_message {to, kind, text, hover, id} (re-checked rate limits, queued for t
 Systemd actions go through polkit (base role: 50-mc-ops.rules): minecraft start/stop/restart, mc-backup,
 mc-plugins-apply and mc-restore@<snapshot> start. Nothing runs as root.
 
+v1.3: `mc_agent.py cli LOGIN ACTION [ARGS_JSON]` runs one panel action for `mcctl` over Tailscale SSH (as
+the ops user through `sudo mc-run`, see cli_main): the same Executor checks and job runner (countdown, one job
+at a time across processes: mc_panel.JOB_LOCK_FILE), audited like a panel command with login `mcctl:<user>`.
+
 v1.1 (CLIENT=1): /modpack's one-time codes. mc-brand (minecraft) writes CLIENT_REQUEST_DIR/<uuid>.req
 (`mc-client-request 1` + uuid, name, nonce, ts); this agent POSTs /agent/client-code {uuid, name} (bearer
 token: the Worker mints a 15-minute single-use code bound to the UUID) and writes the answer to
@@ -122,7 +126,7 @@ ACTIONS = (
 INVENTORY_MIN_GAP_S = 5  # a state change pushes the inventory at once, but not more often than this
 RESTORE_TIMEOUT_S = 7200
 
-# --- settings -------------------------------------------------------------------------------------------
+# --- settings -----------------------------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -186,7 +190,7 @@ def check_url(url: str) -> None:
     raise ValueError("INGEST_URL must be https:// (http:// only for a loopback address)")
 
 
-# --- audit ------------------------------------------------------------------------------------------------
+# --- audit --------------------------------------------------------------------------------------------------
 
 JOURNAL_SOCKET = "/run/systemd/journal/socket"
 
@@ -231,7 +235,7 @@ class Warnings:
 WARN = Warnings()
 
 
-# --- HTTP -------------------------------------------------------------------------------------------------
+# --- HTTP ---------------------------------------------------------------------------------------------------
 
 
 class IngestError(Exception):
@@ -271,7 +275,7 @@ def post_json(s: Settings, path: str, payload: object) -> Any:  # noqa: ANN401
     return request(s, "POST", path, json.dumps(payload, separators=(",", ":")).encode())
 
 
-# --- metrics ----------------------------------------------------------------------------------------------
+# --- metrics ------------------------------------------------------------------------------------------------
 
 
 @dataclass
@@ -568,7 +572,7 @@ def push_metrics(s: Settings, spool: Spool, sample: dict[str, Any]) -> int:
     return sent
 
 
-# --- logs -------------------------------------------------------------------------------------------------
+# --- logs ---------------------------------------------------------------------------------------------------
 
 
 def message_text(value: object) -> str:
@@ -843,7 +847,7 @@ def ship_logs(
     return len(kept), more
 
 
-# --- inventory (P9: the panel's players, bans and plugins views) -------------------------------------------
+# --- inventory (P9: the panel's players, bans and plugins views) --------------------------------------------
 
 
 def read_json_obj(path: Path) -> dict[str, Any]:
@@ -985,7 +989,7 @@ def push_inventory(s: Settings, server_dir: Path | None = None, extra: dict[str,
     post_json(s, "/ingest/inventory", {"agent": VERSION, "inventory": inventory})
 
 
-# --- commands ---------------------------------------------------------------------------------------------
+# --- commands -----------------------------------------------------------------------------------------------
 
 
 class Rejected(Exception):
@@ -1820,7 +1824,7 @@ def handle_command(message: object, s: Settings, nonces: Nonces, executor: Execu
     return result
 
 
-# --- WebSocket (RFC 6455, client side, the subset the Durable Object uses) --------------------------------
+# --- WebSocket (RFC 6455, client side, the subset the Durable Object uses) ----------------------------------
 
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 OP_CONT, OP_TEXT, OP_BIN, OP_CLOSE, OP_PING, OP_PONG = 0x0, 0x1, 0x2, 0x8, 0x9, 0xA
@@ -1998,10 +2002,10 @@ class WebSocket:
         self.sock.close()
 
 
-# --- loops ------------------------------------------------------------------------------------------------
+# --- loops --------------------------------------------------------------------------------------------------
 
 
-# --- v1.1: /modpack's one-time codes --------------------------------------------------------------------
+# --- v1.1: /modpack's one-time codes ------------------------------------------------------------------------
 
 CLIENT_UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 CLIENT_NAME = re.compile(r"^[A-Za-z0-9_]{1,16}$")
@@ -2135,7 +2139,7 @@ class Agent:
         self.inventory_due = threading.Event()  # P10: a state change pushes the inventory now
         self.github = mc_panel.github_from_env(fetch_token=self.github_token)
         self.panel = Panel(
-            jobs=mc_panel.Jobs(self.report_job),
+            jobs=mc_panel.Jobs(self.report_job, lock_path=mc_panel.JOB_LOCK_FILE),
             pending=mc_panel.Pending(s.state_dir / "pending.json"),
             rejected=mc_panel.RejectedLogins(s.state_dir / "rejected.json"),
             changed=self.inventory_due.set,
@@ -2433,6 +2437,135 @@ def daily_budget(
     }
 
 
+# --- v1.3: the same actions from mcctl, over Tailscale SSH --------------------------------------------------
+
+# `sudo mc-run -/etc/minecraft/notify.env mc_agent.py cli LOGIN ACTION [ARGS_JSON]` (mcctl/actions.py): runs
+# as the ops user in mc-run's sandbox, so systemd actions go through the same polkit rules as the agent's. No
+# signature: the caller is the deploy user over Tailscale SSH (who has sudo anyway); the Executor's own
+# checks, the job runner and the audit entry are the panel's. Destructive world and plugin actions also need
+# the typed confirmation the panel asks for (cli_confirm), checked here again.
+CLI_LOGIN = re.compile(r"mcctl:[A-Za-z0-9._@-]{1,64}")
+CLI_ACTIONS = ("restart", "plugin", "moderate", "world_create", "world_switch", "world_delete")
+CLI_LISTS = ("worlds", "plugins")
+CLI_USAGE = (
+    f"usage: mc_agent.py cli mcctl:USER {{{'|'.join(CLI_ACTIONS)}}} [ARGS_JSON] | "
+    f"mc_agent.py cli mcctl:USER {{{'|'.join(CLI_LISTS)}}}"
+)
+
+
+def cli_confirm(action: str, args: dict[str, Any]) -> str | None:
+    """The typed confirmation an action needs (the Worker's phrases for the world library; plugins: the
+    CLI's own, the panel confirms them on its confirmation host)."""
+    name = args.get("name")
+    if action == "world_create":
+        return f"create {name}"
+    if action == "world_switch":
+        return f"switch to {name}"
+    if action == "world_delete":
+        return f"delete {name}"
+    if action == "plugin":
+        return f"{'enable' if args.get('enabled') is True else 'disable'} {name}"
+    return None
+
+
+def cli_panel(state_dir: Path, report: Callable[[dict[str, Any]], None]) -> Panel:
+    """The agent's Panel (default paths), with a job runner that runs in the foreground."""
+    return Panel(
+        jobs=mc_panel.Jobs(report, lock_path=mc_panel.JOB_LOCK_FILE, background=False),
+        pending=mc_panel.Pending(state_dir / "pending.json"),
+        rejected=mc_panel.RejectedLogins(state_dir / "rejected.json"),
+    )
+
+
+def cli_main(
+    argv: list[str],
+    panel: Panel | None = None,
+    state_dir: Path | None = None,
+    out: Callable[[str], None] | None = None,
+) -> int:
+    """One action for mcctl; prints the job's progress (`countdown: ...`, `running: ...`) and ends with
+    `RESULT ok|failed|refused: <text>`. Exit 0 done, 1 failed/cancelled/refused, 2 usage."""
+    say = out or (lambda line: print(line, flush=True))
+    if len(argv) not in (2, 3) or not CLI_LOGIN.fullmatch(argv[0]):
+        say(CLI_USAGE)
+        return 2
+    login, action = argv[0], argv[1]
+    try:
+        raw = json.loads(argv[2]) if len(argv) == 3 else {}
+    except ValueError:
+        raw = None
+    if not isinstance(raw, dict) or (action not in CLI_ACTIONS and action not in CLI_LISTS):
+        say(CLI_USAGE)
+        return 2
+    state_dir = state_dir or Path("/var/lib/mc-agent")
+    last: dict[str, str] = {}
+
+    def report(job: dict[str, Any]) -> None:
+        line = f"{job.get('state')}: {job.get('step') or job.get('label')}"
+        if line != last.get("line"):
+            last["line"] = line
+            say(line)
+
+    if panel is None:
+        panel = cli_panel(state_dir, report)
+    else:
+        panel.jobs.report = report
+    executor = Executor(lambda: {}, None, panel)
+    if action == "plugins":
+        disabled = set(mc_panel.read_disabled(panel.plugins_disabled))
+        lock = mc_panel.read_lock(panel.plugins_lock)
+        say(json.dumps([p | {"enabled": p["name"] not in disabled} for p in lock], sort_keys=True))
+        return 0
+    if action == "worlds":
+        say(json.dumps(worlds_inventory(panel, executor), sort_keys=True))
+        return 0
+
+    args = {k: v for k, v in raw.items() if k != "confirm"}
+    shown = json.dumps(args, sort_keys=True)[:500]
+
+    def finish(ok: bool, kind: str, text: str) -> int:
+        audit(
+            f"mcctl action={action} ok={ok} login={login}",
+            action=action,
+            login=login,
+            args=shown,
+            via="mcctl",
+            result="ok" if ok else text[:300],
+        )
+        say(f"RESULT {kind}: {text}")
+        return 0 if ok else 1
+
+    want = cli_confirm(action, args)
+    if want is not None and raw.get("confirm") != want:
+        return finish(False, "refused", f'{action}: type "{want}" to confirm')
+    if action.startswith("world_") and not state_dir.is_dir():
+        why = "the world library records its changes through mc-agent (panel.mode: cloudflare): not here"
+        return finish(False, "refused", f"{action}: {why}")
+
+    def cancel(*_: object) -> None:  # mcctl's session ended (Ctrl-C, ssh gone): cancel a countdown
+        job = panel.jobs.current
+        if job is not None and job.state == "countdown":
+            job.cancel.set()
+
+    for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+        with contextlib.suppress(ValueError, OSError):  # not the main thread (tests)
+            signal.signal(sig, cancel)
+    try:
+        text = executor.run(
+            {"id": f"mcctl-{int(time.time())}", "action": action, "args": args, "login": login}
+        )
+    except Rejected as e:
+        return finish(False, "refused", str(e))
+    except (OSError, subprocess.SubprocessError, mc_rcon.RconError) as e:
+        return finish(False, "failed", f"{action} failed: {type(e).__name__}")
+    job = panel.jobs.current
+    if action == "moderate" or job is None or job.id != executor.cmd_id:
+        return finish(True, "ok", text)  # no job: done at once (moderation, a restart without countdown)
+    if job.state == "done":
+        return finish(True, "ok", job.step)
+    return finish(False, "failed" if job.state == "failed" else job.state, job.step or job.state)
+
+
 def main() -> int:
     try:
         settings = Settings.from_env()
@@ -2450,4 +2583,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     os.umask(0o077)  # spool, cursor and nonces stay private (StateDirectoryMode=0700 too)
-    sys.exit(main())
+    sys.exit(cli_main(sys.argv[2:]) if sys.argv[1:2] == ["cli"] else main())

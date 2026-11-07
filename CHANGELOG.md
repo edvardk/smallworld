@@ -26,9 +26,24 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 - **The home screen:** `mcctl` with no command, on an interactive terminal, shows a status header (deployment,
   config repo, pinned product vs this mcctl, server online/players/TPS/MSPT, last deploy, open panel PRs; slow
   or failed parts read "unknown (why)" and never block) and an arrow-key menu grouped Server, Players, Worlds,
-  Config, Publish, Health, Updates, Secrets, Metrics. Its items run the existing read-only commands (status, logs,
+  Config, Publish, Health, Updates, Secrets, Metrics. Its items run the existing commands (status, logs,
   backup list, players list, validate, config get, doctor, update dry runs, secrets dashlane, metrics); the rest
   of v1.3's items are shown as coming. `--plain`, CI, `NO_COLOR` and no terminal keep the usage error (exit 2).
+- **Server actions from the CLI** (v1.3 phase 2), over Tailscale SSH like `rcon`/`stop`/`start`:
+  `mcctl restart [--countdown 0|10|60|300] [--backup] [--wait]` (the panel's restart: in-game countdown, skipped
+  when nobody is online), `mcctl console [COMMAND...]` (an RCON prompt, or one command), `mcctl worlds
+  list|create|switch|delete` (the world library, typed `create NAME` / `switch to NAME` / `delete NAME`), `mcctl
+  plugins list|enable|disable` (the plugin switch and a countdown restart, typed `enable NAME` / `disable NAME`)
+  and `mcctl players kick|ban|pardon NAME [--reason T]` (live only, never `players.yml`). They run the panel's own
+  code on the server (`mc_agent.py cli`: the agent's checks and job runner as the ops user, through the existing
+  polkit-allowed units) and write the panel's audit entry with the login `mcctl:<local user>`. Confirmations come
+  from a terminal prompt or `--confirm TEXT`; without either the command refuses. Panel and CLI jobs never
+  overlap: one job at a time across both (`/var/lib/minecraft/job.lock`).
+- The home screen's Server, Players, Worlds and Config groups run these (console, restart, stop, start, back up
+  now, restore, kick/ban/pardon, worlds and plugins), asking for names and countdowns and for the typed
+  confirmation of destructive items.
+- The docs write `mcctl ...`: `pip install --no-deps -e .` in the product venv installs the command (the
+  `[project.scripts]` entry); `python3 -m mcctl` keeps working. Printed hints no longer say a bare `python`.
 - **Remembered config repo:** `~/.config/mcctl/config.toml` (XDG_CONFIG_HOME; Windows `%APPDATA%\mcctl`)
   remembers the config repos used with `-C` (paths only, no secrets). Without `-C`, outside a config repo, mcctl
   uses the remembered one; the home screen's "Switch config repo" picks between them.

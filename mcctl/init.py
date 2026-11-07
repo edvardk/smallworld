@@ -467,7 +467,7 @@ def venv_problem(family: str, has_ensurepip: bool | None = None) -> str | None:
         has_ensurepip = importlib.util.find_spec("ensurepip") is not None
     if has_ensurepip:
         return None
-    return f"`python -m venv` won't work here (no ensurepip). Install: {install_hint('venv', family)}"
+    return f"`python3 -m venv` won't work here (no ensurepip). Install: {install_hint('venv', family)}"
 
 
 def step_preflight(ctx: Ctx) -> dict[str, Any]:
