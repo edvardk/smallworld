@@ -17,9 +17,9 @@ name: e2e-mock
 # Nothing here has a secret: the MC_SECRET_* values below are fixed fakes for a throwaway container, and the
 # restic repository is a local directory inside it.
 #
-# The checks run as parallel shards of job `e2e-shard` (core, agent, telemetry-brand, migrate-p16), each on its
-# own runner with its own freshly deployed box; job `e2e` (the required check) passes when every shard did.
-# Wall time is the agent shard's (~20 min) instead of the sum (~42 min).
+# The checks run as parallel shards of job `e2e-shard` (core, agent-a, agent-b, telemetry-brand, migrate-p16), each
+# on its own runner with its own freshly deployed box; job `e2e` (the required check) passes when every shard did.
+# Wall time is the slowest shard's (~11 min) instead of the sum (~42 min).
 #
 # What runs when (docs/ci.md; the product repo is public, so GitHub's runners cost no minutes here):
 #   - every pull request to main: `e2e` (a required check). The essential half (1-5, reboot gate, deploy checks,
@@ -108,7 +108,8 @@ jobs:
   # builds the config repo, boots a container and deploys it (the first site.yml run); then
   #   core:            mcctl init's re-runs and stale pin, the client switch, terraform validate, the second
   #                    site.yml (changed=0), hardening, reboot gate, deploy checks, firewall, P12 dry runs;
-  #   agent:           mc-agent and the P10 panel actions (the longest shard, ~20 min);
+  #   agent-a/agent-b: mc-agent and the P10 panel actions, split by rounds (agent_check.py --rounds a|b: a = rcon,
+  #                    client code, stop/start, whitelist, restart, plugin, restore guard; b = backup/restore, world);
   #   telemetry-brand: telemetry, then branding (heavy half only);
   #   migrate-p16:     migrate container -> container, then P16 on the migrated box (heavy half only).
   # A heavy shard in an essential run skips every step (done in seconds); the matrix stays static. Each check
@@ -131,11 +132,12 @@ jobs:
       # ports above) and the same container names, so two on one machine would clash.
       max-parallel: >-
         ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-        && vars.E2E_RUNNER && '1' || '4') }}
+        && vars.E2E_RUNNER && '1' || '5') }}
       matrix:
         include:
           - {shard: core, full_only: false, timeout: 45}
-          - {shard: agent, full_only: false, timeout: 45}
+          - {shard: agent-a, full_only: false, timeout: 45}
+          - {shard: agent-b, full_only: false, timeout: 45}
           - {shard: telemetry-brand, full_only: true, timeout: 45}
           - {shard: migrate-p16, full_only: true, timeout: 60}
     env:
@@ -342,15 +344,19 @@ jobs:
       # P10 acceptance: every panel action through signed commands: whitelist add/remove (live, pending.json, a
       # deploy's players role keeps it, PR to a mock GitHub API, merged), restart with a countdown, plugin disable
       # -> restart without it -> enable, backup now -> snapshot list, restore round trip with a safety snapshot.
+      # Two shards share the rounds (--rounds a / b, each on its own box, each with the shared part: metrics,
+      # journal, the first commands, the audit of what it sent); every round prints its time.
       - name: mc-agent checks (pushes to a mock Worker, signed commands, P10 panel actions)
-        if: matrix.shard == 'agent'
-        timeout-minutes: 25
+        if: startsWith(matrix.shard, 'agent-')
+        timeout-minutes: 20
+        env:
+          ROUNDS: ${{ matrix.shard == 'agent-a' && 'a' || 'b' }}
         run: |
           docker exec \
             -e MC_SECRET_RCON_PASSWORD -e MC_SECRET_RESTIC_PASSWORD -e MC_SECRET_RESTIC_REPOSITORY \
             -e MC_SECRET_R2_ACCESS_KEY_ID -e MC_SECRET_R2_SECRET_ACCESS_KEY -e MC_SECRET_HEARTBEAT_TOKEN \
             -e MC_SECRET_DISCORD_WEBHOOK_URL -e MC_SECRET_AGENT_TOKEN -e MC_SECRET_COMMAND_HMAC_KEY \
-            mc-e2e python3 /src/product/tests/e2e/agent_check.py
+            mc-e2e python3 /src/product/tests/e2e/agent_check.py --rounds "$ROUNDS"
 
       # P13 acceptance: the mc-telemetry plugin on the real Purpur, snapshots on tmpfs, mc-agent shipping minute rows
       # and segments to the real Worker code (node, node:sqlite as D1, on 127.0.0.1:8787), verdicts back to the

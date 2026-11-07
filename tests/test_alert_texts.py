@@ -115,6 +115,7 @@ def _box_other() -> dict[str, str]:
         "mc_panel.whitelist-expired": mc_panel.expired_alert("add Player_One, remove Player_Two"),
         "mc_panel.whitelist-rejected": mc_panel.rejected_alert(7, ["remove Player_One"], []),
         "mc_panel.whitelist-rejected-partly": mc_panel.rejected_alert(8, [], ["add Player_Two"]),
+        "mc_panel.whitelist-kept": mc_panel.kept_alert(["Player_One", "Player_Two"]),
         "backup_check.failed": backup_check.alert(
             "restore", "latest snapshot 1a2b3c4d is 30.0 h old (> 2 h): backups have stopped"
         ),

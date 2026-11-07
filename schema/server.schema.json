@@ -149,6 +149,11 @@
           "type": "boolean",
           "default": true
         },
+        "strict_whitelist": {
+          "description": "v1.3: players.yml is the whole whitelist: a deploy removes every live player it doesn't list. Default false: players who were never in players.yml (added on the console, through Discord, or a panel add that never reached Git) are kept and announced; removals from players.yml and the panel still apply.",
+          "type": "boolean",
+          "default": false
+        },
         "gamerules": {
           "description": "Game rules set over RCON in every dimension at each deploy (26.x names: snake_case, e.g. keep_inventory; checked against keys/<version>/gamerules.txt). locator_bar and players_sleeping_percentage are gameplay.* fields.",
           "type": "object",

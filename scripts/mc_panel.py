@@ -32,6 +32,7 @@ allows the ops user (base role, 50-mc-ops.rules); nothing here runs as root.
 
     mc_panel.py apply-plugins     # mc-plugins-apply.service only (runs as minecraft)
     mc_panel.py reconcile-players DESIRED.json [--live]   # players role (as minecraft): Git + pending
+    mc_panel.py alert-kept NAME...                        # players role (ops user, mc-run notify.env)
 """
 
 from __future__ import annotations
@@ -1000,20 +1001,86 @@ def desired_players(desired: dict[str, Any]) -> tuple[dict[str, dict[str, Any]],
     return wl, ops
 
 
+# The players role's memory (v1.3 whitelist guard), next to whitelist.json in the server dir (as minecraft).
+PLAYERS_STATE_FILE = "whitelist-managed.json"
+
+
+@dataclass
+class Reconciled:
+    """What reconcile_players did: the changes (empty = nothing changed) and the live players it kept
+    although neither Git nor the panel's pending adds have them (names; the UUID if the file has no valid
+    name)."""
+
+    changes: list[str] = field(default_factory=list)
+    kept: list[str] = field(default_factory=list)
+
+
+def kept_alert(names: Iterable[str]) -> str:
+    """A deploy kept players that are on the live whitelist but not in players.yml (v1.3 whitelist guard)."""
+    shown = ", ".join(names)
+    return render(
+        Alert(
+            "warning",
+            "A deploy kept whitelisted players that aren't in players.yml",
+            impact=f"They can still join ({shown}) and later deploys keep them, but players.yml doesn't list "
+            "them (with `minecraft.strict_whitelist: true` a deploy would remove them).",
+            cause="They were whitelisted outside Git (console, Discord or the panel while its pull request "
+            "failed), and players.yml never got them.",
+            todo="Keep them: `mcctl players add NAME` for each (it commits players.yml). Don't want them: "
+            "remove them in the panel (Players tab).",
+            details=f"on the live whitelist, not in players.yml or pending panel adds: {shown}",
+        )
+    )
+
+
 def reconcile_players(
-    desired: dict[str, Any], server_dir: Path, live: bool, rcon: Callable[[str], str] | None = None
-) -> list[str]:
+    desired: dict[str, Any],
+    server_dir: Path,
+    live: bool,
+    rcon: Callable[[str], str] | None = None,
+    alert: Callable[[list[str]], None] | None = None,
+) -> Reconciled:
     """Make whitelist.json/ops.json match `desired` (compared by uuid, and level for ops, so the server's own
     rewrites never count as a change). With `live` (the server runs) the change is applied over RCON:
     `whitelist reload` (by UUID) and `deop` for removed operators. A new operator or a level change takes
     effect when the server next starts (it reads ops.json then): `op <name>` would resolve the *name* with
-    Mojang, which could be someone else after a rename, while ops.json holds the UUID from Git."""
+    Mojang, which could be someone else after a rename, while ops.json holds the UUID from Git.
+
+    Whitelist guard (v1.3): a live player that Git + pending adds don't have is removed only on purpose:
+    a pending panel remove, or Git had them at the last reconcile (PLAYERS_STATE_FILE: the UUIDs players.yml
+    held then) and doesn't now, i.e. a commit removed them. Any other such player was never in Git
+    ("unmanaged": console, Discord, an expired panel add) and is kept, listed in `kept`; `alert` is called
+    once with the names whenever one is kept that the last reconcile didn't keep already. No state file yet
+    (the first deploy with the guard) = nobody was in Git before: everyone not in Git is kept.
+    `desired["strict"]` (server.yml minecraft.strict_whitelist): Git is the only truth, nobody is kept."""
     wl, ops = desired_players(desired)
     wl_file, ops_file = server_dir / "whitelist.json", server_dir / "ops.json"
-    cur_wl = {str(e.get("uuid")).lower() for e in read_json(wl_file, []) if isinstance(e, dict)}
+    state_file = server_dir / PLAYERS_STATE_FILE
+    cur_list = [e for e in read_json(wl_file, []) if isinstance(e, dict)]
+    cur_wl = {str(e.get("uuid")).lower() for e in cur_list}
     cur_ops_list = [e for e in read_json(ops_file, []) if isinstance(e, dict)]
     cur_ops = {(str(e.get("uuid")).lower(), int(e.get("level") or 0)) for e in cur_ops_list}
-    changes: list[str] = []
+    state = read_json(state_file, {})
+    state = state if isinstance(state, dict) else {}
+    git_before = {str(u) for u in state.get("git") or [] if isinstance(u, str)}
+    warned = {str(u) for u in state.get("kept") or [] if isinstance(u, str)}
+    git_now = {str(p.get("uuid")).lower() for p in desired.get("whitelist") or []} | set(ops)
+    pend = desired.get("pending") or []
+    removing = {str(e.get("uuid", "")).lower() for e in pend if e.get("op") == "remove"}
+    result = Reconciled()
+    unmanaged: list[str] = []
+    if not desired.get("strict"):
+        unmanaged = sorted(
+            u for u in cur_wl - set(wl) if UUID.fullmatch(u) and u not in git_before and u not in removing
+        )
+        live_names = {str(e.get("uuid")).lower(): str(e.get("name", "")) for e in cur_list}
+        for u in unmanaged:
+            name = live_names.get(u, "")
+            wl[u] = {"uuid": u, "name": name if NAME.fullmatch(name) else u}
+        result.kept = sorted((wl[u]["name"] for u in unmanaged), key=str.lower)
+        if alert and set(unmanaged) - warned:
+            alert(result.kept)
+    changes = result.changes
     run = rcon or rcon_command
     if set(wl) != cur_wl:
         added, removed = sorted(set(wl) - cur_wl), sorted(cur_wl - set(wl))
@@ -1039,7 +1106,11 @@ def reconcile_players(
         body = [{"uuid": u, "name": o["name"], "level": o["level"], "bypassesPlayerLimit": False}
                 for u, o in sorted(ops.items(), key=lambda kv: (kv[1]["name"].lower(), kv[0]))]  # fmt: skip
         atomic_write(ops_file, json.dumps(body, indent=2) + "\n", 0o640)
-    return changes
+    # only after the files are written: what Git held at this (successful) reconcile, and whom it kept
+    new_state = {"git": sorted(u for u in git_now if UUID.fullmatch(u)), "kept": unmanaged}
+    if {k: state.get(k) for k in new_state} != new_state:
+        atomic_write(state_file, json.dumps(new_state, indent=2) + "\n", 0o640)
+    return result
 
 
 # --- the CLI half that runs as minecraft --------------------------------------------------------------------
@@ -1048,13 +1119,31 @@ def reconcile_players(
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     if args[:1] == ["reconcile-players"] and len(args) in (2, 3) and args[2:] in ([], ["--live"]):
-        changes = reconcile_players(
-            json.loads(Path(args[1]).read_text()), SERVER_DIR, live=args[2:] == ["--live"]
+        alerted: list[str] = []
+        res = reconcile_players(
+            json.loads(Path(args[1]).read_text()),
+            SERVER_DIR,
+            live=args[2:] == ["--live"],
+            alert=alerted.extend,
         )
-        print(f"CHANGED: {'; '.join(changes)}" if changes else "UNCHANGED")
+        print(f"CHANGED: {'; '.join(res.changes)}" if res.changes else "UNCHANGED")
+        if res.kept:
+            print(
+                f"KEPT: {', '.join(res.kept)} (on the live whitelist but not in players.yml: `mcctl players "
+                "add NAME` keeps them in Git, the panel removes them; minecraft.strict_whitelist drops them)"
+            )
+        if alerted:  # the players role sends it as the ops user (mc-run notify.env: the webhook isn't ours)
+            print(f"ALERT-KEPT: {' '.join(alerted)}")
+        return 0
+    names = args[1:]
+    if args[:1] == ["alert-kept"] and names and all(NAME.fullmatch(a) or UUID.fullmatch(a) for a in names):
+        notify.discord(kept_alert(names))  # as the ops user: mc-run notify.env (players role)
         return 0
     if args != ["apply-plugins"]:
-        print("usage: mc_panel.py apply-plugins | reconcile-players DESIRED.json [--live]", file=sys.stderr)
+        print(
+            "usage: mc_panel.py apply-plugins | reconcile-players DESIRED.json [--live] | alert-kept NAME...",
+            file=sys.stderr,
+        )
         return 2
     lock, disabled = read_lock(), read_disabled()
     unknown = sorted(set(disabled) - {p["name"] for p in lock})

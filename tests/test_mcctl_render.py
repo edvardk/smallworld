@@ -168,6 +168,7 @@ EXPECTED_GROUP_VARS = {
     "mc_max_players",
     "mc_online_mode",
     "mc_whitelist",
+    "mc_strict_whitelist",  # v1.3 whitelist guard
     "mc_world_border_radius",
     "mc_world_active",  # v1.2 world library
     "mc_world_library",

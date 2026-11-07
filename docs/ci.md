@@ -34,12 +34,22 @@ answer is "everything changed".
   can't share one: host-network ports, restarts, restores, world switches, paused timers). Job `e2e-shard`
   (static matrix, `fail-fast: false`):
 
-  | Shard | Checks (after its own boot + first `site.yml`) | Runs | Wall time |
+  | Shard | Checks (after its own boot + first `site.yml`, ~3.5 min) | Runs | Wall time |
   |---|---|---|---|
-  | `core` | `mcctl init` re-run and stale pin, the client switch, `terraform validate`, the second `site.yml` (`changed=0`), hardening, reboot gate, deploy checks, firewall, P12 dry runs | always | ~15 min |
-  | `agent` | mc-agent and the P10 panel actions (`agent_check.py`) | always | ~20 min |
-  | `telemetry-brand` | experience telemetry, then branding | heavy half | ~13 min |
-  | `migrate-p16` | migrate container -> container, then the P16 knobs on the migrated box | heavy half | ~17 min |
+  | `core` | `mcctl init` re-run and stale pin, the client switch, `terraform validate`, the second `site.yml` (`changed=0`), hardening, reboot gate, deploy checks, firewall, P12 dry runs | always | ~10 min |
+  | `agent-a` | `agent_check.py --rounds a`: mc-agent's pushes and first commands, then the rounds rcon, client code, stop/start, whitelist, restart, plugin, restore guard | always | ~10-11 min |
+  | `agent-b` | `agent_check.py --rounds b`: mc-agent's pushes and first commands, then the rounds backup/restore, world library | always | ~10 min |
+  | `telemetry-brand` | experience telemetry, then branding | heavy half | ~11 min |
+  | `migrate-p16` | migrate container -> container, then the P16 knobs on the migrated box | heavy half | ~10 min |
+
+  The times are a measured full run (v1.2.2: core 10, the one `agent` shard 16, telemetry-brand 11, migrate-p16
+  9.5); v1.3 cut `agent` in two by its rounds. Each agent shard repeats the shared part (the agent's sandbox, the
+  buffered and live metrics, the journal archive, the first poll's signed commands) and checks that every
+  command it sent is in the audit journal; each round sets up its own preconditions (the world round seeds the
+  mock GitHub repository itself; whitelist always brings stop/start, which seeds the profile cache) and prints
+  its time (`round <name>: N s`, then a `timings:` line), so the split can be rebalanced from a run's log
+  (`GROUPS` in `tests/e2e/agent_check.py`). Without `--rounds` the script runs every round, as one shard did
+  before (for a local box).
 
   A heavy shard in an essential run skips every step (its boot too) and passes in seconds. Each check sets up
   its own preconditions, so none depends on another shard; the failure journal dump runs in every shard.
@@ -105,12 +115,12 @@ Not a required check.
 
 ## Expected runner time (product repo)
 
-No minutes are billed (public repo). For wall-clock planning: a docs-only PR ~20 minutes (the essential e2e:
-its `agent` shard), a code PR ~20-25 (e2e's shards and the controller matrix run in parallel, ~5-10 per cell),
-the nightly run ~20 shorter than its former ~70 (e2e's heavy half now runs beside the rest), the benches ~110.
-The e2e shards together use about as much runner time as the one job did, plus a boot and deploy (~6 min) per
-extra shard; e2e's wall time is its slowest shard (`agent`, ~20 min; it was ~23 essential / ~42 full as one
-job).
+No minutes are billed (public repo). For wall-clock planning: a docs-only PR ~11 minutes (the essential e2e:
+its slowest shard), a code PR ~11-15 (e2e's shards and the controller matrix run in parallel, ~5-10 per cell),
+the nightly run well under its former ~70 (e2e's heavy half now runs beside the rest), the benches ~110.
+The e2e shards together use about as much runner time as the one job did, plus a boot and deploy (~3.5 min) per
+extra shard; e2e's wall time is its slowest shard (~11 min; 16 with one `agent` shard in v1.2.2, ~23 essential /
+~42 full as one job).
 
 ### An optional self-hosted runner for e2e
 

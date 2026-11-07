@@ -311,14 +311,22 @@ test("P9 review: inventory flags are booleans whatever the agent sends", async (
     { file: "c.jar", name: "c", enabled: true },
     { file: "d.jar", name: "d" },
   ];
+  const whitelist = [
+    { name: "Dora_K", uuid: "9e1d0000-0000-4000-8000-0000000000d4", unmanaged: true },
+    { name: "eli", uuid: "7b2e0000-0000-4000-8000-0000000000e5", unmanaged: "yes" },
+    { name: "Em_K", uuid: "3f2a0000-0000-4000-8000-000000000c41" },
+  ];
   const post = new Request("https://hb.mc.example.com/ingest/inventory", {
     method: "POST",
     headers: { Authorization: `Bearer ${env.AGENT_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ inventory: { ts: NOW, plugins } }),
+    body: JSON.stringify({ inventory: { ts: NOW, plugins, whitelist } }),
   });
   assert.equal((await W.handle(post, env, NOW, rt)).status, 200);
   const inv = (await call(env, "/api/inventory", { token: await good() })).body.inventory;
   assert.deepEqual(inv.plugins.map((p) => p.enabled), [false, false, true, false]);
+  // v1.3 whitelist guard: "kept by the last deploy, not in players.yml" is a boolean too
+  assert.deepEqual(inv.whitelist.map((w) => w.unmanaged), [true, false, false]);
+  assert.deepEqual(inv.whitelist[0], { name: "Dora_K", uuid: "9e1d0000-0000-4000-8000-0000000000d4", unmanaged: true });
 });
 
 test("console: same-origin POSTs only; a command is signed for the agent, audited, and its result recorded", async () => {

@@ -257,6 +257,13 @@ class Minecraft:
     level_name: str = opt("world", doc="World folder name.", pattern=LEVEL_NAME)
     online_mode: bool = opt(True, doc="Authenticate players with Mojang (false needs --i-know).")
     whitelist: bool = opt(True, doc="Only whitelisted players may join.")
+    strict_whitelist: bool = opt(
+        False,
+        doc="v1.3: players.yml is the whole whitelist: a deploy removes every live player it doesn't list. "
+        "Default false: players who were never in players.yml (added on the console, through Discord, or a "
+        "panel add that never reached Git) are kept and announced; removals from players.yml and the panel "
+        "still apply.",
+    )
     gamerules: dict[str, bool | int] = opt(
         factory=dict,
         doc="Game rules set over RCON in every dimension at each deploy (26.x names: snake_case, e.g. "

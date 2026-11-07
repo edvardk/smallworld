@@ -409,6 +409,7 @@ def group_vars(cfg: ServerConfig) -> dict[str, Any]:
         "mc_max_players": mc.max_players,
         "mc_online_mode": mc.online_mode,
         "mc_whitelist": mc.whitelist,
+        "mc_strict_whitelist": mc.strict_whitelist,  # v1.3: the players role's whitelist guard
         "mc_world_border_radius": {DIMENSIONS[d]: r for d, r in border.items() if r is not None},
         **world_library(cfg),
         "mc_nerf_spawner_mobs": cfg.gameplay.nerf_spawner_mobs,
