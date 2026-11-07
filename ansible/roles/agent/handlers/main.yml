@@ -3,3 +3,5 @@
     name: mc-agent.service
     state: restarted
     daemon_reload: true
+  # notified by the base role's script install too (v1.2.3), so also where mc-agent isn't installed
+  when: mc_panel_mode == 'cloudflare'
