@@ -783,7 +783,10 @@ def _lore(v: list[str]) -> str | None:
 
 
 # mc-brand's own commands (plugin/mc-brand/src/main/resources/plugin.yml): the drink's command can't take one.
-BRAND_COMMANDS = ("rules", "discord", "hud", "mcbrand", "modpack", "view")
+BRAND_COMMANDS = (
+    *("rules", "discord", "hud", "mcbrand", "modpack", "view"),
+    *("compass", "map", "help", "commands"),  # v1.3
+)
 
 
 def _drink_command(v: str) -> str | None:
@@ -865,7 +868,7 @@ class BrandingDrink:
     command: str = opt(
         "drink",
         doc="v1.2: the command that hands out the drink (/<command>), 3-16 lowercase letters; not one of "
-        "mc-brand's own (rules, discord, hud, mcbrand, modpack, view).",
+        "mc-brand's own (rules, discord, hud, mcbrand, modpack, view, compass, map, help, commands).",
         pattern=r"^[a-z]{3,16}$",
         check=_drink_command,
         json={"not": {"enum": list(BRAND_COMMANDS)}},
@@ -912,11 +915,15 @@ def _holograms(v: list[Any]) -> str | None:
 
 @dataclass(frozen=True)
 class BrandingHologram:
-    x: int = opt(doc="Block x: the text floats over the block's centre.", required=True, minimum=-29999984,
-                 maximum=29999984)  # fmt: skip
-    y: int = opt(doc="Block y (the text's centre is half a block above it).", required=True, minimum=-64,
-                 maximum=319)  # fmt: skip
-    z: int = opt(doc="Block z.", required=True, minimum=-29999984, maximum=29999984)
+    x: int | None = opt(doc="Block x: the text floats over the block's centre (x, y and z, or `at: spawn`).",
+                        minimum=-29999984, maximum=29999984)  # fmt: skip
+    y: int | None = opt(doc="Block y (the text's centre is half a block above it).", minimum=-64,
+                        maximum=319)  # fmt: skip
+    z: int | None = opt(doc="Block z.", minimum=-29999984, maximum=29999984)
+    at: Literal["spawn"] | None = opt(
+        doc="v1.3: `spawn` instead of x/y/z: 3 blocks above the dimension's world spawn (found when the "
+        "hologram spawns; it follows /setworldspawn).",
+    )
     world: Literal["overworld", "nether", "end"] = opt("overworld", doc="The dimension.")
     lines: list[str] = opt(
         factory=lambda: ["Welcome to {server}"],
@@ -927,6 +934,50 @@ class BrandingHologram:
     )
     health: bool = opt(
         False, doc="Add a live line with the server's health word (Smooth / A bit busy / Laggy)."
+    )
+    help: bool = opt(
+        False,
+        doc="v1.3: append the list of commands every player may use (the same list as /help: built from the "
+        "enabled features, never out of sync).",
+    )
+
+
+@dataclass(frozen=True)
+class BrandingCompass:
+    enabled: bool = opt(
+        True,
+        doc="v1.3: the friend compass, a boss bar that turns with the player: cardinal points and online "
+        "players' names at their bearing; the one faced shows the distance and up/down arrows; players in "
+        "other dimensions as 'name (Nether)'. /compass on|off|hide|show|auto. false = no compass and no "
+        "/compass.",
+    )
+    default_on: bool = opt(
+        True,
+        doc="v1.3: shown without /compass on, except for clients with both the Smallworld mod and Xaero's "
+        "maps (their friends are on Xaero's maps). false = only for players who type /compass on.",
+    )
+    max_range: int = opt(
+        1000, doc="v1.3: players farther away (blocks, horizontally) aren't on the compass.", minimum=16,
+        maximum=100000,
+    )  # fmt: skip
+    distance_rounding: int = opt(
+        5, doc="v1.3: the faced player's distance is rounded to a multiple of this (blocks).", minimum=1,
+        maximum=100,
+    )  # fmt: skip
+    height_threshold: int = opt(
+        8, doc="v1.3: up/down arrows when a player is more than this many blocks above/below.", minimum=2,
+        maximum=64,
+    )  # fmt: skip
+
+
+@dataclass(frozen=True)
+class BrandingPocketMap:
+    enabled: bool = opt(
+        True,
+        doc="v1.3: /map gives each player a personal map item that re-centres on them while held (the off "
+        "hand makes it a minimap), with every online player as a named cursor; /map zoom cycles the scale. "
+        "Terrain fills in as the player explores (vanilla's map rendering). Free to re-get, can't be copied. "
+        "Players without client mods get a one-line tip at join.",
     )
 
 
@@ -1007,6 +1058,8 @@ class Branding:
         doc="v1.2: floating texts (e.g. at spawn), text display entities for vanilla clients; at most 10.",
         check=_holograms,
     )
+    compass: BrandingCompass = opt(factory=BrandingCompass, doc="v1.3: the friend compass (a boss bar).")
+    pocket_map: BrandingPocketMap = opt(factory=BrandingPocketMap, doc="v1.3: /map, the pocket map.")
 
 
 CLIENT_TIERS = ("low", "medium", "high", "maximum")
@@ -1660,6 +1713,12 @@ def _cross_validate(cfg: ServerConfig, product_root: Path, i_know: bool, errors:
             errors.append("client.enabled: needs branding.enabled (mc-brand gives players their code)")
         if c.hostname in {cfg.panel.hostname, f"{cfg.panel.hostname}-confirm", cfg.dns.hostname}:
             errors.append(f"client.hostname: {c.hostname!r} is already used by another record")
+    for i, h in enumerate(cfg.branding.holograms):
+        coords = [h.x, h.y, h.z]
+        if h.at is None and None in coords:
+            errors.append(f"branding.holograms[{i}]: needs x, y and z, or at: spawn")
+        elif h.at is not None and coords != [None, None, None]:
+            errors.append(f"branding.holograms[{i}]: at: {h.at} and x/y/z both given (use one)")
     names = [p.name for p in cfg.plugins]
     if len(set(names)) != len(names):
         errors.append("plugins: duplicate names")

@@ -13,3 +13,6 @@ agent_panel_batch_s: 60
 agent_panel_pr_check_s: 120
 # P13: how often the agent closes a telemetry segment (seconds); the e2e-mock run shortens it.
 agent_segment_s: 300
+# v1.3: the Mojang name lookup's endpoints (comma-separated); empty = api.mojang.com, then
+# api.minecraftservices.com (scripts/mc_agent.py MOJANG_LOOKUPS). Only the e2e-mock run sets it (a loopback mock).
+agent_mojang_lookup_urls: ""

@@ -1,12 +1,18 @@
 """v1.3: plain `mcctl` on an interactive terminal opens a home screen: a status header, an arrow-key menu.
 
 The header is cheap and never blocks: the deployment, the config repo, the pinned product against this mcctl,
-then the server (online, players, TPS/MSPT, last deploy, open panel PRs) from `remote.status` in a background
-thread with a time budget, cached for `StatusProbe.ttl` seconds. Whatever fails reads "unknown (why)".
+then the server (online, players, TPS/MSPT, the deployed product version against the pin (v1.3), last deploy,
+open panel PRs) from `remote.status` in a background thread with a time budget, cached for `StatusProbe.ttl`
+seconds. Whatever fails reads "unknown (why)".
 
 Every menu item runs an existing command through `cli.run` (the same parser, the same `cmd_*` function, `-C`
 added), so subcommands, scripts, CI and tests are unchanged; then the menu comes back. Esc, Ctrl-C or "Quit"
 leave with exit code 0. Items marked "(v1.3, coming)" are shown disabled until their phase lands.
+
+An item's questions (`Ask`: a name, a countdown...) become the command's arguments; a destructive item then
+asks for the typed confirmation its command requires (`worlds switch NAME` -> "switch to NAME") and passes
+it as `--confirm`: empty or Esc changes nothing, a wrong one is refused by the command (`restore` asks
+its own).
 
 Anything non-interactive keeps today's behaviour (an argparse usage error, exit code 2): `--plain`,
 MCCTL_PLAIN, NO_COLOR, CI, TERM=dumb, stdin or stdout not a terminal, or questionary not importable.
@@ -14,6 +20,7 @@ MCCTL_PLAIN, NO_COLOR, CI, TERM=dumb, stdin or stdout not a terminal, or questio
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 import sys
 import threading
@@ -24,7 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TextIO
 
-from mcctl import __version__, configrepo, homecfg, remote, ui
+from mcctl import __version__, actions, configrepo, homecfg, remote, ui
 from mcctl.schema import ServerConfig
 
 try:  # a controller dependency (requirements/validate.in); without it `mcctl` alone stays a usage error
@@ -41,19 +48,51 @@ SWITCH_PATH, SWITCH_BACK = "\x00path", "\x00back"
 
 
 @dataclass(frozen=True)
+class Ask:
+    """One question of an item: its answer becomes a positional argument, or `flag VALUE`."""
+
+    prompt: str
+    flag: str = ""  # "": positional
+    optional: bool = False  # an empty answer leaves the argument out (else it cancels the item)
+    choices: tuple[str, ...] = ()  # a pick list instead of free text
+    default: str = ""
+
+
+@dataclass(frozen=True)
 class Item:
     key: str
     title: str
     argv: tuple[str, ...] = ()  # the command (the home screen adds `-C <repo>`)
     coming: bool = False
     ask: str = ""  # a question whose answer is appended to argv (`config get PATH`)
+    asks: tuple[Ask, ...] = ()
+    confirm: str = ""  # the typed confirmation, formatted with the positional answers ("switch to {0}")
 
 
 def _coming(key: str, title: str) -> Item:
     return Item(key, title, coming=True)
 
 
-# Phase 1: read-only items that already exist as commands; the rest are shown disabled.
+COUNTDOWN = Ask(
+    "Countdown in seconds (skipped when nobody is online)",
+    "--countdown",
+    choices=("60", "10", "300", "0"),
+    default="60",
+)
+PLAYER = Ask("Player name")
+REASON = Ask("Reason (optional, shown to the player)", "--reason", optional=True)
+WORLD = Ask("World name (`Worlds: list` shows them)")
+PLUGIN = Ask("Plugin name (`Plugins: list` shows them)")
+NEW_WORLD = (
+    Ask("New world name (lowercase letters, digits, _ or -)"),
+    Ask("World type", "--type", choices=actions.WORLD_TYPES, default="default"),
+    Ask("Preset", "--preset", choices=actions.WORLD_PRESETS, default="survival_smp"),
+    Ask("Seed (empty: random)", "--seed", optional=True),
+    COUNTDOWN,
+)
+
+# Phase 1: read-only items; phase 2: server, player, world and plugin actions; Part B: publish and
+# players.yml; the rest are shown disabled.
 MENU: tuple[tuple[str, tuple[Item, ...]], ...] = (
     (
         "Server",
@@ -61,24 +100,88 @@ MENU: tuple[tuple[str, tuple[Item, ...]], ...] = (
             Item("status", "Status: server, players, TPS/MSPT, backups, deploys", ("status",)),
             Item("logs", "Logs: the last 100 lines", ("logs",)),
             Item("logs-follow", "Live logs (Ctrl-C returns here)", ("logs", "--follow")),
+            Item("console", "Console (RCON; `exit` returns here)", ("console",)),
+            Item("restart", "Restart (in-game countdown)", ("restart",), asks=(COUNTDOWN,)),
+            Item("stop", "Stop on purpose (stays down until Start)", ("stop",), asks=(REASON,)),
+            Item("start", "Start (after a stop)", ("start",)),
+            Item("backup-now", "Back up now", ("backup", "now")),
             Item("backups", "Backups: list snapshots", ("backup", "list")),
-            _coming("console", "Console"),
-            _coming("start-stop", "Start, stop, restart"),
-            _coming("backup-now", "Back up now"),
-            _coming("restore", "Restore"),
+            Item(
+                "restore",
+                "Restore a snapshot (typed; safety snapshot first)",
+                ("restore", "--live"),
+                asks=(Ask("Snapshot id (`Backups: list snapshots` shows them)"),),
+            ),
         ),
     ),
     (
         "Players",
         (
             Item("players", "Whitelist and operators", ("players", "list")),
-            _coming("players-edit", "Add, remove, op, kick, ban"),
+            Item("kick", "Kick a player", ("players", "kick"), asks=(PLAYER, REASON)),
+            Item("ban", "Ban a player", ("players", "ban"), asks=(PLAYER, REASON)),
+            Item("pardon", "Pardon (unban) a player", ("players", "pardon"), asks=(PLAYER,)),
+            Item("player-add", "Whitelist a player (players.yml, a PR)", ("players", "add"), asks=(PLAYER,)),
+            Item(
+                "player-remove",
+                "Remove from the whitelist (players.yml, pull request)",
+                ("players", "remove"),
+                asks=(PLAYER,),
+            ),
+            Item(
+                "player-op",
+                "Make operator (players.yml, pull request)",
+                ("players", "op"),
+                asks=(PLAYER, Ask("Level", "--level", choices=("4", "3", "2", "1"), default="4")),
+            ),
+            Item("player-deop", "Remove operator (players.yml, a PR)", ("players", "deop"), asks=(PLAYER,)),
         ),
     ),
-    ("Worlds", (_coming("worlds", "List, create, switch worlds"),)),
+    (
+        "Worlds",
+        (
+            Item("worlds", "Worlds: list", ("worlds", "list")),
+            Item(
+                "world-create",
+                "Create a world (typed)",
+                ("worlds", "create"),
+                asks=NEW_WORLD,
+                confirm="create {0}",
+            ),
+            Item(
+                "world-switch",
+                "Switch world (typed)",
+                ("worlds", "switch"),
+                asks=(WORLD, COUNTDOWN),
+                confirm="switch to {0}",
+            ),
+            Item(
+                "world-delete",
+                "Delete an archived world (typed)",
+                ("worlds", "delete"),
+                asks=(WORLD,),
+                confirm="delete {0}",
+            ),
+        ),
+    ),
     (
         "Config",
         (
+            Item("plugins", "Plugins: list", ("plugins", "list")),
+            Item(
+                "plugin-enable",
+                "Enable a plugin (typed; restart)",
+                ("plugins", "enable"),
+                asks=(PLUGIN, COUNTDOWN),
+                confirm="enable {0}",
+            ),
+            Item(
+                "plugin-disable",
+                "Disable a plugin (typed; restart)",
+                ("plugins", "disable"),
+                asks=(PLUGIN, COUNTDOWN),
+                confirm="disable {0}",
+            ),
             Item("validate", "Validate the config repo", ("validate",)),
             Item(
                 "config-get",
@@ -90,7 +193,19 @@ MENU: tuple[tuple[str, tuple[Item, ...]], ...] = (
             Item("switch", "Switch config repo"),
         ),
     ),
-    ("Publish", (_coming("publish", "Publish changes (preview, pull request)"),)),
+    (
+        "Publish",
+        (
+            Item("publish-preview", "Preview changes (restart? Terraform?)", ("publish", "--dry-run")),
+            Item("publish", "Publish changes (preview, pull request, your merge)", ("publish",)),
+            Item(
+                "publish-wait",
+                "Publish, restart only when the server is empty",
+                ("publish", "--wait-empty"),
+            ),
+            Item("publish-revert", "Undo the last deploy (a revert pull request)", ("publish", "--revert")),
+        ),
+    ),
     ("Health", (Item("doctor", "Doctor: tools, credentials, DNS, tailnet, watchdog", ("doctor",)),)),
     (
         "Updates",
@@ -286,6 +401,11 @@ def header_rows(
     with out.spinner(f"asking {cfg.host.tailscale_name} over the tailnet, and GitHub"):
         st = probe.get(root, cfg, force=force)
     rows.append(("Server", server_summary(st)))
+    if isinstance(st, remote.Status) and st.product:
+        # v1.3: what the last deploy installed against the pin (the panel's Versions row shows the Worker too)
+        drift = remote.product_drift(st.product, pin)
+        note = f" · {drift}" if drift else " · as pinned"
+        rows.append(("Deployed", remote.product_text(st.product) + note))
     if isinstance(st, remote.Status):
         rows.append(("Last deploy", deploy_summary(st)))
         prs = len(st.pending_panel_prs)
@@ -409,7 +529,28 @@ class Home:
             if not answer or not answer.strip():
                 return None
             argv.append(answer.strip())
-        shown = "mcctl " + " ".join(argv)
+        positional: list[str] = []
+        for ask in item.asks:
+            if ask.choices:
+                choices = [questionary.Choice(c, value=c) for c in ask.choices]
+                answer = self.prompter.select(ask.prompt, choices, default=ask.default or None)
+            else:
+                answer = self.prompter.text(ask.prompt)
+            if answer is None or (not answer.strip() and not ask.optional):
+                return None  # Esc / Ctrl-C / nothing typed: back to the menu
+            if not answer.strip():
+                continue
+            argv += [ask.flag, answer.strip()] if ask.flag else [answer.strip()]
+            if not ask.flag:
+                positional.append(answer.strip())
+        if item.confirm:
+            want = item.confirm.format(*positional)
+            typed = self.prompter.text(f"Type `{want}` to confirm (Esc: back)")
+            if not typed or not typed.strip():
+                self.out.warn("not confirmed: nothing was changed")
+                return None
+            argv += ["--confirm", typed.strip()]
+        shown = "mcctl " + shlex.join(argv)
         self.out.dim(f"$ {shown}")
         try:
             code = self.runner([*argv, "-C", str(self.root)])

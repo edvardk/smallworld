@@ -56,7 +56,13 @@ record Settings(
         boolean viewEnabled,
         int viewMax,
         int viewCheckSeconds,
-        List<Holograms.Spec> holograms) {
+        List<Holograms.Spec> holograms,
+        boolean compassEnabled,
+        boolean compassDefaultOn,
+        int compassMaxRange,
+        int compassRounding,
+        int compassHeight,
+        boolean pocketMapEnabled) {
 
     static final int MAX_RULES = 20;
     static final int MAX_TEXT = 256;
@@ -69,6 +75,8 @@ record Settings(
         ConfigurationSection client = section(cfg, "client");
         ConfigurationSection view = section(cfg, "view");
         ConfigurationSection map = section(cfg, "map");
+        ConfigurationSection compass = section(cfg, "compass");
+        ConfigurationSection pocketMap = section(cfg, "pocket_map");
         String name = text(cfg.getString("name"), "Minecraft");
         return new Settings(
                 name,
@@ -119,7 +127,14 @@ record Settings(
                 view.getBoolean("enabled", false),
                 clamp(view.getInt("max", 16), 2, 32),
                 clamp(view.getInt("check_seconds", 5), 2, 60),
-                holograms(cfg.getMapList("holograms")));
+                holograms(cfg.getMapList("holograms")),
+                // v1.3: the friend compass and the pocket map (Compass, PocketMap)
+                compass.getBoolean("enabled", true),
+                compass.getBoolean("default_on", true),
+                clamp(compass.getInt("max_range", 1000), 16, 100_000),
+                clamp(compass.getInt("distance_rounding", 5), 1, 100),
+                clamp(compass.getInt("height_threshold", 8), 2, 64),
+                pocketMap.getBoolean("enabled", true));
     }
 
     private static ConfigurationSection section(YamlConfiguration cfg, String key) {
@@ -155,14 +170,23 @@ record Settings(
         return v.matches("[a-z]{3,16}") ? v : "drink";
     }
 
-    /** v1.2: branding.holograms (block coordinates -> the block's centre, half a block up), clamped. */
+    /**
+     * v1.2: branding.holograms (block coordinates -> the block's centre, half a block up), clamped. v1.3: {@code at:
+     * spawn} instead of x/y/z (placed above the world spawn when it spawns: {@link Holograms}), {@code help: true}
+     * appends /help's list.
+     */
     static List<Holograms.Spec> holograms(List<Map<?, ?>> in) {
         List<Holograms.Spec> out = new java.util.ArrayList<>();
         for (Map<?, ?> m : in) {
-            if (out.size() >= Holograms.MAX || !(m.get("x") instanceof Integer x) || !(m.get("y") instanceof Integer y)
-                    || !(m.get("z") instanceof Integer z)) {
+            boolean spawn = "spawn".equals(m.get("at"));
+            boolean coords = m.get("x") instanceof Integer && m.get("y") instanceof Integer
+                    && m.get("z") instanceof Integer;
+            if (out.size() >= Holograms.MAX || !(spawn || coords)) {
                 continue;
             }
+            int x = spawn ? 0 : (Integer) m.get("x");
+            int y = spawn ? 0 : (Integer) m.get("y");
+            int z = spawn ? 0 : (Integer) m.get("z");
             String world = m.get("world") instanceof String w && w.matches("minecraft:[a-z_]{1,32}") ? w
                     : "minecraft:overworld";
             List<String> lines = new java.util.ArrayList<>();
@@ -174,8 +198,10 @@ record Settings(
                 }
             }
             boolean health = Boolean.TRUE.equals(m.get("health"));
-            if (!lines.isEmpty() || health) {
-                out.add(new Holograms.Spec(world, x + 0.5, y + 0.5, z + 0.5, List.copyOf(lines), health));
+            boolean help = Boolean.TRUE.equals(m.get("help"));
+            if (!lines.isEmpty() || health || help) {
+                out.add(new Holograms.Spec(world, x + 0.5, y + 0.5, z + 0.5, List.copyOf(lines), health, spawn,
+                        help));
             }
         }
         return List.copyOf(out);

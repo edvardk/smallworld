@@ -134,6 +134,8 @@ def backup_list_command(latest: int) -> str:
 
 # --- status -------------------------------------------------------------------------------------------
 
+PRODUCT_VERSION_FILE = "/opt/minecraft/product-version.json"  # = ansible mc_product_version_file (v1.3)
+
 STATUS_SCRIPT = "\n".join(
     [
         f"echo '{SECTION}active'; systemctl is-active minecraft.service",
@@ -144,6 +146,7 @@ STATUS_SCRIPT = "\n".join(
         f"echo '{SECTION}disabled'; cat /var/lib/minecraft/plugins-disabled.json 2>/dev/null",
         f"echo '{SECTION}stopped'; test -e /var/lib/minecraft/admin-stopped && echo yes",
         f"echo '{SECTION}reboot'; test -e /var/run/reboot-required && echo yes",
+        f"echo '{SECTION}product'; cat {PRODUCT_VERSION_FILE} 2>/dev/null",
         "true",
     ]
 )
@@ -200,6 +203,7 @@ class Status:
     last_main_run: dict[str, Any] | None = None
     pending_panel_prs: list[dict[str, Any]] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    product: dict[str, str] | None = None  # v1.3: {version, commit} the last deploy installed
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -225,7 +229,36 @@ def parse_status(text: str) -> Status:
         st.disabled_plugins = [str(d) for d in disabled]
     elif isinstance(disabled, dict):
         st.disabled_plugins = sorted(str(k) for k in disabled)
+    st.product = parse_product(s.get("product", ""))
     return st
+
+
+def parse_product(text: str) -> dict[str, str] | None:
+    """v1.3: the box's product-version.json ({version, commit}), or None (deployed before v1.3)."""
+    try:
+        data = json.loads(text or "null")
+    except ValueError:
+        return None
+    if not isinstance(data, dict) or not re.fullmatch(r"[0-9A-Za-z.+-]{1,40}", str(data.get("version", ""))):
+        return None
+    commit = str(data.get("commit") or "")
+    commit = commit if re.fullmatch(r"[0-9a-f]{40}", commit) else ""
+    return {"version": str(data["version"]), "commit": commit}
+
+
+def product_text(product: dict[str, str]) -> str:
+    return f"v{product['version']}" + (f" ({product['commit'][:12]})" if product.get("commit") else "")
+
+
+def product_drift(product: dict[str, str] | None, pin: Any) -> str | None:  # noqa: ANN401 - configrepo.Pin
+    """v1.3: why the deployed product isn't the pinned one (a commit or version mismatch), or None."""
+    if not product or pin is None:
+        return None
+    if product.get("commit") and product["commit"] != pin.sha:
+        return f"deployed {product['commit'][:12]}, pinned {pin.sha[:12]}: deploy"
+    if not product.get("commit") and pin.version and pin.version.lstrip("v") != product["version"]:
+        return f"deployed v{product['version']}, pinned {pin.version}: deploy"
+    return None
 
 
 def github_status(st: Status, repository: str, run: Runner) -> None:
@@ -287,6 +320,8 @@ def status_rows(st: Status) -> list[tuple[str, str]]:
         rows.append(("last backup", f"{'ok' if good else 'warn'}: {backup}"))
         if st.reboot_required:
             rows.append(("reboot", "warn: required (/var/run/reboot-required)"))
+        if st.product:
+            rows.append(("product", product_text(st.product)))
     if st.last_main_run:
         r = st.last_main_run
         result = r.get("conclusion") or r.get("status")

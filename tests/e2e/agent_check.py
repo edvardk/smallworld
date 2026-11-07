@@ -34,9 +34,20 @@ failing to reach it since: this script now starts a mock of the Worker there and
     directory -> the agent asks the Worker (POST /agent/client-code, bearer token) -> the code file in the verdict
     directory, which minecraft can read but not write; the code never reaches the journal.
 
+  - v1.3, versions everywhere: the deploy's /opt/minecraft/product-version.json (root, 0644, the product version)
+    and the agent's report of it in the inventory (installed = running); the Panel -> Git self-test (`selftest`)
+    against the GitHub mock, read-only, its steps in the inventory, one run a minute from the panel; `lookup` of a
+    Java name from the box against a mock Mojang (first endpoint 403, the fallback answers; unknown and malformed
+    names).
+  - v1.3, mcctl's actions: `mc_agent.py cli` run as mcctl runs it over SSH (sudo mc-run, the ops user): a kick and
+    a refused unconfirmed world_delete, both audited with MC_VIA=mcctl; then two processes in the CLI's place
+    record players in pending.json while mc-agent's sync loop merges and opens pull requests on the same file
+    (pending.json.lock): nothing lost.
+
 Rounds (v1.3): the shared part always runs (the agent's sandbox, the buffered and live metrics, the journal, the
 first poll's status/console/denied/replay, the final checks); `--rounds` picks the rest, so CI runs them as two
-shards on two boxes (docs/ci.md): `a` = rcon, client-code, stop-start, whitelist, restart, plugin, restore-guard;
+shards on two boxes (docs/ci.md): `a` = rcon, client-code, stop-start, whitelist, restart, plugin, restore-guard,
+versions, cli;
 `b` = backup-restore, world. Round names (comma-separated) work too; whitelist brings stop-start along (it seeds
 the profile cache). Without `--rounds`, every round, in the order above with backup-restore before restore-guard.
 Each round prints its wall time (`round <name>: N s`).
@@ -57,6 +68,8 @@ import json
 import os
 import pwd
 import secrets
+import shlex
+import signal
 import subprocess
 import sys
 import threading
@@ -157,7 +170,8 @@ class Mock(http.server.BaseHTTPRequestHandler):
             return
         elif self.path == "/agent/github-token":  # P10 review: the Worker mints the panel App's tokens
             seen["github_token"].append(1)
-            self.reply(200, {"token": INSTALLATION_TOKEN, "expires_at": "2099-01-01T00:00:00Z"})
+            self.reply(200, {"token": INSTALLATION_TOKEN, "expires_at": "2099-01-01T00:00:00Z",
+                             "permissions": {"contents": "write", "pull_requests": "write", "metadata": "read"}})  # fmt: skip
             return
         else:
             self.reply(404, {"error": "not found"})
@@ -367,6 +381,8 @@ class GitHubMock(http.server.BaseHTTPRequestHandler):
     server: ClassVar[dict[str, str]] = {"main": "name: e2e\n"}  # v1.2: server.yml per branch (world PRs)
     prs: ClassVar[dict[int, dict[str, Any]]] = {}
     tokens: ClassVar[set[str]] = set()
+    mojang: ClassVar[list[str]] = []  # v1.3: the agent's lookups
+    listed: ClassVar[int] = 0
 
     def log_message(self, *a: object) -> None:
         pass
@@ -384,8 +400,20 @@ class GitHubMock(http.server.BaseHTTPRequestHandler):
 
         n = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(n)) if n else None
-        GitHubMock.tokens.add(self.headers.get("Authorization", ""))
         path, m = self.path.split("?")[0], self.command
+        if path.startswith(
+            "/mojang/"
+        ):  # v1.3: the agent's name lookup (MOJANG_LOOKUP_URLS, tests/e2e/vars.yml)
+            GitHubMock.mojang.append(path)
+            _, _, endpoint, name = path.split("/", 3)
+            if endpoint == "a":  # what api.mojang.com answers Cloudflare's egress
+                return self.reply(403, {"error": "forbidden"})
+            if name.lower() == LOOKUP_NAME.lower():
+                return self.reply(200, {"id": LOOKUP_ID, "name": LOOKUP_NAME})
+            return self.reply(404, {})
+        GitHubMock.tokens.add(self.headers.get("Authorization", ""))
+        if m == "GET" and path == f"/repos/{CONFIG_REPO}":  # v1.3 self-test: the repository
+            return self.reply(200, {"full_name": CONFIG_REPO, "permissions": {"pull": True, "push": True}})
         if not path.startswith(f"/repos/{CONFIG_REPO}/"):
             return self.reply(404, {"message": "Not Found"})
         rest = path[len(f"/repos/{CONFIG_REPO}/") :]
@@ -413,6 +441,11 @@ class GitHubMock(http.server.BaseHTTPRequestHandler):
             return self.reply(
                 201, {"number": number, "html_url": f"https://github.com/{CONFIG_REPO}/pull/{number}"}
             )
+        if m == "GET" and rest == "pulls":  # v1.3 self-test: the open pull requests
+            GitHubMock.listed += 1
+            return self.reply(
+                200, [{"number": n} for n, p in GitHubMock.prs.items() if p["state"] == "open"][:1]
+            )
         if m == "GET" and rest.startswith("pulls/"):
             return self.reply(200, GitHubMock.prs[int(rest.split("/")[1])])
         return self.reply(404, {"message": "Not Found"})
@@ -421,6 +454,10 @@ class GitHubMock(http.server.BaseHTTPRequestHandler):
 
 
 CONFIG_REPO = "mcctl-e2e/e2e-mc-config"  # tests/e2e/answers.yml repo
+LOOKUP_NAME, LOOKUP_ID = (
+    "E2E_Lookup",
+    "0d61aa00bb0011224455667788997f90",
+)  # v1.3: the mock Mojang's one account
 
 
 def merge_pr(number: int) -> None:
@@ -714,6 +751,31 @@ def deploy_minecraft(*extra: str) -> subprocess.CompletedProcess[str]:
     )  # fmt: skip
 
 
+RESTORE_LOCK = "/var/lib/minecraft/restore.lock"
+
+
+def lock_held(lock: str) -> bool:
+    """The restore guard's own probe (restore_guard.yml): a shared flock that conflicts with a restore's."""
+    probe = ["flock", "--nonblock", "--shared", "--conflict-exit-code", "75", lock, "true"]
+    return subprocess.run(probe, check=False).returncode == 75
+
+
+@contextlib.contextmanager
+def holding_lock(lock: str, script: str, user: str | None = None) -> Iterator[subprocess.Popen[bytes]]:
+    """Run `script` under an exclusive flock on `lock` (as `user`) until the block ends, then release it for sure.
+    Killing only runuser would orphan flock and its command, and the command inherits the locked fd, so the lock
+    stayed held until the script ended (the restore-guard round's next deploy waited ~285 s for a `sleep 300`):
+    the holder gets its own session and the whole process group is killed."""
+    argv = (["runuser", "-u", user, "--"] if user else []) + ["flock", lock, "sh", "-c", script]
+    holder = subprocess.Popen(argv, start_new_session=True)
+    try:
+        yield holder
+    finally:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(holder.pid, signal.SIGKILL)
+        holder.wait()
+
+
 def restore_guard_round() -> None:
     """P10 review: a deploy during a restore must not start the server. Mid-restore state (as restore.py --panel
     leaves it between its stop and its start): restore.lock held by mcops, the server stopped, the admin-stopped
@@ -721,10 +783,9 @@ def restore_guard_round() -> None:
     released but the marker still there (a failed apply) it deploys and leaves the server down."""
     marker = Path("/var/lib/minecraft/admin-stopped")
     subprocess.run(["systemctl", "stop", "minecraft.service"], check=True)
-    holder = subprocess.Popen(["runuser", "-u", "mcops", "--", "flock", "/var/lib/minecraft/restore.lock",
-                               "sh", "-c", "echo '{\"by\": \"restore\", \"reason\": \"e2e restore in progress\"}' "
-                               "> /var/lib/minecraft/admin-stopped && sleep 300"])  # fmt: skip
-    try:
+    script = ("echo '{\"by\": \"restore\", \"reason\": \"e2e restore in progress\"}' > /var/lib/minecraft/admin-stopped"
+              " && sleep 300")  # fmt: skip
+    with holding_lock(RESTORE_LOCK, script, user="mcops"):
         wait_for("the restore lock to be held", marker.exists, 30, 1)
         run = deploy_minecraft("-e", "mc_restore_wait_s=20")
         out = run.stdout + run.stderr
@@ -734,13 +795,15 @@ def restore_guard_round() -> None:
         expect(
             state not in ("active", "activating"), f"the deploy didn't start the server mid-restore ({state})"
         )
-    finally:
-        holder.kill()
-        holder.wait()
+    expect(not lock_held(RESTORE_LOCK), "the restore lock is released once its holder is gone")
+    started = time.monotonic()
     run = deploy_minecraft()
+    took = time.monotonic() - started
     out = run.stdout + run.stderr
     expect(run.returncode == 0 and "admin-stopped exists" in out,
            f"lock released, marker kept: the deploy runs and warns ({out[-300:]})")  # fmt: skip
+    # A released lock must not be waited for (mc_restore_wait_s is 1800 s): this deploy changes nothing.
+    expect(took < 60, f"the deploy after the restore didn't wait for the lock ({took:.0f} s)")
     state = show("minecraft.service", "ActiveState")["ActiveState"]
     expect(
         state not in ("active", "activating"), f"a marker left by a restore keeps the server down ({state})"
@@ -859,6 +922,212 @@ def _world_round() -> None:
     marker.unlink(missing_ok=True)
 
 
+def versions_round() -> None:
+    """v1.3: the deploy's version file and the agent's report of it; the Panel -> Git self-test against the GitHub
+    mock (read-only: no branch, no pull request); the Mojang lookup from the box against a mock Mojang whose first
+    endpoint refuses (403, as api.mojang.com refuses Cloudflare) and whose second answers."""
+    import re
+
+    path = Path("/opt/minecraft/product-version.json")
+    want = re.search(r'^__version__ = "([^"]+)"', Path("/src/product/mcctl/__init__.py").read_text(), re.M)
+    st = path.stat() if path.exists() else None
+    expect(st is not None and st.st_uid == 0 and st.st_mode & 0o777 == 0o644,
+           f"the deploy wrote {path} (root, 0644): {oct(st.st_mode) if st else 'missing'}")  # fmt: skip
+    data = json.loads(path.read_text()) if st else {}
+    expect(bool(want) and data.get("version") == want.group(1), f"it names the product version ({data})")  # type: ignore[union-attr]
+    expect(as_minecraft_read(str(path)) == 0, "anyone may read it (nothing secret)")
+    inv = wait_for("an inventory push with the product version",
+                   lambda: next((i for i in reversed(seen["inventory"]) if (i.get("product") or {}).get("version")), None), 120)  # fmt: skip
+    prod = (inv or {}).get("product") or {}
+    expect(prod.get("version") == data.get("version") and prod.get("running") == data.get("version"),
+           f"mc-agent reports it, and runs that version's code ({prod})")  # fmt: skip
+    with github_mock():
+        before = (len(GitHubMock.prs), sorted(GitHubMock.files), GitHubMock.listed)
+        r = send("selftest", {}, "e2e-selftest")
+        expect(r.get("ok") is True and str(r.get("output", "")).startswith("passed: token, permissions, repository"),
+               f"the self-test passed ({r})")  # fmt: skip
+        expect(INSTALLATION_TOKEN not in json.dumps(r), "its result never carries the token")
+        expect((len(GitHubMock.prs), sorted(GitHubMock.files)) == before[:2] and GitHubMock.listed > before[2],
+               "it read the pull requests and created nothing")  # fmt: skip
+        again = send("selftest", {}, "e2e-selftest-2")
+        expect("an earlier run" in str(again.get("output", "")), f"at most one run a minute ({again})")
+        inv = wait_for("an inventory push with the self-test",
+                       lambda: next((i for i in reversed(seen["inventory"]) if (i.get("selftest") or {}).get("ok")), None), 60)  # fmt: skip
+        steps = [x.get("step") for x in ((inv or {}).get("selftest") or {}).get("steps", [])]
+        expect(
+            steps == ["token", "permissions", "repository", "main", "pulls"],
+            f"the inventory has its steps ({steps})",
+        )
+        found = send("lookup", {"name": LOOKUP_NAME.lower()}, "e2e-lookup")
+        out = json.loads(found.get("output") or "{}")
+        expect(out.get("found") is True and out.get("name") == LOOKUP_NAME and out.get("uuid", "").startswith("0d61aa00-"),
+               f"lookup resolved the name from the box ({found})")  # fmt: skip
+        expect(
+            [p.split("/")[2] for p in GitHubMock.mojang[:2]] == ["a", "b"],
+            f"first endpoint, then the fallback ({GitHubMock.mojang})",
+        )
+        missing = json.loads(send("lookup", {"name": "No_Such_Name"}, "e2e-lookup-2").get("output") or "{}")
+        expect(missing.get("found") is False, f"an unknown name is 'not found' ({missing})")
+        bad = send("lookup", {"name": "../etc"}, "e2e-lookup-bad")
+        expect(
+            bad.get("ok") is False and "Java name" in bad.get("error", ""),
+            f"a malformed name is refused ({bad})",
+        )
+    audit = subprocess.run(["journalctl", "SYSLOG_IDENTIFIER=mc-agent", "-o", "cat", "--no-pager"],
+                           capture_output=True, text=True).stdout  # fmt: skip
+    expect(INSTALLATION_TOKEN not in audit, "the token never reaches the journal")
+
+
+# v1.3: mcctl's actions over SSH run `mc_agent.py cli` on the box (mcctl/actions.py agent_command); here the shell
+# is local (no Tailscale), the command line the same (tests/test_agent.py compares the two).
+CLI_LOGIN = "mcctl:e2e"
+CLI_UUID_PREFIX = "e2ec0000-0000-4000-8000-"  # the made-up players the cli round's writers record
+PENDING_FILE = Path("/var/lib/mc-agent/pending.json")
+# What `mc_agent.py cli` does to pending.json (mc_panel.Pending.record), in a process of its own with its user and
+# sandbox (mc-run): writer W records N players, one every GAP seconds.
+PENDING_WRITER = """
+import sys, time
+from pathlib import Path
+sys.path.insert(0, "/opt/minecraft/bin")
+import mc_panel
+w, n, gap = int(sys.argv[1]), int(sys.argv[2]), float(sys.argv[3])
+pend = mc_panel.Pending(Path("/var/lib/mc-agent/pending.json"))
+for j in range(n):
+    pend.record("add", f"E2eCli{w}_{j:02d}", f"e2ec0000-0000-4000-8000-{w:04x}{j:08x}", "mcctl:e2e", time.time())
+    time.sleep(gap)
+"""
+# A failed cli round must not leave its made-up players (or its pull request) for a deploy or the next round.
+PENDING_CLEANUP = """
+import sys
+from pathlib import Path
+sys.path.insert(0, "/opt/minecraft/bin")
+import mc_panel
+ours = {int(n) for n in sys.argv[1:]}
+with mc_panel.Pending(Path("/var/lib/mc-agent/pending.json")).update() as d:
+    d["entries"] = [e for e in d["entries"] if not e["uuid"].startswith("e2ec0000-")]
+    if (d.get("pr") or {}).get("number") in ours:
+        d["pr"] = None
+"""
+
+
+def cli_argv(action: str, args: dict[str, Any] | None = None) -> list[str]:
+    """= mcctl.actions.agent_command(CLI_LOGIN, action, args), split."""
+    argv = ["sudo", "/usr/local/bin/mc-run", "-/etc/minecraft/notify.env", "/opt/minecraft/bin/mc_agent.py",
+            "cli", CLI_LOGIN, action]  # fmt: skip
+    if args is not None:
+        argv.append(json.dumps(args, sort_keys=True, separators=(",", ":")))
+    return argv
+
+
+def agent_cli(action: str, args: dict[str, Any] | None = None) -> subprocess.CompletedProcess[str]:
+    """One action as `mcctl` runs it: the command line through a shell, as sshd would."""
+    return subprocess.run(["sh", "-c", shlex.join(cli_argv(action, args))], capture_output=True, text=True,
+                          timeout=60, check=False)  # fmt: skip
+
+
+def as_ops(script: str, *args: str) -> list[str]:
+    """A Python snippet as the ops user in mc-run's sandbox (where `mc_agent.py cli` runs)."""
+    return [
+        "sudo",
+        "/usr/local/bin/mc-run",
+        "-/etc/minecraft/notify.env",
+        "/usr/bin/python3",
+        "-c",
+        script,
+        *args,
+    ]
+
+
+def cli_audit() -> list[dict[str, Any]]:
+    out = subprocess.run(["journalctl", "SYSLOG_IDENTIFIER=mc-agent", "MC_AUDIT=1", "MC_VIA=mcctl", "-o", "json",
+                          "--no-pager"], capture_output=True, text=True, check=False).stdout  # fmt: skip
+    return [json.loads(line) for line in out.splitlines() if line.strip()]
+
+
+def ours_pending() -> dict[str, dict[str, Any]]:
+    return {e["uuid"]: e for e in pending() if e["uuid"].startswith(CLI_UUID_PREFIX)}
+
+
+def cli_round() -> None:
+    """v1.3: an action from mcctl, end to end: `mc_agent.py cli` as mcctl runs it over SSH (sudo mc-run, the ops
+    user): a kick of a player who isn't online (its RESULT, exit 0), a destructive action without its typed
+    confirmation (refused), both in the audit journal with MC_VIA=mcctl and the mcctl login. Then pending.json
+    with two writers in the CLI's place (its user, its sandbox) while mc-agent's sync loop works on the same file
+    (a pull request merged, the next opened) against the GitHub mock: nothing either side recorded is lost."""
+    r = agent_cli("moderate", {"verb": "kick", "target": "E2E_Nobody"})
+    last = (r.stdout.strip().splitlines() or [""])[-1]
+    expect(r.returncode == 0 and last.startswith("RESULT ok: "),
+           f"mc_agent.py cli moderate kick ran ({r.stdout[-300:]}{r.stderr[-300:]})")  # fmt: skip
+    r = agent_cli("world_delete", {"name": "e2e-nope"})
+    expect(r.returncode == 1 and 'RESULT refused: world_delete: type "delete e2e-nope" to confirm' in r.stdout,
+           f"a destructive action without its confirmation is refused ({r.stdout[-300:]})")  # fmt: skip
+    seen_audit = {(e.get("MC_ACTION"), e.get("MC_RESULT", "")[:3]) for e in cli_audit()
+                  if e.get("MC_LOGIN") == CLI_LOGIN}  # fmt: skip
+    expect({("moderate", "ok"), ("world_delete", "wor")} <= seen_audit,
+           f"both in the audit journal with MC_VIA=mcctl and the login {CLI_LOGIN} ({sorted(seen_audit)})")  # fmt: skip
+
+    with github_mock():
+        main_before, ours_prs = GitHubMock.files["main"], []
+        try:
+            _cli_pending(ours_prs)
+        finally:
+            for n in ours_prs:
+                if GitHubMock.prs[n]["state"] == "open":
+                    merge_pr(n)
+            if ours_pending():
+                wait_for("the cli round's players to leave pending.json", lambda: not ours_pending(), 20)
+            if ours_pending():
+                subprocess.run(as_ops(PENDING_CLEANUP, *map(str, ours_prs)), check=False, timeout=60)
+            GitHubMock.files["main"] = main_before
+
+
+def _cli_pending(ours_prs: list[int]) -> None:
+    known = set(GitHubMock.prs)
+    first = subprocess.run(as_ops(PENDING_WRITER, "1", "5", "0"), capture_output=True, text=True, timeout=60,
+                           check=False, stdin=subprocess.DEVNULL)  # fmt: skip
+    expect(first.returncode == 0 and len(ours_pending()) == 5,
+           f"a CLI-side process recorded 5 players ({first.stderr[-300:]})")  # fmt: skip
+    meta = {}
+    for path in (PENDING_FILE, PENDING_FILE.with_name("pending.json.lock")):
+        st = path.stat() if path.exists() else None
+        meta[path.name] = (st.st_uid, oct(st.st_mode & 0o777)) if st else None
+    ops = (pwd.getpwnam("mcops").pw_uid, oct(0o600))
+    expect(list(meta.values()) == [ops, ops], f"pending.json and its lock: mcops, 0600 ({meta})")
+    number = wait_for(
+        "mc-agent's pull request for them", lambda: next(iter(set(GitHubMock.prs) - known), None), 30
+    )
+    if not number:
+        return
+    ours_prs.append(number)
+    first_five = set(ours_pending())
+    # two writers at once while mc-agent finds the merge and drops those five (its read-modify-write)
+    writers = [subprocess.Popen(as_ops(PENDING_WRITER, str(w), "20", "0.2"), stdin=subprocess.DEVNULL,
+                                stderr=subprocess.PIPE, text=True)
+               for w in (2, 3)]  # fmt: skip
+    time.sleep(1)
+    merge_pr(number)
+    codes = [w.wait(60) for w in writers]
+    expect(codes == [0, 0], f"both writers ran ({[w.stderr.read()[-200:] for w in writers if w.stderr]})")
+    want = {f"{CLI_UUID_PREFIX}{w:04x}{j:08x}" for w in (2, 3) for j in range(20)}
+    got = wait_for("pending.json: the merged five gone, all 40 new players there",
+                   lambda: set(ours_pending()) == want or None, 30)  # fmt: skip
+    if not got:
+        have = set(ours_pending())
+        expect(False, f"lost {len(want - have)} of 40, {len(have & first_five)} of the merged five left")
+        return
+    expect(True, "mc-agent's sync and two CLI-side writers on pending.json at once: nothing lost")
+    second = wait_for(
+        "the next pull request", lambda: next(iter(set(GitHubMock.prs) - known - {number}), None), 30
+    )
+    if second:
+        ours_prs.append(second)
+        text = GitHubMock.files.get(GitHubMock.prs[second]["head"], "")
+        expect(all(f'"E2eCli{w}_{j:02d}"' in text for w in (2, 3) for j in range(20)),
+               "all 40 in the next pull request's players.yml")  # fmt: skip
+        merge_pr(second)
+        wait_for("pending.json to clear", lambda: not ours_pending(), 30)
+
+
 def done() -> bool:
     return bool(
         seen["results"] and seen["archive"] and seen["logs"] and seen["inventory"]
@@ -882,9 +1151,21 @@ ROUNDS: dict[str, Callable[[], None]] = {
     "backup-restore": backup_and_restore_round,
     "restore-guard": restore_guard_round,
     "world": world_round,  # v1.2
+    "versions": versions_round,  # v1.3: version file, self-test, lookup (~20 s)
+    "cli": cli_round,  # v1.3: mcctl's actions (mc_agent.py cli), pending.json shared with mc-agent (~40 s)
 }
 GROUPS: dict[str, tuple[str, ...]] = {
-    "a": ("rcon", "client-code", "stop-start", "whitelist", "restart", "plugin", "restore-guard"),
+    "a": (
+        "rcon",
+        "client-code",
+        "stop-start",
+        "whitelist",
+        "restart",
+        "plugin",
+        "restore-guard",
+        "versions",
+        "cli",
+    ),
     "b": ("unmanaged", "backup-restore", "world"),  # unmanaged: two players-only deploys, ~30 s
 }
 NEEDS: dict[str, str] = {"whitelist": "stop-start"}

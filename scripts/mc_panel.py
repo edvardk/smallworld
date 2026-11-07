@@ -8,6 +8,8 @@ allows the ops user (base role, 50-mc-ops.rules); nothing here runs as root.
 - Jobs: restart, stop, plugin toggles and restores run one at a time in a background thread, after an in-game
   countdown (tellraw + action bar at 5/4/3/2/1 min, 30, 10, 5..1 s), skipped when nobody is online. A job can
   be cancelled during its countdown. Its state is reported to the Worker (POST /ingest/job) for the panel.
+  v1.3: one at a time across processes too (JOB_LOCK_FILE): mcctl's actions over SSH (mc_agent.py cli) run
+  their job in the foreground with the same lock.
 - Whitelist: RCON `whitelist add|remove` (the server resolves the UUID) -> confirmed in whitelist.json ->
   recorded in pending.json (the agent's state dir). A sync loop batches pending changes for 60 s, then commits
   the canonical players.yml to a branch `panel/<ts>` of the config repo and opens a pull request (GitHub REST
@@ -40,6 +42,8 @@ from __future__ import annotations
 import base64
 import calendar
 import contextlib
+import copy
+import fcntl
 import ipaddress
 import json
 import os
@@ -51,7 +55,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -69,6 +73,9 @@ SNAPSHOTS_FILE = notify.SNAPSHOTS_FILE  # backup.py --list-snapshots writes it
 PLUGINS_APPLY_UNIT = "mc-plugins-apply.service"
 UNIT = "minecraft.service"
 BACKUP_UNIT = "mc-backup.service"
+# v1.3: one job at a time across processes: mc-agent's jobs and `mcctl` actions over SSH (mc_agent.py cli)
+# both hold this lock from the countdown to the end of the work (the agent's ReadWritePaths: the state dir).
+JOB_LOCK_FILE = STATE_DIR / "job.lock"
 NAME = re.compile(r"[A-Za-z0-9_]{3,16}")
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 SNAPSHOT_ID = re.compile(r"[0-9a-f]{8,64}")
@@ -88,9 +95,15 @@ class ActionError(Exception):
 
 
 def atomic_write(path: Path, text: str, mode: int = 0o644) -> None:
+    """A temporary file next to `path`, created owner-only (0600) and written, then given `mode` and renamed
+    over it: a reader sees the old file or the new one, never half of it, and never a wider mode mid-write."""
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text)
-    tmp.chmod(mode)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_CLOEXEC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        os.fchmod(f.fileno(), 0o600)  # an existing tmp can't keep other bits while it is written
+        f.write(text)
+        f.flush()
+        os.fchmod(f.fileno(), mode)  # the file's intended mode (e.g. 0640 for files the JVM reads)
     os.replace(tmp, path)
 
 
@@ -101,7 +114,7 @@ def read_json(path: Path, default: Any) -> Any:  # noqa: ANN401 - whatever the f
         return default
 
 
-# --- players.yml (canonical form, mcctl/schema.py dump_players) ------------------------------------------
+# --- players.yml (canonical form, mcctl/schema.py dump_players) ---------------------------------------------
 
 ITEM = re.compile(r"^  - \{(?P<body>.*)\}$")
 PAIR = re.compile(r'\s*(?P<key>[a-z]+): (?P<value>"(?:[^"\\]|\\.)*"|-?\d+)\s*(?:,|$)')
@@ -174,18 +187,58 @@ def apply_entries(
     return {"whitelist": list(wl.values()), "ops": list(players.get("ops", []))}, changed
 
 
-# --- pending whitelist changes -----------------------------------------------------------------------------
+# --- pending whitelist changes ------------------------------------------------------------------------------
 
 
 class Pending:
     """pending.json in the agent's state dir: {"entries": [{uuid, name, op, ts, login, pr}], "pr": {...},
-    "error": str, "changed": ts}. The deploy (players role) reads it as root."""
+    "error": str, "changed": ts}. The deploy (players role) reads it as root.
 
-    def __init__(self, path: Path) -> None:
+    v1.3: two processes write it, mc-agent (the panel's commands and the sync loop) and `mc_agent.py cli`
+    (mcctl's actions over SSH), so every read-modify-write holds an flock on pending.json.lock (next to it,
+    0600: only the ops user opens it) and reads the file again under it; the write is atomic (tmp + rename,
+    0600). Nobody holds the lock across a network call: sync_pending works on a snapshot and merges its result
+    back (merge_sync)."""
+
+    def __init__(self, path: Path, lock_path: Path | None = None) -> None:
         self.path = path
-        self.lock = threading.Lock()
+        self.lock_path = lock_path or path.with_name(path.name + ".lock")
+        self.lock = threading.Lock()  # the threads of one process (flock alone would do, this is cheaper)
+
+    @contextlib.contextmanager
+    def locked(self) -> Iterator[None]:
+        """Exclusive across threads and processes (an flock, released by the kernel if the process dies). Held
+        for a read and a write of a small file, never across a network call, so it blocks. A lock file that
+        can't be opened (no state dir: a test, a dev box) only loses the cross-process part."""
+        with self.lock:
+            try:
+                fd: int | None = os.open(self.lock_path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600)
+            except OSError as e:
+                why = f"{type(e).__name__} (this process only)"
+                print(f"pending lock {self.lock_path}: {why}", file=sys.stderr)
+                fd = None
+            try:
+                if fd is not None:
+                    fcntl.flock(fd, fcntl.LOCK_EX)
+                yield
+            finally:
+                if fd is not None:
+                    with contextlib.suppress(OSError):
+                        fcntl.flock(fd, fcntl.LOCK_UN)
+                    os.close(fd)
+
+    @contextlib.contextmanager
+    def update(self) -> Iterator[dict[str, Any]]:
+        """pending.json as it is now (read under the lock), saved on leaving the block if it changed."""
+        with self.locked():
+            data = self.load()
+            before = json.dumps(data, sort_keys=True)
+            yield data
+            if json.dumps(data, sort_keys=True) != before:
+                self.save(data)
 
     def load(self) -> dict[str, Any]:
+        """A consistent read without the lock (writes are atomic renames); modify only inside update()."""
         data = read_json(self.path, {})
         if not isinstance(data, dict):
             data = {}
@@ -202,6 +255,7 @@ class Pending:
         }
 
     def save(self, data: dict[str, Any]) -> None:
+        """Only under locked() (update() does both)."""
         atomic_write(self.path, json.dumps(data, sort_keys=True, indent=1), 0o600)
 
     def record_world(
@@ -210,8 +264,7 @@ class Pending:
         """v1.2: the world library as it now is on the server (world.active + world.library for server.yml).
         The latest state wins; it stays until a pull request with it is merged (a switch can't be undone by
         dropping it, so it never expires). Deploys honour it (minecraft role: worlds-library.json)."""
-        with self.lock:
-            data = self.load()
+        with self.update() as data:
             prev = data.get("world") or {}
             data["world"] = {
                 "active": active,
@@ -224,18 +277,39 @@ class Pending:
                 "error": "",
             }
             data["changed"] = data["changed"] or now
-            self.save(data)
 
     def record(self, op: str, name: str, uuid: str, login: str, now: float) -> None:
         """The latest change per player wins (one already in an open PR is replaced: superseded)."""
-        with self.lock:
-            data = self.load()
+        with self.update() as data:
             data["entries"] = [e for e in data["entries"] if e["uuid"] != uuid]
             data["entries"].append(
                 {"uuid": uuid, "name": name, "op": op, "ts": now, "login": login, "pr": None}
             )
             data["changed"] = now
-            self.save(data)
+
+
+def merge_sync(current: dict[str, Any], snap: dict[str, Any], done: dict[str, Any]) -> dict[str, Any]:
+    """v1.3: a sync round's result (`done`, worked out from `snap` without the lock) applied to pending.json
+    as it is now (`current`, read again under the lock). What changed meanwhile (record/record_world from the
+    other process or a panel command) wins: an entry recorded again is kept as recorded (its own PR comes
+    next), a new entry is kept; a world change keeps its new state and takes the round's view of the open
+    world PR. The rest (expired, merged, rejected, put in a PR) is the round's; pr, error and expired are only
+    the round's to write."""
+    before = {e["uuid"]: e for e in snap["entries"]}
+    after = {e["uuid"]: e for e in done["entries"]}
+    entries = []
+    for e in current["entries"]:
+        if before.get(e["uuid"]) != e:  # new, or recorded again since the snapshot
+            entries.append(e)
+        elif e["uuid"] in after:
+            entries.append(after[e["uuid"]])
+        # else: the round dropped it (expired, merged, rejected, already in Git)
+    out = dict(current, entries=entries, pr=done["pr"], error=done["error"], expired=done["expired"])
+    if current["world"] == snap["world"]:
+        out["world"] = done["world"]
+    elif current["world"] is not None:  # a newer world state: the round's open PR (or its end) still counts
+        out["world"] = dict(current["world"], open_pr=(done["world"] or {}).get("open_pr"))
+    return out
 
 
 # --- GitHub (contents + pulls API, stdlib) ------------------------------------------------------------------
@@ -425,6 +499,172 @@ def github_from_env(
     return GitHub(TokenCache(fetch_token), repo, api, branch)
 
 
+# --- v1.3: the Panel -> Git self-test -----------------------------------------------------------------------
+#
+# Proves the panel can still open a pull request, without opening one (v1.2.2: GitHub's tokens grew to 390
+# characters, TokenCache refused them, and nobody noticed for days): the Worker mints a token, a fresh
+# TokenCache accepts it, the token's permissions are the ones the flow needs, and GitHub answers for the
+# config repo (the repository, main's head and players.yml as open_pr reads them, the pull request list).
+# Read-only: no branch, no commit, no pull request. Every error names the step; no token reaches a message
+# (GitHubError carries the request line and status only, token_shape the length and odd characters).
+
+SELFTEST_STEPS = ("token", "permissions", "repository", "main", "pulls")
+SELFTEST_NEEDS = {"contents": "write", "pull_requests": "write"}  # what the Worker narrows the token to
+SELFTEST_ALERT_AFTER = 2  # consecutive failures before Discord hears about it
+
+
+def _no_token(text: str, token: str) -> str:
+    return text.replace(token, "<token>") if token else text
+
+
+def selftest(
+    fetch_token: Callable[[], Any] | None,
+    gh: GitHub | None,
+    now: float,
+    clock: Callable[[], float] = time.time,
+) -> dict[str, Any]:
+    """One self-test run: {ok, ts, configured, steps: [{step, ok, detail}], error ("<step>: <why>")}."""
+    out: dict[str, Any] = {"ok": False, "ts": int(now * 1000), "configured": gh is not None, "steps": [],
+                           "error": ""}  # fmt: skip
+    if gh is None or fetch_token is None:
+        out["error"] = "configuration: no config repo for the panel (CONFIG_REPO) or no token source"
+        return out
+    token = ""
+    reply: Any = None
+
+    def fetch() -> Any:  # noqa: ANN401 - the Worker's JSON reply, kept for the permissions step
+        nonlocal reply
+        reply = fetch_token()
+        return reply
+
+    def step(name: str, ok: bool, detail: str) -> bool:
+        detail = _no_token(detail, token)[:200]
+        out["steps"].append({"step": name, "ok": ok, "detail": detail})
+        if not ok and not out["error"]:
+            out["error"] = f"{name}: {detail}"
+        return ok
+
+    cache = TokenCache(fetch, clock)  # a fresh cache: the Worker's answer is checked, not a remembered token
+    try:
+        token = cache()
+    except GitHubError as e:
+        step("token", False, str(e))
+        return out
+    step("token", True, f"the Worker minted a token ({len(token)} characters), TokenCache accepted it")
+    perms = reply.get("permissions") if isinstance(reply, dict) else None
+    if isinstance(perms, dict):
+        missing = [f"{k}: {v}" for k, v in SELFTEST_NEEDS.items() if perms.get(k) != v]
+        why = f"the token lacks {', '.join(missing)}" if missing else "contents + pull_requests write"
+        if not step("permissions", not missing, why):
+            return out
+    else:
+        step("permissions", True, "not reported by this Worker (checked through the repository below)")
+    probe = GitHub(lambda: token, gh.repo, gh.api, gh.branch)
+    try:
+        repo = probe.call("GET", f"/repos/{gh.repo}")
+        push = (repo.get("permissions") or {}).get("push") if isinstance(repo, dict) else None
+        if push is False:
+            step("repository", False, f"{gh.repo}: the token can't push (permissions.push is false)")
+            return out
+        step("repository", True, f"{gh.repo} readable" + (", push allowed" if push else ""))
+    except (GitHubError, KeyError, TypeError, ValueError) as e:
+        step("repository", False, str(e) or type(e).__name__)
+        return out
+    try:
+        players, _, head = probe.players_on_main()
+        step("main", True, f"{gh.branch} at {str(head)[:12]}, players.yml has {len(players['whitelist'])} "
+             "whitelisted")  # fmt: skip
+    except (GitHubError, KeyError, TypeError, ValueError) as e:
+        step("main", False, str(e) or type(e).__name__)
+        return out
+    try:
+        prs = probe.call("GET", f"/repos/{gh.repo}/pulls?state=open&per_page=1")
+        if not isinstance(prs, list):
+            raise GitHubError("GET pulls: not a list")
+        step("pulls", True, "pull requests reachable (nothing was created)")
+    except GitHubError as e:
+        step("pulls", False, str(e))
+        return out
+    out["ok"] = True
+    return out
+
+
+class SelfTestState:
+    """The last self-test result and the failure streak, kept in the agent's state dir (survives restarts) so
+    the daily run alerts once after SELFTEST_ALERT_AFTER consecutive failures, and once when it passes
+    again."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.lock = threading.Lock()
+
+    def load(self) -> dict[str, Any]:
+        data = read_json(self.path, {})
+        if not isinstance(data, dict):
+            data = {}
+        last = data.get("last")
+        return {
+            "last": last if isinstance(last, dict) else None,
+            "failures": int(data.get("failures") or 0),
+            "alerted": data.get("alerted") is True,
+        }
+
+    def record(self, result: dict[str, Any], alert: Callable[[str], None] | None = None) -> dict[str, Any]:
+        with self.lock:
+            st = self.load()
+            st["last"] = result
+            if result.get("ok") or not result.get("configured", True):
+                if st["alerted"] and alert and result.get("ok"):
+                    alert(selftest_back_alert(st["failures"]))
+                st["failures"], st["alerted"] = 0, False
+            else:
+                st["failures"] += 1
+                if st["failures"] >= SELFTEST_ALERT_AFTER and not st["alerted"]:
+                    if alert:
+                        alert(selftest_alert(str(result.get("error") or "unknown"), st["failures"]))
+                    st["alerted"] = True
+            atomic_write(self.path, json.dumps(st), 0o600)
+            return st
+
+    def public(self) -> dict[str, Any] | None:
+        st = self.load()
+        last = st["last"]
+        if not last:
+            return None
+        return {k: last.get(k) for k in ("ok", "ts", "configured", "error", "steps", "trigger")} | {
+            "failures": st["failures"]
+        }
+
+
+def selftest_alert(error: str, failures: int) -> str:
+    """The daily Panel -> Git self-test failed twice in a row (docs/operations.md "Alerts")."""
+    return render(
+        Alert(
+            "warning",
+            "The panel can't open pull requests on the config repo",
+            impact="Whitelist and world changes made in the panel stay live but never reach Git; whitelist "
+            "changes are dropped after 24 h, and the next deploy undoes them.",
+            cause=f"The daily Panel -> Git self-test failed {failures} times in a row, at {error}",
+            todo="Run `mcctl doctor`, and the self-test from the panel's Health tab after a fix. Token or "
+            "permissions: the panel's GitHub App (installed on the config repo, Contents + Pull requests); "
+            "a stale Worker: `mcctl render` + `mcctl apply`.",
+            details=f"{failures} consecutive failures; last: {error}",
+        )
+    )
+
+
+def selftest_back_alert(failures: int) -> str:
+    return render(
+        Alert(
+            "recovered",
+            "The panel can open pull requests again",
+            impact="Panel whitelist and world changes reach the config repo again.",
+            cause="The Panel -> Git self-test passed.",
+            details=f"after {failures} failed run(s)",
+        )
+    )
+
+
 def expired_alert(names: str) -> str:
     """Panel whitelist changes that never reached Git within 24 h (docs/operations.md "Alerts")."""
     return render(
@@ -496,79 +736,82 @@ def sync_pending(
     pending.json (so the next deploy follows Git) and announced on Discord."""
     log = log or (lambda msg, **f: None)
     run = rcon or rcon_command
-    with pending.lock:
-        data = pending.load()
-        before = json.dumps(data, sort_keys=True)
-        entries = data["entries"]
-        # 24 h without reaching Git: drop, tell the admin (the next deploy will follow Git again)
-        old = [e for e in entries if now - float(e.get("ts") or 0) > PENDING_TTL_S]
-        if old:
-            data["entries"] = entries = [e for e in entries if e not in old]
-            data["expired"] = (
-                data["expired"] + [{"name": e["name"], "op": e["op"], "ts": now} for e in old]
-            )[-20:]
-            names = ", ".join(f"{e['op']} {e['name']}" for e in old)
-            alert(expired_alert(names))
-            log(f"panel whitelist entries expired: {names}", action="whitelist-expire", result="dropped")
-        if gh is None:
-            data["error"] = (
-                "no config repo for the panel (CONFIG_REPO): changes stay pending until they expire"
-            )
-        else:
-            try:
-                pr = data.get("pr")
-                if pr and pr.get("number") and now - float(pr.get("checked") or 0) >= pr_check_s:
-                    state = gh.pr_state(int(pr["number"]))
-                    pr["checked"] = now
-                    if state == "merged":
-                        data["entries"] = entries = [e for e in entries if e.get("pr") != pr["number"]]
-                        log(f"panel PR #{pr['number']} merged", action="whitelist-pr", result="merged")
-                        data["pr"] = pr = None
-                    elif state == "closed":
-                        number = int(pr["number"])
-                        rejected = [e for e in entries if e.get("pr") == number]
-                        reverted, failed = revert_live(rejected, run)
-                        data["entries"] = entries = [e for e in entries if e.get("pr") != number]
-                        data["error"] = (
-                            f"pull request #{number} was closed without merging: reverted on the server"
-                            + (
-                                f" (couldn't revert {', '.join(failed)}: the next deploy follows Git)"
-                                if failed
-                                else ""
-                            )
+    # v1.3: a snapshot under the lock, the round (GitHub, RCON, Discord) without it, then merged back into
+    # pending.json as it is by then (mc_agent.py cli or a panel command may have recorded something meanwhile)
+    with pending.locked():
+        snap = pending.load()
+    data = copy.deepcopy(snap)
+    entries = data["entries"]
+    # 24 h without reaching Git: drop, tell the admin (the next deploy will follow Git again)
+    old = [e for e in entries if now - float(e.get("ts") or 0) > PENDING_TTL_S]
+    if old:
+        data["entries"] = entries = [e for e in entries if e not in old]
+        gone = [{"name": e["name"], "op": e["op"], "ts": now} for e in old]
+        data["expired"] = (data["expired"] + gone)[-20:]
+        names = ", ".join(f"{e['op']} {e['name']}" for e in old)
+        alert(expired_alert(names))
+        log(f"panel whitelist entries expired: {names}", action="whitelist-expire", result="dropped")
+    if gh is None:
+        data["error"] = "no config repo for the panel (CONFIG_REPO): changes stay pending until they expire"
+    else:
+        try:
+            pr = data.get("pr")
+            if pr and pr.get("number") and now - float(pr.get("checked") or 0) >= pr_check_s:
+                state = gh.pr_state(int(pr["number"]))
+                pr["checked"] = now
+                if state == "merged":
+                    data["entries"] = entries = [e for e in entries if e.get("pr") != pr["number"]]
+                    log(f"panel PR #{pr['number']} merged", action="whitelist-pr", result="merged")
+                    data["pr"] = pr = None
+                elif state == "closed":
+                    number = int(pr["number"])
+                    rejected = [e for e in entries if e.get("pr") == number]
+                    reverted, failed = revert_live(rejected, run)
+                    data["entries"] = entries = [e for e in entries if e.get("pr") != number]
+                    data["error"] = (
+                        f"pull request #{number} was closed without merging: reverted on the server"
+                        + (
+                            f" (couldn't revert {', '.join(failed)}: the next deploy follows Git)"
+                            if failed
+                            else ""
                         )
-                        why = f"PR #{number} closed"
-                        gone = [{"name": e["name"], "op": e["op"], "ts": now, "why": why} for e in rejected]
-                        data["expired"] = (data["expired"] + gone)[-20:]
-                        alert(rejected_alert(number, reverted, failed))
-                        log(f"panel PR #{number} closed unmerged; reverted {reverted} failed {failed}",
-                            action="whitelist-pr", result="reverted")  # fmt: skip
-                        data["pr"] = pr = None
-                fresh = [e for e in entries if e.get("pr") is None]
-                if fresh and (not pr) and now - data["changed"] >= batch_s:
-                    made = gh.open_pr(fresh, now)
-                    if made["number"] is None:
-                        data["entries"] = [e for e in entries if e not in fresh]  # Git already has them
-                    else:
-                        for e in fresh:
-                            e["pr"] = made["number"] if e["uuid"] in made["changed"] else 0
-                        data["entries"] = [e for e in entries if e.get("pr") != 0]
-                        data["pr"] = {
-                            "number": made["number"],
-                            "url": made["url"],
-                            "branch": made["branch"],
-                            "created": now,
-                            "checked": now,
-                        }
-                        log(f"panel PR #{made['number']} opened", action="whitelist-pr", result="opened")
-                    data["error"] = ""
-                sync_world(data, gh, now, alert, log, batch_s, pr_check_s)
-            except (GitHubError, ValueError, KeyError, TypeError) as e:
-                data["error"] = f"GitHub: {str(e)[:200]}"
-        changed = json.dumps(data, sort_keys=True) != before
-        if changed:
-            pending.save(data)
-        return changed
+                    )
+                    why = f"PR #{number} closed"
+                    gone = [{"name": e["name"], "op": e["op"], "ts": now, "why": why} for e in rejected]
+                    data["expired"] = (data["expired"] + gone)[-20:]
+                    alert(rejected_alert(number, reverted, failed))
+                    log(f"panel PR #{number} closed unmerged; reverted {reverted} failed {failed}",
+                        action="whitelist-pr", result="reverted")  # fmt: skip
+                    data["pr"] = pr = None
+            fresh = [e for e in entries if e.get("pr") is None]
+            if fresh and (not pr) and now - data["changed"] >= batch_s:
+                made = gh.open_pr(fresh, now)
+                if made["number"] is None:
+                    data["entries"] = [e for e in entries if e not in fresh]  # Git already has them
+                else:
+                    for e in fresh:
+                        e["pr"] = made["number"] if e["uuid"] in made["changed"] else 0
+                    data["entries"] = [e for e in entries if e.get("pr") != 0]
+                    data["pr"] = {
+                        "number": made["number"],
+                        "url": made["url"],
+                        "branch": made["branch"],
+                        "created": now,
+                        "checked": now,
+                    }
+                    log(f"panel PR #{made['number']} opened", action="whitelist-pr", result="opened")
+                data["error"] = ""
+            sync_world(data, gh, now, alert, log, batch_s, pr_check_s)
+        except (GitHubError, ValueError, KeyError, TypeError) as e:
+            data["error"] = f"GitHub: {str(e)[:200]}"
+    if data == snap:
+        return False
+    with pending.update() as current:
+        merged = merge_sync(current, snap, data)
+        changed = merged != current
+        current.clear()
+        current.update(merged)
+    return changed
 
 
 def world_rejected_alert(number: int, active: str) -> str:
@@ -845,6 +1088,8 @@ class Jobs:
         rcon: Callable[[str], str] | None = None,
         clock: Callable[[], float] = time.time,
         wait: Callable[[threading.Event, float], bool] | None = None,
+        lock_path: Path | None = None,
+        background: bool = True,
     ) -> None:
         self.report = report
         self.rcon = rcon or rcon_command
@@ -852,6 +1097,38 @@ class Jobs:
         self.wait = wait or (lambda ev, s: ev.wait(s))
         self.current: Job | None = None
         self.lock = threading.Lock()
+        self.lock_path = lock_path  # JOB_LOCK_FILE: shared with the other process (agent or mcctl)
+        self.background = background  # False: start() runs the job before returning (mc_agent.py cli)
+        self._held: int | None = None  # the lock file's descriptor while a job runs
+
+    def _take_file_lock(self) -> None:
+        """The cross-process lock (an flock, released by the kernel if the process dies). A lock file that
+        can't be opened (no state dir: a test, a dev box) only loses the cross-process check."""
+        if self.lock_path is None:
+            return
+        try:
+            # only mcops takes it (mc-agent and `mc_agent.py cli`): nobody else needs to open it
+            fd = os.open(self.lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+        except OSError as e:
+            print(
+                f"job lock {self.lock_path}: {type(e).__name__} (one job per process only)", file=sys.stderr
+            )
+            return
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(fd)
+            raise ActionError(
+                "busy: another action is running (started from the panel or mcctl); wait, or cancel it there"
+            ) from None
+        self._held = fd
+
+    def _release_file_lock(self) -> None:
+        fd, self._held = self._held, None
+        if fd is not None:
+            with contextlib.suppress(OSError):
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
 
     def busy(self) -> Job | None:
         j = self.current
@@ -879,7 +1156,7 @@ class Jobs:
         countdown: int,
         work: Callable[[Job], str],
         skip_if_empty: bool = True,
-        background: bool = True,
+        background: bool | None = None,
     ) -> Job:
         if countdown not in COUNTDOWNS:
             raise ActionError(f"countdown must be one of {', '.join(map(str, COUNTDOWNS))} seconds")
@@ -889,10 +1166,11 @@ class Jobs:
                 raise ActionError(
                     f"busy: {other.label.lower()} ({other.state}) started by {other.login}; cancel it first"
                 )
+            self._take_file_lock()
             job = Job(job_id, action, label, login, countdown, started=self.clock())
             job.on_change = lambda: self.report(job.public())
             self.current = job
-        if background:
+        if self.background if background is None else background:
             threading.Thread(
                 target=self._run, args=(job, work, skip_if_empty), name=f"job-{action}", daemon=True
             ).start()
@@ -901,6 +1179,12 @@ class Jobs:
         return job
 
     def _run(self, job: Job, work: Callable[[Job], str], skip_if_empty: bool) -> None:
+        try:
+            self._work(job, work, skip_if_empty)
+        finally:
+            self._release_file_lock()
+
+    def _work(self, job: Job, work: Callable[[Job], str], skip_if_empty: bool) -> None:
         try:
             job.players = self.players() if job.countdown else 0
             left = job.countdown if (job.players or not skip_if_empty) else 0

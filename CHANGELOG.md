@@ -26,23 +26,100 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 - **The home screen:** `mcctl` with no command, on an interactive terminal, shows a status header (deployment,
   config repo, pinned product vs this mcctl, server online/players/TPS/MSPT, last deploy, open panel PRs; slow
   or failed parts read "unknown (why)" and never block) and an arrow-key menu grouped Server, Players, Worlds,
-  Config, Publish, Health, Updates, Secrets, Metrics. Its items run the existing read-only commands (status, logs,
+  Config, Publish, Health, Updates, Secrets, Metrics. Its items run the existing commands (status, logs,
   backup list, players list, validate, config get, doctor, update dry runs, secrets dashlane, metrics); the rest
   of v1.3's items are shown as coming. `--plain`, CI, `NO_COLOR` and no terminal keep the usage error (exit 2).
+- **Server actions from the CLI** (v1.3 phase 2), over Tailscale SSH like `rcon`/`stop`/`start`:
+  `mcctl restart [--countdown 0|10|60|300] [--backup] [--wait]` (the panel's restart: in-game countdown, skipped
+  when nobody is online), `mcctl console [COMMAND...]` (an RCON prompt, or one command), `mcctl worlds
+  list|create|switch|delete` (the world library, typed `create NAME` / `switch to NAME` / `delete NAME`), `mcctl
+  plugins list|enable|disable` (the plugin switch and a countdown restart, typed `enable NAME` / `disable NAME`)
+  and `mcctl players kick|ban|pardon NAME [--reason T]` (live only, never `players.yml`). They run the panel's own
+  code on the server (`mc_agent.py cli`: the agent's checks and job runner as the ops user, through the existing
+  polkit-allowed units) and write the panel's audit entry with the login `mcctl:<local user>`. Confirmations come
+  from a terminal prompt or `--confirm TEXT`; without either the command refuses. Panel and CLI jobs never
+  overlap: one job at a time across both (`/var/lib/minecraft/job.lock`).
+- The home screen's Server, Players, Worlds and Config groups run these (console, restart, stop, start, back up
+  now, restore, kick/ban/pardon, worlds and plugins), asking for names and countdowns and for the typed
+  confirmation of destructive items.
+- The docs write `mcctl ...`: `pip install --no-deps -e .` in the product venv installs the command (the
+  `[project.scripts]` entry); `python3 -m mcctl` keeps working. Printed hints no longer say a bare `python`.
 - **Remembered config repo:** `~/.config/mcctl/config.toml` (XDG_CONFIG_HOME; Windows `%APPDATA%\mcctl`)
   remembers the config repos used with `-C` (paths only, no secrets). Without `-C`, outside a config repo, mcctl
   uses the remembered one; the home screen's "Switch config repo" picks between them.
 - Dependencies: questionary 2.1.1 (with prompt-toolkit 3.0.53 and wcwidth 0.9.4) in all three requirement sets
   and `pyproject.toml`.
+- **Friend compass** (mc-brand, vanilla clients): a boss bar that turns with the player, with the cardinal points
+  and every online player's name at their bearing. The player faced is centred with ▼, the distance (rounded) and
+  ↑/↓ for large height differences. Players in other dimensions are listed after a bar as "name (Nether)", without
+  a distance. It is redrawn only when someone turns or moves. `/compass on|off|hide|show|auto`, remembered per
+  player (`hide` keeps you off other players' compasses and maps). server.yml `branding.compass`: `enabled`,
+  `default_on`, `max_range`, `distance_rounding`, `height_threshold`.
+- **Pocket map**: `/map` gives a personal map that re-centres on the player about once a second while held, with
+  every other player as a named cursor (an edge dot when off the map). Terrain comes from vanilla's map rendering.
+  In the off hand it's a minimap; `/map zoom` cycles the scale. One map per player: free to re-get, and it can't
+  be dropped, copied, framed or stored. server.yml `branding.pocket_map.enabled`.
+- **Client mods take precedence**: mc-brand reads each client's registered plugin channels (`smallworld:*`,
+  Xaero's `xaerominimap:main` / `xaeroworldmap:main`) and checks again when one registers late. The Smallworld
+  mod together with Xaero's turns the compass off by default; clients with no mods get the compass and a one-line
+  `/map` tip at join. `/compass on|off` and `/map` always override.
+- **`/help`** (alias `/commands`): a clickable list of the commands this player can use, built from the enabled
+  features and permissions. Vanilla's list stays at `/minecraft:help`.
+- **Help hologram**: `branding.holograms[].help: true` appends the same list, and `at: spawn` places a hologram
+  above the world spawn instead of explicit `x`/`y`/`z`.
+- **Versions everywhere:** each deploy writes `/opt/minecraft/product-version.json` (product version and commit),
+  which mc-agent reports with the version its own process runs; `mcctl render` stamps the product version and
+  the config repo's pin into the Worker's static assets (`version.json`, uploaded by `mcctl apply`, never served).
+  The panel header reads "Smallworld vX.Y.Z · Purpur 26.3"; the Health tab's Versions row shows server, Worker and
+  pin, with the fix for a mismatch ("run `mcctl render` + `mcctl apply`", "deploy", "restart mc-agent"). `mcctl
+  doctor` compares them with the config repo's current pin (rows `versions`, read from the watchdog's D1), and
+  `mcctl status` and the home screen show the deployed version against the pin. (v1.2.2 reached the server and
+  the Worker in two separate steps and nothing showed it.)
+- **Panel → Git self-test:** mc-agent proves daily (and 5 minutes after each start) that the panel can open pull
+  requests, without opening one: the Worker mints a token, a fresh token cache accepts it, its permissions are
+  Contents + Pull requests write, and GitHub answers for the config repo (repository, main and `players.yml`,
+  pull requests). The result and each step are in the Health tab (with "Run the self-test now": new agent action
+  `selftest`, at most once a minute) and in `mcctl doctor` (row `panel → git`); two failures in a row post one
+  Discord alert, and recovery one more. Errors name the step and never contain the token. (v1.2.2's 390-character
+  tokens were refused for days unnoticed.)
+- **Mojang lookup from the server:** the panel's whitelist name check asks mc-agent (new action `lookup {name}`:
+  api.mojang.com, then api.minecraftservices.com, from the box; 3 s timeout each, 20 per minute, cached 10
+  minutes) and falls back to the Worker's own lookup when the agent is offline or doesn't answer within 4 s; "add
+  unverified" stays the last resort. SECURITY.md "Panel actions" lists the two new read-only actions.
+- `scripts/build_plugin.py` runs a plugin's fixture class (mc-brand: `WayfindingFixtures`, pure logic on the
+  pinned JDK, never in the jar) and compares its output, which `tests/test_wayfinding.py` checks independently.
+- **`mcctl publish`** (v1.3 Part B): previews a config change before it lands: the files that differ from
+  `origin/main`, the `server.yml` settings and `players.yml` entries, and their consequences from rendering both
+  sides (the Ansible roles and server config overlays it touches, whether Minecraft restarts, whether Terraform
+  changes, who is online now), then validates and lands it. By default as a pull request (`publish/<timestamp>`):
+  checks shown live, your merge offered when green, the deploy run followed, then the server's status.
+  `--route main` pushes to main; `--route deploy` is the labelled emergency local deploy that skips CI.
+  Terraform changes run `mcctl apply` (plan, typed confirmation) first; a restart with players online asks
+  deploy now / wait until empty / cancel (`--wait-empty`; without a terminal it waits, and a timeout cancels).
+  `--revert` opens a pull request reverting the last deploy's commits; `--dry-run` only previews. The home
+  screen's Publish items run it.
+- Home screen: Players "Whitelist a player", "Remove from the whitelist", "Make operator", "Remove operator".
 
 ### Changed
 
+- `mcctl players add|remove|op|deop` opens a pull request (`players/*`), merges it when green (the admin's merge;
+  `server / gate` still auto-merges whitelist-only changes only from the panel App) and follows the deploy,
+  instead of pushing to main. `--push` keeps the old behaviour, `--no-push` still only commits.
 - The product's e2e `agent` shard is split in two by its rounds (`agent-a`, `agent-b`: `tests/e2e/agent_check.py
   --rounds a|b`, each on its own box with its own mock Worker and GitHub API), so e2e's slowest shard drops from
   16 to about 11 minutes. Every round prints its wall time; without `--rounds` the script still runs every
   round (docs/ci.md).
+- `POST /agent/github-token` also returns the token's granted `permissions` (from GitHub's reply), for the
+  self-test.
+- The e2e `agent-a` shard gains the round `versions` (version file, self-test against the GitHub mock, lookup
+  against a mock Mojang; about 20 s).
+- The e2e `agent-a` shard gains the round `cli` (about 40 s): `mc_agent.py cli` run with mcctl's own command line
+  (`sudo mc-run ...`, as over SSH): a kick and a refused unconfirmed `world_delete`, both in the audit journal with
+  `MC_VIA=mcctl`; then two processes in the CLI's place write pending.json while mc-agent's sync loop merges and
+  opens pull requests on it (GitHub mock), and no entry is lost.
 - Golden rendering (`tests/fixtures/full-render.json`): new group var `mc_strict_whitelist` (the example sets it
-  explicitly to `false`).
+  explicitly to `false`); mc-brand's config gains `compass`, `pocket_map` and each hologram's `help` (the example
+  adds a spawn help hologram and explicit compass values).
 
 ### Fixed
 
@@ -52,6 +129,19 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   script install now notifies a handler pair that restarts mc-agent only where its unit is installed (a fresh box,
   where handlers can flush before the agent role ran, and boxes without the panel skip it).
   `tests/test_playbooks.py` checks that every script mc-agent imports is covered.
+- Panel whitelist and world changes could be lost when mcctl ran an action while mc-agent was running (new in
+  this release, never in a tag): `mc_agent.py cli` (mcctl's actions over SSH) writes
+  `/var/lib/mc-agent/pending.json` from its own process, and the in-process lock didn't cover it, so the agent's sync loop or a panel command could overwrite a change
+  the other had just recorded (whose deploy and pull request then never knew of it). Every read-modify-write of
+  pending.json now holds an flock on `pending.json.lock` (0600, next to it) and reads the file again under it;
+  writes are atomic and stay 0600. The sync loop no longer holds the lock across GitHub, RCON or Discord calls: it
+  works on a snapshot and merges its result back, keeping whatever was recorded meanwhile (a player recorded again
+  while in an open pull request gets the next one).
+- e2e (test only): the restore-guard round's stand-in restore no longer outlives its kill. Killing `runuser`
+  left `flock` and its `sleep 300` running, still holding `restore.lock`, so the round's next deploy correctly
+  waited ~285 s for a restore that the test had already "ended" (the round took 319 s). The holder now runs in its
+  own session and its whole process group is killed; the round checks the lock is free and that the deploy takes
+  < 60 s. The product's restore guard was right throughout (it waits only while the lock is really held).
 
 ## [1.2.2] - 2026-11-07
 

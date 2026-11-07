@@ -140,6 +140,26 @@ entry to the journal (`MC_AUDIT=1`, with the login the command carried).
 | World library (v1.2): create, switch, delete | the agent writes `/var/lib/minecraft/world-request.json` (checked: name, seed, type, preset, border; the target archived, not newer than the server) → polkit → `mc-world.service` (fixed unit, as `mcops`, restic credentials, `CAP_DAC_READ_SEARCH`, same hidden paths as mc-restore@; `worlds.py` checks the request again) → `mc-world-apply.service` (as `minecraft`, no credentials, no network, writes only the server dir) | Replace the live world with another one (the active one is archived first), generate a new one, or forget an archived world | **Confirmed on the confirmation host** with a typed confirmation (`create <name>`, `switch to <name>`, `delete <name>`); never from Discord or in-game; before anything changes the active world is **archived** (a restic snapshot tagged `world-archive`, `world:<name>`: the safety snapshot; a failure there leaves the world untouched and starts it again); a world saved by a newer Minecraft is refused; restore.lock held throughout (deploys, backups, self-heal wait), admin-stopped `by=world`; the apply step writes only the three world folders and the world's `server.properties` keys (seed, type, difficulty, gamemode, force-gamemode, hardcore: a fixed list, values one line); archives are outside the backup retention and a delete can't forget a snapshot younger than the bucket lock (forgotten later); the active world can't be deleted; the panel's restore refuses another world's archive |
 | Restore | `mcops` → polkit → `mc-restore@<id>.service` (as `mcops`, restic credentials, `CAP_DAC_READ_SEARCH` for reading the world like mc-backup, same hidden paths) → `mc-restore-apply.service` (as `minecraft`) | Roll the world back to any snapshot in the repository | Typed confirmation `restore <id>`; id must be in restic's list; **a safety snapshot (tag `pre-restore`) of the current world is taken first** and a failure there stops the restore before anything changes; snapshots are protected by the R2 bucket lock, so nothing the panel does can delete one; **confirmed on the confirmation host**; while it runs the server is marked admin-stopped (`by=restore`) and deploys wait for `restore.lock`, so nothing starts the server halfway (P10 review) |
 
+**Read-only agent actions (v1.3).** Two more signed commands change nothing on the server:
+
+- `selftest` (the Health tab, panel host, no arguments; also daily by the agent itself): the agent asks the Worker
+  for a panel App token (`POST /agent/github-token`, as for a pull request) and reads the config repo with it
+  (`GET /repos/{repo}`, main's ref and `players.yml`, the open pull requests). No branch, commit or pull request.
+  At most one run a minute from the panel (a sooner request gets the last result); the result names the failing
+  step and never contains the token (GitHub errors carry the request line and status only). The Worker now also
+  passes the token's granted `permissions` (from GitHub's mint reply, nothing secret) for the check.
+- `lookup {name}` (only through the whitelist form's name check, `GET /api/mojang`; `POST /api/action` refuses it):
+  the agent sends the name, `[A-Za-z0-9_]{3,16}` checked on both sides, to `https://api.mojang.com` and then
+  `https://api.minecraftservices.com` (stdlib HTTPS, 3 s timeout each, unauthenticated, only the name), at most 20
+  requests a minute, answers cached 10 minutes. New outbound hosts from the box: those two (the box already reaches
+  Mojang's session servers through the JVM). The Worker waits for the answer at most 4 s and only while the agent
+  holds its WebSocket, then falls back to its own lookup. Someone holding the Cloudflare account could make the box
+  ask Mojang about names (rate-limited); nothing more.
+
+The deploy also writes `/opt/minecraft/product-version.json` (root, 0644: the product version and commit, nothing
+secret), which the agent reports in its inventory; `mcctl render` stamps the same into the Worker's static assets
+(`version.json`, read through the ASSETS binding only, never served).
+
 **Re-auth** (P10 review). Stop, plugin switches and restore (v1.2: and every world library action) are never accepted on `panel.<zone>`. The panel opens
 `<panel.hostname>-confirm.<zone>` in a new window with the action in the URL fragment; that host is a second Access
 application with a session of `panel.access.reauth_minutes` (default 10) and the **one-time PIN as its only login
@@ -198,6 +218,20 @@ deduplicated like every backup). What it adds to the attack surface:
 - **Not covered:** an archive is the whole server dir (like any backup), so switching back restores that world's
   folders only; the rest of the server dir stays the current one. A world from an older Minecraft is upgraded on
   load, one way (the archive keeps the old copy).
+
+### The same actions from mcctl (v1.3)
+
+`mcctl restart|worlds|plugins|players kick|ban|pardon` run the panel's actions over Tailscale SSH as the deploy
+user (the admin's `check` rule): `sudo mc-run -/etc/minecraft/notify.env /opt/minecraft/bin/mc_agent.py cli ...`.
+No new credential, unit, polkit verb or listening socket: the entry point runs mc-agent's Executor as `mcops` in
+mc-run's sandbox, so its systemd actions are the units `50-mc-ops.rules` already allows, and it reads only
+`notify.env` (the watchdog's maintenance window), never `agent.env`. It needs no signature because only the
+deploy user reaches it, and that user has sudo anyway; the checks are the agent's, plus the typed confirmations
+(world library, plugins) checked again on the box. Every action, refused or not, writes the panel's audit
+entry (`MC_AUDIT=1`, `MC_VIA=mcctl`) with the login `mcctl:<local user>` as the controller states it (the
+Tailscale SSH session itself is in tailscaled's log). A panel job and a CLI job can't overlap:
+`mc_panel.Jobs` holds an flock on `/var/lib/minecraft/job.lock` (a directory only `mcops` can write) from the
+countdown to the end of the work.
 
 ### The panel's GitHub App
 

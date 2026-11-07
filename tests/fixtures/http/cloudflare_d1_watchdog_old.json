@@ -1,0 +1,59 @@
+{
+  "_source": "Shaped from the Cloudflare API v4 reference: list D1 databases (GET /accounts/{account_id}/d1/database?name=) and query (POST .../d1/database/{id}/query, {sql} -> result[0].results), 2026-11-07; ids are fake. The rows are the watchdog's key/value table: the agent's inventory (v1.3 product + selftest) and the Worker's version stamp. Old: a v1.2 agent and Worker (no product, no selftest, no stamp).",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/d1/database?name=example-watchdog"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "success": true,
+          "errors": [],
+          "messages": [],
+          "result": [
+            {
+              "name": "example-watchdog",
+              "uuid": "7a9e8d1c-0000-4000-8000-00000000d1d1",
+              "created_at": "2026-11-01T00:00:00Z",
+              "version": "production"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/d1/database/7a9e8d1c-0000-4000-8000-00000000d1d1/query"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "success": true,
+          "errors": [],
+          "messages": [],
+          "result": [
+            {
+              "results": [
+                {
+                  "key": "inventory",
+                  "value": "{\"ts\": 1793426400000, \"whitelist\": []}"
+                }
+              ],
+              "success": true,
+              "meta": {}
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

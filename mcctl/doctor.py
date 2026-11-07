@@ -34,6 +34,7 @@ from mcctl import (
     ghapp,
     hostnet,
     http,
+    metrics,
     product,
     productsetup,
     remote,
@@ -762,6 +763,95 @@ def check_watchdog(report: Report, repo: configrepo.ConfigRepo, deps: Deps) -> N
         report.add("client page", level, detail + fix)
 
 
+# --- v1.3: versions and the Panel -> Git self-test, from the watchdog's D1 ----------------------------------
+
+SELFTEST_STALE_H = 36  # the agent runs it daily
+
+
+def assess_versions(product: object, worker: object, pin: configrepo.Pin) -> tuple[Level, str]:
+    """(level, detail) of the deployed product (the agent's inventory), the Worker's stamp (`mcctl render` ->
+    `mcctl apply`) and the config repo's pin as it is now."""
+    prod = product if isinstance(product, dict) else None
+    stamp = worker if isinstance(worker, dict) else None
+    pinned = f"{pin.version or '?'} ({pin.sha[:12]})"
+    server = remote.product_text(prod) if prod and prod.get("version") else "unknown"
+    applied = f"v{stamp.get('version')}" if stamp and stamp.get("version") else "unknown"
+    problems = []
+    if prod is None:
+        problems.append("the server reports no version (deployed before v1.3? deploy)")
+    elif (drift := remote.product_drift(prod, pin)) is not None:
+        problems.append(f"server: {drift}")
+    if stamp is None:
+        problems.append(
+            "the Worker has no version stamp: `mcctl render` + `mcctl apply` (applied before v1.3?)"
+        )
+    elif stamp.get("pin_sha") and stamp["pin_sha"] != pin.sha:
+        problems.append(
+            f"the Worker was applied for {str(stamp['pin_sha'])[:12]}, the pin is {pin.sha[:12]}: "
+            "`mcctl render` + `mcctl apply`"
+        )
+    detail = f"server {server}, Worker {applied}, pin {pinned}"
+    return ("warn", f"{detail}; " + "; ".join(problems)) if problems else ("ok", detail)
+
+
+def assess_selftest(result: object, now: datetime.datetime) -> tuple[Level, str]:
+    """(level, detail) of the agent's last Panel -> Git self-test (inventory `selftest`)."""
+    if not isinstance(result, dict):
+        return "warn", (
+            "no result yet: the agent predates v1.3, or its first run is due 5 minutes after it starts"
+        )
+    if result.get("configured") is False:
+        return "skip", "the panel has no config repo (CONFIG_REPO)"
+    ts = result.get("ts")
+    age_h = (now.timestamp() * 1000 - ts) / 3600000 if isinstance(ts, (int, float)) else None
+    when = f"{age_h:.0f} h ago" if age_h is not None else "at an unknown time"
+    if not result.get("ok"):
+        streak = int(result.get("failures") or 1)
+        return "fail", (
+            f"failed {when} at {result.get('error') or 'an unknown step'} ({streak} in a row): panel changes "
+            "can't reach the config repo. Fix it (the panel's GitHub App, a stale Worker), then run the "
+            "self-test from the panel's Health tab"
+        )
+    if age_h is None or age_h > SELFTEST_STALE_H:
+        return "warn", f"last passed {when} (it runs daily: is mc-agent running?)"
+    return (
+        "ok",
+        f"passed {when} (the Worker's token, its permissions, the config repo's main and pull requests)",
+    )
+
+
+def check_panel_link(
+    report: Report,
+    repo: configrepo.ConfigRepo,
+    token: str | None,
+    account: str | None,
+    deps: Deps,
+) -> None:
+    """v1.3: what the panel knows, read from the watchdog's D1 with the admin token (no panel login needed):
+    the versions (server, Worker, pin) and the agent's last Panel -> Git self-test. Read-only."""
+    if repo.server.panel.mode != "cloudflare":
+        return
+    try:
+        applied = state.load(repo.root).is_done("apply")
+    except state.StateError:
+        applied = False
+    if not applied:
+        return  # the watchdog row says why
+    if not token or not account:
+        report.add("versions", "skip", "needs the Cloudflare token (see the credentials above)")
+        return
+    try:
+        db = metrics.database(token, account, f"{repo.server.name}-watchdog", deps.transport)
+        rows = db.query("SELECT key, value FROM watchdog WHERE key IN ('inventory', 'worker')")
+        kv = {str(r.get("key")): json.loads(str(r.get("value") or "null")) for r in rows}
+    except (http.HttpError, cloudflare.CloudflareError, ValueError) as e:
+        report.add("versions", "warn", f"couldn't read the watchdog's D1: {e}")
+        return
+    inv = kv.get("inventory") if isinstance(kv.get("inventory"), dict) else {}
+    report.add("versions", *assess_versions(inv.get("product"), kv.get("worker"), repo.pin))
+    report.add("panel → git", *assess_selftest(inv.get("selftest"), deps.now()))
+
+
 PLAN_VARS = ("CLOUDFLARE_API_TOKEN", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_ENDPOINT_URL_S3")
 
 
@@ -1016,6 +1106,7 @@ def run(root: Path, *, fix: bool = False, deps: Deps | None = None, i_know: bool
     check_tailnet(report, repo, deps)
     check_host_ipv6(report, repo, deps)
     check_watchdog(report, repo, deps)
+    check_panel_link(report, repo, cf_token, str(cf_account) if cf_account else None, deps)
     check_plan(report, repo, env, deps)
     try:
         st = state.load(root)

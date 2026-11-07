@@ -37,6 +37,13 @@
     "subtle": "#A8DADC",
     "text": "#F4F1EA"
    },
+   "compass": {
+    "default_on": true,
+    "distance_rounding": 10,
+    "enabled": true,
+    "height_threshold": 8,
+    "max_range": 2000
+   },
    "discord_invite": "https://discord.gg/lighthouse",
    "drink": {
     "color": "#6F4E37",
@@ -54,6 +61,7 @@
    "holograms": [
     {
      "health": true,
+     "help": false,
      "lines": [
       "Welcome to {server} {glyph}",
       "{players} online"
@@ -62,6 +70,15 @@
      "x": 0,
      "y": 72,
      "z": 0
+    },
+    {
+     "at": "spawn",
+     "health": false,
+     "help": true,
+     "lines": [
+      "New here? Start with these"
+     ],
+     "world": "minecraft:overworld"
     }
    ],
    "hud": {
@@ -87,6 +104,9 @@
     "players": true
    },
    "name": "Lighthouse",
+   "pocket_map": {
+    "enabled": true
+   },
    "rules": [
     "Be kind.",
     "Don't grief or steal.",

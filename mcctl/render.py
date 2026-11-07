@@ -15,6 +15,9 @@ group_vars. Everything comes from here, written into one directory (default <con
                                       watchdog_assets_dir, an absolute path in the tfvars): the product's
                                       watchdog/panel/ files plus pack/<sha1>.zip, the resource pack built
                                       from the config repo's art (mcctl/brandpack.py; mc_brand_pack_sha1)
+                                      and v1.3's version.json: the product version and the config repo's
+                                      pin, which `mcctl apply` uploads with worker.js (the panel's Versions
+                                      row, `mcctl doctor`)
 
 Only variables today's roles and root module read are rendered. Fields whose consumers arrive in later phases
 (Grafana, automation, overrides) are validated but not rendered yet; the panel's (P9) and gamerules (v1.2)
@@ -33,9 +36,9 @@ from typing import Any
 
 import yaml
 
-from mcctl import brandpack, clientpack
+from mcctl import __version__, brandpack, clientpack
 from mcctl.configrepo import ConfigRepo
-from mcctl.schema import Players, ServerConfig, placeholders
+from mcctl.schema import BrandingHologram, Players, ServerConfig, placeholders
 
 TFVARS_FILE = Path("terraform") / "terraform.tfvars.json"
 BACKEND_FILE = Path("terraform") / "state.tfbackend"
@@ -44,6 +47,7 @@ GROUP_VARS_FILE = Path("ansible") / "group_vars" / "all.yml"
 FILES = (TFVARS_FILE, BACKEND_FILE, INVENTORY_FILE, GROUP_VARS_FILE)
 ICON_FILE = Path("ansible") / "files" / "server-icon.png"  # only with branding.icon (P17); a binary file
 WATCHDOG_ASSETS_DIR = Path("watchdog")  # v1.2: staged by render() (terraform var watchdog_assets_dir)
+VERSION_STAMP = WATCHDOG_ASSETS_DIR / "version.json"  # v1.3: read by the Worker through ASSETS, never served
 PACK_DIR = WATCHDOG_ASSETS_DIR / "pack"  # the resource pack: pack/<sha1>.zip (only with resource_pack on)
 PRODUCT_ASSETS = brandpack.PRODUCT_ROOT / "watchdog" / "panel"  # copied without a pack/ directory
 DEPLOY_USER = "deploy"  # product constant (ansible/group_vars/all/main.yml deploy_user)
@@ -138,19 +142,24 @@ def brand_plugin(cfg: ServerConfig) -> dict[str, Any]:
             "nausea_seconds": b.drink.nausea_seconds,
             "give_on_first_join": b.drink.give_on_first_join,
         },
-        "holograms": [  # v1.2: Holograms.java (block coordinates; the plugin centres the text)
-            {
-                "world": DIMENSIONS[h.world],
-                "x": h.x,
-                "y": h.y,
-                "z": h.z,
-                "lines": list(h.lines),
-                "health": h.health,
-            }
-            for h in b.holograms
-        ],
+        "holograms": [hologram(h) for h in b.holograms],
+        "compass": {  # v1.3: Compass.java
+            "enabled": b.compass.enabled,
+            "default_on": b.compass.default_on,
+            "max_range": b.compass.max_range,
+            "distance_rounding": b.compass.distance_rounding,
+            "height_threshold": b.compass.height_threshold,
+        },
+        "pocket_map": {"enabled": b.pocket_map.enabled},  # v1.3: PocketMap.java
         **brand_client(cfg),
     }
+
+
+def hologram(h: BrandingHologram) -> dict[str, Any]:
+    """v1.2: one of Holograms.java's specs (block coordinates; the plugin centres the text); v1.3: `at: spawn`
+    instead of x/y/z, and `help`."""
+    where: dict[str, Any] = {"at": h.at} if h.at else {"x": h.x, "y": h.y, "z": h.z}
+    return {"world": DIMENSIONS[h.world], **where, "lines": list(h.lines), "health": h.health, "help": h.help}
 
 
 def gamerules(cfg: ServerConfig) -> dict[str, str]:
@@ -614,6 +623,7 @@ def render(repo: ConfigRepo, out_dir: Path) -> list[Path]:
         raise RenderError(problems)
     rendered = files(repo, out_dir)
     stage_watchdog_assets(out_dir)  # not in the returned list: product files, copied
+    (out_dir / VERSION_STAMP).write_text(json.dumps(version_stamp(repo), indent=1, sort_keys=True) + "\n")
     written = []
     for rel, content in rendered.items():
         path = out_dir / rel
@@ -624,6 +634,16 @@ def render(repo: ConfigRepo, out_dir: Path) -> list[Path]:
             path.write_text(content)
         written.append(path)
     return written
+
+
+def version_stamp(repo: ConfigRepo) -> dict[str, Any]:
+    """v1.3: what the Worker reports as its version: this product's (the code that renders is the code `mcctl
+    apply` uploads: both run from the pin) and the config repo's pin at render time."""
+    return {
+        "product": __version__,
+        "pin": {"sha": repo.pin.sha, "version": repo.pin.version},
+        "repository": repo.pin.repository,
+    }
 
 
 def stage_watchdog_assets(out_dir: Path) -> None:

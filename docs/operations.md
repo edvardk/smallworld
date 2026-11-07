@@ -4,8 +4,9 @@ Day 2 and after: what you can do from the panel, from Discord and with `mcctl`, 
 how backups and restores work, and how to read the player-experience verdicts. Setup is in [setup.md](setup.md);
 the full command list and the design details are in [reference.md](reference.md).
 
-In the examples `C=~/code/mc-config` is your config repo, and `mcctl` means `python -m mcctl` run from the
-product checkout with its venv active.
+In the examples `C=~/code/mc-config` is your config repo, and `mcctl` is the command the product checkout's
+venv provides (`. .venv/bin/activate` first; `pip install --no-deps -e .` installed it, see
+[setup](setup.md#the-product-checkout)). Without that step `python3 -m mcctl` does the same.
 
 Contents:
 [The panel](#the-panel) ·
@@ -25,7 +26,10 @@ Contents:
 ## Changing the server
 
 The config repo is the source of truth. Edit `server.yml` (settings) or `players.yml` (whitelist and operators),
-commit and push: CI validates and deploys within minutes. A restart happens only if something changed that needs
+then `mcctl publish -C $C` (v1.3): it shows what the change does (which roles, whether Minecraft restarts,
+whether Terraform changes, who is online), validates, opens a pull request, merges it when the checks pass and
+follows the deploy; `--dry-run` only shows ([reference](reference.md#publishing-a-config-change-v13)). Committing
+and pushing to main yourself still works: CI validates and deploys within minutes. A restart happens only if something changed that needs
 one (jar, plugin, Java, a systemd unit or a managed config value), with a 60/30/10-second countdown in game,
 skipped when nobody is online. `mcctl config set PATH VALUE -C $C` changes one value (schema-checked, comments
 kept, committed), and `mcctl players -C $C add NAME` edits the whitelist. The product's own behaviour changes
@@ -71,7 +75,7 @@ Light and dark theme, works on a phone.
 | Backups | restic's snapshots | back up now, **restore** a snapshot |
 | Worlds (v1.2) | the active world, the archived worlds (size, version), what Git still has to follow | **create** a world, **switch** to an archived one, **delete** one ([below](#world-library)) |
 | Logs | journal lines in D1 (search by text, unit, level), the R2 archives | |
-| Health | 2 h to 90 d history, watchdog state | |
+| Health | 2 h to 90 d history, watchdog state, **Versions** (v1.3: server, Worker, the pin) and the **Panel → Git self-test** | run the self-test now |
 | Audit log | every action with the Access identity | |
 
 How actions work: every action opens a confirmation dialog, goes to the Worker, is audit-logged, signed for the
@@ -83,7 +87,42 @@ takes a **safety snapshot** of the current world first (tag `pre-restore`).
 
 Whitelist changes from the panel apply at once and are also written to `players.yml` through a pull request from
 the panel's GitHub App, which merges by itself when only the whitelist changed. Until it merges, deploys keep the
-change; if you close the pull request without merging, the change is reverted on the server.
+change; if you close the pull request without merging, the change is reverted on the server. The name check in
+the whitelist form (v1.3) asks Mojang **from the server** (mc-agent's `lookup`: api.mojang.com refuses
+Cloudflare's addresses); when the agent is offline or slow (4 s) the Worker asks itself, and if nobody gets an
+answer the form offers to add the name unverified (the server refuses a name with no Java account).
+
+### Versions (v1.3)
+
+The header reads "Smallworld vX.Y.Z · Purpur 26.3". The Health tab's **Versions** row shows three things that
+used to drift apart silently (v1.2.2 reached the server and the Worker in separate steps):
+
+- **Server (deployed):** each deploy writes `/opt/minecraft/product-version.json` (product version and commit,
+  root-owned, world-readable); mc-agent reports it, and the version its own process runs.
+- **Worker (applied):** `mcctl render` stamps the product version and the config repo's pin into the Worker's
+  static assets (`version.json`, not served), which `mcctl apply` uploads with `worker.js`.
+- **Config repo pin:** as of the last apply.
+
+| Warning | Fix |
+|---|---|
+| The Worker is older than the server | `mcctl render` + `mcctl apply` |
+| The server is older than the Worker | deploy (push to main, or `mcctl deploy`) |
+| mc-agent runs older code than installed | restart it (a deploy does) |
+
+`mcctl doctor` checks the same against the config repo's pin as it is now (rows `versions` and `panel → git`,
+read from the watchdog's D1 with the Cloudflare token), and the home screen and `mcctl status` show the deployed
+version over SSH.
+
+### The Panel → Git self-test (v1.3)
+
+Proves the panel can still open pull requests without opening one (v1.2.2: GitHub's longer tokens were refused
+for days unnoticed). mc-agent asks the Worker for a token, checks it with a fresh token cache (shape, expiry) and
+its permissions (Contents + Pull requests write), then reads the config repo with it: the repository, main's head
+and `players.yml`, the open pull requests. Nothing is created. It runs 5 minutes after the agent starts (so after
+every deploy) and then daily, and from the Health tab ("Run the self-test now", at most once a minute). The result
+and each step are in the Health tab and in `mcctl doctor`; two failures in a row post one Discord alert, and one
+more when it passes again. Errors name the step (`token`, `permissions`, `repository`, `main`, `pulls`) and never
+contain the token.
 
 ## World library
 
@@ -200,7 +239,8 @@ The ones you will use (all take `-C $C`; the complete list is in [reference.md](
 | `mcctl doctor` | checks tools, `.env`, every credential live (writes `expiry.yml`: commit it), the product pin, DNS, the tailnet, the watchdog; `--fix` repairs what it can (file mode, a stale product pin after a typed `yes`) |
 | `mcctl status [--json]` | server state, players, TPS/MSPT, last backup, last deploy run, drift (disabled plugins, open panel PRs) |
 | `mcctl deploy [--check]` | deploy from your computer (the same playbook and secrets as CI; `--check` is a dry run with a diff) |
-| `mcctl players list\|add\|remove\|op\|deop NAME` | edit `players.yml` (UUID from Mojang), commit and push (the push deploys) |
+| `mcctl publish [--route pr\|main\|deploy] [--dry-run] [--revert] [--wait-empty]` | v1.3: preview what your config change does (roles, restart, Terraform, who is online), validate, then a pull request, its checks, your merge and the deploy ([reference](reference.md#publishing-a-config-change-v13)) |
+| `mcctl players list\|add\|remove\|op\|deop NAME` | edit `players.yml` (UUID from Mojang); v1.3: as a pull request you merge when green (`--push`: straight to main) |
 | `mcctl rcon CMD`, `mcctl ssh`, `mcctl logs [unit] [-f]` | a console command, a shell as `deploy`, the journal (over Tailscale SSH) |
 | `mcctl backup now\|list` | a backup now / the snapshots |
 | `mcctl restore --list \| --to /var/tmp/DIR \| --live ID` | list snapshots (the last pre-upgrade one marked), restore into a scratch directory and verify, or restore the live world (typed confirmation, safety snapshot first) |
@@ -352,7 +392,7 @@ players that is the budget the product sizes for (see the bench numbers in the d
 profile"); watch the Experience tab's tick p99 and "Busiest chunks". View distance 10 costs chunk sending and
 memory only (chunks outside the simulation distance don't tick).
 
-**Switch**: `python -m mcctl config set performance.profile balanced -C $C`, push (a deploy with an announced
+**Switch**: `mcctl config set performance.profile balanced -C $C`, push (a deploy with an announced
 restart). Back: `... vanilla`. Both profiles set the same keys, so switching never leaves an old value behind.
 
 ## Performance tuning
@@ -372,7 +412,7 @@ change **one knob at a time** and give it a week of similar play.
 **Switch** (each one is a deploy with an announced restart, skipped when nobody is online):
 
 ```bash
-python -m mcctl config set jvm.gc zgc -C $C          # schema-checked, comments kept, committed
+mcctl config set jvm.gc zgc -C $C                    # schema-checked, comments kept, committed
 git -C $C push                                         # CI validates and deploys
 ```
 
@@ -381,8 +421,8 @@ chart), lag spikes, "heap after GC" (with ZGC keep it under ~70 %: above that ZG
 which `mc-health` reports as GC pauses), and the overhead card (minecraft's CPU goes up a little with ZGC). The
 Overview's GC pause figure comes from the same log for both collectors.
 
-**Compare** before and after: `python -m mcctl metrics -C $C --days 14` prints tick p99 for the 24 h before and
-after every deploy, plus the worst hours; for a full week each side, `python -m mcctl metrics export -C $C --since
+**Compare** before and after: `mcctl metrics -C $C --days 14` prints tick p99 for the 24 h before and
+after every deploy, plus the worst hours; for a full week each side, `mcctl metrics export -C $C --since
 YYYY-MM-DD` gives the minute rows (p99, p99.9, max, players) as CSV. Compare hours with similar player counts: a
 quiet week always looks better.
 
@@ -467,11 +507,28 @@ mechanic touches farms). The defaults are generic; set your own and push (`mcctl
 | `branding.hud.*` | available, `default_mode: top` | the HUD (below), refreshed every 5 s; the tab list's header/footer |
 | `branding.drink.*` | off | the signature drink (below): `name`, `command` (default `drink`), `lore`, `color`, `texture` |
 | `branding.resource_pack.*` | off | the drink's texture and the `{glyph}` icon (below): `prompt`, `description`, `glyph` |
+| `branding.holograms[]` | none | floating texts: `x`/`y`/`z` or `at: spawn` (v1.3: 3 blocks above the world spawn), `lines`, `health`, `help` (v1.3: appends `/help`'s list) |
+| `branding.compass.*` | on | v1.3: the friend compass (below): `enabled`, `default_on`, `max_range` (1000 blocks), `distance_rounding` (5), `height_threshold` (8) |
+| `branding.pocket_map.enabled` | on | v1.3: `/map` (below) |
 
-**Commands** (everyone): `/rules [page]`, `/discord`, `/hud [top|side|off]` (remembered per player; `/hud` alone
-switches between the top bar and off), `/drink` (and the drink's own `branding.drink.command`). Operators and the console: `/mcbrand status` (the plugin's task
+**Commands** (everyone): `/help` (v1.3, alias `/commands`: the list below, built from what's on; vanilla's list is
+`/minecraft:help`), `/rules [page]`, `/discord`, `/hud [top|side|off]` (remembered per player; `/hud` alone
+switches between the top bar and off), `/drink` (and the drink's own `branding.drink.command`), `/compass
+[on|off|hide|show|auto]` and `/map [zoom]` (v1.3). A new player command goes into `Help.entries` (the plugin's
+one list; `tests/test_wayfinding.py` fails otherwise). Operators and the console: `/mcbrand status` (the plugin's task
 time, and the technical numbers: TPS, MSPT, p95) and `/mcbrand selftest` (renders every text with a sample player,
 fills a sidebar and a boss bar and checks them; also the e2e test).
+
+**Wayfinding** (v1.3; [features](features.md#finding-friends-without-mods-the-compass-map-and-help) has the
+picture). The compass is a boss bar of its own (under or over the HUD's top bar), redrawn only when its player
+turns or moves (at most every 4 ticks) or someone else moves (at most once a second); nothing runs while nobody
+moves (`/mcbrand status`: `compass showing/renders/updates`). Who gets it by default follows the client: off for
+the Smallworld mod together with Xaero's maps, on otherwise (`branding.compass.default_on: false` makes it
+opt-in for everyone); players override it with `/compass on|off`. The pocket map is one map id per player (kept
+in the player's data), so `/map` never piles up map files; while it is held mc-brand re-centres it and draws the
+old picture shifted until vanilla has redrawn the terrain (vanilla only draws while a map is held, 128 blocks
+around the player). The client-mod detection reads the channels the client registers (`smallworld:*` = the
+Smallworld mod; `xaerominimap:main` / `xaeroworldmap:main`, or any `xaero*` namespace, = Xaero's maps).
 
 **The HUD** (v1.0.1). Players choose where it is; `branding.hud.default_mode` (`top`, `side` or `off`; default
 `top`) is what everyone gets until they choose (a config from before v1.0.1 with `default_on: true` means `side`).
@@ -511,7 +568,7 @@ migration, `mcctl schema-migrate`).
 as `/mc-brand:<name>`; if another plugin already has the name, only the prefixed form and `/drink` work and the
 server log says so). `branding.drink.texture: art/mug.png` replaces the product's neutral item art with a 16x16 PNG
 (at most 8 KB); `branding.resource_pack.description` is the pack's description in the client's resource pack
-list. `mcctl render` checks the PNGs' sizes; run `python -m mcctl apply -C $C` after changing the pack's art.
+list. `mcctl render` checks the PNGs' sizes; run `mcctl apply -C $C` after changing the pack's art.
 
 **The drink** (`branding.drink.enabled: true`): every player who never had one gets it when they join
 (v1.0.1: also players from before the drink existed; a full inventory just means next time). `/drink` (or its own
@@ -529,7 +586,7 @@ from your config repo's PNGs, byte for byte (`branding.drink.texture`, `branding
 `branding.icon` as its pack.png), or the product's neutral art (`plugin/mc-brand/art/`, the default icon) for
 any you don't set; the same art always gives the same file and sha1, so players are only asked again after the
 art or the description changes. Your watchdog Worker hosts it at `https://hb.<hostname>.<zone>/pack/<sha1>.zip`
-(`mcctl render` stages it with the Worker's files; Terraform uploads them), so run `python -m mcctl apply -C $C`
+(`mcctl render` stages it with the Worker's files; Terraform uploads them), so run `mcctl apply -C $C`
 after turning it on or changing its art; until then the deploy warns and players see the potion.
 
 **Icon and art**: `docs/images/brand-server-icon.png` and `docs/images/brand-drink.png` are enlarged previews of the
@@ -543,20 +600,24 @@ To use your own icon, commit a 64x64 PNG to the config repo and set `branding.ic
 | Task | How |
 |---|---|
 | Change a setting | Edit the config repo's `server.yml`, push. Live in < 5 min with an announced restart if anything changed. Product behaviour (`server-config/*.j2`, roles) changes with a product release and a new pin |
-| Status | `python -m mcctl status -C $C` (`--json`): server state, players, TPS/MSPT, last backup, last deploy run, drift (disabled plugins, open `panel/*` PRs) |
-| Deploy from the laptop | `python -m mcctl deploy -C $C` (`--check` = dry run with diff). Runs the pinned product; same playbook and secrets as CI, read from `terraform output -json` |
-| Health of the setup | `python -m mcctl doctor -C $C`: tools, `.env`, tokens and their expiry (updates `expiry.yml`: commit it), domain expiry, DNS vs `host.*`, tailnet, watchdog freshness |
+| Status | `mcctl status -C $C` (`--json`): server state, players, TPS/MSPT, last backup, last deploy run, drift (disabled plugins, open `panel/*` PRs) |
+| Deploy from the laptop | `mcctl deploy -C $C` (`--check` = dry run with diff). Runs the pinned product; same playbook and secrets as CI, read from `terraform output -json` |
+| Health of the setup | `mcctl doctor -C $C`: tools, `.env`, tokens and their expiry (updates `expiry.yml`: commit it), domain expiry, DNS vs `host.*`, tailnet, watchdog freshness |
 | Watchdog | `curl https://hb.<hostname>.<zone>/status`: last cron run, health/backup heartbeat states, IPv4/IPv6 probe results (no addresses) |
 | Planned downtime | on the box: `sudo mc-run /etc/minecraft/notify.env /opt/minecraft/bin/notify.py maintenance MINUTES REASON` (0 ends it): self-heal and the watchdog stand down. Deploy restarts do this themselves |
-| Console command | `python -m mcctl rcon -C $C list` (any console command), or `python -m mcctl ssh -C $C` then `mc list`, `mc whitelist add <name>`, `mc spark tps` |
-| Logs | `python -m mcctl logs -C $C [unit] [-f] [-n N]` (default unit `minecraft`), or on the box `journalctl -u minecraft -f`, `-u mc-backup`, `-u mc-health` |
-| Backup now | `python -m mcctl backup now -C $C`, or `sudo systemctl start mc-backup` on the box (works with the server stopped too) |
-| List snapshots | `python -m mcctl backup list -C $C [--latest N]`, or `sudo mc-restic restic snapshots` |
+| Console command | `mcctl console -C $C` (v1.3: a prompt, each line sent over RCON; `exit` or Ctrl-D leaves) or `mcctl console -C $C list` / `mcctl rcon -C $C list` (one command), or `mcctl ssh -C $C` then `mc list`, `mc whitelist add <name>`, `mc spark tps` |
+| Restart (countdown) | `mcctl restart -C $C [--countdown 0\|10\|60\|300] [--backup] [--wait]` (v1.3): the panel's restart over Tailscale SSH: the in-game countdown (default 60 s; skipped when nobody is online unless `--wait`), an optional backup first, then the restart by the ops user, waiting until RCON answers. Ctrl-C during the countdown cancels it. Refused while admin-stopped (use `mcctl start`) or while another panel/mcctl action runs |
+| Logs | `mcctl logs -C $C [unit] [-f] [-n N]` (default unit `minecraft`), or on the box `journalctl -u minecraft -f`, `-u mc-backup`, `-u mc-health` |
+| Backup now | `mcctl backup now -C $C`, or `sudo systemctl start mc-backup` on the box (works with the server stopped too) |
+| List snapshots | `mcctl backup list -C $C [--latest N]`, or `sudo mc-restic restic snapshots` |
 | **Restore test** | `sudo mc-restic /opt/minecraft/bin/restore.py --verify-into /var/tmp/restore-test`: file count, a sample of checksums, and a usable world (level.dat + region files). Weekly on the server (v1.2: `mc-backup-check.timer`, Mondays 09:41 UTC, as `mcops`; `scripts/backup_check.py`): `restic check` on 5% of the data, room for the restore, then the same restore with `--max-age-hours` = two backup periods. Run it now: `sudo systemctl start mc-backup-check`, log: `sudo journalctl -u mc-backup-check`. The workflow's `backup-check` task (manual dispatch) runs the same checks from an Actions runner |
-| Stop / start on purpose | `python -m mcctl stop -C $C [--reason TEXT]` / `mcctl start`, or on the box `sudo /opt/minecraft/bin/admin.py stop "reason"` / `start` (`status` shows the marker). Stop writes `/var/lib/minecraft/admin-stopped` first, then stops gracefully: self-heal stands down, the watchdog doesn't alert on the probes (it learns the marker from the health heartbeat; a dead host still alerts), and deploys apply config but leave the server stopped (with a warning). Never `systemctl stop minecraft` alone: self-heal would start it again |
-| Players | `python -m mcctl players -C $C list \| add NAME \| remove NAME \| op NAME [--level N] \| deop NAME` (P12): edits `players.yml` in its canonical form (UUID from Mojang, or `--uuid`), validates, commits and pushes (the push deploys; `--no-push` only commits). The panel's whitelist button does the same through a PR |
-| Restore (CLI) | `python -m mcctl restore -C $C --list` (marks the last Minecraft upgrade's pre-upgrade snapshot); `--to /var/tmp/DIR [--snapshot ID]` (`/var/tmp` or `/tmp` only: restic runs sandboxed as mcops) restores into a scratch dir on the server and verifies it; `--live ID` runs the panel's restore (`mc-restore@ID`: maintenance window, **safety snapshot**, stop, fetch as mcops, apply as minecraft, start) after a typed `restore <first 8 hex>` (P12) |
-| Rotate a secret | `python -m mcctl secrets rotate -C $C rcon\|heartbeat\|agent-token\|command-hmac\|r2\|restic-key [--dry-run]` (P12): `apply -replace` (typed) then a deploy; restic-key: the deploy itself adds the new password as a key before writing it (whichever deploy comes first after the apply, CI's included; the password on stdin), then mcctl removes the old key, which the bucket lock refuses (`keys/` is locked forever): the old password then stays valid |
+| Stop / start on purpose | `mcctl stop -C $C [--reason TEXT]` / `mcctl start`, or on the box `sudo /opt/minecraft/bin/admin.py stop "reason"` / `start` (`status` shows the marker). Stop writes `/var/lib/minecraft/admin-stopped` first, then stops gracefully: self-heal stands down, the watchdog doesn't alert on the probes (it learns the marker from the health heartbeat; a dead host still alerts), and deploys apply config but leave the server stopped (with a warning). Never `systemctl stop minecraft` alone: self-heal would start it again |
+| Players | `mcctl players -C $C list \| add NAME \| remove NAME \| op NAME [--level N] \| deop NAME` (P12): edits `players.yml` in its canonical form (UUID from Mojang, or `--uuid`), validates, and (v1.3) opens a pull request, merges it when green (your merge) and follows the deploy (`--push`: commit and push to main; `--no-push`: only commit). The panel's whitelist button does the same through a PR |
+| Kick, ban, pardon | `mcctl players -C $C kick\|ban\|pardon NAME [--reason TEXT]` (v1.3): live only, over RCON through the panel's moderation action (same checks, audited as `mcctl:<you>`); bans live in the server's `banned-players.json`, not in `players.yml` |
+| Worlds (CLI) | `mcctl worlds -C $C list` (active world, archives, library, pending change); `create NAME [--type T] [--preset P] [--seed N] [--no-pregen] [--countdown S]`, `switch NAME [--countdown S]`, `delete NAME` (v1.3): the panel's world library over Tailscale SSH, with its typed confirmations (`create NAME`, `switch to NAME`, `delete NAME`; type it when asked, or `--confirm TEXT` in a script). Same rules as the [World library](#world-library): the active world is archived first, no newer-Minecraft archives, never delete the active world. The change goes to `server.yml` through mc-agent's pull request |
+| Plugins (CLI) | `mcctl plugins -C $C list`; `enable\|disable NAME [--countdown S]` (v1.3): the panel's plugin switch (only plugins in the deployed lock; typed `enable NAME` / `disable NAME`), then a countdown restart |
+| Restore (CLI) | `mcctl restore -C $C --list` (marks the last Minecraft upgrade's pre-upgrade snapshot); `--to /var/tmp/DIR [--snapshot ID]` (`/var/tmp` or `/tmp` only: restic runs sandboxed as mcops) restores into a scratch dir on the server and verifies it; `--live ID` runs the panel's restore (`mc-restore@ID`: maintenance window, **safety snapshot**, stop, fetch as mcops, apply as minecraft, start) after a typed `restore <first 8 hex>` (P12) |
+| Rotate a secret | `mcctl secrets rotate -C $C rcon\|heartbeat\|agent-token\|command-hmac\|r2\|restic-key [--dry-run]` (P12): `apply -replace` (typed) then a deploy; restic-key: the deploy itself adds the new password as a key before writing it (whichever deploy comes first after the apply, CI's included; the password on stdin), then mcctl removes the old key, which the bucket lock refuses (`keys/` is locked forever): the old password then stays valid |
 | Restore the live world | `sudo /opt/minecraft/bin/admin.py stop "restore"`, move the world folders aside, `sudo mc-restic /opt/minecraft/bin/restore.py --snapshot <id>`, then `sudo /opt/minecraft/bin/admin.py start`. `restore.py --snapshot` refuses unless the server is stopped **and** admin-stopped (or a maintenance window is open), and holds `/var/lib/minecraft/restore.lock` while it runs: self-heal never starts the server mid-restore and backups skip. It fetches the snapshot as `mcops` into `/var/lib/mc-restore/staging`, then `mc-restore-apply.service` copies it in as `minecraft` (needs free space for a second copy of the world). Top-level entries in the snapshot are replaced; paths backups exclude (plugin jars, `server.jar`, `logs/`, caches) are kept. `/opt/minecraft/server/.restored-from` then names the snapshot |
 | Where did this world come from? | `cat /opt/minecraft/server/.restored-from`: `{"restored_at", "short_id", "snapshot_id", "snapshot_time", "source_path"}` (absent = generated on this box) |
 | Reboot for updates | Automatic (P11): `mc-reboot-gate.timer` reboots inside `automation.reboot_window` (04:30-06:00 local) when `/var/run/reboot-required` exists, nobody is online, no backup/restore runs and the server isn't admin-stopped; Discord before and after, a watchdog maintenance window. **Never forced**: still pending after 3 days, Discord says so daily; then `sudo systemctl reboot` by hand when convenient. `sudo -u mcops /opt/minecraft/bin/reboot_gate.py --status` shows what it would do (or `journalctl -u mc-reboot-gate`) |
@@ -566,7 +627,7 @@ To use your own icon, commit a 64x64 PNG to the config repo and set `branding.ic
 
 **Tailscale SSH check.** Your SSH to the server is `check` (12 h): the first session after 12 h prints a
 `login.tailscale.com` URL; open it and log in. `mcctl deploy` and `mcctl bootstrap` open such a session visibly
-first; before other commands (`status`, `logs`, `migrate`) run `python -m mcctl ssh -C $C` once if they seem to hang.
+first; before other commands (`status`, `logs`, `migrate`) run `mcctl ssh -C $C` once if they seem to hang.
 
 **Break-glass** (Tailscale broken): root's password is locked and its SSH key removed (security review M1), so
 the console login is closed. netcup SCP → your server → Media → **Rescue system** (shows a one-time root
@@ -581,7 +642,7 @@ repository secrets before it creates the environment ones):
 1. Re-create (or edit) the GitHub token in `.env` (`GITHUB_TOKEN`) with **Environments: Read and write** and **Actions: Read-only** added (Actions read is what lets Terraform read an environment back).
 2. In the config repo set `github.environments: true` in `server.yml` and move the product pin to this release
    (`mcctl upgrade`), but don't push yet.
-3. `python -m mcctl apply -C $C`: mcctl sees the repository-level secrets and applies in two steps, each with
+3. `mcctl apply -C $C`: mcctl sees the repository-level secrets and applies in two steps, each with
    its typed confirmation: (a) `--target github_actions_environment_secret.this`: environments `deploy` and
    `update`, their `main` branch policies and the secrets; (b) the rest: the repository-level secrets are
    destroyed (all but `PRODUCT_READ_TOKEN`), `tailscale_federated_identity.ci` gets the subject
@@ -589,7 +650,7 @@ repository secrets before it creates the environment ones):
 4. Push right after (b): the deploy job now runs in `deploy`. Between (b) and the push, the old workflow can't
    join the tailnet; a deploy that starts with a secret missing stops at "Check secrets are present" before it
    changes anything.
-5. `python -m mcctl doctor -C $C`: `ci oidc subject` and `github environments` are ok.
+5. `mcctl doctor -C $C`: `ci oidc subject` and `github environments` are ok.
 
 **Owner checklist** (once, then yearly):
 
@@ -644,6 +705,7 @@ ever appear in an alert (a CI alert carries the run's link only). Every alert's 
 | ℹ️ The server restarts in N s for a config deploy | mc_rcon (deploy) | a deploy restart while players are online (they get an in-game countdown) | - |
 | ⚠️ A deploy kept whitelisted players that aren't in players.yml | players role (deploy) | live players never in `players.yml` were kept, not removed ([Players not in Git](#players-not-in-git)); once per newly kept player | `mcctl players add NAME`, or remove them in the panel |
 | ⚠️ Whitelist changes made in the panel were dropped | mc_panel (agent) | panel whitelist changes didn't reach Git within 24 h; the next deploy undoes them | re-do in the panel or edit `players.yml`; `mcctl doctor` |
+| ⚠️ The panel can't open pull requests on the config repo / ✅ can again (v1.3) | mc_panel (agent) | the Panel → Git self-test failed twice in a row (the step and why) / passed again | `mcctl doctor`; the panel's GitHub App (installed, Contents + Pull requests); a stale Worker: `mcctl render` + `mcctl apply`; then the Health tab's self-test |
 | ℹ️ A panel whitelist change was turned down | mc_panel (agent) | its pull request was closed unmerged; reverted live (or at the next deploy) | nothing if intended |
 | 🔴 Players can't reach the server over IPv4/IPv6 / ✅ again | Worker | 2 failed status pings; says whether the host still reports in | DNS/firewall (`mcctl doctor`) or the host's console |
 | 🔴 The backup failed / hasn't run / ⚠️ is taking much longer / ✅ works again | Worker | the backup heartbeat failed, is late (period + 30 min) or runs longer than 60 min | `mcctl backup now`, `journalctl -u mc-backup -n 100` |

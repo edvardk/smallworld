@@ -29,6 +29,13 @@ plugin, restore a backup, search the server's journal, and see the watchdog's vi
 
 ![The players tab: online players, rejected logins, the whitelist](images/panel-after-players-desktop.png)
 
+**Versions and the Panel → Git self-test** (v1.3): the header names the Smallworld version and the server
+build ("Smallworld v1.3.0 · Purpur 26.3"); the Health tab compares what the server runs, what the Worker runs and
+the config repo's pin, and says how to fix a mismatch ("run `mcctl render` + `mcctl apply`", "deploy"). A daily
+self-test proves the panel can still open pull requests on the config repo, without opening one, and says which
+step failed (Discord after two failures); run it from the Health tab any time. Whitelist names are checked with
+Mojang from the server itself, so Mojang's refusals of Cloudflare's addresses no longer get in the way.
+
 Destructive actions (restore, world switch, plugin changes) are confirmed in a separate window, signed in again
 with a one-time PIN, by typing a phrase. [SECURITY: Panel actions](../SECURITY.md#panel-actions-p10-what-the-panel-can-change).
 
@@ -100,6 +107,41 @@ More: [operations: Branding](operations.md#branding).
 With the client pack, Xaero's minimap and world map work with fair-play settings (no cave map, no entity radar)
 and show your friends at any distance in the same dimension. Without mods, the vanilla Locator Bar is on, and
 half the players asleep skip the night. More: [player-guide.md](player-guide.md).
+
+## Finding friends without mods: the compass, /map and /help
+
+Every vanilla client gets a **friend compass** (v1.3), a bar at the top of the screen that turns with the player:
+
+```
+   W   ·    ·   NW   ·  ▼Alex 120m↑  ·   NE   ·     Sam | Kim (Nether)
+```
+
+Cardinal points and every online player's name at their bearing; the player faced is in the middle with the
+distance (rounded) and an arrow when they are well above or below; players in other dimensions come after the
+bar, without a distance. `/compass on|off` (per player, remembered), `/compass hide` (stay off everyone else's
+compass and map), `/compass auto` (back to the default below).
+
+**`/map`** gives a personal **pocket map**: it re-centres on the player about once a second while held (in the off
+hand it's a minimap), shows every other player as a named arrow (a dot at the edge beyond the map) and fills in
+the terrain as the player explores, like any vanilla map. `/map zoom` cycles the scale. One per player, free to
+re-get, and it can't be copied, framed, stored or dropped (a dropped one just disappears).
+
+**`/help`** (also `/commands`) lists the commands this player can use, built from what's switched on, each one a
+click away; Minecraft's own list stays at `/minecraft:help`. A hologram with `help: true` shows the same list,
+for example above the world spawn (`at: spawn`).
+
+**The better client mods come first.** mc-brand looks at the plugin channels each client registers (and checks
+again when one registers late):
+
+| Client | Compass | `/map` |
+|---|---|---|
+| Smallworld client mod + Xaero's maps (the client pack) | off: friends are on Xaero's minimap | works, not suggested |
+| Xaero's maps, no Smallworld mod | on | works (friend arrows on top of Xaero's) |
+| No mods | on | works, and a one-line tip at join suggests it |
+
+`/compass on|off` and `/map` always override this; the vanilla Locator Bar stays on for everyone. Settings:
+`branding.compass` (on by default, `max_range`, `distance_rounding`, `height_threshold`, `default_on`) and
+`branding.pocket_map.enabled`. More: [operations: Branding](operations.md#branding).
 
 ## Graves
 

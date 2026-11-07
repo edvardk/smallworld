@@ -32,13 +32,20 @@ import org.bukkit.persistence.PersistentDataType;
  *   <li>The optional live health line ("Server: Smooth", the HUD's smoothed word) and {players}/{tps} are
  *       refreshed by the HUD task; setText runs only when the text actually changed (one Component compare per
  *       hologram per run otherwise).
+ *   <li>v1.3: {@code help: true} appends /help's list for everyone ({@link Help#hologram}: the same source as
+ *       /help); {@code at: spawn} places the hologram {@link #ABOVE_SPAWN} blocks above the world spawn of its
+ *       dimension (World.getSpawnLocation, read whenever it spawns; the HUD task moves it if the spawn moved).
+ *       The HUD task also spawns any hologram whose chunk is loaded but whose display is missing (not only
+ *       EntitiesLoadEvent), so a missed event or a moved spawn heals within one run.
  * </ul>
  */
 final class Holograms {
     static final int MAX = 10;
     static final int MAX_LINES = 8;
+    static final double ABOVE_SPAWN = 3.0; // above a player's head at the spawn point
 
-    record Spec(String world, double x, double y, double z, List<String> lines, boolean health) {
+    record Spec(String world, double x, double y, double z, List<String> lines, boolean health, boolean spawn,
+            boolean help) {
         boolean glyph() {
             return lines.stream().anyMatch(l -> l.contains("{glyph}"));
         }
@@ -57,13 +64,15 @@ final class Holograms {
     private final NamespacedKey tag;
     private final Msg.Smoother smoother = new Msg.Smoother();
     private final List<Live> live = new ArrayList<>();
+    private final List<Component> helpLines;
     long spawned;
     long swept;
     long updates;
 
-    Holograms(BrandPlugin plugin, Settings settings) {
+    Holograms(BrandPlugin plugin, Settings settings, List<Component> helpLines) {
         this.plugin = plugin;
         this.s = settings;
+        this.helpLines = helpLines;
         this.tag = new NamespacedKey(plugin, "hologram");
         for (int i = 0; i < settings.holograms().size(); i++) {
             live.add(new Live());
@@ -92,6 +101,16 @@ final class Holograms {
                 out.append(Component.newline());
             }
             out.append(Component.text(Msg.SERVER + ": ", s.subtle())).append(Component.text(health.word, health.color));
+            first = false;
+        }
+        if (spec.help()) {
+            for (Component line : helpLines) {
+                if (!first) {
+                    out.append(Component.newline());
+                }
+                first = false;
+                out.append(line);
+            }
         }
         return out.build();
     }
@@ -100,6 +119,15 @@ final class Holograms {
 
     static String worldKey(World w) {
         return w.getKey().toString();
+    }
+
+    /** Where hologram {@code spec} floats in {@code w}: its block centre, or above the world spawn (v1.3). */
+    static Location where(Spec spec, World w) {
+        if (!spec.spawn()) {
+            return new Location(w, spec.x(), spec.y(), spec.z());
+        }
+        Location sp = w.getSpawnLocation();
+        return new Location(w, sp.getBlockX() + 0.5, sp.getBlockY() + ABOVE_SPAWN, sp.getBlockZ() + 0.5);
     }
 
     private Integer index(Entity e) {
@@ -148,8 +176,11 @@ final class Holograms {
         String key = worldKey(w);
         for (int i = 0; i < live.size(); i++) {
             Spec spec = s.holograms().get(i);
-            if (spec.world().equals(key) && ((int) Math.floor(spec.x())) >> 4 == chunkX
-                    && ((int) Math.floor(spec.z())) >> 4 == chunkZ) {
+            if (!spec.world().equals(key)) {
+                continue;
+            }
+            Location at = where(spec, w);
+            if (at.getBlockX() >> 4 == chunkX && at.getBlockZ() >> 4 == chunkZ) {
                 ensure(i);
             }
         }
@@ -167,11 +198,19 @@ final class Holograms {
     private void ensure(int i) {
         Spec spec = s.holograms().get(i);
         Live l = live.get(i);
-        World w = Bukkit.getWorld(NamespacedKey.fromString(spec.world()));
-        if (w == null || !w.isChunkLoaded(((int) Math.floor(spec.x())) >> 4, ((int) Math.floor(spec.z())) >> 4)) {
+        boolean missing = l.plain == null || !l.plain.isValid()
+                || spec.glyph() && (l.glyph == null || !l.glyph.isValid());
+        if (!missing) {
             return;
         }
-        Location at = new Location(w, spec.x(), spec.y(), spec.z());
+        World w = Bukkit.getWorld(NamespacedKey.fromString(spec.world()));
+        if (w == null) {
+            return;
+        }
+        Location at = where(spec, w);
+        if (!w.isChunkLoaded(at.getBlockX() >> 4, at.getBlockZ() >> 4)) {
+            return;
+        }
         Msg.Speed speed = Msg.Speed.of(Bukkit.getServer());
         int players = Bukkit.getOnlinePlayers().size();
         if (l.plain == null || !l.plain.isValid()) {
@@ -225,6 +264,10 @@ final class Holograms {
         for (int i = 0; i < live.size(); i++) {
             Spec spec = s.holograms().get(i);
             Live l = live.get(i);
+            ensure(i); // v1.3: also here, not only on EntitiesLoadEvent (a chunk loaded another way, a spawn moved)
+            if (spec.spawn()) {
+                follow(spec, l);
+            }
             if (l.plain != null && l.plain.isValid()) {
                 Component t = text(spec, players, speed.tps(), health, false);
                 if (!t.equals(l.plainText)) {
@@ -244,14 +287,60 @@ final class Holograms {
         }
     }
 
+    /** v1.3: an {@code at: spawn} hologram follows a moved world spawn (/setworldspawn). */
+    private void follow(Spec spec, Live l) {
+        for (TextDisplay d : new TextDisplay[] {l.plain, l.glyph}) {
+            if (d != null && d.isValid()) {
+                Location at = where(spec, d.getWorld());
+                if (d.getLocation().distanceSquared(at) > 0.25) {
+                    d.teleport(at);
+                }
+            }
+        }
+    }
+
+    /**
+     * Where each help hologram is (block x y z, or "-" without its world), for tests/e2e/brand_check.py: it
+     * force-loads exactly that chunk. An {@code at: spawn} one uses Bukkit's World.getSpawnLocation (Paper's
+     * per-world respawn data), which need not be where the console's {@code ~ ~} points (vanilla's server-wide
+     * respawn data: RconConsoleSource), checked in the pinned jar.
+     */
+    String helpAt() {
+        List<String> out = new ArrayList<>();
+        for (Spec spec : s.holograms()) {
+            if (!spec.help()) {
+                continue;
+            }
+            World w = Bukkit.getWorld(NamespacedKey.fromString(spec.world()));
+            Location at = w == null ? null : where(spec, w);
+            out.add(at == null ? "-" : at.getBlockX() + " " + at.getBlockY() + " " + at.getBlockZ());
+        }
+        return String.join(", ", out);
+    }
+
+    /** Live displays of help holograms (tests/e2e/brand_check.py, with the spawn chunk force-loaded). */
+    int helpLive() {
+        int n = 0;
+        for (int i = 0; i < live.size(); i++) {
+            Live l = live.get(i);
+            if (s.holograms().get(i).help() && l.plain != null && l.plain.isValid()) {
+                n++;
+            }
+        }
+        return n;
+    }
+
     /** For /mcbrand selftest: the text rules on a fixed spec, and the counters. */
     String selftest() {
         Spec spec = new Spec("minecraft:overworld", 0.5, 70, 0.5, List.of("Welcome to {server} {glyph}",
-                "{players} online at {tps} TPS"), true);
+                "{players} online at {tps} TPS"), true, false, false);
+        Spec help = new Spec("minecraft:overworld", 0, 0, 0, List.of("Hi"), false, true, true);
+        String helpText = Texts.flat(text(help, 3, 20.0, Msg.Health.SMOOTH, false));
         String plain = Texts.flat(text(spec, 3, 19.96, Msg.Health.SMOOTH, false));
         String withGlyph = Texts.flat(text(spec, 3, 19.96, Msg.Health.SMOOTH, true));
         return "holograms " + plain.replace("\n", " | ") + ", glyph " + withGlyph.contains(Texts.GLYPH_CHAR)
                 + "/" + !plain.contains(Texts.GLYPH_CHAR) + ", configured " + live.size() + " spawned "
-                + spawned + " swept " + swept + " updates " + updates;
+                + spawned + " swept " + swept + " updates " + updates + ", help hologram "
+                + helpText.replace("\n", " | ") + ", help live " + helpLive() + ", help at [" + helpAt() + "]";
     }
 }

@@ -3,7 +3,7 @@ name: mc-brand
 version: 1.0.0
 main: io.github.edvardk.mcbrand.BrandPlugin
 api-version: '1.13'
-description: The server's branding - join greeting, rules, Discord link, an optional HUD and the signature drink.
+description: The server's branding - join greeting, rules, Discord link, an optional HUD, the signature drink, the friend compass, the pocket map and /help.
 load: POSTWORLD
 commands:
   rules:
@@ -28,6 +28,18 @@ commands:
     description: Your own view distance (higher only while the server runs smoothly).
     usage: /view [number|reset]
     permission: mcbrand.view
+  compass:
+    description: The friend compass at the top of the screen (hide = keep yourself off others' compasses and maps).
+    usage: /compass [on|off|hide|show|auto]
+    permission: mcbrand.compass
+  map:
+    description: A pocket map that follows you and shows your friends.
+    usage: /map [zoom]
+    permission: mcbrand.map
+  help:
+    description: The commands you can use here (vanilla's list is /minecraft:help).
+    aliases: [commands]
+    permission: mcbrand.help
   mcbrand:
     description: mc-brand status and self-test (operators and the console).
     usage: /mcbrand status|selftest
@@ -44,6 +56,12 @@ permissions:
   mcbrand.modpack:
     default: true
   mcbrand.view:
+    default: true
+  mcbrand.compass:
+    default: true
+  mcbrand.map:
+    default: true
+  mcbrand.help:
     default: true
   mcbrand.admin:
     default: op

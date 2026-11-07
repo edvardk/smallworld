@@ -360,7 +360,15 @@ def test_holograms_schema_validation_and_render() -> None:
     )
     out = render.brand_plugin(cfg)["holograms"]
     assert out == [
-        {"world": "minecraft:the_nether", "x": 10, "y": 70, "z": -5, "lines": holo["lines"], "health": False},
+        {
+            "world": "minecraft:the_nether",
+            "x": 10,
+            "y": 70,
+            "z": -5,
+            "lines": holo["lines"],
+            "health": False,
+            "help": False,
+        },
         {
             "world": "minecraft:overworld",
             "x": 0,
@@ -368,6 +376,7 @@ def test_holograms_schema_validation_and_render() -> None:
             "z": 0,
             "lines": ["Welcome to {server}"],
             "health": False,
+            "help": False,
         },
     ]
     assert render.brand_plugin(schema.load_server(example_server()))["holograms"] == []
@@ -376,7 +385,9 @@ def test_holograms_schema_validation_and_render() -> None:
         ({"x": 0, "y": 64, "z": 0, "lines": []}, "1 to 8 lines"),
         ({"x": 0, "y": 64, "z": 0, "lines": ["a"] * 9}, "1 to 8 lines"),
         ({"x": 0, "y": 400, "z": 0}, "branding.holograms[0].y"),
-        ({"y": 64, "z": 0}, "branding.holograms[0].x"),
+        ({"y": 64, "z": 0}, "branding.holograms[0]: needs x, y and z, or at: spawn"),
+        ({"at": "spawn", "x": 1}, "at: spawn and x/y/z both given"),
+        ({"at": "home"}, "branding.holograms[0].at"),
     ):
         errors = schema_errors(example_server() | {"branding": {"holograms": [bad]}})
         assert any(needle in e for e in errors), (bad, errors)

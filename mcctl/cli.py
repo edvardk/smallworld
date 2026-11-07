@@ -6,12 +6,15 @@
   doctor, metrics                   doctor (+ pinmove, wfsecrets), metrics
   status, rcon, ssh, logs, backup,  remote (over the tailnet)
   stop, start
+  restart, console, worlds,         actions (v1.3: the panel's actions over the tailnet, audited)
+  plugins, players kick|ban|pardon
   init, setup                       init (mock for --mock)
   product-setup, config             productsetup, configedit
   migrate, retire-old               migrate
   upgrade, lock, schema-migrate     upgrade (+ migrations)
   secrets, discord                  rotate, integrations (+ dashlane)
   players, restore                  players, restorecmd
+  publish                           publish (v1.3: preview, validate, PR / main / deploy)
   CI: update-prs, expiry-check,     updates, expirycheck, panelpr, gate, clientpublish
   panel-pr-check, pr-gate, client-publish
 
@@ -33,6 +36,7 @@ from typing import TYPE_CHECKING
 
 from mcctl import (
     __version__,
+    actions,
     configrepo,
     doctor,
     http,
@@ -243,7 +247,7 @@ def _pinned(args: argparse.Namespace, repo: configrepo.ConfigRepo | configrepo.P
         # override naming another checkout than the one running: never re-execute from here.
         print(
             f"mcctl: {product.ENV_OVERRIDE}={override} but this mcctl runs from {schema.PRODUCT_ROOT}: "
-            "refusing to re-execute again. Run mcctl from that checkout (`cd <it> && python -m mcctl ...`) "
+            "refusing to re-execute again. Run mcctl from that checkout (`cd <it> && python3 -m mcctl ...`) "
             f"or unset {product.ENV_OVERRIDE}.",
             file=sys.stderr,
         )
@@ -457,6 +461,51 @@ def cmd_stop(args: argparse.Namespace) -> int:
 
 def cmd_start(args: argparse.Namespace) -> int:
     return _ssh(args, remote.admin_command("start"))
+
+
+def _remote(args: argparse.Namespace) -> actions.Remote:
+    return actions.Remote(_repo(args).server)
+
+
+def cmd_restart(args: argparse.Namespace) -> int:
+    rem = _remote(args)
+    return actions.guarded(rem, lambda: actions.restart(rem, args.countdown, args.backup, args.wait))
+
+
+def cmd_console(args: argparse.Namespace) -> int:
+    rem = _remote(args)
+    return actions.guarded(rem, lambda: actions.console(rem, args.command))
+
+
+def cmd_worlds(args: argparse.Namespace) -> int:
+    rem = _remote(args)
+    if args.action == "list":
+        return actions.guarded(rem, lambda: actions.worlds_list(rem))
+    if args.action == "create":
+        return actions.guarded(
+            rem,
+            lambda: actions.world_create(
+                rem, args.name, seed=args.seed, wtype=args.type, preset=args.preset, pregen=args.pregen,
+                countdown=args.countdown, confirm=args.confirm,
+            ),
+        )  # fmt: skip
+    if args.action == "switch":
+        return actions.guarded(
+            rem, lambda: actions.world_switch(rem, args.name, countdown=args.countdown, confirm=args.confirm)
+        )
+    return actions.guarded(rem, lambda: actions.world_delete(rem, args.name, confirm=args.confirm))
+
+
+def cmd_plugins(args: argparse.Namespace) -> int:
+    rem = _remote(args)
+    if args.action == "list":
+        return actions.guarded(rem, lambda: actions.plugins_list(rem))
+    return actions.guarded(
+        rem,
+        lambda: actions.plugin_toggle(
+            rem, args.name, args.action == "enable", countdown=args.countdown, confirm=args.confirm
+        ),
+    )
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -777,6 +826,9 @@ def cmd_players(args: argparse.Namespace) -> int:
     if args.action != "list" and not args.name:
         print(f"mcctl players {args.action}: give a player NAME", file=sys.stderr)
         return 2
+    if args.action in actions.MODERATION:  # v1.3: live moderation over RCON, never players.yml
+        rem = _remote(args)
+        return actions.guarded(rem, lambda: actions.moderate(rem, args.action, args.name, args.reason))
     return _p12(
         "players",
         lambda: players.change(
@@ -785,7 +837,40 @@ def cmd_players(args: argparse.Namespace) -> int:
             args.name or "",
             uuid=args.uuid,
             level=args.level,
-            push=not args.no_push,
+            route="push" if args.push else "commit" if args.no_push else "pr",
+            follow=not args.no_follow,
+        ),
+    )
+
+
+def _conversation(ctx: init.Ctx) -> None:
+    """Without a terminal on stdin, publish's questions take their defaults (the safe answers: wait for an
+    empty server, no Terraform apply); with one, it asks."""
+    from mcctl import ui as ui_mod
+
+    if not sys.stdin.isatty():
+        ctx.ui = ui_mod.UI(answers={})
+
+
+def cmd_publish(args: argparse.Namespace) -> int:
+    """v1.3: runs in this mcctl (not re-executed from the pin); `apply` and the deploy route run the pinned
+    product's own commands (upgrade.run_in_product)."""
+    from mcctl import publish
+
+    ctx = _ctx(args)
+    _conversation(ctx)
+    tools = publish.Tools(max_wait_minutes=args.max_wait)
+    return _p12(
+        "publish",
+        lambda: publish.run(
+            ctx,
+            route=args.route,
+            dry_run=args.dry_run,
+            revert=args.revert,
+            wait_empty=args.wait_empty,
+            follow=not args.no_follow,
+            message=args.message,
+            tools=tools,
         ),
     )
 
@@ -965,6 +1050,58 @@ def build_parser() -> argparse.ArgumentParser:
     with_config(sp)
     sp.set_defaults(func=cmd_start)
 
+    countdown_help = "seconds of in-game countdown: 0, 10, 60 (default) or 300; skipped when nobody is online"
+    sp = sub.add_parser("restart", help="restart the server like the panel: in-game countdown, then restart")
+    with_config(sp)
+    sp.add_argument("--countdown", type=int, default=actions.DEFAULT_COUNTDOWN, help=countdown_help)
+    sp.add_argument("--backup", action="store_true", help="back up first")
+    sp.add_argument("--wait", action="store_true", help="count down even when nobody is online")
+    sp.set_defaults(func=cmd_restart)
+
+    sp = sub.add_parser("console", help="server console over RCON: a prompt, or one COMMAND (= rcon)")
+    with_config(sp)
+    sp.add_argument("command", nargs=argparse.REMAINDER, help="one command (e.g. list); none: a prompt")
+    sp.set_defaults(func=cmd_console)
+
+    confirm_help = "the typed confirmation (scripts); without it a terminal asks, anything else refuses"
+    sp = sub.add_parser("worlds", help="the world library (like the panel): list, create, switch, delete")
+    wsub = sp.add_subparsers(dest="action", required=True, metavar="ACTION")
+    w = wsub.add_parser("list", help="the active world, archived worlds, the library")
+    with_config(w)
+    w = wsub.add_parser("create", help="a new world (the active one is archived first); typed `create NAME`")
+    with_config(w)
+    w.add_argument("name")
+    w.add_argument("--seed", default="", help="a whole number (default: random)")
+    w.add_argument("--type", default="default", choices=actions.WORLD_TYPES)
+    w.add_argument("--preset", default="survival_smp", choices=actions.WORLD_PRESETS)
+    w.add_argument("--pregen", action=argparse.BooleanOptionalAction, default=None, help="pre-generate")
+    w.add_argument("--countdown", type=int, default=actions.DEFAULT_COUNTDOWN, help=countdown_help)
+    w.add_argument("--confirm", metavar="TEXT", help=confirm_help)
+    w = wsub.add_parser("switch", help="switch to an archived world; typed `switch to NAME`")
+    with_config(w)
+    w.add_argument("name")
+    w.add_argument("--countdown", type=int, default=actions.DEFAULT_COUNTDOWN, help=countdown_help)
+    w.add_argument("--confirm", metavar="TEXT", help=confirm_help)
+    w = wsub.add_parser("delete", help="forget an archived world (never the active one); typed `delete NAME`")
+    with_config(w)
+    w.add_argument("name")
+    w.add_argument("--confirm", metavar="TEXT", help=confirm_help)
+    sp.set_defaults(func=cmd_worlds)
+
+    sp = sub.add_parser("plugins", help="locked plugins: list, enable/disable (countdown restart, typed)")
+    psub = sp.add_subparsers(dest="action", required=True, metavar="ACTION")
+    w = psub.add_parser("list", help="the deployed lock's plugins and whether each is enabled")
+    with_config(w)
+    for verb in ("enable", "disable"):
+        w = psub.add_parser(
+            verb, help=f"{verb} a locked plugin (restart after a countdown); typed `{verb} NAME`"
+        )
+        with_config(w)
+        w.add_argument("name")
+        w.add_argument("--countdown", type=int, default=actions.DEFAULT_COUNTDOWN, help=countdown_help)
+        w.add_argument("--confirm", metavar="TEXT", help=confirm_help)
+    sp.set_defaults(func=cmd_plugins)
+
     for name, text in (
         ("setup", "guided end-to-end setup (= init): resumable, with a checklist of what's done and pending"),
         ("init", "the onboarding wizard: config repo, tokens, cloud, host, first deploy"),
@@ -1098,14 +1235,46 @@ def build_parser() -> argparse.ArgumentParser:
     ds.add_argument("--endpoint-only", action="store_true", help="only set the interactions endpoint")
     sp.set_defaults(func=cmd_discord)
 
-    sp = sub.add_parser("players", help="whitelist/ops in players.yml (canonical), commit, push (deploys)")
+    sp = sub.add_parser(
+        "players",
+        help="whitelist/ops in players.yml as a pull request (--push: to main); kick/ban/pardon: live",
+    )
     with_config(sp)
-    sp.add_argument("action", choices=["list", "add", "remove", "op", "deop"])
+    sp.add_argument("action", choices=["list", "add", "remove", "op", "deop", *actions.MODERATION])
     sp.add_argument("name", nargs="?", help="Minecraft name")
     sp.add_argument("--uuid", help="skip the Mojang lookup")
     sp.add_argument("--level", type=int, default=4, help="op: permission level 1-4 (default 4)")
-    sp.add_argument("--no-push", action="store_true", help="only commit")
+    g = sp.add_mutually_exclusive_group()
+    g.add_argument(
+        "--push", action="store_true", help="commit and push to main (deploys) instead of a pull request"
+    )
+    g.add_argument("--no-push", action="store_true", help="only commit (`mcctl publish` lands it later)")
+    sp.add_argument(
+        "--no-follow", action="store_true", help="open the pull request, then stop (no checks, merge, deploy)"
+    )
+    sp.add_argument("--reason", default="", help="kick/ban: shown to the player (one line, 100 characters)")
     sp.set_defaults(func=cmd_players)
+
+    sp = sub.add_parser(
+        "publish", help="preview a config change (restart? Terraform?), validate, land it: a PR by default"
+    )
+    with_config(sp)
+    sp.add_argument(
+        "--route",
+        choices=["pr", "main", "deploy"],
+        default="pr",
+        help="pr (default): pull request, checks, your merge; main: push to main; deploy: emergency local "
+        "deploy (skips CI)",
+    )
+    sp.add_argument("--dry-run", action="store_true", help="the preview and validation only")
+    sp.add_argument("--revert", action="store_true", help="a PR reverting the last deploy's commits")
+    sp.add_argument(
+        "--wait-empty", action="store_true", help="a restart with players online waits for an empty server"
+    )
+    sp.add_argument("--max-wait", type=int, default=120, metavar="MIN", help="wait at most MIN minutes")
+    sp.add_argument("--no-follow", action="store_true", help="open the PR (or push), then stop")
+    sp.add_argument("-m", "--message", help="the commit message / PR title (default: a summary)")
+    sp.set_defaults(func=cmd_publish)
 
     sp = sub.add_parser("restore", help="snapshots: --list, --to DIR (scratch, verified), --live ID (typed)")
     with_config(sp)
@@ -1120,7 +1289,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 # Commands whose trailing words go to the server, verbatim (`mcctl rcon say --plain` says "--plain").
-_VERBATIM = ("rcon",)
+_VERBATIM = ("rcon", "console")
 
 
 def strip_plain(argv: list[str]) -> tuple[list[str], bool]:
@@ -1143,7 +1312,7 @@ def _command_words(args: argparse.Namespace) -> int:
     return 2 if getattr(args, "action", None) and args.command in _NESTED else 1
 
 
-_NESTED = ("config", "lock", "secrets", "discord")
+_NESTED = ("config", "lock", "secrets", "discord", "worlds", "plugins")
 
 
 def resolve_config_dir(args: argparse.Namespace) -> None:

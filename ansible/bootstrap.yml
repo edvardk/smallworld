@@ -3,7 +3,7 @@
 # runs this playbook with TS_AUTHKEY in its environment, then checks Tailscale SSH and that public 22 is closed.
 # By hand, from this directory (C=<config repo>, credentials from $C/.env loaded into the shell):
 #
-#   R=$C/.mcctl/rendered; export TF_DATA_DIR=$C/.mcctl/terraform   # `python -m mcctl render -C $C` first
+#   R=$C/.mcctl/rendered; export TF_DATA_DIR=$C/.mcctl/terraform   # `mcctl render -C $C` first
 #   terraform -chdir=../terraform init -backend-config=$R/terraform/state.tfbackend
 #   terraform -chdir=../terraform apply -var-file=$R/terraform/terraform.tfvars.json \
 #     -replace=tailscale_tailnet_key.server                                   # fresh 24 h key first

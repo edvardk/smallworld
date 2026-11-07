@@ -7,8 +7,11 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import fcntl
 import http.server
 import json
+import multiprocessing
+import os
 import threading
 import time
 from collections.abc import Iterator
@@ -98,6 +101,7 @@ class FakeGitHub:
         self.prs: dict[int, dict[str, Any]] = {}
         self.calls: list[tuple[str, str, dict[str, Any] | None]] = []
         self.auth: set[str] = set()
+        self.push = True
         fake = self
 
         class H(http.server.BaseHTTPRequestHandler):
@@ -148,6 +152,11 @@ class FakeGitHub:
             }
         if method == "GET" and path.startswith(f"{repo}/pulls/"):
             return 200, self.prs[int(path.rsplit("/", 1)[1])]
+        # v1.3 self-test: the repository (with the token's permissions) and the open pull request list
+        if method == "GET" and path == repo:
+            return 200, {"full_name": "octocat/mc-config", "permissions": {"pull": True, "push": self.push}}
+        if method == "GET" and path.startswith(f"{repo}/pulls?"):
+            return 200, [{"number": n} for n, p in self.prs.items() if p["state"] == "open"][:1]
         return 404, {"message": "Not Found"}
 
     def merge(self, number: int) -> None:
@@ -287,6 +296,177 @@ def test_github_errors_never_carry_the_token(tmp_path, github) -> None:
     pend.record("add", "Felix_2011", UUID_C, "admin@x", 0.0)
     mc_panel.sync_pending(pend, gh, 100.0)
     assert "HTTP 404" in pend.load()["error"] and TOKEN not in (tmp_path / "pending.json").read_text()
+
+
+# --- v1.3: pending.json across processes (mc-agent + `mc_agent.py cli`) -------------------------------------
+
+
+def _uuid(i: int, j: int) -> str:
+    return f"{i:08x}-0000-4000-8000-{j:012x}"
+
+
+class RacingGitHub:
+    """A stand-in for GitHub whose calls run `meanwhile` first: what another process writes while the sync
+    loop is out on the network (and a check that it doesn't hold the lock while it is)."""
+
+    def __init__(self, lock_path: Path, meanwhile: Any) -> None:
+        self.lock_path = lock_path
+        self.meanwhile = meanwhile
+        self.opened: list[list[str]] = []
+        self.states: dict[int, str] = {}
+        self.unlocked: list[bool] = []
+
+    def _network(self) -> None:
+        fd = os.open(self.lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # raises if the sync loop held it here
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            self.unlocked.append(True)
+        finally:
+            os.close(fd)
+        self.meanwhile()
+
+    def open_pr(self, entries: list[dict[str, Any]], now: float) -> dict[str, Any]:
+        self._network()
+        number = len(self.opened) + 1
+        self.opened.append([e["uuid"] for e in entries])
+        self.states[number] = "open"
+        return {"number": number, "url": f"u/{number}", "branch": f"panel/{number}",
+                "changed": [e["uuid"] for e in entries]}  # fmt: skip
+
+    def pr_state(self, number: int) -> str:
+        self._network()
+        return self.states[number]
+
+    def open_world_pr(self, world: dict[str, Any], now: float) -> dict[str, Any]:
+        self._network()
+        return {"number": 7, "url": "u/7", "branch": "panel/world-7"}
+
+
+def test_two_pending_instances_on_one_file_lose_nothing(tmp_path: Path) -> None:
+    """mc-agent's Pending and `mc_agent.py cli`'s, interleaved: each records against the file as it is."""
+    path = tmp_path / "pending.json"
+    agent, cli = mc_panel.Pending(path), mc_panel.Pending(path)
+    agent.record("add", "Felix_2011", UUID_C, "admin@x", 1.0)
+    cli.record("remove", "jonas_r", UUID_B, "mcctl:sam", 2.0)
+    agent.record_world("e2e", [{"name": "e2e"}], "switch", "admin@x", 3.0)
+    cli.record("add", "Em_K", UUID_A, "mcctl:sam", 4.0)
+    data = agent.load()
+    assert [(e["uuid"], e["login"]) for e in data["entries"]] == [
+        (UUID_C, "admin@x"), (UUID_B, "mcctl:sam"), (UUID_A, "mcctl:sam")]  # fmt: skip
+    assert data["world"]["active"] == "e2e" and data["changed"] == 4.0
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert (tmp_path / "pending.json.lock").stat().st_mode & 0o777 == 0o600
+
+
+def test_pending_writes_from_several_processes_at_once_lose_nothing(tmp_path: Path) -> None:
+    """Real processes (fork), each recording its own players as fast as it can: every entry is there."""
+    path = tmp_path / "pending.json"
+    procs, per = 4, 25
+    ctx = multiprocessing.get_context("fork")
+
+    def writer(i: int) -> None:
+        mine = mc_panel.Pending(path)
+        for j in range(per):
+            mine.record("add", f"p{i}_{j}", _uuid(i, j), f"w{i}", float(j))
+
+    workers = [ctx.Process(target=writer, args=(i,)) for i in range(procs)]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join(30)
+    assert [w.exitcode for w in workers] == [0] * procs
+    uuids = {e["uuid"] for e in mc_panel.Pending(path).load()["entries"]}
+    assert uuids == {_uuid(i, j) for i in range(procs) for j in range(per)}
+
+
+def test_pending_writes_wait_for_the_other_processs_lock(tmp_path: Path) -> None:
+    """A record while another process holds pending.json.lock waits for it, then reads what that one wrote."""
+    path = tmp_path / "pending.json"
+    holder = mc_panel.Pending(path)
+    done = threading.Event()
+    with holder.locked():
+        data = holder.load()
+        t = threading.Thread(
+            target=lambda: (
+                mc_panel.Pending(path).record("add", "Em_K", UUID_A, "mcctl:sam", 2.0),
+                done.set(),
+            )
+        )
+        # the other instance is "another process": its own threading lock, only the flock in common
+        t.start()
+        assert not done.wait(0.3)  # blocked on the flock
+        data["entries"].append({"uuid": UUID_C, "name": "Felix_2011", "op": "add", "ts": 1.0, "login": "a",
+                                "pr": None})  # fmt: skip
+        holder.save(data)
+    assert done.wait(5)
+    t.join()
+    assert {e["uuid"] for e in holder.load()["entries"]} == {UUID_A, UUID_C}
+
+
+def test_sync_keeps_what_another_process_recorded_while_it_opened_the_pull_request(tmp_path: Path) -> None:
+    """The sync loop snapshots, opens the PR without the lock, then merges: a player recorded meanwhile stays
+    (its own PR next), one recorded again meanwhile keeps the new change (not marked as in the old PR)."""
+    path = tmp_path / "pending.json"
+    agent, cli = mc_panel.Pending(path), mc_panel.Pending(path)
+    agent.record("add", "Felix_2011", UUID_C, "admin@x", 0.0)
+    agent.record("add", "jonas_r", UUID_B, "admin@x", 0.0)
+
+    def meanwhile() -> None:
+        cli.record("add", "Em_K", UUID_A, "mcctl:sam", 50.0)  # new
+        cli.record("remove", "jonas_r", UUID_B, "mcctl:sam", 50.0)  # superseded while in the PR
+
+    gh = RacingGitHub(agent.lock_path, meanwhile)
+    assert mc_panel.sync_pending(agent, gh, 100.0) is True  # type: ignore[arg-type]
+    assert gh.unlocked == [True] and gh.opened == [[UUID_C, UUID_B]]
+    data = agent.load()
+    by = {e["uuid"]: e for e in data["entries"]}
+    assert set(by) == {UUID_A, UUID_B, UUID_C}
+    assert by[UUID_C]["pr"] == 1
+    assert by[UUID_B] == {"uuid": UUID_B, "name": "jonas_r", "op": "remove", "ts": 50.0, "login": "mcctl:sam",
+                          "pr": None}  # fmt: skip
+    assert by[UUID_A]["pr"] is None and data["pr"]["number"] == 1 and data["changed"] == 50.0
+    # merged: only what was in it leaves; the two newer changes get the next PR
+    gh.meanwhile = lambda: None
+    gh.states[1] = "merged"
+    assert mc_panel.sync_pending(agent, gh, 100.0 + mc_panel.PR_CHECK_S) is True  # type: ignore[arg-type]
+    assert gh.opened[-1] == [UUID_A, UUID_B]
+    assert {e["uuid"]: e["pr"] for e in agent.load()["entries"]} == {UUID_B: 2, UUID_A: 2}
+
+
+def test_sync_keeps_a_record_made_while_it_checked_a_merged_pull_request(tmp_path: Path) -> None:
+    path = tmp_path / "pending.json"
+    agent, cli = mc_panel.Pending(path), mc_panel.Pending(path)
+    agent.record("add", "Felix_2011", UUID_C, "admin@x", 0.0)
+    gh = RacingGitHub(agent.lock_path, lambda: None)
+    mc_panel.sync_pending(agent, gh, 100.0)  # type: ignore[arg-type]
+    gh.states[1] = "merged"
+    gh.meanwhile = lambda: cli.record("remove", "Felix_2011", UUID_C, "mcctl:sam", 150.0)
+    mc_panel.sync_pending(agent, gh, 100.0 + mc_panel.PR_CHECK_S, batch_s=10**6)  # type: ignore[arg-type]
+    data = agent.load()
+    assert data["pr"] is None
+    assert [(e["op"], e["pr"]) for e in data["entries"]] == [("remove", None)]  # not dropped with the merge
+
+
+def test_sync_keeps_a_world_change_made_while_it_opened_the_world_pull_request(tmp_path: Path) -> None:
+    path = tmp_path / "pending.json"
+    agent, cli = mc_panel.Pending(path), mc_panel.Pending(path)
+    agent.record_world("one", [{"name": "one"}], "switch to one", "admin@x", 0.0)
+    gh = RacingGitHub(
+        agent.lock_path,
+        lambda: cli.record_world("two", [{"name": "two"}], "switch to two", "mcctl:sam", 50.0),
+    )
+    mc_panel.sync_pending(agent, gh, 100.0)  # type: ignore[arg-type]
+    w = agent.load()["world"]
+    assert w["active"] == "two" and w["pr"] is None  # the newer state: its own PR once #7 is done
+    assert w["open_pr"]["number"] == 7
+
+
+def test_merge_sync_without_concurrent_changes_is_the_rounds_result() -> None:
+    snap = {"entries": [{"uuid": UUID_A, "op": "add", "pr": None}], "pr": None, "error": "", "changed": 1.0,
+            "expired": [], "world": None}  # fmt: skip
+    done = dict(snap, entries=[{"uuid": UUID_A, "op": "add", "pr": 3}], pr={"number": 3}, error="")
+    assert mc_panel.merge_sync(snap, snap, done) == done
 
 
 def test_github_settings_need_https_except_loopback() -> None:
@@ -1073,3 +1253,114 @@ def test_polkit_allows_the_p10_units_only() -> None:
     apply = (REPO / "ansible/roles/plugins/templates/mc-plugins-apply.service.j2").read_text()
     assert "User=minecraft" in apply and "ReadWritePaths={{ mc_server_dir }}/plugins" in apply
     assert "EnvironmentFile" not in apply
+
+
+# --- v1.3: the Panel -> Git self-test (read-only: token, permissions, repository, main, pulls) -----------------
+
+
+PERMS = {"contents": "write", "pull_requests": "write", "metadata": "read"}
+
+
+def selftest_fetch(reply: Any) -> Any:
+    calls: list[int] = []
+
+    def fetch() -> Any:
+        calls.append(1)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+    fetch.calls = calls  # type: ignore[attr-defined]
+    return fetch
+
+
+def test_selftest_passes_without_creating_anything(github) -> None:
+    gh = gh_for(github)
+    long_token = "ghs_" + "x" * 386  # v1.2.2: 390 characters, as GitHub issues them now
+    fetch = selftest_fetch({"token": long_token, "expires_at": "2099-01-01T00:00:00Z", "permissions": PERMS})
+    r = mc_panel.selftest(fetch, gh, 1000.0)
+    assert r["ok"] is True and r["error"] == "" and r["ts"] == 1_000_000
+    assert [s["step"] for s in r["steps"]] == list(mc_panel.SELFTEST_STEPS)
+    assert all(s["ok"] for s in r["steps"])
+    assert "390 characters" in r["steps"][0]["detail"]
+    assert {m for m, _, _ in github.calls} == {"GET"}, "read-only: no branch, commit or pull request"
+    assert not github.prs and set(github.files) == {"main"}
+    assert github.auth == {f"Bearer {long_token}"}
+    assert long_token not in json.dumps(r)
+    # a second run fetches again: the Worker's answer is checked, not a remembered token
+    mc_panel.selftest(fetch, gh, 1001.0)
+    assert len(fetch.calls) == 2  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    ("reply", "step", "why"),
+    [
+        (OSError("HTTP 502: GitHub App: POST /app/installations/{id}/access_tokens: HTTP 401"),
+         "token", "no GitHub token from the Worker"),
+        ({"token": "ghs_" + "y" * 30 + "!", "expires_at": "2099-01-01T00:00:00Z"}, "token", "unexpected '!'"),
+        ({"error": "no GitHub App for the panel"}, "token", "no token in the reply"),
+        ({"token": "ghs_" + "z" * 36, "permissions": {"contents": "read", "pull_requests": "write"}},
+         "permissions", "the token lacks contents: write"),
+    ],
+)  # fmt: skip
+def test_selftest_names_the_failing_step_and_never_the_token(github, reply: Any, step: str, why: str) -> None:
+    r = mc_panel.selftest(selftest_fetch(reply), gh_for(github), 1000.0)
+    assert r["ok"] is False and r["error"].startswith(f"{step}: ") and why in r["error"]
+    assert r["steps"][-1] == {"step": step, "ok": False, "detail": r["error"].split(": ", 1)[1]}
+    if isinstance(reply, dict) and reply.get("token"):
+        assert reply["token"] not in json.dumps(r)
+    assert not github.calls, "nothing reaches GitHub before the token and its permissions pass"
+
+
+def test_selftest_github_side_failures(github) -> None:
+    gh = gh_for(github)
+    fetch = selftest_fetch({"token": TOKEN, "expires_at": "2099-01-01T00:00:00Z"})
+    github.push = False
+    r = mc_panel.selftest(fetch, gh, 1000.0)
+    assert r["error"] == "repository: octocat/mc-config: the token can't push (permissions.push is false)"
+    assert r["steps"][1] == {"step": "permissions", "ok": True,
+                             "detail": "not reported by this Worker (checked through the repository below)"}  # fmt: skip
+    github.push = True
+    github.files.pop("main")  # players.yml unreadable on main
+    r = mc_panel.selftest(fetch, gh, 1000.0)
+    assert r["error"].startswith("main: ") and TOKEN not in json.dumps(r)
+    other = mc_panel.github_from_env({"CONFIG_REPO": "octocat/gone", "GITHUB_API_URL": github.url}, fetch)
+    r = mc_panel.selftest(fetch, other, 1000.0)
+    assert r["error"] == "repository: GET /repos/octocat/gone: HTTP 404"
+    assert mc_panel.selftest(None, None, 1000.0) | {"ts": 0} == {
+        "ok": False, "ts": 0, "configured": False, "steps": [],
+        "error": "configuration: no config repo for the panel (CONFIG_REPO) or no token source",
+    }  # fmt: skip
+
+
+def test_selftest_state_alerts_after_two_failures_and_once_on_recovery(tmp_path: Path) -> None:
+    st = mc_panel.SelfTestState(tmp_path / "selftest.json")
+    sent: list[str] = []
+    fail = {
+        "ok": False,
+        "ts": 1,
+        "configured": True,
+        "error": "token: no GitHub token from the Worker: x",
+        "steps": [],
+    }
+    st.record(fail, sent.append)
+    assert not sent and st.public()["failures"] == 1  # type: ignore[index]
+    st.record(fail, sent.append)
+    assert len(sent) == 1 and "can't open pull requests" in sent[0] and "at token:" in sent[0]
+    st.record(fail, sent.append)
+    assert len(sent) == 1, "one alert per streak"
+    # survives a restart (the agent's state dir)
+    again = mc_panel.SelfTestState(tmp_path / "selftest.json")
+    again.record({"ok": True, "ts": 2, "configured": True, "error": "", "steps": []}, sent.append)
+    assert len(sent) == 2 and "again" in sent[1]
+    assert again.public() == {"ok": True, "ts": 2, "configured": True, "error": "", "steps": [], "trigger": None,
+                              "failures": 0}  # fmt: skip
+    assert (tmp_path / "selftest.json").stat().st_mode & 0o777 == 0o600
+    # not configured: no streak, no alert
+    again.record(
+        {"ok": False, "ts": 3, "configured": False, "error": "configuration: x", "steps": []}, sent.append
+    )
+    again.record(
+        {"ok": False, "ts": 4, "configured": False, "error": "configuration: x", "steps": []}, sent.append
+    )
+    assert len(sent) == 2

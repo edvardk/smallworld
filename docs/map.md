@@ -35,6 +35,7 @@ All commands are parsed in `mcctl/cli.py` (`build_parser`); the `cmd_*` function
 | `mcctl doctor` | `mcctl/doctor.py`, `mcctl/providers/`, `mcctl/expiry.py`, `mcctl/pinmove.py` | `tests/test_mcctl_doctor.py`, `tests/test_mcctl_providers.py`, `tests/test_pinmove.py` |
 | `mcctl status`, `mcctl rcon`, `mcctl ssh`, `mcctl logs`, `mcctl backup` | `mcctl/remote.py` | `tests/test_mcctl_core.py` |
 | `mcctl stop`, `mcctl start` | `mcctl/remote.py` → `scripts/admin.py` | `tests/test_admin.py` |
+| `mcctl restart`, `mcctl console`, `mcctl worlds`, `mcctl plugins` (v1.3: the panel's actions over the tailnet) | `mcctl/actions.py` → `scripts/mc_agent.py` (`cli_main`: the Executor, audit), `scripts/mc_panel.py` (`Jobs`, `JOB_LOCK_FILE`) | `tests/test_mcctl_actions.py`, `tests/test_agent_cli.py`, `tests/test_home.py` |
 | `mcctl metrics` | `mcctl/metrics.py` | `tests/test_mcctl_metrics.py` |
 | `mcctl init`, `mcctl setup` | `mcctl/init.py` (17 steps, `STEPS`), `mcctl/mock.py`, `mcctl/state.py`, `mcctl/ui.py` | `tests/test_mcctl_init.py`, `tests/test_setup_resume.py`, `tests/test_setup_automation.py`, `tests/test_ui.py`, `tests/e2e/answers.yml` |
 | `mcctl product-setup` | `mcctl/productsetup.py` | `tests/test_setup_automation.py`, **`tests/test_ci_changes.py`** (required checks) |
@@ -42,7 +43,8 @@ All commands are parsed in `mcctl/cli.py` (`build_parser`); the `cmd_*` function
 | `mcctl migrate`, `mcctl retire-old` | `mcctl/migrate.py`, `mcctl/serverops.py` | **`tests/test_mcctl_p12.py`**, `tests/e2e/migrate_check.py` |
 | `mcctl upgrade`, `mcctl lock` (update), `mcctl schema-migrate` | `mcctl/upgrade.py`, `mcctl/migrations.py`, `mcctl/wfsecrets.py` | **`tests/test_mcctl_p12.py`**, `tests/test_wfsecrets.py` |
 | `mcctl secrets` (rotate, dashlane, show-restic) | `mcctl/rotate.py`, `mcctl/integrations.py`, `mcctl/dashlane.py` | **`tests/test_mcctl_p12.py`** (rotate), `tests/test_dashlane.py` |
-| `mcctl players` | `mcctl/players.py`, `mcctl/providers/mojang.py` | **`tests/test_mcctl_p12.py`** |
+| `mcctl players` | `mcctl/players.py`, `mcctl/providers/mojang.py`, `mcctl/publish.py` (v1.3 PR route); `kick`/`ban`/`pardon`: `mcctl/actions.py` | **`tests/test_mcctl_p12.py`**, `tests/test_mcctl_actions.py`, `tests/test_publish.py` |
+| `mcctl publish` (v1.3: preview, PR / main / deploy, revert) | `mcctl/publish.py` (+ `mcctl/render.py`, `mcctl/upgrade.py` for the pinned `apply`/`deploy`) | **`tests/test_publish.py`** |
 | `mcctl restore` | `mcctl/restorecmd.py` → `scripts/restore.py` on the box | **`tests/test_mcctl_p12.py`** |
 | `mcctl discord` (sync) | `mcctl/integrations.py`, `mcctl/providers/discord.py` | `tests/test_discord.py` |
 | `mcctl update-prs` (CI) | `mcctl/updates.py` | `tests/test_updates.py` |
@@ -76,6 +78,7 @@ Docs: [reference: mcctl commands](reference.md#mcctl-commands), [operations: mcc
 | Hardening, firewall, tailnet | `ansible/roles/hardening/`, `ansible/roles/firewall/templates/nftables.conf.j2`, `ansible/roles/base/templates/50-mc-ops.rules.j2`, `ansible/roles/tailscale/`, `terraform/tailscale.tf`, `terraform/tailscale-policy.json.tftpl` | `tests/test_hardening.py`, `tests/test_tailscale_policy.py`, `tests/e2e/hardening_check.py`, `tests/e2e/firewall_check.py`, `tests/e2e/firewall.yml` | [SECURITY.md](../SECURITY.md) | "Hardening", "Privilege separation" |
 | Player-experience telemetry | `plugin/mc-telemetry/`, `scripts/telemetry.py`, `ansible/roles/plugins/templates/mc-telemetry.yml.j2`, `mcctl/metrics.py` | `tests/test_telemetry.py`, `watchdog/test/experience.test.mjs`, `tests/test_mcctl_metrics.py`, `tests/e2e/telemetry_check.py` | [operations: The Experience tab](operations.md#the-experience-tab) | "mc-agent" (budget) |
 | Branding | `plugin/mc-brand/build.yml`, `scripts/brand_art.py`, `mcctl/brandpack.py`, `scripts/build_plugin.py`, `ansible/roles/plugins/templates/mc-brand.yml.j2` | `tests/test_brand.py`, `tests/e2e/brand_check.py` | [operations: Branding](operations.md#branding) | "Pin everything" (plugin hashes) |
+| Wayfinding (v1.3: compass, `/map`, `/help`, client-mod precedence) | `plugin/mc-brand/src/main/java/io/github/edvardk/mcbrand/` (Wayfinding.java: the pure logic; Compass.java, PocketMap.java, Help.java), `plugin/mc-brand/src/test/java/io/github/edvardk/mcbrand/WayfindingFixtures.java` → `plugin/mc-brand/src/test/wayfinding-fixtures.json` (`scripts/build_plugin.py`) | `tests/test_wayfinding.py`, `tests/e2e/brand_check.py` | [features](features.md#finding-friends-without-mods-the-compass-map-and-help), [operations: Branding](operations.md#branding) | "Pin everything" (plugin hashes) |
 | Client modpack (v1.1) | `client/pack.yml`, `scripts/client_pack.py` (writes the config repo's client lock), `scripts/update_lock.py`, `mcctl/clientpack.py` (builds the `.mrpack`), `mcctl/clientpublish.py`, `mcctl/configedit.py` (turning it on), `terraform/client.tf`, `watchdog/panel/client/`, `plugin/mc-brand/src/main/java/io/github/edvardk/mcbrand/Modpack.java` (`/modpack`) | `tests/test_client.py`, `watchdog/test/client.test.mjs` | client-v1.1.md, [operations: The client modpack and /view](operations.md#the-client-modpack-and-view) | – |
 | Smallworld client mod (v1.2) | `client/mod/` (Fabric, client side), `client/mod/build.yml`, `scripts/build_client_mod.py` (reproducible build), `client/mod/WIRE.md` (the `smallworld:*` channels), `plugin/mc-brand/src/main/java/io/github/edvardk/mcbrand/Smallworld.java` | `tests/test_client_mod.py`, `tests/test_social.py` (server side: mc-brand, mc-telemetry, the Worker's FPS diagnosis), ci.yml job `plugin` | client-v1.2.md | "Pin everything" |
 | Docs screenshots | `scripts/screenshots.py` (one entry point: `watchdog/test/ui.smoke.mjs` and `watchdog/test/client-smoke.mjs` for the panel and the client setup page, `scripts/brand_art.py`, `scripts/setup_screenshot.py`) → `docs/images/` | `tests/test_panel.py`, `tests/test_brand.py` | [features.md](features.md) | – |
@@ -97,11 +100,13 @@ Docs: [reference: mcctl commands](reference.md#mcctl-commands), [operations: mcc
 | `mcctl/expiry.py` vs `mcctl/expirycheck.py` | the expiry.yml file vs the weekly CI check that reads it |
 | `scripts/verify_lock_update.py` vs `mcctl/gate.py` | the lock-update rule vs the `server / gate` check that calls it |
 | `scripts/mc_agent.py` vs `scripts/mc_panel.py` | the outbound agent vs the panel actions it executes |
+| `mcctl/actions.py` vs `scripts/mc_agent.py` `cli_main` | mcctl's side of the v1.3 actions (pre-checks, typed confirmations, SSH) vs the server's entry point that runs the agent's Executor for them |
 
 ## Tests in unexpected places
 
 - `tests/test_ci_changes.py`: also `mcctl/productsetup.py`'s required checks.
 - `tests/test_updates.py`: also `mcctl/expirycheck.py` (`mcctl expiry-check`).
 - `tests/test_mcctl_p12.py`: `migrate`, `retire-old`, `upgrade`, `lock update`, `schema-migrate`, `secrets rotate`, `players`, `restore`.
+- `tests/test_agent_cli.py`: `mc_agent.py cli` (mcctl's actions on the box) and the cross-process job lock of `mc_panel.Jobs`.
 - `tests/test_mcctl_core.py`: the tailnet wrappers (`status`, `rcon`, `ssh`, `logs`, `backup`), expiry.yml, `mcctl/state.py`.
 - `tests/test_watchdog.py`: runs the Worker's node tests (`NODE_TEST`, the same command as `.github/workflows/ci.yml`).
