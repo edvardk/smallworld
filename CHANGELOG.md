@@ -8,6 +8,33 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ### Added
 
+- **Update notice:** interactive mcctl commands (and the home screen's new "Update" row) say when a newer
+  Smallworld **minor or major** release than the config repo's pin is out, with the fix (`mcctl upgrade`).
+  Patch releases stay quiet (the weekly update pull request brings them). GitHub's releases/latest, asked
+  anonymously with a 3 s timeout at most once a day (cached in `~/.cache/mcctl/update-notice.json`), silent on
+  any failure, never in CI, without a terminal, with `--plain`/`NO_COLOR`, in a re-executed pinned mcctl or for
+  the CI commands; `MCCTL_NO_UPDATE_NOTICE=1` turns it off (docs/reference.md "The update notice").
+- **Maintenance window:** `server.yml` `maintenance: {window: "HH:MM-HH:MM", timezone: ...}` (optional; the time
+  zone defaults to `host.timezone`; a window may cross midnight; unset = restarts any time, as before). A deploy
+  that needs a Minecraft restart outside the window, with the server running, no longer restarts it: it applies
+  the files (jar, plugins, unit, JRE), stages the merged config overlays in `/var/lib/minecraft/restart-pending/`
+  and Discord says a restart is pending. `mc-restart-window.timer` (as `mcops`, sandboxed; the existing polkit
+  rule) restarts it inside the window once the server is empty (RCON `list`; checked at the window's start and
+  every 15 minutes), or, with players still online or RCON unreachable, in the window's last
+  `maintenance.force_after_minutes_before_end` minutes (default 30, the timer fires then too; `0` = never forced,
+  wait for the next window) with the 60-second in-game countdown; any earlier start (the panel, `mcctl restart`, self-heal, a
+  reboot) applies the staged change through `minecraft.service`'s new `ExecStartPre` (`restart_window.py apply`,
+  as `minecraft`), and a deploy inside the window does the pending restart by the same rule. Forced: `mcctl deploy
+  --force-restart`, the reusable workflow's new optional input `force_restart`, or the config repo template's new
+  dispatch input `force_restart`. A second deploy outside the window changes nothing. `mcctl publish`'s preview
+  says "restart deferred to the maintenance window HH:MM-HH:MM <tz>" and then doesn't ask about players online
+  (docs/operations.md "Maintenance window"). The first deploy with this release restarts Minecraft once (the
+  unit changed).
+
+## [1.3.0] - 2026-11-07
+
+### Added
+
 - `scripts/release.py bump X.Y.Z [--date YYYY-MM-DD]` sets the version in `pyproject.toml`, `mcctl/__init__.py`
   and README and dates the CHANGELOG's Unreleased section (refuses a version that isn't greater, an empty
   Unreleased section, a dirty tree); `scripts/release.py tag [vX.Y.Z] [--remote R] [--push]` creates the annotated
@@ -99,29 +126,6 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   `--revert` opens a pull request reverting the last deploy's commits; `--dry-run` only previews. The home
   screen's Publish items run it.
 - Home screen: Players "Whitelist a player", "Remove from the whitelist", "Make operator", "Remove operator".
-
-- **Update notice:** interactive mcctl commands (and the home screen's new "Update" row) say when a newer
-  Smallworld **minor or major** release than the config repo's pin is out, with the fix (`mcctl upgrade`).
-  Patch releases stay quiet (the weekly update pull request brings them). GitHub's releases/latest, asked
-  anonymously with a 3 s timeout at most once a day (cached in `~/.cache/mcctl/update-notice.json`), silent on
-  any failure, never in CI, without a terminal, with `--plain`/`NO_COLOR`, in a re-executed pinned mcctl or for
-  the CI commands; `MCCTL_NO_UPDATE_NOTICE=1` turns it off (docs/reference.md "The update notice").
-- **Maintenance window:** `server.yml` `maintenance: {window: "HH:MM-HH:MM", timezone: ...}` (optional; the time
-  zone defaults to `host.timezone`; a window may cross midnight; unset = restarts any time, as before). A deploy
-  that needs a Minecraft restart outside the window, with the server running, no longer restarts it: it applies
-  the files (jar, plugins, unit, JRE), stages the merged config overlays in `/var/lib/minecraft/restart-pending/`
-  and Discord says a restart is pending. `mc-restart-window.timer` (as `mcops`, sandboxed; the existing polkit
-  rule) restarts it inside the window once the server is empty (RCON `list`; checked at the window's start and
-  every 15 minutes), or, with players still online or RCON unreachable, in the window's last
-  `maintenance.force_after_minutes_before_end` minutes (default 30, the timer fires then too; `0` = never forced,
-  wait for the next window) with the 60-second in-game countdown; any earlier start (the panel, `mcctl restart`, self-heal, a
-  reboot) applies the staged change through `minecraft.service`'s new `ExecStartPre` (`restart_window.py apply`,
-  as `minecraft`), and a deploy inside the window does the pending restart by the same rule. Forced: `mcctl deploy
-  --force-restart`, the reusable workflow's new optional input `force_restart`, or the config repo template's new
-  dispatch input `force_restart`. A second deploy outside the window changes nothing. `mcctl publish`'s preview
-  says "restart deferred to the maintenance window HH:MM-HH:MM <tz>" and then doesn't ask about players online
-  (docs/operations.md "Maintenance window"). The first deploy with this release restarts Minecraft once (the
-  unit changed).
 
 ### Changed
 
