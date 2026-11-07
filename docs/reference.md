@@ -370,7 +370,8 @@ mcctl secrets rotate -C $C NAME [--dry-run]             # apply -replace (typed)
 mcctl secrets dashlane -C $C [--convert]            # P14: Dashlane items for .env; --convert: values -> dl:// refs
 mcctl secrets show-restic -C $C                   # the restic password, once, to a terminal only
 mcctl discord sync -C $C [--endpoint-only]            # P14: register the slash commands, point them at the Worker
-mcctl players -C $C add|remove|op|deop|list NAME             # players.yml (canonical), commit, push
+mcctl players -C $C add|remove|op|deop|list NAME [--push|--no-push] [--no-follow]  # players.yml: a PR (v1.3)
+mcctl publish -C $C [--route pr|main|deploy] [--dry-run] [--revert] [--wait-empty] [--no-follow]  # v1.3
 mcctl players -C $C kick|ban|pardon NAME [--reason T]        # v1.3: live over RCON, never players.yml
 mcctl restore -C $C --list | --to DIR | --live ID            # live: typed, safety snapshot first
 mcctl schema                          # regenerate ./schema/server.schema.json after editing mcctl/schema.py
@@ -390,6 +391,55 @@ with `host.ipv6` unset it reads `ip -j -6 addr show scope global` over the tailn
 there (no AAAA record). It writes
 `expiry.yml` (names and dates only; commit it) and warns 30 days ahead. `.mcctl/state.json` records
 `apply`, `bootstrap`, `doctor` and every `init` step (`init` resumes from it).
+
+### Publishing a config change (v1.3)
+
+`mcctl publish` (`mcctl/publish.py`) lands what you changed in the config repo, and says first what it will do:
+
+1. **Preview:** the files that differ from `origin/main` (fetched first): uncommitted ones and unpushed commits,
+   the `server.yml` settings and `players.yml` entries they touch. Then the consequences, from rendering both
+   sides (`origin/main` in a temporary `git worktree`, and your working tree) and comparing the rendered Ansible
+   group_vars, Terraform tfvars, state backend and files:
+   - **Ansible roles and overlays**: the roles and `server-config/` overlays whose files name a changed variable
+     (directly, or through a product default derived from it);
+   - **Minecraft restart**: yes when a changed variable is read by a file whose change notifies the minecraft
+     role's `restart minecraft` handler (the config overlays, `minecraft.service.j2`, the mc-brand and
+     mc-telemetry settings) or is one of the locks, the product plugins' on/off switches or the icon. It is an
+     approximation of the deploy's own decision (which compares the live files): it may say yes for a value the
+     server already has, never no for something the product restarts for. "unknown" (the base or the tree
+     doesn't render) counts as yes;
+   - **Terraform**: yes when the tfvars (or the watchdog's rendered files) differ: the pinned product's
+     `mcctl apply` (its plan and your typed confirmation) runs before anything is merged or deployed; if it
+     applies nothing you're asked whether to go on (unattended: no). A changed state backend is refused;
+   - **players online now** (the status script over the tailnet, 20 s; "unknown" when that fails).
+2. **Validate** (as `mcctl validate`).
+3. **Route.** `pr` (the default): a commit (its message summarises the change; `-m` overrides) on
+   `publish/<UTC timestamp>`, pushed, a pull request, its checks shown live (`gh pr checks`, polled every 15 s,
+   at most 45 min). When every check but `server / gate` passed, mcctl offers to merge (`gh pr merge --merge
+   --admin`: the gate fails any change a person publishes with "needs the admin", so the admin's merge is the
+   ruleset bypass, as before), then follows the deploy run of the merge commit (`gh run watch`), says whether
+   the deploy job ran or was skipped, and shows the server's status. Run it again on the `publish/*` branch
+   after a failed check: it pushes to the same pull request. `--route main` commits and pushes to main (the
+   admin), then follows the deploy. `--route deploy` is the emergency: `mcctl deploy` from here, skipping CI and
+   Git (main doesn't have the change until you publish it; the next CI deploy would undo it).
+4. **Restart awareness:** when the deploy restarts Minecraft and players are online (or nobody knows), mcctl
+   asks: deploy now (the deploy's own in-game countdown), wait until the server is empty (checked every minute,
+   at most `--max-wait` minutes, default 120), or cancel. `--wait-empty` answers "wait". Without a terminal
+   on stdin every question takes its default: wait (a wait that times out cancels), merge when green, no
+   Terraform apply. Unattended, mcctl never restarts a server with players on it.
+5. `--revert` opens a pull request (`publish/revert-<timestamp>`) reverting the last deploy: the first-parent
+   commits between the two newest workflow runs on main whose deploy job succeeded (`gh run list`/`gh run
+   view`), newest first, merge commits with `-m 1`. A conflict aborts the revert and leaves main alone.
+6. `--dry-run` previews and validates only; `--no-follow` opens the pull request (or pushes) and stops.
+
+Refused: a detached HEAD, a branch other than `main` or `publish/*`, a config that doesn't validate (after the
+preview), no `gh` for the pull request routes, a state-backend change, and (`--revert`) uncommitted changes.
+
+`mcctl players add|remove|op|deop` goes the same way: the edited `players.yml` alone on `players/<action>-<name>-
+<timestamp>`, a pull request, its checks, the admin's merge when green, the deploy (a whitelist change never
+restarts). `server / gate` is unchanged: it merges whitelist-only changes by itself only from `panel/*` by the
+panel App; a person's whitelist change waits for the admin's merge, which mcctl offers. `--push` keeps the old
+behaviour (commit and push to main), `--no-push` only commits.
 
 ### Server actions over Tailscale SSH (v1.3)
 

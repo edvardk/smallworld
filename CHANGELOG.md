@@ -88,9 +88,23 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   unverified" stays the last resort. SECURITY.md "Panel actions" lists the two new read-only actions.
 - `scripts/build_plugin.py` runs a plugin's fixture class (mc-brand: `WayfindingFixtures`, pure logic on the
   pinned JDK, never in the jar) and compares its output, which `tests/test_wayfinding.py` checks independently.
+- **`mcctl publish`** (v1.3 Part B): previews a config change before it lands: the files that differ from
+  `origin/main`, the `server.yml` settings and `players.yml` entries, and their consequences from rendering both
+  sides (the Ansible roles and server config overlays it touches, whether Minecraft restarts, whether Terraform
+  changes, who is online now), then validates and lands it. By default as a pull request (`publish/<timestamp>`):
+  checks shown live, your merge offered when green, the deploy run followed, then the server's status.
+  `--route main` pushes to main; `--route deploy` is the labelled emergency local deploy that skips CI.
+  Terraform changes run `mcctl apply` (plan, typed confirmation) first; a restart with players online asks
+  deploy now / wait until empty / cancel (`--wait-empty`; without a terminal it waits, and a timeout cancels).
+  `--revert` opens a pull request reverting the last deploy's commits; `--dry-run` only previews. The home
+  screen's Publish items run it.
+- Home screen: Players "Whitelist a player", "Remove from the whitelist", "Make operator", "Remove operator".
 
 ### Changed
 
+- `mcctl players add|remove|op|deop` opens a pull request (`players/*`), merges it when green (the admin's merge;
+  `server / gate` still auto-merges whitelist-only changes only from the panel App) and follows the deploy,
+  instead of pushing to main. `--push` keeps the old behaviour, `--no-push` still only commits.
 - The product's e2e `agent` shard is split in two by its rounds (`agent-a`, `agent-b`: `tests/e2e/agent_check.py
   --rounds a|b`, each on its own box with its own mock Worker and GitHub API), so e2e's slowest shard drops from
   16 to about 11 minutes. Every round prints its wall time; without `--rounds` the script still runs every

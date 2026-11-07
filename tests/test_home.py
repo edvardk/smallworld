@@ -150,7 +150,9 @@ def test_header_and_groups(config_repo: Path) -> None:
         "Metrics",
     ]
     disabled = {c.value: c.disabled for c in choices if getattr(c, "disabled", None)}
-    assert disabled["publish"] == disabled["settings"] == "v1.3, coming"
+    assert disabled["settings"] == "v1.3, coming"
+    for key in ("publish", "publish-preview", "publish-revert", "player-add", "player-op"):
+        assert key not in disabled, key  # Part B: live
     for key in ("console", "restart", "worlds", "world-switch", "kick", "plugins", "restore", "backup-now"):
         assert key not in disabled, key  # phase 2: live
     assert "status" not in disabled and "quit" not in disabled

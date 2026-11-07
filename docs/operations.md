@@ -26,7 +26,10 @@ Contents:
 ## Changing the server
 
 The config repo is the source of truth. Edit `server.yml` (settings) or `players.yml` (whitelist and operators),
-commit and push: CI validates and deploys within minutes. A restart happens only if something changed that needs
+then `mcctl publish -C $C` (v1.3): it shows what the change does (which roles, whether Minecraft restarts,
+whether Terraform changes, who is online), validates, opens a pull request, merges it when the checks pass and
+follows the deploy; `--dry-run` only shows ([reference](reference.md#publishing-a-config-change-v13)). Committing
+and pushing to main yourself still works: CI validates and deploys within minutes. A restart happens only if something changed that needs
 one (jar, plugin, Java, a systemd unit or a managed config value), with a 60/30/10-second countdown in game,
 skipped when nobody is online. `mcctl config set PATH VALUE -C $C` changes one value (schema-checked, comments
 kept, committed), and `mcctl players -C $C add NAME` edits the whitelist. The product's own behaviour changes
@@ -236,7 +239,8 @@ The ones you will use (all take `-C $C`; the complete list is in [reference.md](
 | `mcctl doctor` | checks tools, `.env`, every credential live (writes `expiry.yml`: commit it), the product pin, DNS, the tailnet, the watchdog; `--fix` repairs what it can (file mode, a stale product pin after a typed `yes`) |
 | `mcctl status [--json]` | server state, players, TPS/MSPT, last backup, last deploy run, drift (disabled plugins, open panel PRs) |
 | `mcctl deploy [--check]` | deploy from your computer (the same playbook and secrets as CI; `--check` is a dry run with a diff) |
-| `mcctl players list\|add\|remove\|op\|deop NAME` | edit `players.yml` (UUID from Mojang), commit and push (the push deploys) |
+| `mcctl publish [--route pr\|main\|deploy] [--dry-run] [--revert] [--wait-empty]` | v1.3: preview what your config change does (roles, restart, Terraform, who is online), validate, then a pull request, its checks, your merge and the deploy ([reference](reference.md#publishing-a-config-change-v13)) |
+| `mcctl players list\|add\|remove\|op\|deop NAME` | edit `players.yml` (UUID from Mojang); v1.3: as a pull request you merge when green (`--push`: straight to main) |
 | `mcctl rcon CMD`, `mcctl ssh`, `mcctl logs [unit] [-f]` | a console command, a shell as `deploy`, the journal (over Tailscale SSH) |
 | `mcctl backup now\|list` | a backup now / the snapshots |
 | `mcctl restore --list \| --to /var/tmp/DIR \| --live ID` | list snapshots (the last pre-upgrade one marked), restore into a scratch directory and verify, or restore the live world (typed confirmation, safety snapshot first) |
@@ -608,7 +612,7 @@ To use your own icon, commit a 64x64 PNG to the config repo and set `branding.ic
 | List snapshots | `mcctl backup list -C $C [--latest N]`, or `sudo mc-restic restic snapshots` |
 | **Restore test** | `sudo mc-restic /opt/minecraft/bin/restore.py --verify-into /var/tmp/restore-test`: file count, a sample of checksums, and a usable world (level.dat + region files). Weekly on the server (v1.2: `mc-backup-check.timer`, Mondays 09:41 UTC, as `mcops`; `scripts/backup_check.py`): `restic check` on 5% of the data, room for the restore, then the same restore with `--max-age-hours` = two backup periods. Run it now: `sudo systemctl start mc-backup-check`, log: `sudo journalctl -u mc-backup-check`. The workflow's `backup-check` task (manual dispatch) runs the same checks from an Actions runner |
 | Stop / start on purpose | `mcctl stop -C $C [--reason TEXT]` / `mcctl start`, or on the box `sudo /opt/minecraft/bin/admin.py stop "reason"` / `start` (`status` shows the marker). Stop writes `/var/lib/minecraft/admin-stopped` first, then stops gracefully: self-heal stands down, the watchdog doesn't alert on the probes (it learns the marker from the health heartbeat; a dead host still alerts), and deploys apply config but leave the server stopped (with a warning). Never `systemctl stop minecraft` alone: self-heal would start it again |
-| Players | `mcctl players -C $C list \| add NAME \| remove NAME \| op NAME [--level N] \| deop NAME` (P12): edits `players.yml` in its canonical form (UUID from Mojang, or `--uuid`), validates, commits and pushes (the push deploys; `--no-push` only commits). The panel's whitelist button does the same through a PR |
+| Players | `mcctl players -C $C list \| add NAME \| remove NAME \| op NAME [--level N] \| deop NAME` (P12): edits `players.yml` in its canonical form (UUID from Mojang, or `--uuid`), validates, and (v1.3) opens a pull request, merges it when green (your merge) and follows the deploy (`--push`: commit and push to main; `--no-push`: only commit). The panel's whitelist button does the same through a PR |
 | Kick, ban, pardon | `mcctl players -C $C kick\|ban\|pardon NAME [--reason TEXT]` (v1.3): live only, over RCON through the panel's moderation action (same checks, audited as `mcctl:<you>`); bans live in the server's `banned-players.json`, not in `players.yml` |
 | Worlds (CLI) | `mcctl worlds -C $C list` (active world, archives, library, pending change); `create NAME [--type T] [--preset P] [--seed N] [--no-pregen] [--countdown S]`, `switch NAME [--countdown S]`, `delete NAME` (v1.3): the panel's world library over Tailscale SSH, with its typed confirmations (`create NAME`, `switch to NAME`, `delete NAME`; type it when asked, or `--confirm TEXT` in a script). Same rules as the [World library](#world-library): the active world is archived first, no newer-Minecraft archives, never delete the active world. The change goes to `server.yml` through mc-agent's pull request |
 | Plugins (CLI) | `mcctl plugins -C $C list`; `enable\|disable NAME [--countdown S]` (v1.3): the panel's plugin switch (only plugins in the deployed lock; typed `enable NAME` / `disable NAME`), then a countdown restart |
