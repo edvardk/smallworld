@@ -3,6 +3,9 @@
 # that races the panel's pull request can't undo a change made in the panel. Ops come from Git only. Applied
 # live over RCON when the server runs (`whitelist reload`, op/deop), compared by UUID (and op level), so the
 # server's own rewrites of those files never count as a change.
+# Whitelist guard (v1.3, docs/operations.md "Players not in Git"): a live player is removed only on purpose (a
+# pending panel remove, or a commit took them out of players.yml since the last reconcile); players that were
+# never in Git are kept, shown here and announced on Discord once, unless minecraft.strict_whitelist is on.
 - name: Read the panel's pending whitelist changes
   ansible.builtin.slurp:
     src: "{{ players_pending_file }}"
@@ -20,7 +23,8 @@
   ansible.builtin.copy:
     dest: "{{ players_desired_file }}"
     content: |
-      {{ {'whitelist': mc_players_whitelist, 'ops': mc_players_ops, 'pending': players_pending} | to_nice_json }}
+      {{ {'whitelist': mc_players_whitelist, 'ops': mc_players_ops, 'pending': players_pending,
+          'strict': mc_strict_whitelist | bool} | to_nice_json }}
     owner: root
     group: minecraft
     mode: "0640"
@@ -45,7 +49,23 @@
   register: players_reconcile
   changed_when: players_reconcile.stdout.startswith('CHANGED')
 
-- name: Show what the reconcile changed
+# KEPT: live players that neither Git nor the panel has (never in players.yml): left on the whitelist, not a change.
+- name: Show what the reconcile changed or kept
   ansible.builtin.debug:
-    msg: "{{ players_reconcile.stdout }}"
-  when: players_reconcile is changed  # noqa: no-handler
+    msg: "{{ players_reconcile.stdout_lines | reject('match', '^ALERT-KEPT') | list }}"
+  when: players_reconcile is changed or players_reconcile.stdout_lines | default([]) | select('match', '^KEPT') | list | length > 0  # noqa: no-handler
+
+# ALERT-KEPT only when the reconcile kept someone it didn't keep last time (not every deploy; none in --check).
+- name: Remember whom to announce
+  ansible.builtin.set_fact:
+    players_alert_kept: >-
+      {{ (players_reconcile.stdout_lines | default([]) | select('match', '^ALERT-KEPT') | first | default('ALERT-KEPT: '))[12:]
+         | split }}
+
+# As the ops user with notify.env (mc-run): the Discord webhook never reaches a process running as minecraft.
+- name: Tell Discord which players were kept although players.yml doesn't list them
+  ansible.builtin.command:
+    argv: "{{ ['/usr/local/bin/mc-run', '-' ~ mc_etc_dir ~ '/notify.env', mc_bin_dir ~ '/mc_panel.py', 'alert-kept'] + players_alert_kept }}"
+  when: players_alert_kept | length > 0
+  changed_when: false
+  failed_when: false  # a notification never fails a deploy (the KEPT line above is in the deploy's output)

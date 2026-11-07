@@ -32,6 +32,27 @@ kept, committed), and `mcctl players -C $C add NAME` edits the whitelist. The pr
 only when the pin in `.github/workflows/server.yml` moves (patch releases do that weekly by themselves; see
 [What runs by itself](#what-runs-by-itself)).
 
+### Players not in Git
+
+A deploy sets the whitelist to `players.yml` plus the panel's pending adds, minus its pending removes. Since
+v1.3 it never silently drops someone who is on the live whitelist but was never in `players.yml` (added on the
+console, through Discord, or a panel add whose pull request never merged and expired after 24 h). The rule, per
+live player that Git + pending adds don't have:
+
+- **removed** if the panel has a pending remove for them, or if `players.yml` listed them at the last deploy and
+  doesn't any more (a commit took them out on purpose);
+- **kept** otherwise ("unmanaged"): the deploy's output says `KEPT: <names>`, the panel tags them *not in Git*,
+  and Discord gets one ⚠️ message the first time each one is kept (not on every deploy). Make them permanent
+  with `mcctl players add NAME`, or remove them in the panel.
+
+What `players.yml` held at the last deploy is remembered in `/opt/minecraft/server/whitelist-managed.json`
+(written by the deploy, with the players it kept). On the first deploy with v1.3 there is no such file, so
+everyone not in `players.yml` counts as unmanaged and is kept; a player taken out of `players.yml` in that same
+deploy stays too (remove them in the panel). Ops always come from Git only.
+
+**Strict mode:** `minecraft.strict_whitelist: true` in `server.yml` makes `players.yml` the whole whitelist: a
+deploy removes every live player it doesn't list (pending panel adds still count until they merge or expire).
+
 ## The panel
 
 `https://panel.<your domain>` (Terraform output `panel_url`). Cloudflare Access lets in only the admin email(s)
@@ -620,6 +641,7 @@ ever appear in an alert (a CI alert carries the run's link only). Every alert's 
 | ⚠️ The outside watchdog can't be reached / has stopped checking / ✅ again | health.py | heartbeats fail 3 checks in a row, or the Worker's cron is 15 min stale | cloudflarestatus.com, the Worker's cron trigger and logs |
 | ⚠️ Security updates are waiting for a reboot / ℹ️ rebooting / ✅ back | reboot gate | pending 3+ days because the window never found the server empty (daily reminder), or it reboots now | `sudo systemctl reboot` on the box when convenient |
 | ℹ️ The server restarts in N s for a config deploy | mc_rcon (deploy) | a deploy restart while players are online (they get an in-game countdown) | - |
+| ⚠️ A deploy kept whitelisted players that aren't in players.yml | players role (deploy) | live players never in `players.yml` were kept, not removed ([Players not in Git](#players-not-in-git)); once per newly kept player | `mcctl players add NAME`, or remove them in the panel |
 | ⚠️ Whitelist changes made in the panel were dropped | mc_panel (agent) | panel whitelist changes didn't reach Git within 24 h; the next deploy undoes them | re-do in the panel or edit `players.yml`; `mcctl doctor` |
 | ℹ️ A panel whitelist change was turned down | mc_panel (agent) | its pull request was closed unmerged; reverted live (or at the next deploy) | nothing if intended |
 | 🔴 Players can't reach the server over IPv4/IPv6 / ✅ again | Worker | 2 failed status pings; says whether the host still reports in | DNS/firewall (`mcctl doctor`) or the host's console |
@@ -732,7 +754,8 @@ Two independent watchers, so a dead box is noticed even though it can't report i
     add|remove`, the server resolves the UUID), then recorded in `players.yml` through a pull request from a
     branch `panel/<ts>` of the config repo (batched for a minute) that the config repo's workflow merges by
     itself when only the whitelist changed (the required `server / gate` check + `mcctl panel-pr-check`). Until
-    it is merged, deploys keep the change (the `players` role applies *Git + pending adds − pending removes*);
+    it is merged, deploys keep the change (the `players` role applies *Git + pending adds − pending removes*
+    and keeps live players that were never in Git: [Players not in Git](#players-not-in-git));
     **closed without merging, it is reverted on the server** and announced on Discord; unmerged after 24 h it is
     dropped with a Discord message. The pull requests come from the panel's **GitHub App** (created by
     `mcctl init` through GitHub's App manifest flow: Contents + Pull requests write on the config repo only).

@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import mc_agent
+import mc_panel
 import notify
 import pytest
 
@@ -1081,6 +1082,18 @@ def test_inventory_reads_the_servers_own_files(tmp_path: Path) -> None:
     (tmp_path / "banned-ips.json").write_text("{not json")
     inv = mc_agent.collect_inventory(tmp_path)
     assert inv["whitelist"] == [{"name": "Em_K", "uuid": "u1"}]
+    # v1.3 whitelist guard: players the last deploy kept although players.yml lacks them -> "not in Git"
+    (tmp_path / "whitelist.json").write_text(
+        '[{"uuid": "u1", "name": "Em_K"}, {"uuid": "U2", "name": "Dora"}]'
+    )
+    (tmp_path / mc_panel.PLAYERS_STATE_FILE).write_text('{"git": ["u1"], "kept": ["u2"]}')
+    assert mc_agent.collect_inventory(tmp_path)["whitelist"] == [
+        {"name": "Em_K", "uuid": "u1"},
+        {"name": "Dora", "uuid": "U2", "unmanaged": True},
+    ]
+    for junk in ('{"kept": "u2"}', '{"kept": [{}, 3]}', "[1]", "{no"):
+        (tmp_path / mc_panel.PLAYERS_STATE_FILE).write_text(junk)
+        assert all("unmanaged" not in e for e in mc_agent.collect_inventory(tmp_path)["whitelist"])
     assert inv["ops"] == [{"name": "Em_K", "uuid": "u1", "level": 4}]
     assert inv["bans"] == [{"name": "griefer", "created": "2026", "reason": "x"}] and inv["ip_bans"] == []
     assert inv["plugins"] == [

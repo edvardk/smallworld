@@ -106,6 +106,64 @@ def test_players_reconcile_change_detection() -> None:
     assert rec["changed_when"] == "players_reconcile.stdout.startswith('CHANGED')"
 
 
+@pytest.mark.parametrize(
+    ("stdout", "alerted"),
+    [
+        ("UNCHANGED\nKEPT: Dora_K, eli (on the live whitelist ...)\nALERT-KEPT: Dora_K eli", "Dora_K eli"),
+        ("UNCHANGED\nKEPT: Dora_K, eli (on the live whitelist ...)", None),  # announced at an earlier deploy
+        ("UNCHANGED", None),
+        (None, None),  # --check (mcctl deploy --check): the command was skipped, no stdout at all
+    ],
+)
+def test_players_role_shows_kept_players_and_announces_them_as_the_ops_user(
+    tmp_path, stdout, alerted
+) -> None:
+    """v1.3 whitelist guard: the role's own tasks after the reconcile, on localhost with a fake mc-run: KEPT is
+    shown, ALERT-KEPT becomes one `mc-run notify.env mc_panel.py alert-kept NAME...`, and nothing is a change."""
+    import json
+    import sys
+
+    import yaml
+
+    tasks = yaml.safe_load((REPO / "ansible/roles/players/tasks/main.yml").read_text())
+    start = next(i for i, t in enumerate(tasks) if t["name"] == "Show what the reconcile changed or kept")
+    picked = tasks[start:]
+    assert [t["name"] for t in picked] == [
+        "Show what the reconcile changed or kept",
+        "Remember whom to announce",
+        "Tell Discord which players were kept although players.yml doesn't list them",
+    ]
+    log = tmp_path / "mc-run.log"
+    fake = tmp_path / "mc-run"
+    fake.write_text(
+        f"#!{sys.executable}\nimport json, sys\nopen({str(log)!r}, 'a').write(json.dumps(sys.argv[1:]) + '\\n')\n"
+    )
+    fake.chmod(0o755)
+    cmd = picked[2]["ansible.builtin.command"]
+    cmd["argv"] = cmd["argv"].replace("/usr/local/bin/mc-run", str(fake))
+    reg = (
+        {"changed": False, "rc": 0, "stdout": stdout, "stdout_lines": stdout.splitlines()}
+        if stdout is not None
+        else {"changed": False, "skipped": True}
+    )
+    play = [{"hosts": "localhost", "connection": "local", "gather_facts": False,
+             "vars": {"players_reconcile": reg, "mc_etc_dir": "/etc/minecraft", "mc_bin_dir": "/opt/minecraft/bin"},
+             "tasks": picked}]  # fmt: skip
+    (tmp_path / "play.yml").write_text(yaml.safe_dump(play, sort_keys=False))
+    proc = run([str(tmp_path / "play.yml"), "-i", "localhost,"], {})
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "changed=0" in proc.stdout[proc.stdout.rfind("PLAY RECAP") :]
+    assert ("KEPT: Dora_K, eli" in proc.stdout) == (
+        "KEPT" in (stdout or "")
+    ) and "ALERT-KEPT" not in proc.stdout
+    calls = [json.loads(x) for x in log.read_text().splitlines()] if log.exists() else []
+    if alerted:
+        assert calls == [["-/etc/minecraft/notify.env", "/opt/minecraft/bin/mc_panel.py", "alert-kept",
+                          *alerted.split()]]  # fmt: skip
+    else:
+        assert calls == []
+
+
 def test_no_doubled_backslashes_in_playbook_yaml() -> None:
     """Plain and folded YAML scalars keep `\\\\` as two backslashes, so a Jinja regex like '^100\\\\.' matches a
     literal backslash, never an IP (the live bootstrap failure). Regexes use classes like `[.]` instead."""

@@ -6,6 +6,23 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Added
+
+- Whitelist guard: a deploy no longer silently removes players who are on the live whitelist but were never in
+  `players.yml` (console or Discord adds, panel adds whose pull request expired). They are kept, the deploy's
+  output says `KEPT: <names>`, Discord gets one message per newly kept player (`mcctl players add NAME` to make
+  them permanent) and the panel tags them *not in Git*. Removals still apply: the panel's pending removes, and
+  players a commit took out of `players.yml` since the last deploy (remembered in
+  `/opt/minecraft/server/whitelist-managed.json`; the first deploy with this release keeps everyone not in
+  `players.yml`). docs/operations.md "Players not in Git".
+- `server.yml` `minecraft.strict_whitelist` (default `false`): `true` makes `players.yml` the whole whitelist, as
+  before this release (a deploy removes every live player it doesn't list, apart from pending panel adds).
+
+### Changed
+
+- Golden rendering (`tests/fixtures/full-render.json`): new group var `mc_strict_whitelist` (the example sets it
+  explicitly to `false`).
+
 ## [1.2.2] - 2026-11-07
 
 Panel whitelist fixes. A deploy sets the whitelist to `players.yml` plus the panel's pending adds; with both bugs,

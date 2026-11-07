@@ -20,7 +20,9 @@ host:
   tailscale_name: lighthouse-mc
   timezone: UTC
   resize_hint: a host with dedicated cores or more RAM
-minecraft: {version: "26.3", accept_eula: true, motd: "Lighthouse"}
+# strict_whitelist: explicit, so the golden rendering doesn't move with the default (players never in
+# players.yml are kept and announced; true = players.yml is the whole whitelist).
+minecraft: {version: "26.3", accept_eula: true, motd: "Lighthouse", strict_whitelist: false}
 backups: {bucket: lighthouse-backups}
 jvm: {gc: zgc, heap_mb: 6144}
 performance:

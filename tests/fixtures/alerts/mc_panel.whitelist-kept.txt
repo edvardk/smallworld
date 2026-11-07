@@ -1,0 +1,5 @@
+⚠️ **A deploy kept whitelisted players that aren't in players.yml**
+**Impact:** They can still join (Player_One, Player_Two) and later deploys keep them, but players.yml doesn't list them (with `minecraft.strict_whitelist: true` a deploy would remove them).
+**Likely cause:** They were whitelisted outside Git (console, Discord or the panel while its pull request failed), and players.yml never got them.
+**What to do:** Keep them: `mcctl players add NAME` for each (it commits players.yml). Don't want them: remove them in the panel (Players tab).
+**Details:** on the live whitelist, not in players.yml or pending panel adds: Player_One, Player_Two
