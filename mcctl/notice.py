@@ -1,4 +1,4 @@
-"""v1.3: "a newer Smallworld is out" on interactive commands and the home screen.
+"""v1.3: "a newer Smallworld is out" on interactive commands and the dashboard.
 
 When the product has a newer MINOR or MAJOR release than the config repo's pin (its workflow's `# vX.Y.Z`
 comment), mcctl says so once per command, on stderr after the command's own output, with the fix:

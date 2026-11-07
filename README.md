@@ -90,7 +90,7 @@ pip install --require-hashes --no-deps -r requirements/deploy.txt
 pip install --no-deps -e .           # the `mcctl` command in this venv (else: python3 -m mcctl)
 ansible-galaxy collection install -r ansible/requirements.yml
 mcctl setup -C ~/code/mc-config
-mcctl                                  # afterwards: the home screen (status + menu; remembers the config repo)
+mcctl                                  # afterwards: the dashboard (the web panel in the terminal)
 ```
 
 `mcctl setup` is a resumable checklist of 17 steps: stop at any point, run the same command again and it

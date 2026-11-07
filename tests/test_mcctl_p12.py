@@ -449,6 +449,7 @@ def test_restore_list_live_and_to(deployed: Path, tmp_path: Path) -> None:
     wrong, _ = fresh(deployed, tmp_path / "w", P12_ANSWERS | {"confirm_restore": "restore 00000000"})
     calls = len(wrong.deps.tools.calls)  # type: ignore[attr-defined]
     assert restorecmd.live(wrong, "a1b2c3d4") == 1
+    assert restorecmd.live(wrong, "a1b2c3d4", confirm="restore 0000") == 1  # --confirm: compared the same way
     assert not any("mc-restore@" in c[-1] for c in wrong.deps.tools.calls[calls:])  # type: ignore[attr-defined]
     assert restorecmd.to_dir(ctx, "/opt/minecraft/server", None) == 2  # never the live dir
     assert restorecmd.to_dir(ctx, "/var/tmp/check", None) == 0  # noqa: S108 - a path on the (fake) server
