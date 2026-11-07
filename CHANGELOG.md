@@ -6,6 +6,15 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/release.py bump X.Y.Z [--date YYYY-MM-DD]` sets the version in `pyproject.toml`, `mcctl/__init__.py`
+  and README and dates the CHANGELOG's Unreleased section (refuses a version that isn't greater, an empty
+  Unreleased section, a dirty tree); `scripts/release.py tag [vX.Y.Z] [--remote R] [--push]` creates the annotated
+  release tag only on the fetched tip of `origin/main` with a clean tree, a passing `check` and a new tag name,
+  and prints the push command (`--push` pushes after a typed confirmation). v1.2.1's tag had landed on a branch
+  commit instead of main's merge commit (docs/reference.md "Releasing").
+
 ## [1.2.2] - 2026-11-07
 
 Panel whitelist fixes. A deploy sets the whitelist to `players.yml` plus the panel's pending adds; with both bugs,

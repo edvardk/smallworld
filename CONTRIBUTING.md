@@ -47,4 +47,5 @@ Which of these run depends on the paths a pull request changes, and the benches 
 ## Releasing
 
 See [docs/reference.md](docs/reference.md#releasing): versions in `pyproject.toml`, `mcctl/__init__.py` and
-`CHANGELOG.md` must agree (`scripts/release.py check vX.Y.Z`); the owner pushes the tag.
+`CHANGELOG.md` must agree (`scripts/release.py check vX.Y.Z`); the owner bumps them (`release.py bump`) and,
+after the merge, tags main's tip (`release.py tag`) and pushes the tag.
