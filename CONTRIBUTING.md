@@ -35,7 +35,7 @@ Which of these run depends on the paths a pull request changes, and the benches 
 ## Conventions in short
 
 - No deployment values in `terraform/`, `ansible/` or workflows: add a `server.yml` field (`mcctl/schema.py`, then
-  `python -m mcctl schema`) and render it.
+  `python3 -m mcctl schema`) and render it.
 - After changing `template/`, run `python scripts/sync_example.py`.
 - A new secret goes in every place `tests/test_consistency.py` checks (`mcctl/secrets.py` is the list).
 - Python helper scripts are type-hinted and ruff-clean; server-side scripts are stdlib-only (Python >= 3.11).

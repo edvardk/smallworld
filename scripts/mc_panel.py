@@ -8,6 +8,8 @@ allows the ops user (base role, 50-mc-ops.rules); nothing here runs as root.
 - Jobs: restart, stop, plugin toggles and restores run one at a time in a background thread, after an in-game
   countdown (tellraw + action bar at 5/4/3/2/1 min, 30, 10, 5..1 s), skipped when nobody is online. A job can
   be cancelled during its countdown. Its state is reported to the Worker (POST /ingest/job) for the panel.
+  v1.3: one at a time across processes too (JOB_LOCK_FILE): mcctl's actions over SSH (mc_agent.py cli) run
+  their job in the foreground with the same lock.
 - Whitelist: RCON `whitelist add|remove` (the server resolves the UUID) -> confirmed in whitelist.json ->
   recorded in pending.json (the agent's state dir). A sync loop batches pending changes for 60 s, then commits
   the canonical players.yml to a branch `panel/<ts>` of the config repo and opens a pull request (GitHub REST
@@ -40,6 +42,7 @@ from __future__ import annotations
 import base64
 import calendar
 import contextlib
+import fcntl
 import ipaddress
 import json
 import os
@@ -69,6 +72,9 @@ SNAPSHOTS_FILE = notify.SNAPSHOTS_FILE  # backup.py --list-snapshots writes it
 PLUGINS_APPLY_UNIT = "mc-plugins-apply.service"
 UNIT = "minecraft.service"
 BACKUP_UNIT = "mc-backup.service"
+# v1.3: one job at a time across processes: mc-agent's jobs and `mcctl` actions over SSH (mc_agent.py cli)
+# both hold this lock from the countdown to the end of the work (the agent's ReadWritePaths: the state dir).
+JOB_LOCK_FILE = STATE_DIR / "job.lock"
 NAME = re.compile(r"[A-Za-z0-9_]{3,16}")
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 SNAPSHOT_ID = re.compile(r"[0-9a-f]{8,64}")
@@ -101,7 +107,7 @@ def read_json(path: Path, default: Any) -> Any:  # noqa: ANN401 - whatever the f
         return default
 
 
-# --- players.yml (canonical form, mcctl/schema.py dump_players) ------------------------------------------
+# --- players.yml (canonical form, mcctl/schema.py dump_players) ---------------------------------------------
 
 ITEM = re.compile(r"^  - \{(?P<body>.*)\}$")
 PAIR = re.compile(r'\s*(?P<key>[a-z]+): (?P<value>"(?:[^"\\]|\\.)*"|-?\d+)\s*(?:,|$)')
@@ -174,7 +180,7 @@ def apply_entries(
     return {"whitelist": list(wl.values()), "ops": list(players.get("ops", []))}, changed
 
 
-# --- pending whitelist changes -----------------------------------------------------------------------------
+# --- pending whitelist changes ------------------------------------------------------------------------------
 
 
 class Pending:
@@ -845,6 +851,8 @@ class Jobs:
         rcon: Callable[[str], str] | None = None,
         clock: Callable[[], float] = time.time,
         wait: Callable[[threading.Event, float], bool] | None = None,
+        lock_path: Path | None = None,
+        background: bool = True,
     ) -> None:
         self.report = report
         self.rcon = rcon or rcon_command
@@ -852,6 +860,37 @@ class Jobs:
         self.wait = wait or (lambda ev, s: ev.wait(s))
         self.current: Job | None = None
         self.lock = threading.Lock()
+        self.lock_path = lock_path  # JOB_LOCK_FILE: shared with the other process (agent or mcctl)
+        self.background = background  # False: start() runs the job before returning (mc_agent.py cli)
+        self._held: int | None = None  # the lock file's descriptor while a job runs
+
+    def _take_file_lock(self) -> None:
+        """The cross-process lock (an flock, released by the kernel if the process dies). A lock file that
+        can't be opened (no state dir: a test, a dev box) only loses the cross-process check."""
+        if self.lock_path is None:
+            return
+        try:
+            fd = os.open(self.lock_path, os.O_RDWR | os.O_CREAT, 0o644)
+        except OSError as e:
+            print(
+                f"job lock {self.lock_path}: {type(e).__name__} (one job per process only)", file=sys.stderr
+            )
+            return
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(fd)
+            raise ActionError(
+                "busy: another action is running (started from the panel or mcctl); wait, or cancel it there"
+            ) from None
+        self._held = fd
+
+    def _release_file_lock(self) -> None:
+        fd, self._held = self._held, None
+        if fd is not None:
+            with contextlib.suppress(OSError):
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
 
     def busy(self) -> Job | None:
         j = self.current
@@ -879,7 +918,7 @@ class Jobs:
         countdown: int,
         work: Callable[[Job], str],
         skip_if_empty: bool = True,
-        background: bool = True,
+        background: bool | None = None,
     ) -> Job:
         if countdown not in COUNTDOWNS:
             raise ActionError(f"countdown must be one of {', '.join(map(str, COUNTDOWNS))} seconds")
@@ -889,10 +928,11 @@ class Jobs:
                 raise ActionError(
                     f"busy: {other.label.lower()} ({other.state}) started by {other.login}; cancel it first"
                 )
+            self._take_file_lock()
             job = Job(job_id, action, label, login, countdown, started=self.clock())
             job.on_change = lambda: self.report(job.public())
             self.current = job
-        if background:
+        if self.background if background is None else background:
             threading.Thread(
                 target=self._run, args=(job, work, skip_if_empty), name=f"job-{action}", daemon=True
             ).start()
@@ -901,6 +941,12 @@ class Jobs:
         return job
 
     def _run(self, job: Job, work: Callable[[Job], str], skip_if_empty: bool) -> None:
+        try:
+            self._work(job, work, skip_if_empty)
+        finally:
+            self._release_file_lock()
+
+    def _work(self, job: Job, work: Callable[[Job], str], skip_if_empty: bool) -> None:
         try:
             job.players = self.players() if job.countdown else 0
             left = job.countdown if (job.players or not skip_if_empty) else 0

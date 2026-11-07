@@ -199,6 +199,20 @@ deduplicated like every backup). What it adds to the attack surface:
   folders only; the rest of the server dir stays the current one. A world from an older Minecraft is upgraded on
   load, one way (the archive keeps the old copy).
 
+### The same actions from mcctl (v1.3)
+
+`mcctl restart|worlds|plugins|players kick|ban|pardon` run the panel's actions over Tailscale SSH as the deploy
+user (the admin's `check` rule): `sudo mc-run -/etc/minecraft/notify.env /opt/minecraft/bin/mc_agent.py cli ...`.
+No new credential, unit, polkit verb or listening socket: the entry point runs mc-agent's Executor as `mcops` in
+mc-run's sandbox, so its systemd actions are the units `50-mc-ops.rules` already allows, and it reads only
+`notify.env` (the watchdog's maintenance window), never `agent.env`. It needs no signature because only the
+deploy user reaches it, and that user has sudo anyway; the checks are the agent's, plus the typed confirmations
+(world library, plugins) checked again on the box. Every action, refused or not, writes the panel's audit
+entry (`MC_AUDIT=1`, `MC_VIA=mcctl`) with the login `mcctl:<local user>` as the controller states it (the
+Tailscale SSH session itself is in tailscaled's log). A panel job and a CLI job can't overlap:
+`mc_panel.Jobs` holds an flock on `/var/lib/minecraft/job.lock` (a directory only `mcops` can write) from the
+countdown to the end of the work.
+
 ### The panel's GitHub App
 
 P10 review (the P10 PAT could push to `main`, which deploys). The panel's whitelist pull requests use a **GitHub

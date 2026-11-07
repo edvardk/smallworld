@@ -35,6 +35,7 @@ All commands are parsed in `mcctl/cli.py` (`build_parser`); the `cmd_*` function
 | `mcctl doctor` | `mcctl/doctor.py`, `mcctl/providers/`, `mcctl/expiry.py`, `mcctl/pinmove.py` | `tests/test_mcctl_doctor.py`, `tests/test_mcctl_providers.py`, `tests/test_pinmove.py` |
 | `mcctl status`, `mcctl rcon`, `mcctl ssh`, `mcctl logs`, `mcctl backup` | `mcctl/remote.py` | `tests/test_mcctl_core.py` |
 | `mcctl stop`, `mcctl start` | `mcctl/remote.py` → `scripts/admin.py` | `tests/test_admin.py` |
+| `mcctl restart`, `mcctl console`, `mcctl worlds`, `mcctl plugins` (v1.3: the panel's actions over the tailnet) | `mcctl/actions.py` → `scripts/mc_agent.py` (`cli_main`: the Executor, audit), `scripts/mc_panel.py` (`Jobs`, `JOB_LOCK_FILE`) | `tests/test_mcctl_actions.py`, `tests/test_agent_cli.py`, `tests/test_home.py` |
 | `mcctl metrics` | `mcctl/metrics.py` | `tests/test_mcctl_metrics.py` |
 | `mcctl init`, `mcctl setup` | `mcctl/init.py` (17 steps, `STEPS`), `mcctl/mock.py`, `mcctl/state.py`, `mcctl/ui.py` | `tests/test_mcctl_init.py`, `tests/test_setup_resume.py`, `tests/test_setup_automation.py`, `tests/test_ui.py`, `tests/e2e/answers.yml` |
 | `mcctl product-setup` | `mcctl/productsetup.py` | `tests/test_setup_automation.py`, **`tests/test_ci_changes.py`** (required checks) |
@@ -42,7 +43,7 @@ All commands are parsed in `mcctl/cli.py` (`build_parser`); the `cmd_*` function
 | `mcctl migrate`, `mcctl retire-old` | `mcctl/migrate.py`, `mcctl/serverops.py` | **`tests/test_mcctl_p12.py`**, `tests/e2e/migrate_check.py` |
 | `mcctl upgrade`, `mcctl lock` (update), `mcctl schema-migrate` | `mcctl/upgrade.py`, `mcctl/migrations.py`, `mcctl/wfsecrets.py` | **`tests/test_mcctl_p12.py`**, `tests/test_wfsecrets.py` |
 | `mcctl secrets` (rotate, dashlane, show-restic) | `mcctl/rotate.py`, `mcctl/integrations.py`, `mcctl/dashlane.py` | **`tests/test_mcctl_p12.py`** (rotate), `tests/test_dashlane.py` |
-| `mcctl players` | `mcctl/players.py`, `mcctl/providers/mojang.py` | **`tests/test_mcctl_p12.py`** |
+| `mcctl players` | `mcctl/players.py`, `mcctl/providers/mojang.py`; `kick`/`ban`/`pardon`: `mcctl/actions.py` | **`tests/test_mcctl_p12.py`**, `tests/test_mcctl_actions.py` |
 | `mcctl restore` | `mcctl/restorecmd.py` → `scripts/restore.py` on the box | **`tests/test_mcctl_p12.py`** |
 | `mcctl discord` (sync) | `mcctl/integrations.py`, `mcctl/providers/discord.py` | `tests/test_discord.py` |
 | `mcctl update-prs` (CI) | `mcctl/updates.py` | `tests/test_updates.py` |
@@ -98,11 +99,13 @@ Docs: [reference: mcctl commands](reference.md#mcctl-commands), [operations: mcc
 | `mcctl/expiry.py` vs `mcctl/expirycheck.py` | the expiry.yml file vs the weekly CI check that reads it |
 | `scripts/verify_lock_update.py` vs `mcctl/gate.py` | the lock-update rule vs the `server / gate` check that calls it |
 | `scripts/mc_agent.py` vs `scripts/mc_panel.py` | the outbound agent vs the panel actions it executes |
+| `mcctl/actions.py` vs `scripts/mc_agent.py` `cli_main` | mcctl's side of the v1.3 actions (pre-checks, typed confirmations, SSH) vs the server's entry point that runs the agent's Executor for them |
 
 ## Tests in unexpected places
 
 - `tests/test_ci_changes.py`: also `mcctl/productsetup.py`'s required checks.
 - `tests/test_updates.py`: also `mcctl/expirycheck.py` (`mcctl expiry-check`).
 - `tests/test_mcctl_p12.py`: `migrate`, `retire-old`, `upgrade`, `lock update`, `schema-migrate`, `secrets rotate`, `players`, `restore`.
+- `tests/test_agent_cli.py`: `mc_agent.py cli` (mcctl's actions on the box) and the cross-process job lock of `mc_panel.Jobs`.
 - `tests/test_mcctl_core.py`: the tailnet wrappers (`status`, `rcon`, `ssh`, `logs`, `backup`), expiry.yml, `mcctl/state.py`.
 - `tests/test_watchdog.py`: runs the Worker's node tests (`NODE_TEST`, the same command as `.github/workflows/ci.yml`).
