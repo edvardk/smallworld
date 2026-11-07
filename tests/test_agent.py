@@ -1036,6 +1036,32 @@ def test_the_e2e_agent_check_splits_its_rounds_into_two_shards(monkeypatch: pyte
     assert "{shard: agent-a," in wf and "{shard: agent-b," in wf and "{shard: agent," not in wf
 
 
+def test_the_e2e_cli_round_runs_what_mcctl_runs_over_ssh(monkeypatch: pytest.MonkeyPatch) -> None:
+    """v1.3: agent_check.py's cli round runs `mc_agent.py cli` with mcctl's very command line (mcctl/actions.py),
+    as the login shape the agent accepts, and its made-up players are well-formed pending entries."""
+    import importlib
+    import shlex
+
+    from mcctl import actions
+
+    repo = Path(__file__).parent.parent
+    monkeypatch.syspath_prepend(str(repo / "tests/e2e"))
+    monkeypatch.setenv("MC_SECRET_AGENT_TOKEN", "t")
+    monkeypatch.setenv("MC_SECRET_COMMAND_HMAC_KEY", "k")
+    check = importlib.import_module("agent_check")
+    args = {"verb": "kick", "target": "E2E_Nobody"}
+    assert shlex.join(check.cli_argv("moderate", args)) == actions.agent_command(
+        check.CLI_LOGIN, "moderate", args
+    )
+    assert shlex.join(check.cli_argv("worlds")) == actions.agent_command(check.CLI_LOGIN, "worlds")
+    assert mc_agent.CLI_LOGIN.fullmatch(check.CLI_LOGIN) and "cli" in check.GROUPS["a"]
+    uuid = f"{check.CLI_UUID_PREFIX}{3:04x}{19:08x}"
+    assert mc_panel.UUID.fullmatch(uuid) and mc_panel.NAME.fullmatch("E2eCli3_19")
+    assert (
+        check.CLI_UUID_PREFIX in check.PENDING_WRITER and check.CLI_UUID_PREFIX[:9] in check.PENDING_CLEANUP
+    )
+
+
 @pytest.mark.skipif(not shutil.which("flock"), reason="needs util-linux flock")
 def test_the_e2e_restore_lock_holder_releases_the_lock_when_done(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path

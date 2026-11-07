@@ -136,6 +136,10 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   self-test.
 - The e2e `agent-a` shard gains the round `versions` (version file, self-test against the GitHub mock, lookup
   against a mock Mojang; about 20 s).
+- The e2e `agent-a` shard gains the round `cli` (about 40 s): `mc_agent.py cli` run with mcctl's own command line
+  (`sudo mc-run ...`, as over SSH): a kick and a refused unconfirmed `world_delete`, both in the audit journal with
+  `MC_VIA=mcctl`; then two processes in the CLI's place write pending.json while mc-agent's sync loop merges and
+  opens pull requests on it (GitHub mock), and no entry is lost.
 - Golden rendering (`tests/fixtures/full-render.json`): new group var `mc_strict_whitelist` (the example sets it
   explicitly to `false`); mc-brand's config gains `compass`, `pocket_map` and each hologram's `help` (the example
   adds a spawn help hologram and explicit compass values).
@@ -148,6 +152,14 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   script install now notifies a handler pair that restarts mc-agent only where its unit is installed (a fresh box,
   where handlers can flush before the agent role ran, and boxes without the panel skip it).
   `tests/test_playbooks.py` checks that every script mc-agent imports is covered.
+- Panel whitelist and world changes could be lost when mcctl ran an action while mc-agent was running (new in
+  this release, never in a tag): `mc_agent.py cli` (mcctl's actions over SSH) writes
+  `/var/lib/mc-agent/pending.json` from its own process, and the in-process lock didn't cover it, so the agent's sync loop or a panel command could overwrite a change
+  the other had just recorded (whose deploy and pull request then never knew of it). Every read-modify-write of
+  pending.json now holds an flock on `pending.json.lock` (0600, next to it) and reads the file again under it;
+  writes are atomic and stay 0600. The sync loop no longer holds the lock across GitHub, RCON or Discord calls: it
+  works on a snapshot and merges its result back, keeping whatever was recorded meanwhile (a player recorded again
+  while in an open pull request gets the next one).
 - e2e (test only): the restore-guard round's stand-in restore no longer outlives its kill. Killing `runuser`
   left `flock` and its `sleep 300` running, still holding `restore.lock`, so the round's next deploy correctly
   waited ~285 s for a restore that the test had already "ended" (the round took 319 s). The holder now runs in its
