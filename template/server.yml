@@ -18,3 +18,7 @@ host:
   # ipv4 / ipv6: set once the host exists (one address from its IPv6 prefix for ipv6).
   timezone: UTC
 minecraft: {version: "26.3", accept_eula: true}
+# Everything else has a default (schema/server.schema.json); e.g. a board above the world spawn listing the
+# commands players can use (v1.3; /help shows the same list):
+# branding:
+#   holograms: [{at: spawn, lines: ["Welcome to {server}"], help: true}]

@@ -16,6 +16,11 @@ on
 any machine. `check` also compares its sha256 with the ansible/group_vars/all/main.yml pin named in build.yml
 (`pin`, what Ansible verifies on deploy), and that mcctl/brandpack.py's resource-pack format is the pinned
 server jar's (version.json pack_version.resource_major). CI runs `check` (ci.yml, job plugin).
+
+v1.3: a plugin whose build.yml names `fixtures` and `fixtures_main` also compiles src/test/java (never in the
+jar) and runs that class with the pinned JDK; its stdout is the fixtures file (`build` writes it, `check`
+compares it), which a Python test checks independently (mc-brand: WayfindingFixtures,
+tests/test_wayfinding.py).
 """
 
 from __future__ import annotations
@@ -169,31 +174,55 @@ def compile_only(build_cfg: dict[str, Any], cache: Path) -> list[Path]:
     return out
 
 
-def build(jdk: Path, server: bytes, build_cfg: dict[str, Any], cache: Path) -> bytes:
+def _javac(jdk: Path, build_cfg: dict[str, Any], sources: list[Path], cp: list[Path], out: Path) -> None:
+    argv = [
+        str(jdk / "bin" / "javac"),
+        "--release", str(build_cfg["release"]),
+        "-encoding", "UTF-8",
+        "-proc:none",
+        "-Xlint:all,-processing,-serial,-classfile",  # missing annotation classes in the API jars
+        "-Werror",
+        "-implicit:none",
+        "-d", str(out),
+        "-cp", os.pathsep.join(map(str, cp)),
+        *[str(s.relative_to(REPO_ROOT)) for s in sources],
+    ]  # fmt: skip
+    res = subprocess.run(argv, cwd=REPO_ROOT, capture_output=True, text=True, env=_env())
+    if res.returncode != 0:
+        sys.stderr.write(res.stdout + res.stderr)
+        raise SystemExit("javac failed")
+
+
+def build(jdk: Path, server: bytes, build_cfg: dict[str, Any], cache: Path) -> tuple[bytes, bytes | None]:
+    """(the jar, the fixtures' output or None)."""
     plugin_dir = REPO_ROOT / "plugin" / build_cfg["name"]
     sources = sorted((plugin_dir / "src" / "main" / "java").rglob("*.java"))
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
-        (tmp / "lib").mkdir()
-        (tmp / "classes").mkdir()
+        for d in ("lib", "classes", "test-classes"):
+            (tmp / d).mkdir()
         cp = classpath(server, build_cfg["classpath"], tmp / "lib") + compile_only(build_cfg, cache)
-        argv = [
-            str(jdk / "bin" / "javac"),
-            "--release", str(build_cfg["release"]),
-            "-encoding", "UTF-8",
-            "-proc:none",
-            "-Xlint:all,-processing,-serial,-classfile",  # missing annotation classes in the API jars
-            "-Werror",
-            "-implicit:none",
-            "-d", str(tmp / "classes"),
-            "-cp", os.pathsep.join(map(str, cp)),
-            *[str(s.relative_to(REPO_ROOT)) for s in sources],
-        ]  # fmt: skip
-        res = subprocess.run(argv, cwd=REPO_ROOT, capture_output=True, text=True, env=_env())
+        _javac(jdk, build_cfg, sources, cp, tmp / "classes")
+        jar = jar_bytes(tmp / "classes", plugin_dir / "src" / "main" / "resources")
+        if not build_cfg.get("fixtures_main"):
+            return jar, None
+        tests = sorted((plugin_dir / "src" / "test" / "java").rglob("*.java"))
+        run_cp = [tmp / "classes", *cp]
+        _javac(jdk, build_cfg, tests, run_cp, tmp / "test-classes")
+        res = subprocess.run(
+            [
+                str(jdk / "bin" / "java"),
+                "-cp",
+                os.pathsep.join(map(str, [tmp / "test-classes", *run_cp])),
+                build_cfg["fixtures_main"],
+            ],
+            capture_output=True,
+            env=_env(),
+        )
         if res.returncode != 0:
-            sys.stderr.write(res.stdout + res.stderr)
-            raise SystemExit("javac failed")
-        return jar_bytes(tmp / "classes", plugin_dir / "src" / "main" / "resources")
+            sys.stderr.write(res.stdout.decode() + res.stderr.decode())
+            raise SystemExit(f"{build_cfg['fixtures_main']} failed")
+        return jar, res.stdout
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -240,12 +269,15 @@ def build_one(
         return [
             f"{name}: build.yml release {cfg['release']} != java_major {lock['java_major']} (server.lock.yml)"
         ]
-    data = build(jdk_home(jdk, cfg, cache), server, cfg, cache)
+    data, fixtures = build(jdk_home(jdk, cfg, cache), server, cfg, cache)
     target = REPO_ROOT / cfg["jar"]
     digest = sha256(data)
+    fixture_file = REPO_ROOT / cfg["fixtures"] if fixtures is not None else None
     if command == "build":
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
+        if fixture_file is not None and fixtures is not None:
+            fixture_file.write_bytes(fixtures)
         print(f"{target.relative_to(REPO_ROOT)}: {len(data)} bytes, sha256 {digest}")
         if digest != pinned_jar_sha256(cfg):
             print(f"update ansible/group_vars/all/main.yml: {cfg['pin']}: {digest}")
@@ -258,6 +290,8 @@ def build_one(
         )
     if digest != pinned_jar_sha256(cfg):
         problems.append(f"{cfg['pin']} in ansible/group_vars/all/main.yml != {digest}")
+    if fixture_file is not None and (not fixture_file.is_file() or fixture_file.read_bytes() != fixtures):
+        problems.append(f"{cfg['fixtures']} differs from {cfg['fixtures_main']}'s output: run `build`")
     if not problems:
         print(f"{cfg['jar']}: reproducible, sha256 {digest}")
     return problems

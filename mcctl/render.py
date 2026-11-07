@@ -35,7 +35,7 @@ import yaml
 
 from mcctl import brandpack, clientpack
 from mcctl.configrepo import ConfigRepo
-from mcctl.schema import Players, ServerConfig, placeholders
+from mcctl.schema import BrandingHologram, Players, ServerConfig, placeholders
 
 TFVARS_FILE = Path("terraform") / "terraform.tfvars.json"
 BACKEND_FILE = Path("terraform") / "state.tfbackend"
@@ -138,19 +138,24 @@ def brand_plugin(cfg: ServerConfig) -> dict[str, Any]:
             "nausea_seconds": b.drink.nausea_seconds,
             "give_on_first_join": b.drink.give_on_first_join,
         },
-        "holograms": [  # v1.2: Holograms.java (block coordinates; the plugin centres the text)
-            {
-                "world": DIMENSIONS[h.world],
-                "x": h.x,
-                "y": h.y,
-                "z": h.z,
-                "lines": list(h.lines),
-                "health": h.health,
-            }
-            for h in b.holograms
-        ],
+        "holograms": [hologram(h) for h in b.holograms],
+        "compass": {  # v1.3: Compass.java
+            "enabled": b.compass.enabled,
+            "default_on": b.compass.default_on,
+            "max_range": b.compass.max_range,
+            "distance_rounding": b.compass.distance_rounding,
+            "height_threshold": b.compass.height_threshold,
+        },
+        "pocket_map": {"enabled": b.pocket_map.enabled},  # v1.3: PocketMap.java
         **brand_client(cfg),
     }
+
+
+def hologram(h: BrandingHologram) -> dict[str, Any]:
+    """v1.2: one of Holograms.java's specs (block coordinates; the plugin centres the text); v1.3: `at: spawn`
+    instead of x/y/z, and `help`."""
+    where: dict[str, Any] = {"at": h.at} if h.at else {"x": h.x, "y": h.y, "z": h.z}
+    return {"world": DIMENSIONS[h.world], **where, "lines": list(h.lines), "health": h.health, "help": h.help}
 
 
 def gamerules(cfg: ServerConfig) -> dict[str, str]:

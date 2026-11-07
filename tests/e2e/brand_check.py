@@ -9,9 +9,16 @@ Runs on the runner, drives the container with `docker exec` (RCON through the bo
     sidebar lines, the drink built and read back through the API: PDC tag, custom_model_data string, use
     cooldown group, colour), /mcbrand status (the HUD/tab task ran, and its time per run);
   - a player-only command from the console is refused politely (no stack trace in the journal), /drink and
-    v1.2's branding.drink.command alike (the e2e config sets it: registered through the CommandMap).
-The join flow itself (title, greeting, sound, the first drink) needs a logged-in client: online-mode is on and the
-whitelist is enforced in the e2e, so it is checked through selftest's rendering, not with a real client.
+    v1.2's branding.drink.command alike (the e2e config sets it: registered through the CommandMap);
+  - v1.3: /help (and its alias /commands) lists the enabled commands with /minecraft:help last, while
+    /minecraft:help is still vanilla's list; /compass and /map are per player; selftest renders the compass line
+    for a fixed scene (= plugin/mc-brand/src/test/wayfinding-fixtures.json, which tests/test_wayfinding.py checks
+    independently), vanilla's map-cursor arithmetic and the help hologram's text; the e2e config's `at: spawn,
+    help: true` hologram is live once the spawn chunk is loaded (forceload from the console, which sits at the
+    world spawn).
+The join flow itself (title, greeting, sound, the first drink, the compass boss bar, the /map tip) needs a
+logged-in client: online-mode is on and the whitelist is enforced in the e2e, and the e2e has no client bot, so it
+is checked through selftest's rendering, not with a real client.
 
     python tests/e2e/brand_check.py BOX
 """
@@ -20,6 +27,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import re
 import struct
 import subprocess
@@ -34,6 +42,10 @@ sys.path.insert(0, str(REPO))
 from mcctl import mcping  # noqa: E402
 
 SERVER = "/opt/minecraft/server"
+# v1.3: CompassFixtures' first scene is Compass.selftest's (tests/test_wayfinding.py checks the file itself)
+_SCENE = json.loads((REPO / "plugin/mc-brand/src/test/wayfinding-fixtures.json").read_text())["strip"][0]
+COMPASS_LINE = re.sub(" {2,}", " ", _SCENE["plain"].strip())
+COMPASS_WIDTH = _SCENE["line_width"]
 failures: list[str] = []
 
 
@@ -95,6 +107,22 @@ def main() -> int:
     for cmd in sorted({"drink", command}):
         expect("Only players" in rcon(box, cmd), f"/{cmd} from the console is refused politely")
 
+    # v1.3: /help, built from the enabled features; vanilla's list stays at /minecraft:help
+    want = ["/rules", "/hud", "/mcbrand"]  # the e2e config: the default rules, the HUD; RCON is an operator
+    want += ["/map", "/compass"] if plugin_conf.get("pocket_map", {}).get("enabled", True) else []
+    want += [f"/{command}"] if drink.get("enabled") else []
+    want += ["/view"] if plugin_conf.get("view", {}).get("enabled") else []
+    for label in ("help", "commands"):
+        out = rcon(box, label)
+        expect(all(w in out for w in want) and "/minecraft:help" in out and "/discord" not in out,
+               f"v1.3: /{label} lists the enabled commands ({want}) and /minecraft:help: {out!r}")  # fmt: skip
+    vanilla = rcon(box, "minecraft:help")
+    expect(
+        "/advancement" in vanilla and "/gamerule" in vanilla, "v1.3: /minecraft:help is still vanilla's list"
+    )
+    for cmd in ("compass", "map"):
+        expect("is per player" in rcon(box, cmd), f"v1.3: /{cmd} from the console is refused politely")
+
     self_test = rcon(box, "mcbrand selftest")
     print(self_test, flush=True)
     for needle, what in (
@@ -150,6 +178,18 @@ def main() -> int:
             "v1.1: /view raises only while Smooth, lowering always; the guard lowers after 2, raises after 6",
         ),
         ("Your personal setup link: ", "v1.1: /modpack's answer with the link"),
+        (
+            f"compass [{COMPASS_LINE}] focus \u25bcAlex 120m\u2191, width {COMPASS_WIDTH}, default true/true/false",
+            "v1.3: the compass line for a fixed scene (Wayfinding's fixtures) and the precedence",
+        ),
+        (
+            "pocket map cursors 20,-39,4 127,0,0e 36,36,14, snap -1/12",
+            "v1.3: vanilla's map-cursor arithmetic (on the map, the edge dot) and whole-pixel centres",
+        ),
+        (
+            "help hologram Hi | Commands | /rules the house rules",
+            "v1.3: the help hologram's text (/help's list)",
+        ),
         ("Settling in\u2026", "v1.1: 'Settling in…' instead of a health word"),
         (" online · ", "v1.0.1: the boss bar's line"),
         ("/20 TPS", "v1.0.1: speed with its scale"),
@@ -170,6 +210,18 @@ def main() -> int:
         print(f"  task time: last {m.group(2)} us, max {m.group(3)} us (nobody online)", flush=True)
     journal2 = sh(box, "journalctl -u minecraft --no-pager -o cat --since '-2min'").stdout
     expect("Exception" not in journal2, "no exception after the commands")
+    # v1.3: the e2e config's spawn help hologram (e2e-mock.yml: branding.holograms [{at: spawn, help: true}]).
+    # No player keeps the spawn chunk loaded, so load it from the console (its position is the world spawn).
+    if any(h.get("help") for h in plugin_conf.get("holograms", [])):
+        rcon(box, "forceload add ~ ~")
+        time.sleep(3)
+        live = re.search(r"help live (\d+)", rcon(box, "mcbrand selftest"))
+        count = rcon(box, "execute if entity @e[type=minecraft:text_display]")
+        expect(live is not None and int(live.group(1)) >= 1 and "Test passed" in count,
+               f"v1.3: the spawn help hologram is live ({live.group(0) if live else None}; {count.strip()!r})")  # fmt: skip
+        rcon(box, "forceload remove ~ ~")
+    else:
+        expect(False, "v1.3: the e2e config has a help hologram (e2e-mock.yml sets branding.holograms)")
     for f in failures:
         print("FAILED:", f)
     return 1 if failures else 0

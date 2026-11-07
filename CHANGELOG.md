@@ -6,6 +6,29 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Added
+
+- **Friend compass** (mc-brand, vanilla clients): a boss bar that turns with the player, with the cardinal points
+  and every online player's name at their bearing. The player faced is centred with ▼, the distance (rounded) and
+  ↑/↓ for large height differences. Players in other dimensions are listed after a bar as "name (Nether)", without
+  a distance. It is redrawn only when someone turns or moves. `/compass on|off|hide|show|auto`, remembered per
+  player (`hide` keeps you off other players' compasses and maps). server.yml `branding.compass`: `enabled`,
+  `default_on`, `max_range`, `distance_rounding`, `height_threshold`.
+- **Pocket map**: `/map` gives a personal map that re-centres on the player about once a second while held, with
+  every other player as a named cursor (an edge dot when off the map). Terrain comes from vanilla's map rendering.
+  In the off hand it's a minimap; `/map zoom` cycles the scale. One map per player: free to re-get, and it can't
+  be dropped, copied, framed or stored. server.yml `branding.pocket_map.enabled`.
+- **Client mods take precedence**: mc-brand reads each client's registered plugin channels (`smallworld:*`,
+  Xaero's `xaerominimap:main` / `xaeroworldmap:main`) and checks again when one registers late. The Smallworld
+  mod together with Xaero's turns the compass off by default; clients with no mods get the compass and a one-line
+  `/map` tip at join. `/compass on|off` and `/map` always override.
+- **`/help`** (alias `/commands`): a clickable list of the commands this player can use, built from the enabled
+  features and permissions. Vanilla's list stays at `/minecraft:help`.
+- **Help hologram**: `branding.holograms[].help: true` appends the same list, and `at: spawn` places a hologram
+  above the world spawn instead of explicit `x`/`y`/`z`.
+- `scripts/build_plugin.py` runs a plugin's fixture class (mc-brand: `WayfindingFixtures`, pure logic on the
+  pinned JDK, never in the jar) and compares its output, which `tests/test_wayfinding.py` checks independently.
+
 ## [1.2.2] - 2026-11-07
 
 Panel whitelist fixes. A deploy sets the whitelist to `players.yml` plus the panel's pending adds; with both bugs,

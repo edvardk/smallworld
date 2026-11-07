@@ -213,12 +213,14 @@ jobs:
           test -z "$(git -C "$CONFIG" status --porcelain)"
 
       # v1.2: the drink under its own command name (mc-brand registers it next to /drink: brand_check.py).
+      # v1.3: a help board above the world spawn (brand_check.py checks it is live).
       - name: mcctl validate + render the new config repo
         if: env.ACTIVE == 'true'
         timeout-minutes: 5
         run: |
-          GIT_AUTHOR_NAME=e2e GIT_AUTHOR_EMAIL=e2e@e2e.test GIT_COMMITTER_NAME=e2e GIT_COMMITTER_EMAIL=e2e@e2e.test \
-            python -m mcctl config set branding.drink.command cocoa -C "$CONFIG"
+          export GIT_AUTHOR_NAME=e2e GIT_AUTHOR_EMAIL=e2e@e2e.test GIT_COMMITTER_NAME=e2e GIT_COMMITTER_EMAIL=e2e@e2e.test
+          python -m mcctl config set branding.drink.command cocoa -C "$CONFIG"
+          python -m mcctl config set branding.holograms '[{at: spawn, help: true}]' -C "$CONFIG"
           python -m mcctl validate -C "$CONFIG"
           python -m mcctl render -C "$CONFIG" -o "$RUNNER_TEMP/rendered"
 

@@ -33,6 +33,8 @@ import org.bukkit.event.inventory.BrewEvent;
 import org.bukkit.event.player.AsyncPlayerPreLoginEvent;
 import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.world.EntitiesLoadEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
@@ -61,6 +63,10 @@ import org.bukkit.scheduler.BukkitTask;
  *   <li>v1.2: the smallworld channels ({@link Smallworld}: the client mod's hello and FPS reports, exact pack
  *       detection, the outdated-pack line, the config payload) and Xaero's maps ({@link XaeroMap}: fair play,
  *       friends on the map).
+ *   <li>v1.3: wayfinding for vanilla clients: the friend compass ({@link Compass}, a boss bar, /compass), the pocket
+ *       map ({@link PocketMap}, /map) and /help ({@link Help}, alias /commands; also on a hologram), with the client
+ *       mods taking precedence ({@link Wayfinding#compassByDefault}: the Smallworld mod + Xaero's = no compass;
+ *       no mod = the compass and a one-line /map tip).
  * </ul>
  *
  * <p>Tail-latency rule: no per-tick work. The HUD/tab task runs every interval_seconds and measures itself
@@ -82,6 +88,8 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
     private XaeroMap xaero;
     private BukkitTask mapTask;
     private Holograms holograms;
+    private Compass compass;
+    private PocketMap pocketMap;
     private BukkitTask hologramTask;
     private final List<ServerLinks.ServerLink> links = new ArrayList<>();
     private Sound joinSound;
@@ -98,7 +106,9 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
         smallworld.start();
         xaero = new XaeroMap(this, s);
         xaero.start();
-        holograms = new Holograms(this, s);
+        holograms = new Holograms(this, s, Help.hologram(s));
+        compass = new Compass(this, s);
+        pocketMap = new PocketMap(this, s, compass);
         if (!s.holograms().isEmpty()) {
             holograms.start();
             long every = s.hudSeconds() * 20L;
@@ -117,7 +127,9 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
         }
         addLinks();
         getServer().getPluginManager().registerEvents(this, this);
-        for (String name : List.of("rules", "discord", "drink", "hud", "mcbrand", "modpack", "view")) {
+        getServer().getPluginManager().registerEvents(pocketMap, this);
+        for (String name : List.of("rules", "discord", "drink", "hud", "mcbrand", "modpack", "view", "compass", "map",
+                "help")) {
             PluginCommand cmd = getCommand(name);
             if (cmd != null) {
                 cmd.setExecutor(this);
@@ -136,12 +148,14 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
         for (Player p : Bukkit.getOnlinePlayers()) { // after a reload
             hud.join(p);
             view.join(p);
+            compass.join(p);
         }
         getLogger().info("branding " + s.name() + ": " + s.rules().size() + " rules, discord "
                 + (s.discordInvite().isEmpty() ? "not set" : "set") + ", hud " + (s.hudEnabled() ? "available" : "off")
                 + ", drink " + (s.drinkEnabled() ? "on (/" + s.drinkCommand() + ")" : "off") + ", " + links.size() + " server links"
                 + ", modpack " + (s.clientEnabled() ? "on" : "off") + ", /view " + (s.viewEnabled() ? "up to "
-                + s.viewMax() : "off"));
+                + s.viewMax() : "off") + ", compass " + (s.compassEnabled() ? s.compassDefaultOn() ? "on" : "opt-in"
+                : "off") + ", pocket map " + (s.pocketMapEnabled() ? "on" : "off"));
     }
 
     @Override
@@ -172,6 +186,9 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
         }
         if (hud != null) {
             hud.hideAll();
+        }
+        if (compass != null) {
+            compass.hideAll();
         }
         if (drinkAlias != null) {
             drinkAlias.unregister(Bukkit.getCommandMap());
@@ -305,6 +322,10 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
         view.join(p);
         modpack.join(p, smallworld);
         holograms.viewer(p, glyphs(p));
+        compass.join(p);
+        if (s.pocketMapEnabled()) {
+            pocketMap.join(p);
+        }
         if (s.drinkEnabled()) {
             boolean has = glass.sweep(p);
             // v1.0.1: not only on the first join. Everyone who never got a glass gets one (serial 0 in their PDC:
@@ -329,6 +350,13 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
                 p.playSound(joinSound);
             }
         }, 20L);
+        // v1.3: the /map tip, once the client's mods are known (the hello and late channels come in the play phase)
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            if (p.isOnline() && s.pocketMapEnabled() && Wayfinding.suggestMap(hasOurMod(p), hasXaero(p))
+                    && !pocketMap.hasOne(p)) {
+                p.sendMessage(pocketMap.tip());
+            }
+        }, 60L);
     }
 
     @EventHandler
@@ -339,11 +367,35 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
         modpack.forget(e.getPlayer().getUniqueId());
         smallworld.forget(e.getPlayer());
         xaero.quit(e.getPlayer());
+        compass.quit(e.getPlayer());
     }
 
     /** v1.2: the client mod said hello (main thread): the pack includes Xaero's maps. */
     void onSmallworldHello(Player p) {
         xaero.hello(p);
+        compass.clientsChanged(p);
+    }
+
+    /** v1.3: the client has the Smallworld mod (it said hello, or registered one of our channels). */
+    boolean hasOurMod(Player p) {
+        return smallworld.client(p.getUniqueId()) != null
+                || p.getListeningPluginChannels().stream().anyMatch(Wayfinding::isOurs);
+    }
+
+    /** v1.3: the client has Xaero's minimap or world map (it registered one of their channels). */
+    boolean hasXaero(Player p) {
+        return p.getListeningPluginChannels().stream().anyMatch(Wayfinding::isXaero);
+    }
+
+    /** v1.3: the compass follows turning and moving (Paper fires PlayerMoveEvent for both); nothing else here. */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onMove(PlayerMoveEvent e) {
+        compass.moved(e.getPlayer());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onTeleport(PlayerTeleportEvent e) {
+        compass.moved(e.getPlayer());
     }
 
     /** v1.2: a chunk's entities loaded: sweep stale holograms there, respawn the configured one. */
@@ -355,6 +407,7 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
     @EventHandler(priority = EventPriority.MONITOR)
     public void onWorldChange(PlayerChangedWorldEvent e) {
         xaero.changedWorld(e.getPlayer());
+        compass.moved(e.getPlayer());
     }
 
     /** v1.2: a channel the client registered (minecraft:register), e.g. smallworld:config after the hello. */
@@ -362,6 +415,9 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
     public void onRegisterChannel(PlayerRegisterChannelEvent e) {
         smallworld.registered(e.getPlayer(), e.getChannel());
         xaero.registered(e.getPlayer(), e.getChannel());
+        if (Wayfinding.isOurs(e.getChannel()) || Wayfinding.isXaero(e.getChannel())) {
+            compass.clientsChanged(e.getPlayer()); // v1.3: a late registration re-decides the compass
+        }
     }
 
     // --- the drink -------------------------------------------------------------------------------------------------
@@ -425,6 +481,21 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
                     sender.sendMessage(Component.text("/view is per player."));
                 }
             }
+            case "compass" -> {
+                if (sender instanceof Player p) {
+                    compass.command(p, args);
+                } else {
+                    sender.sendMessage(Component.text("/compass is per player."));
+                }
+            }
+            case "map" -> {
+                if (sender instanceof Player p) {
+                    pocketMap.command(p, args);
+                } else {
+                    sender.sendMessage(Component.text("/map is per player."));
+                }
+            }
+            case "help" -> sender.sendMessage(Help.chat(s, Help.visible(s, sender)));
             default -> {
                 return false;
             }
@@ -442,6 +513,8 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
             case "mcbrand" -> List.of("status", "selftest");
             case "modpack" -> List.of("off", "on");
             case "view" -> List.of("8", "10", "12", "14", "16", "reset");
+            case "compass" -> List.of("on", "off", "hide", "show", "auto");
+            case "map" -> List.of("zoom");
             default -> List.of();
         };
     }
@@ -565,6 +638,8 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
             to.sendMessage(Component.text("mc-brand selftest: " + xaero.selftest() + "; map: ")
                     .append(xaero.fairPlayMessage()));
             to.sendMessage(Component.text("mc-brand selftest: " + holograms.selftest()));
+            to.sendMessage(Component.text("mc-brand selftest: " + compass.selftest()));
+            to.sendMessage(Component.text("mc-brand selftest: " + pocketMap.selftest() + "; " + Help.selftest(s)));
             to.sendMessage(Component.text("mc-brand selftest: links " + Bukkit.getServerLinks().getLinks().size()
                     + " (ours " + links.size() + "), rules " + s.rules().size()));
             return;
@@ -574,11 +649,13 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
                 "mc-brand %s: hud task runs=%d last=%dus max=%dus, hud write errors=%d, drinks=%d, glasses removed=%d;"
                         + " TPS %.1f, MSPT %.1f (p95 %.1f) = %s; modpack requests=%d codes=%d failures=%d;"
                         + " view checks=%d raised=%d (now %d) lowered=%d; smallworld hellos=%d"
-                        + " malformed=%d outdated=%d; xaero handshakes=%d updates=%d fair play=%d",
+                        + " malformed=%d outdated=%d; xaero handshakes=%d updates=%d fair play=%d;"
+                        + " compass showing=%d renders=%d updates=%d; pocket maps given=%d removed=%d recentres=%d",
                 s.name(), hud.runs, hud.lastNs / 1000, hud.maxNs / 1000, hud.writeErrors, glass.drinks, glass.removed,
                 sp.tps(), sp.mspt(), sp.p95(), sp.health().word, modpack.requests, modpack.codes, modpack.failures,
                 view.checks, view.raisedCount, view.raisedNow(), view.lowered, smallworld.hellos,
                 smallworld.malformed, smallworld.outdatedPrompts, xaero.handshakes, xaero.updates,
-                xaero.fairPlay)));
+                xaero.fairPlay, compass.showing(), compass.renders, compass.updates, pocketMap.given,
+                pocketMap.removed, pocketMap.recentres)));
     }
 }

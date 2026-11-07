@@ -445,11 +445,28 @@ mechanic touches farms). The defaults are generic; set your own and push (`mcctl
 | `branding.hud.*` | available, `default_mode: top` | the HUD (below), refreshed every 5 s; the tab list's header/footer |
 | `branding.drink.*` | off | the signature drink (below): `name`, `command` (default `drink`), `lore`, `color`, `texture` |
 | `branding.resource_pack.*` | off | the drink's texture and the `{glyph}` icon (below): `prompt`, `description`, `glyph` |
+| `branding.holograms[]` | none | floating texts: `x`/`y`/`z` or `at: spawn` (v1.3: 3 blocks above the world spawn), `lines`, `health`, `help` (v1.3: appends `/help`'s list) |
+| `branding.compass.*` | on | v1.3: the friend compass (below): `enabled`, `default_on`, `max_range` (1000 blocks), `distance_rounding` (5), `height_threshold` (8) |
+| `branding.pocket_map.enabled` | on | v1.3: `/map` (below) |
 
-**Commands** (everyone): `/rules [page]`, `/discord`, `/hud [top|side|off]` (remembered per player; `/hud` alone
-switches between the top bar and off), `/drink` (and the drink's own `branding.drink.command`). Operators and the console: `/mcbrand status` (the plugin's task
+**Commands** (everyone): `/help` (v1.3, alias `/commands`: the list below, built from what's on; vanilla's list is
+`/minecraft:help`), `/rules [page]`, `/discord`, `/hud [top|side|off]` (remembered per player; `/hud` alone
+switches between the top bar and off), `/drink` (and the drink's own `branding.drink.command`), `/compass
+[on|off|hide|show|auto]` and `/map [zoom]` (v1.3). A new player command goes into `Help.entries` (the plugin's
+one list; `tests/test_wayfinding.py` fails otherwise). Operators and the console: `/mcbrand status` (the plugin's task
 time, and the technical numbers: TPS, MSPT, p95) and `/mcbrand selftest` (renders every text with a sample player,
 fills a sidebar and a boss bar and checks them; also the e2e test).
+
+**Wayfinding** (v1.3; [features](features.md#finding-friends-without-mods-the-compass-map-and-help) has the
+picture). The compass is a boss bar of its own (under or over the HUD's top bar), redrawn only when its player
+turns or moves (at most every 4 ticks) or someone else moves (at most once a second); nothing runs while nobody
+moves (`/mcbrand status`: `compass showing/renders/updates`). Who gets it by default follows the client: off for
+the Smallworld mod together with Xaero's maps, on otherwise (`branding.compass.default_on: false` makes it
+opt-in for everyone); players override it with `/compass on|off`. The pocket map is one map id per player (kept
+in the player's data), so `/map` never piles up map files; while it is held mc-brand re-centres it and draws the
+old picture shifted until vanilla has redrawn the terrain (vanilla only draws while a map is held, 128 blocks
+around the player). The client-mod detection reads the channels the client registers (`smallworld:*` = the
+Smallworld mod; `xaerominimap:main` / `xaeroworldmap:main`, or any `xaero*` namespace, = Xaero's maps).
 
 **The HUD** (v1.0.1). Players choose where it is; `branding.hud.default_mode` (`top`, `side` or `off`; default
 `top`) is what everyone gets until they choose (a config from before v1.0.1 with `default_on: true` means `side`).

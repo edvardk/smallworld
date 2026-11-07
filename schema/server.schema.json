@@ -1410,7 +1410,7 @@
               "pattern": "^(?!.*\\{[{%#])[^\\x00-\\x1f\\x7f]{1,200}$"
             },
             "command": {
-              "description": "v1.2: the command that hands out the drink (/<command>), 3-16 lowercase letters; not one of mc-brand's own (rules, discord, hud, mcbrand, modpack, view).",
+              "description": "v1.2: the command that hands out the drink (/<command>), 3-16 lowercase letters; not one of mc-brand's own (rules, discord, hud, mcbrand, modpack, view, compass, map, help, commands).",
               "type": "string",
               "pattern": "^[a-z]{3,16}$",
               "not": {
@@ -1420,7 +1420,11 @@
                   "hud",
                   "mcbrand",
                   "modpack",
-                  "view"
+                  "view",
+                  "compass",
+                  "map",
+                  "help",
+                  "commands"
                 ]
               },
               "default": "drink"
@@ -1521,22 +1525,60 @@
             "additionalProperties": false,
             "properties": {
               "x": {
-                "description": "Block x: the text floats over the block's centre.",
-                "type": "integer",
-                "minimum": -29999984,
-                "maximum": 29999984
+                "description": "Block x: the text floats over the block's centre (x, y and z, or `at: spawn`).",
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -29999984,
+                    "maximum": 29999984
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
               },
               "y": {
                 "description": "Block y (the text's centre is half a block above it).",
-                "type": "integer",
-                "minimum": -64,
-                "maximum": 319
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -64,
+                    "maximum": 319
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
               },
               "z": {
                 "description": "Block z.",
-                "type": "integer",
-                "minimum": -29999984,
-                "maximum": 29999984
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -29999984,
+                    "maximum": 29999984
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "at": {
+                "description": "v1.3: `spawn` instead of x/y/z: 3 blocks above the dimension's world spawn (found when the hologram spawns; it follows /setworldspawn).",
+                "anyOf": [
+                  {
+                    "enum": [
+                      "spawn"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
               },
               "world": {
                 "description": "The dimension.",
@@ -1562,15 +1604,65 @@
                 "description": "Add a live line with the server's health word (Smooth / A bit busy / Laggy).",
                 "type": "boolean",
                 "default": false
+              },
+              "help": {
+                "description": "v1.3: append the list of commands every player may use (the same list as /help: built from the enabled features, never out of sync).",
+                "type": "boolean",
+                "default": false
               }
-            },
-            "required": [
-              "x",
-              "y",
-              "z"
-            ]
+            }
           },
           "default": []
+        },
+        "compass": {
+          "description": "v1.3: the friend compass (a boss bar).",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "description": "v1.3: the friend compass, a boss bar that turns with the player: cardinal points and online players' names at their bearing; the one faced shows the distance and up/down arrows; players in other dimensions as 'name (Nether)'. /compass on|off|hide|show|auto. false = no compass and no /compass.",
+              "type": "boolean",
+              "default": true
+            },
+            "default_on": {
+              "description": "v1.3: shown without /compass on, except for clients with both the Smallworld mod and Xaero's maps (their friends are on Xaero's maps). false = only for players who type /compass on.",
+              "type": "boolean",
+              "default": true
+            },
+            "max_range": {
+              "description": "v1.3: players farther away (blocks, horizontally) aren't on the compass.",
+              "type": "integer",
+              "minimum": 16,
+              "maximum": 100000,
+              "default": 1000
+            },
+            "distance_rounding": {
+              "description": "v1.3: the faced player's distance is rounded to a multiple of this (blocks).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 5
+            },
+            "height_threshold": {
+              "description": "v1.3: up/down arrows when a player is more than this many blocks above/below.",
+              "type": "integer",
+              "minimum": 2,
+              "maximum": 64,
+              "default": 8
+            }
+          }
+        },
+        "pocket_map": {
+          "description": "v1.3: /map, the pocket map.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "description": "v1.3: /map gives each player a personal map item that re-centres on them while held (the off hand makes it a minimap), with every online player as a named cursor; /map zoom cycles the scale. Terrain fills in as the player explores (vanilla's map rendering). Free to re-get, can't be copied. Players without client mods get a one-line tip at join.",
+              "type": "boolean",
+              "default": true
+            }
+          }
         }
       }
     },

@@ -13,12 +13,24 @@ Useful commands in game:
 
 | Type | What it does |
 |---|---|
+| `/help` | The commands you can use here, clickable (also `/commands`; Minecraft's own list is `/minecraft:help`) |
 | `/rules` | The house rules |
+| `/map` | A pocket map that follows you and shows your friends (`/map zoom` changes the scale) |
+| `/compass` | The friend compass at the top of the screen (`/compass off` hides it, `/compass hide` keeps you off other players' compasses and maps) |
 | `/hud` | The status bar at the top (`/hud side` for the sidebar, `/hud off` to hide it) |
 | `/lag` | Why the game feels slow right now: the server, your connection or your computer |
 | `/view 16` | See further (see below) |
 | `/modpack` | Your personal link to the optional client (see below) |
 | `/drink` | A new copy of the server's drink if you lost yours (only on servers that have one; it may have its own name too) |
+
+**Finding your friends.** At the top of the screen a compass turns with you: `N`, `NE`, `E`, ... and every
+other player's name in their direction. Turn until a name is in the middle and it shows `▼Alex 120m↑`: 120
+blocks away and higher up than you (`↓` lower). Players in the Nether or the End are listed after a bar, like
+`| Kim (Nether)`. `/map` gives you a map that keeps you in the middle and shows everyone as a named arrow (a dot at
+the edge for players off the map); hold it in your other hand and it becomes a small minimap. The map draws the
+land as you walk around, like any Minecraft map. Lost it or dropped it? `/map` again, it's free. With the optional
+client (below) your friends are on Xaero's minimap instead, so the compass starts switched off there; `/compass
+on` brings it back.
 
 Right after you join, the status bar says **Settling in…** for about ten seconds: your connection and the
 world around you are still loading, so the numbers wouldn't mean much yet.

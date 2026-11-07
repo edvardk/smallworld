@@ -101,6 +101,41 @@ With the client pack, Xaero's minimap and world map work with fair-play settings
 and show your friends at any distance in the same dimension. Without mods, the vanilla Locator Bar is on, and
 half the players asleep skip the night. More: [player-guide.md](player-guide.md).
 
+## Finding friends without mods: the compass, /map and /help
+
+Every vanilla client gets a **friend compass** (v1.3), a bar at the top of the screen that turns with the player:
+
+```
+   W   ·    ·   NW   ·  ▼Alex 120m↑  ·   NE   ·     Sam | Kim (Nether)
+```
+
+Cardinal points and every online player's name at their bearing; the player faced is in the middle with the
+distance (rounded) and an arrow when they are well above or below; players in other dimensions come after the
+bar, without a distance. `/compass on|off` (per player, remembered), `/compass hide` (stay off everyone else's
+compass and map), `/compass auto` (back to the default below).
+
+**`/map`** gives a personal **pocket map**: it re-centres on the player about once a second while held (in the off
+hand it's a minimap), shows every other player as a named arrow (a dot at the edge beyond the map) and fills in
+the terrain as the player explores, like any vanilla map. `/map zoom` cycles the scale. One per player, free to
+re-get, and it can't be copied, framed, stored or dropped (a dropped one just disappears).
+
+**`/help`** (also `/commands`) lists the commands this player can use, built from what's switched on, each one a
+click away; Minecraft's own list stays at `/minecraft:help`. A hologram with `help: true` shows the same list,
+for example above the world spawn (`at: spawn`).
+
+**The better client mods come first.** mc-brand looks at the plugin channels each client registers (and checks
+again when one registers late):
+
+| Client | Compass | `/map` |
+|---|---|---|
+| Smallworld client mod + Xaero's maps (the client pack) | off: friends are on Xaero's minimap | works, not suggested |
+| Xaero's maps, no Smallworld mod | on | works (friend arrows on top of Xaero's) |
+| No mods | on | works, and a one-line tip at join suggests it |
+
+`/compass on|off` and `/map` always override this; the vanilla Locator Bar stays on for everyone. Settings:
+`branding.compass` (on by default, `max_range`, `distance_rounding`, `height_threshold`, `default_on`) and
+`branding.pocket_map.enabled`. More: [operations: Branding](operations.md#branding).
+
 ## Graves
 
 When a player dies, their items and XP wait in a grave where they fell, for 15 minutes, and only they can open

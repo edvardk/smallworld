@@ -73,4 +73,12 @@ branding:
     glyph: art/glyph.png           # 8x8
   holograms:                       # v1.2: floating texts at spawn
     - {x: 0, y: 72, z: 0, lines: ["Welcome to {server} {glyph}", "{players} online"], health: true}
+    - {at: spawn, lines: ["New here? Start with these"], help: true}   # v1.3: above the world spawn, /help's list
+  compass:                         # v1.3: the friend compass (a boss bar; /compass on|off|hide)
+    enabled: true
+    default_on: true
+    max_range: 2000
+    distance_rounding: 10
+    height_threshold: 8
+  pocket_map: {enabled: true}      # v1.3: /map
 client: {enabled: true}
