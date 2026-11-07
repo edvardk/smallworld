@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smallworld-mc"
-version = "1.2.3"
+version = "1.2.2"
 requires-python = ">=3.12"  # = mcctl.MIN_PYTHON; server-side scripts: 3.11 stdlib
 license = "MIT"  # PEP 639 (setuptools >= 77)
 license-files = ["LICENSE"]

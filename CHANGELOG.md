@@ -6,13 +6,6 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
-### Changed
-
-- The product's e2e `agent` shard is split in two by its rounds (`agent-a`, `agent-b`: `tests/e2e/agent_check.py
-  --rounds a|b`, each on its own box with its own mock Worker and GitHub API), so e2e's slowest shard drops from
-  16 to about 11 minutes. Every round prints its wall time; without `--rounds` the script still runs every
-  round (docs/ci.md).
-
 ### Added
 
 - `scripts/release.py bump X.Y.Z [--date YYYY-MM-DD]` sets the version in `pyproject.toml`, `mcctl/__init__.py`
@@ -21,9 +14,6 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   release tag only on the fetched tip of `origin/main` with a clean tree, a passing `check` and a new tag name,
   and prints the push command (`--push` pushes after a typed confirmation). v1.2.1's tag had landed on a branch
   commit instead of main's merge commit (docs/reference.md "Releasing").
-
-### Added
-
 - Whitelist guard: a deploy no longer silently removes players who are on the live whitelist but were never in
   `players.yml` (console or Discord adds, panel adds whose pull request expired). They are kept, the deploy's
   output says `KEPT: <names>`, Discord gets one message per newly kept player (`mcctl players add NAME` to make
@@ -33,14 +23,6 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   `players.yml`). docs/operations.md "Players not in Git".
 - `server.yml` `minecraft.strict_whitelist` (default `false`): `true` makes `players.yml` the whole whitelist, as
   before this release (a deploy removes every live player it doesn't list, apart from pending panel adds).
-
-### Changed
-
-- Golden rendering (`tests/fixtures/full-render.json`): new group var `mc_strict_whitelist` (the example sets it
-  explicitly to `false`).
-
-### Added
-
 - **The home screen:** `mcctl` with no command, on an interactive terminal, shows a status header (deployment,
   config repo, pinned product vs this mcctl, server online/players/TPS/MSPT, last deploy, open panel PRs; slow
   or failed parts read "unknown (why)" and never block) and an arrow-key menu grouped Server, Players, Worlds,
@@ -53,7 +35,14 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 - Dependencies: questionary 2.1.1 (with prompt-toolkit 3.0.53 and wcwidth 0.9.4) in all three requirement sets
   and `pyproject.toml`.
 
-## [1.2.3] - 2026-11-07
+### Changed
+
+- The product's e2e `agent` shard is split in two by its rounds (`agent-a`, `agent-b`: `tests/e2e/agent_check.py
+  --rounds a|b`, each on its own box with its own mock Worker and GitHub API), so e2e's slowest shard drops from
+  16 to about 11 minutes. Every round prints its wall time; without `--rounds` the script still runs every
+  round (docs/ci.md).
+- Golden rendering (`tests/fixtures/full-render.json`): new group var `mc_strict_whitelist` (the example sets it
+  explicitly to `false`).
 
 ### Fixed
 
