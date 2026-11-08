@@ -347,13 +347,6 @@ impl Spec {
     }
 }
 
-impl PyStr {
-    /// `self.startswith(prefix)` for another `PyStr`.
-    fn starts_with_py(&self, prefix: &PyStr) -> bool {
-        self.code_points().starts_with(prefix.code_points())
-    }
-}
-
 /// What one parser collected (argparse's namespace).
 #[derive(Default)]
 struct Namespace {

@@ -268,23 +268,39 @@ def reply(text: str) -> Callable[[], Callable[[str], Reply]]:
 # --- the workspace rules ---------------------------------------------------------------------------------------
 
 
-def test_workspace_has_no_dependencies() -> None:
-    """std only: no [dependencies] entries, and Cargo.lock lists nothing but the workspace's own crates."""
-    members = tomllib.loads((RUST / "Cargo.toml").read_text())["workspace"]["members"]
-    for member in members:
-        manifest = tomllib.loads((RUST / member / "Cargo.toml").read_text())
-        for table in ("dependencies", "dev-dependencies", "build-dependencies", "target"):
-            assert not manifest.get(table), (
-                f"{member}: [{table}] must stay empty (CLAUDE.md: no crates.io deps)"
-            )
-        assert manifest["lints"]["rust"]["unsafe_code"] == "forbid"
-    lock = tomllib.loads((RUST / "Cargo.lock").read_text())
-    packages = lock["package"]
-    assert {p["name"] for p in packages} == {Path(m).name for m in members}
-    assert all("source" not in p and not p.get("dependencies") for p in packages), packages
-    main = (RUST / "smallworld-rcon/src/main.rs").read_text()
-    assert "#![forbid(unsafe_code)]" in main
-    assert not list(RUST.rglob("build.rs")), "no build scripts"
+def test_smallworld_rcon_stays_dependency_free() -> None:
+    """smallworld-rcon is std only: its one dependency is smallworld-core without features (whose only
+    crates.io dependency, serde_json, is optional behind `json`), so the resolved graph of the binary holds no
+    crates.io crate. The agent's dependencies are the workspace's (rust/allowed-crates.txt, deny.toml)."""
+    ws = tomllib.loads((RUST / "Cargo.toml").read_text())
+    assert ws["workspace"]["dependencies"]["smallworld-core"] == {
+        "path": "smallworld-core",
+        "default-features": False,
+    }
+    rcon = tomllib.loads((RUST / "smallworld-rcon/Cargo.toml").read_text())
+    assert rcon["dependencies"] == {"smallworld-core": {"workspace": True}}
+    for table in ("dev-dependencies", "build-dependencies", "target", "features"):
+        assert not rcon.get(table), f"smallworld-rcon: [{table}] must stay empty"
+    core = tomllib.loads((RUST / "smallworld-core/Cargo.toml").read_text())
+    assert core["features"]["default"] == []
+    assert all(d.get("optional") for d in core["dependencies"].values()), core["dependencies"]
+    for member in ("smallworld-rcon", "smallworld-core"):
+        assert (
+            tomllib.loads((RUST / member / "Cargo.toml").read_text())["lints"]["rust"]["unsafe_code"]
+            == "forbid"
+        )
+    assert "#![forbid(unsafe_code)]" in (RUST / "smallworld-rcon/src/main.rs").read_text()
+    assert "#![forbid(unsafe_code)]" in (RUST / "smallworld-core/src/lib.rs").read_text()
+    assert not list(RUST.rglob("build.rs")), "no build scripts of our own"
+    if shutil.which("cargo") is None:
+        return
+    tree = subprocess.run(
+        ["cargo", "tree", "--locked", "--offline", "-p", "smallworld-rcon", "-e", "normal,build",
+         "--target", "all", "--prefix", "none", "--format", "{p}"],
+        cwd=RUST, capture_output=True, text=True, check=True,
+    ).stdout  # fmt: skip
+    crates = {line.split()[0] for line in tree.splitlines() if line.strip()}
+    assert crates == {"smallworld-rcon", "smallworld-core"}, crates
 
 
 def test_toolchain_and_release_profile() -> None:

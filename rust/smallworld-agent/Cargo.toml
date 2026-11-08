@@ -1,0 +1,34 @@
+[package]
+name = "smallworld-agent"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Port of Smallworld's on-box agent (scripts/mc_agent.py and the agent half of scripts/mc_panel.py)"
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+smallworld-core = { workspace = true, features = ["json"] }
+ureq.workspace = true
+rustls.workspace = true
+rustls-pki-types.workspace = true
+serde_json.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+sha1.workspace = true
+flate2.workspace = true
+base64.workspace = true
+regex.workspace = true
+unicode-normalization.workspace = true
+unicode-general-category.workspace = true
+libc.workspace = true
+
+[lints.rust]
+# Forbidden except in the one module that needs libc calls (sys.rs: umask, localtime_r, sigwait), which allows
+# it with a comment per block.
+unsafe_code = "deny"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+doc_markdown = "allow"
+module_name_repetitions = "allow"

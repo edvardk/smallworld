@@ -1,0 +1,28 @@
+[package]
+name = "smallworld-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "What Smallworld's Rust programs share: RCON, server.properties, Python-compatible text and JSON, state files, flock locks, the journald audit"
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Without features the crate is std only (smallworld-rcon uses it that way and stays dependency-free).
+default = []
+# JSON: py_json (json.dumps byte for byte), read_json, the JSON state-file helpers.
+json = ["dep:serde_json"]
+
+[dependencies]
+serde_json = { workspace = true, optional = true }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+doc_markdown = "allow"
+# A library of small helpers: #[must_use] on every getter and an "# Errors" section per io::Result add noise.
+must_use_candidate = "allow"
+return_self_not_must_use = "allow"
+missing_errors_doc = "allow"

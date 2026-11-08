@@ -175,6 +175,11 @@ pub fn oserror_class(errno: i32) -> &'static str {
     }
 }
 
+/// `type(e).__name__` for the `OSError` Python raises for this I/O error (a file operation: never a timeout).
+pub fn io_class(e: &std::io::Error) -> &'static str {
+    e.raw_os_error().map_or("OSError", oserror_class)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

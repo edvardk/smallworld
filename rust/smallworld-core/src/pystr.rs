@@ -264,6 +264,11 @@ impl PyStr {
         Ok(out)
     }
 
+    /// `self.startswith(prefix)` for another `PyStr`.
+    pub fn starts_with_py(&self, prefix: &PyStr) -> bool {
+        self.0.starts_with(&prefix.0)
+    }
+
     /// `self.strip()`: without leading and trailing whitespace (Python's definition, `is_space`).
     pub fn strip(&self) -> PyStr {
         let s = &self.0;
@@ -445,12 +450,91 @@ pub fn parse_hex(text: &[u32]) -> Option<i64> {
     Some(if negative { -value } else { value })
 }
 
+// --- Python's text rules for Rust strings ---------------------------------------------------------------------
+//
+// The agent works on Rust `String`s (JSON text is always valid Unicode, so lone surrogates can't occur), but every
+// length, slice and whitespace rule must still be Python's: lengths and slices count code points (`text[:300]`),
+// `str.isspace()` includes U+001C..U+001F (Rust's `char::is_whitespace` doesn't), and `re.ASCII`'s `\d` is 0-9
+// only. Never byte-slice or call `char::is_whitespace` where Python semantics matter: use these.
+
+/// `ch.isspace()` for one character (Python's definition: `is_space`).
+pub fn isspace(ch: char) -> bool {
+    is_space(u32::from(ch))
+}
+
+/// `len(text)`: the number of code points.
+pub fn len_cp(text: &str) -> usize {
+    text.chars().count()
+}
+
+/// `text[:n]`: the first `n` code points (all of `text` if it is shorter).
+pub fn prefix_cp(text: &str, n: usize) -> &str {
+    match text.char_indices().nth(n) {
+        Some((i, _)) => &text[..i],
+        None => text,
+    }
+}
+
+/// `text[start:end]` for non-negative bounds (`end` None = to the end), in code points, clamped like Python.
+pub fn slice_cp(text: &str, start: usize, end: Option<usize>) -> &str {
+    let byte_at = |n: usize| text.char_indices().nth(n).map_or(text.len(), |(i, _)| i);
+    let from = byte_at(start);
+    let to = end.map_or(text.len(), byte_at);
+    if to <= from { "" } else { &text[from..to] }
+}
+
+/// `text.split()` (no argument): the words between runs of Python whitespace, no empty words.
+pub fn split_ws(text: &str) -> Vec<&str> {
+    text.split(isspace).filter(|w| !w.is_empty()).collect()
+}
+
+/// `text.strip()` (no argument): without leading and trailing Python whitespace.
+pub fn strip_ws(text: &str) -> &str {
+    text.trim_matches(isspace)
+}
+
+/// `" ".join(text.split())`: whitespace runs collapsed to one space, none at either end.
+pub fn collapse_ws(text: &str) -> String {
+    split_ws(text).join(" ")
+}
+
+/// `ch.isdigit()` under `re.ASCII` (`\d` in a pattern compiled with `re.ASCII`): 0-9 only. Rust's regex `\d` is
+/// Unicode (it matches Arabic-Indic digits, which NFKC doesn't fold): write `[0-9]` in patterns.
+pub fn is_ascii_digit(ch: char) -> bool {
+    ch.is_ascii_digit()
+}
+
+/// `text.isdigit()` for a whole string under ASCII rules (non-empty, every character 0-9). Note: Python's own
+/// `str.isdigit()` is Unicode; use this only where the Python code checks ASCII digits (a regex with re.ASCII,
+/// or text that is ASCII by construction).
+pub fn all_ascii_digits(text: &str) -> bool {
+    !text.is_empty() && text.chars().all(|c| c.is_ascii_digit())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn s(text: &str) -> PyStr {
         PyStr::from(text)
+    }
+
+    #[test]
+    fn text_helpers_follow_python() {
+        assert!(isspace('\u{1c}') && isspace('\u{85}') && isspace('\u{3000}'));
+        assert!(!'\u{1c}'.is_whitespace()); // why isspace exists
+        assert!(!isspace('\u{200b}'));
+        assert_eq!(len_cp("añ😀"), 3);
+        assert_eq!(prefix_cp("añ😀b", 3), "añ😀");
+        assert_eq!(prefix_cp("ab", 5), "ab");
+        assert_eq!(slice_cp("abcdef", 2, Some(4)), "cd");
+        assert_eq!(slice_cp("abc", 5, None), "");
+        assert_eq!(slice_cp("abc", 2, Some(1)), "");
+        assert_eq!(split_ws(" a\u{1c}b\t\u{a0}c  "), vec!["a", "b", "c"]);
+        assert_eq!(strip_ws("\u{1f} x \u{2028}"), "x");
+        assert_eq!(collapse_ws("  a   b\nc "), "a b c");
+        assert!(!is_ascii_digit('\u{663}') && is_ascii_digit('7'));
+        assert!(all_ascii_digits("4671") && !all_ascii_digits("") && !all_ascii_digits("4\u{663}"));
     }
 
     #[test]

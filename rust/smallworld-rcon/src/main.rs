@@ -16,12 +16,11 @@
 
 // Each `mod` line pulls in the file of that name (src/args.rs, ...), like a Python import of a sibling module.
 mod args;
-mod errno;
-mod error;
 mod ops;
-mod properties;
-mod pystr;
-mod rcon;
+
+// The RCON client, server.properties and Python's text and error rules live in smallworld-core (rust/smallworld-core,
+// shared with smallworld-agent). `use` makes them reachable as crate::error, crate::pystr, crate::rcon here.
+use smallworld_core::{error, pystr, rcon};
 
 use args::{Command, Parsed};
 use error::PyError;
