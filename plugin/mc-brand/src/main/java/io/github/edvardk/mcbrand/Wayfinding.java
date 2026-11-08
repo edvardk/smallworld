@@ -318,6 +318,18 @@ final class Wayfinding {
         return Math.max(-128, Math.min(127, v));
     }
 
+    /** "Never happened" for a tick timestamp; only ever compared through {@link #due}. */
+    static final int NEVER = Integer.MIN_VALUE;
+
+    /**
+     * v1.4: has {@code every} ticks passed since {@code last} ({@link #NEVER}: yes)? Never subtract a sentinel:
+     * {@code now - Integer.MIN_VALUE} overflows to a negative number, which kept the pocket map from ever
+     * re-centring and the map room from ever painting (found by the v1.4 e2e).
+     */
+    static boolean due(int now, int last, int every) {
+        return last == NEVER || now - last >= every;
+    }
+
     /** The map centre for a player at (x, z): whole pixels of this scale, so a re-centre shifts whole pixels. */
     static int snap(double coord, int scale) {
         int blocks = 1 << scale;

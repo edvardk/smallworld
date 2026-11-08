@@ -65,10 +65,15 @@ def bspatch(old: bytes, patch: bytes) -> bytes:
     return bytes(new)
 
 
-def build_server_jar(paperclip: bytes) -> bytes:
+def build_server_jar(paperclip: bytes, vanilla_bundle: bytes | None = None) -> bytes:
+    """The patched server jar. `vanilla_bundle`: the vanilla jar paperclip names (map_palette.py caches it),
+    sha256-checked here; downloaded and checked when None."""
     z = zipfile.ZipFile(io.BytesIO(paperclip))
     sha_vanilla, url, _ = z.read("META-INF/download-context").decode().split()
-    vanilla_bundle = download_verified(url, {"sha256": sha_vanilla})
+    if vanilla_bundle is None:
+        vanilla_bundle = download_verified(url, {"sha256": sha_vanilla})
+    elif digest(vanilla_bundle, "sha256") != sha_vanilla:
+        raise ValueError("vanilla jar hash mismatch")
     line = next(
         ln for ln in z.read("META-INF/patches.list").decode().splitlines() if ln.startswith("versions\t")
     )

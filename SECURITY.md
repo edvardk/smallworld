@@ -622,6 +622,41 @@ What the Rust drop-in for `mc_rcon.py`'s command line changes on the box:
 - **`ExecStop`** is a `/bin/sh -c` line inside the existing sandboxed unit (no change to its `systemd-analyze
   security` score): `mc_rcon.py stop` runs only when the binary gave no verdict (exit status above 1).
 
+## The world map (v1.4)
+
+What the nightly pre-render (`smallworld-map`, role `map`) and its readers in mc-brand change on the box:
+
+- **A new static system user, `mcmap`** (`mc_map_user`), primary group `minecraft`, no home, no shell. Not
+  `minecraft` (a bug in the parser of player-influenced chunk data must never be able to write the world) and not
+  `mcops` (it holds credentials). It reads the world through group permissions only (the server writes it 0640 /
+  0750 under `UMask=0027`).
+- **A new unit, `mc-map.service`** (started by `mc-map.timer`, server.yml `map.schedule`): the shared sandbox plus
+  `MemoryDenyWriteExecute`, `PrivateNetwork=true`, `IPAddressDeny=any`, `RestrictAddressFamilies=AF_UNIX`,
+  `PrivateIPC`, `ProcSubset=pid`, `SystemCallFilter=~@privileged @resources`, `InaccessiblePaths=` for the
+  credential directories (`/etc/minecraft`, `/var/lib/mc-agent`, the restic cache, ...), idle priority,
+  `MemoryMax=512M`, `RuntimeMaxSec=4h`. **Read-only on the world by the sandbox**, not only by file modes:
+  `ProtectSystem=strict` leaves nothing writable but its `StateDirectory=mc-map`. No credentials, no network, no
+  polkit verb (nothing but the timer and root start it). Within the `systemd-analyze security` gate (≤ 2.5:
+  `tests/test_hardening.py`, `tests/e2e/hardening_check.py`); `tests/e2e/map_check.py` proves `mcmap` can't write
+  the world.
+- **A new binary, `/opt/minecraft/bin/smallworld-map`**, `root:root 0755`, installed only after its sha256 matches
+  `mc_smallworld_map_sha256` on the controller (the reproducible build in `rust/dist/`, `scripts/build_rust.py
+  check`). std only (its inflate and LZ4 decoders are its own; every stream's checksum is verified), `unsafe`
+  forbidden, never `mmap`.
+- **Parser input is semi-trusted**: the server writes the region files, but chunks carry player-made content and
+  the world library imports uploaded worlds. Every length is bounds-checked, nesting is capped (512), output is
+  capped (64 MiB per chunk), heights and coordinates are range-checked so the walk stays bounded; a malformed
+  chunk is counted and skipped, never a crash (`cargo test`'s fuzz tests feed it random, truncated and bit-flipped
+  NBT, streams and region files).
+- **A new directory the JVM reads**: `/var/lib/mc-map` (0750 `mcmap:minecraft`, files 0640), like the verdict
+  directory: the plugin may read, never write. mc-brand accepts a tile only with the exact size, magic, scale,
+  reserved field and the tile coordinates of its file name; a malicious tile can only paint map pixels. It reads
+  files off the main thread, caches at most 4 MB, never follows the pre-render into the Nether, and ignores it when
+  `meta.json`'s world identity isn't the world on disk (a world switch).
+- **The spawn map room** (`branding.map_room`, off by default) places item frames in the live world: fixed,
+  invulnerable, never saved with the world (respawned when their chunk loads), protected against breaking,
+  damage, rotation and taking the map; turning it on is a deliberate config change.
+
 ## Not covered (v1)
 
 - **GitHub Free:** without GitHub Pro the config repo (private, personal account) can't have rulesets, so

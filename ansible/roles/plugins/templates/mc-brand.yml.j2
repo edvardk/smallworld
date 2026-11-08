@@ -2,6 +2,9 @@
 # The in-house plugin mc-brand (design §8 P17), from server.yml branding: (mcctl render). Owned by root: the
 # plugin only reads it. v1.1: client.request_dir / client.code_file are the product's /modpack hand-off paths.
 # v1.2: client.packs (tier -> current pack version, from the config repo's client lock) for the outdated-pack line.
+# v1.4: pocket_map.prerender_dir is the world map renderer's output (mc_map_dir, role map; the plugin only reads it),
+# colors_file the map colours it paints with (mc_map_colors, installed by the map role).
 {{ mc_brand | combine({'client': {'request_dir': mc_client_request_dir, 'code_file': mc_client_code_file,
-                                  'packs': mc_client_packs | default({})}}, recursive=True)
+                                  'packs': mc_client_packs | default({})},
+                       'pocket_map': {'prerender_dir': mc_map_dir, 'colors_file': mc_map_colors}}, recursive=True)
    | to_nice_yaml(indent=2, width=1000) }}

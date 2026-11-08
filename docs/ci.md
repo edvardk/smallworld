@@ -109,7 +109,8 @@ Not a required check.
   by `ansible/requirements.yml`, product CI only); Terraform providers (keyed by
   `terraform/.terraform.lock.hcl`; terraform still checks them against the lock); the plugin build's server jar
   and compile-only jars (keyed by `template/server.lock.yml` and `plugin/*/build.yml`; `build_plugin.py`
-  re-verifies their sha256 on every use; the JDK is downloaded and checked each run). The e2e container
+  re-verifies their sha256 on every use; the JDK is downloaded and checked each run). v1.4: the vanilla jar
+  `map_palette.py check` needs sits in the same cache, checked against the server jar's download-context. The e2e container
   downloads Purpur and Temurin inside the box, hash-checked by Ansible. That isn't cached, because it is part of
   what the test proves. Node has no packages and Playwright isn't installed in CI (the UI smoke test is local).
 

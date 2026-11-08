@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Reproducible build of the Rust workspace's binaries (v1.4: rust/smallworld-rcon, the drop-in for
-mc_rcon.py's command line; docs/rust/smallworld-rcon.md).
+mc_rcon.py's command line, docs/rust/smallworld-rcon.md; rust/smallworld-map, the world map pre-renderer,
+docs/rust/smallworld-map.md).
 
-    build_rust.py build    # rust/dist/smallworld-rcon-<target> for every target, prints the sha256 pins
+    build_rust.py build    # rust/dist/<binary>-<target> for every binary and target, prints the sha256 pins
     build_rust.py check    # rebuild in a temporary directory, compare with rust/dist/ and the group_vars pins
 
 The toolchain is the one rust/rust-toolchain.toml pins (rustup installs it; the rustc version is checked).
@@ -12,7 +13,7 @@ dependencies), a clean environment (no RUSTFLAGS, wrappers or profile overrides 
 SOURCE_DATE_EPOCH and `--remap-path-prefix` for every directory involved; the release profile
 (rust/Cargo.toml) has codegen-units=1, LTO, panic=abort and stripped symbols. `check` builds in a different
 directory than `build` did, and fails if a binary differs from the committed one, from its pin
-(ansible/group_vars/all/main.yml mc_smallworld_rcon_sha256: what Ansible verifies before installing it) or
+(ansible/group_vars/all/main.yml, BINARIES' pin: what Ansible verifies before installing it) or
 contains a build path. CI runs `check` (ci.yml, job rust).
 """
 
@@ -34,7 +35,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 RUST_DIR = REPO_ROOT / "rust"
 DIST = RUST_DIR / "dist"
 GROUP_VARS = REPO_ROOT / "ansible" / "group_vars" / "all" / "main.yml"
-PIN = "mc_smallworld_rcon_sha256"
+# Each binary the workspace ships -> its sha256 pin in group_vars (keys: Debian architecture names).
+BINARIES = {
+    "smallworld-rcon": "mc_smallworld_rcon_sha256",
+    "smallworld-map": "mc_smallworld_map_sha256",
+}
+PIN = BINARIES["smallworld-rcon"]
 BINARY = "smallworld-rcon"
 # Debian architecture name (the pin's keys, as restic_sha256's) -> Rust target.
 TARGETS = {"amd64": "x86_64-unknown-linux-musl", "arm64": "aarch64-unknown-linux-musl"}
@@ -64,12 +70,12 @@ def pinned_toolchain() -> str:
     return str(tomllib.loads((RUST_DIR / "rust-toolchain.toml").read_text())["toolchain"]["channel"])
 
 
-def pins() -> dict[str, str]:
-    return {str(k): str(v) for k, v in (yaml.safe_load(GROUP_VARS.read_text()).get(PIN) or {}).items()}
+def pins(pin: str = PIN) -> dict[str, str]:
+    return {str(k): str(v) for k, v in (yaml.safe_load(GROUP_VARS.read_text()).get(pin) or {}).items()}
 
 
-def dist_path(arch: str) -> Path:
-    return DIST / f"{BINARY}-{TARGETS[arch]}"
+def dist_path(arch: str, binary: str = BINARY) -> Path:
+    return DIST / f"{binary}-{TARGETS[arch]}"
 
 
 def build_env(target_dir: Path) -> dict[str, str]:
@@ -97,23 +103,25 @@ def check_toolchain(env: dict[str, str]) -> None:
         raise SystemExit(f"rustc {got} in rust/, rust-toolchain.toml pins {want} (is rustup on PATH?)")
 
 
-def build(target_dir: Path) -> dict[str, bytes]:
-    """Every target's binary, built into `target_dir`."""
+def build(target_dir: Path) -> dict[tuple[str, str], bytes]:
+    """Every (binary, arch)'s build, built into `target_dir`."""
     env = build_env(target_dir)
     check_toolchain(env)
-    out: dict[str, bytes] = {}
+    out: dict[tuple[str, str], bytes] = {}
+    packages = [arg for binary in BINARIES for arg in ("-p", binary)]
     for arch, target in TARGETS.items():
         subprocess.run(
-            ["cargo", "build", "--release", "--locked", "--offline", "--target", target, "-p", BINARY],
+            ["cargo", "build", "--release", "--locked", "--offline", "--target", target, *packages],
             cwd=RUST_DIR,
             env=env,
             check=True,
         )
-        data = (target_dir / target / "release" / BINARY).read_bytes()
-        leaks = leaked_paths(data, target_dir)
-        if leaks:
-            raise SystemExit(f"{target}: the binary contains build paths: {', '.join(leaks)}")
-        out[arch] = data
+        for binary in BINARIES:
+            data = (target_dir / target / "release" / binary).read_bytes()
+            leaks = leaked_paths(data, target_dir)
+            if leaks:
+                raise SystemExit(f"{target}: {binary} contains build paths: {', '.join(leaks)}")
+            out[binary, arch] = data
     return out
 
 
@@ -135,10 +143,11 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     with tempfile.TemporaryDirectory(prefix="smallworld-rust-") as tmp:
         built = build(Path(tmp) / ("target-build" if args.command == "build" else "target-check"))
-    want = pins()
     problems: list[str] = []
-    for arch, data in built.items():
-        path = dist_path(arch)
+    for (binary, arch), data in built.items():
+        pin = BINARIES[binary]
+        want = pins(pin)
+        path = dist_path(arch, binary)
         digest = sha256(data)
         rel = path.relative_to(REPO_ROOT)
         if args.command == "build":
@@ -147,13 +156,13 @@ def main(argv: list[str] | None = None) -> int:
             path.chmod(0o755)
             print(f"{rel}: {len(data)} bytes, sha256 {digest}")
             if want.get(arch) != digest:
-                print(f"update ansible/group_vars/all/main.yml: {PIN}.{arch}: {digest}")
+                print(f"update ansible/group_vars/all/main.yml: {pin}.{arch}: {digest}")
             continue
         if not path.is_file() or path.read_bytes() != data:
             problems.append(f"{rel} differs from the rebuild (sha256 {digest}): run build_rust.py build")
         if want.get(arch) != digest:
-            problems.append(f"{PIN}.{arch} is {want.get(arch)}, the rebuild is {digest}")
-        if not problems:
+            problems.append(f"{pin}.{arch} is {want.get(arch)}, the rebuild is {digest}")
+        if not any(str(rel) in p or f"{pin}.{arch}" in p for p in problems):
             print(f"{rel}: reproducible, {len(data)} bytes, sha256 {digest}")
     for p in problems:
         print(p, file=sys.stderr)

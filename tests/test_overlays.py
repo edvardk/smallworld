@@ -202,6 +202,11 @@ def test_brand_settings_render_as_mcctl_wrote_them(rendered: dict[str, dict]) ->
         "code_file": "/run/mc-verdicts/client-codes.tsv",
         "packs": {},  # v1.2: mc_client_packs (rendered from the client lock; none in this fixture)
     }
+    # v1.4: and the world map pre-render's output and colours (mc_map_dir, mc_map_colors)
+    want["pocket_map"] |= {
+        "prerender_dir": "/var/lib/mc-map",
+        "colors_file": "/opt/minecraft/share/map-colors.tsv",
+    }
     assert rendered["mc-brand"] == want
     props = rendered["server.properties.yml.j2"]
     # the template's defaults: branding on, the resource pack off (its keys managed and empty)

@@ -103,9 +103,27 @@
     "fair_play": true,
     "players": true
    },
+   "map_room": {
+    "at": "spawn",
+    "cursors": true,
+    "enabled": true,
+    "facing": "south",
+    "height": 3,
+    "offset": [
+     0,
+     0,
+     -6
+    ],
+    "radius": 5000,
+    "scale": 3,
+    "view": "border",
+    "width": 4,
+    "world": "minecraft:overworld"
+   },
    "name": "Lighthouse",
    "pocket_map": {
-    "enabled": true
+    "enabled": true,
+    "prerender": true
    },
    "rules": [
     "Be kind.",
@@ -158,6 +176,19 @@
   "mc_maintenance_force_minutes": 30,
   "mc_maintenance_timezone": "Europe/Dublin",
   "mc_maintenance_window": "04:00-07:00",
+  "mc_map_dimensions": [
+   {
+    "id": "minecraft:overworld",
+    "radius": 5000
+   },
+   {
+    "id": "minecraft:the_end",
+    "radius": 3000
+   }
+  ],
+  "mc_map_enabled": true,
+  "mc_map_schedule": "*-*-* 02:41",
+  "mc_map_threads": 1,
   "mc_max_players": 20,
   "mc_metrics_interval_s": 60,
   "mc_motd": "\u00a7f\u00a7lLight\u00a7c\u00a7lhouse \u00a78| \u00a77Keep the lamp lit\n\u00a77A small survival world by the sea",

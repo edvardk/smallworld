@@ -35,9 +35,14 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "code": (),  # computed: any path that is not docs
     # actionlint: every workflow it lints (the product's and the config-repo template's materialized example)
     "workflows": (".github/*", "template/.github/*", "examples/config-repo/.github/*"),
-    # ci.yml job plugin: build_plugin.py check + brand_art.py check + build_client_mod.py check
+    # ci.yml job plugin: build_plugin.py check + map_palette.py check (v1.4) + brand_art.py check +
+    # build_client_mod.py check
     "plugin": (
         "plugin/*",
+        "scripts/map_palette.py",
+        "scripts/map_palette/*",
+        "scripts/config_keys.py",
+        "server-config/keys/*/map-*",
         "client/mod/*",
         "scripts/build_plugin.py",
         "scripts/build_client_mod.py",
@@ -50,7 +55,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "requirements/validate.txt",
     ),
     # v1.4 ci.yml job rust: rustfmt, clippy, cargo test, build_rust.py check (the committed binaries and their
-    # pins), the differential tests against mc_rcon.py
+    # pins), the differential tests against mc_rcon.py, smallworld-map against the reference renderer
     "rust": (
         "rust/*",
         "scripts/build_rust.py",
@@ -58,6 +63,10 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "scripts/notify.py",
         "scripts/alerts.py",
         "tests/test_rust_rcon.py",
+        "tests/test_rust_map.py",  # v1.4: smallworld-map vs tests/map_reference.py on the fixture
+        "tests/map_reference.py",
+        "tests/fixtures/world-26.3/*",
+        "server-config/keys/*/map-palette.tsv",
         "ansible/group_vars/all/main.yml",
         "requirements/dev.txt",
     ),
@@ -106,6 +115,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "ansible/roles/minecraft/*",
         "ansible/roles/plugins/*",
         "ansible/roles/backups/*",
+        "ansible/roles/map/*",  # v1.4: map_check.py (telemetry-brand shard)
+        "rust/dist/smallworld-map-*",
         "mcctl/migrate.py",
         "mcctl/serverops.py",
         "mcctl/restorecmd.py",
