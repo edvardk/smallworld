@@ -56,6 +56,14 @@ fn main() -> ExitCode {
         .collect();
     let code = if argv.get(1).map(String::as_str) == Some("cli") {
         cli::main(&argv[2..])
+    } else if argv.get(1).map(String::as_str) == Some("selftest-console") && argv.len() == 2 {
+        // Hidden, test-only (PORTING.md "Divergences"): the console allowlist on stdin, nothing executed.
+        let mut input = String::new();
+        if std::io::Read::read_to_string(&mut std::io::stdin(), &mut input).is_err() {
+            2
+        } else {
+            actions::console::selftest_main(&input, &mut std::io::stdout())
+        }
     } else {
         daemon::main()
     };

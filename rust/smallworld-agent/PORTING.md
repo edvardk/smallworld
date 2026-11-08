@@ -19,7 +19,7 @@ divergences are listed under "Divergences"; add one only with a reason and a tes
 | `types.rs`, `sys.rs`, `unicode.rs`, `settings.rs`, `http.rs`, `notify.rs`, `systemd.rs`, `worlds.rs` | phase 1 | done (shared) |
 | `jobs.rs` | jobs | runner done (foreground + background, cancel); daemon wiring of reports open |
 | `panel/plugins.rs`, `panel/pending.rs` | phase 1 / sync | done (`record`, `record_world`, `update`); `merge_sync` is sync's |
-| `actions/` | actions | restart, plugin, moderate, world_* done; the rest stubs |
+| `actions/` | actions | **done**: every `do_<action>`, `Telemetry` (sidecar online.json + `Messages`), console vectors + differential fuzzing (`tests/test_rust_agent_console.py`); daemon scenarios wait for link |
 | `link/`, `daemon.rs` | link | stubs |
 | `ship/` | ship | stubs |
 | `data/`, `panel/rejected.rs` | data | stubs |
@@ -164,6 +164,21 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
   already in `actions/mod.rs`.
 - Proof: vectors for `check_console` (done here: extend with the harness corpus), `_one_line`; scenarios 3, 5,
   7, 8, 10, 15, 16; `tests/test_agent.py`'s "ACTIONS == do_*" extended to the Rust list.
+- Done (actions owner): `actions/info.rs` (status, selftest, lookup, console, tail, cancel, player_message),
+  `power.rs` (stop + `stop_now`, start, backup), `moderate.rs` (whitelist + `read_json_list`, rejected_dismiss),
+  `restore.rs`, `telemetry.rs`. Vectors: `console.json` (all 230) and `one_line.json` in `cargo test`;
+  `tests/test_rust_agent_console.py` fuzzes the allowlist against Python (Hypothesis) through the hidden
+  `selftest-console`; `tests/test_agent.py::test_rust_agent_actions_match_python` keeps ACTIONS, the dispatch and
+  the `do_*` set equal and stub-free.
+- **For the daemon wiring (link):** `Executor::new(sample, tail, panel, telemetry)` with `sample` = data's
+  `collect(Counters())` (a fresh `Counters`, the shared persistent RCON), `tail` = data's `ConsoleTail.request`
+  (always passed; it refuses itself without the WebSocket), `panel.selftest`/`panel.lookup` = misc's, `panel.changed` = set `inventory_due`;
+  `telemetry` = `Some(Arc::new(actions::telemetry::Sidecar::from_env(&env)?))` when `EXPERIENCE=1` (a bad
+  `MESSAGE_*` value is `main`'s exit 2, like Python's `int()` in `make_telemetry`), else `None`.
+- **The sidecar's `online.json`** (telemetry side, design §1.3): `/var/lib/mc-telemetry/online.json`, a JSON object
+  `{uuid: {"u", "n", "tips", "join"}}` (exactly `Telemetry.online()`), rewritten every poll; readable by mcops.
+  Older than 30 s by mtime, missing or not an object = nobody online. `Messages` state (per-player/broadcast
+  limits, hourly count) is the agent's, in memory, as in Python.
 
 ### jobs (job runner integration)
 
@@ -256,6 +271,13 @@ Gotchas the goldens encode (keep them; both are logged as known issues to fix in
   it can't happen on a local file).
 - Unicode tables are the crates' (pinned), Python's the interpreter's; parity is over code points assigned in
   the oldest supported table (Unicode 14).
+- `smallworld-agent selftest-console` (hidden, test-only) reads a JSON array on stdin and prints the console
+  allowlist's outcomes (`actions::console::selftest_main`); Python's agent has no such subcommand (there, any
+  first argument but `cli` runs the daemon). Pure: no RCON, no file, no audit, no program run.
+- `read_json_list` (whitelist/ops checks): `json.loads(bytes)`'s UTF-16/32 auto-detection isn't reproduced
+  (UTF-8, with or without a BOM, is); the server writes UTF-8.
+- `player_message` reads who is online from the telemetry sidecar's `online.json` (stale > 30 s = nobody)
+  instead of the in-process `Telemetry.online()`.
 - argv that isn't UTF-8 is decoded lossily (Python: surrogateescape); such an argument can't match `CLI_LOGIN`
   or parse as JSON in either.
 
@@ -275,3 +297,9 @@ Gotchas the goldens encode (keep them; both are logged as known issues to fix in
   (rustls refuses the latter). phase 1.
 - 2026-11-08, core `flock.rs` tests and `jobs.rs` test `the_file_lock_is_shared_across_runners`: retry the
   re-acquire (a concurrent test's fork shares the lock's descriptor until its exec). Tests only. phase 1.
+- 2026-11-08, core `properties.rs`: `read_untrusted_limit(path, limit)` and `UNTRUSTED_MAX_BYTES` (mc_rcon.py's
+  default 16 MiB); `read_untrusted` now calls it with 1 MiB. Additive. actions.
+- 2026-11-08, `settings.rs`: `int_env` made `pub` (telemetry's `MESSAGE_*` settings). actions.
+- 2026-11-08, `main.rs`: the hidden `selftest-console` subcommand (see "Divergences"). actions.
+- 2026-11-08, `requirements/dev.in` (+ `dev.txt`): `hypothesis==6.169.0` for the differential tests (ship's
+  scrubber fuzzing needs it too: keep one pin). actions.
