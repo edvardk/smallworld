@@ -6,6 +6,29 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Added
+
+- `mcctl publish`'s preview warns about players on the live whitelist (mc-agent's last inventory, read from the
+  watchdog's D1 with the admin token in `.env`) that the new `players.yml` doesn't list and the panel has no
+  pending change for: a deploy removes those `players.yml` had before (or every one with
+  `minecraft.strict_whitelist`); the rest are kept by the whitelist guard, outside Git.
+
+### Fixed
+
+- Whitelist revert race: when the panel's pull request was closed unmerged while the same player was changed
+  again in the panel, the revert came from a stale view and undid the newer change on the live server (pending
+  changes still had it). The revert now runs under the pending lock, which the panel's whitelist action holds
+  across its own RCON command, and only for entries nobody changed since.
+- Telemetry (both agents): `NaN`, an infinity or `1e400` in a snapshot no longer stops the read loop or reaches
+  the Worker as non-standard JSON (the snapshot is skipped and logged once); a bool is no longer read as a number;
+  snapshot times stay in order and in range; a row the Worker refuses for good (400, 413) is given up instead of
+  blocking the backfill forever; 75 s after the plugin goes quiet nobody is shown online any more and backfill
+  may run; a failure while closing a minute or writing a segment keeps the rows; rows still in memory are saved
+  to a segment on shutdown; plus the tick-weighted mean, `UINT64_MAX` from systemd, state of hand-deleted
+  segments, a median overflow and out-of-range `BACKFILL_WINDOW` times.
+- mc-agent (both agents): a command with a non-finite `iat` is refused; a job releases `job.lock` before it
+  reports its final state; SIGTERM closes the WebSocket gracefully (1000) before the agent exits.
+
 ## [1.4.1] - 2026-11-08
 
 ### Added
