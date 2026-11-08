@@ -150,8 +150,9 @@ pub fn round<T>(what: &str, f: impl FnOnce() -> AResult<T>) -> Option<T> {
     }
 }
 
-/// A loop's entry point (runs until `daemon.stop`).
-pub type LoopFn = fn(&Daemon) -> AResult<()>;
+/// A loop's entry point (runs until `daemon.stop`): a module's `fn(&Daemon) -> AResult<()>`, or a closure that
+/// adapts a loop with its own signature.
+pub type LoopFn = Box<dyn Fn(&Daemon) -> AResult<()> + Send>;
 
 /// Runs `f` on its own thread, restarted (after 5 s) if it panics or fails; a stub (`NotPorted`) ends it.
 fn spawn_loop(name: &'static str, daemon: &Arc<Daemon>, f: LoopFn) -> std::io::Result<()> {
@@ -181,11 +182,11 @@ fn spawn_loop(name: &'static str, daemon: &Arc<Daemon>, f: LoopFn) -> std::io::R
 /// (`mc-telemetry.service`) in rust mode, not a thread here.
 pub fn run(daemon: &Arc<Daemon>) -> std::io::Result<()> {
     let loops: Vec<(&'static str, LoopFn)> = vec![
-        ("metrics", crate::data::metrics_loop),
-        ("logs", crate::ship::logs_loop),
-        ("control", crate::link::control::control_loop),
-        ("inventory", crate::data::inventory_loop),
-        ("panel", crate::sync::panel_loop),
+        ("metrics", Box::new(crate::data::metrics_loop)),
+        ("logs", Box::new(crate::ship::logs_loop)),
+        ("control", Box::new(crate::link::control::control_loop)),
+        ("inventory", Box::new(crate::data::inventory_loop)),
+        ("panel", Box::new(crate::sync::panel_loop)),
         // ("selftest", crate::misc::selftest::selftest_loop): misc declares it
     ];
     // if daemon.settings.client: ("client", crate::data::client_codes::client_loop): data declares it

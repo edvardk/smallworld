@@ -872,4 +872,19 @@ mod tests {
         let e = WebSocket::connect(&url, &[], 5.0).err().unwrap();
         assert_eq!(e.class, "ConnectionRefusedError");
     }
+
+    /// wss:// against a TLS server (run by hand: `SW_WSS_URL=wss://127.0.0.1:PORT/ SSL_CERT_FILE=... cargo test
+    /// -- --ignored wss_round_trip`, with a server that sends "hi", echoes one text message after a pause and
+    /// closes). Proves the rustls stream under the I/O thread's short read timeouts.
+    #[test]
+    #[ignore = "needs a TLS WebSocket server (SW_WSS_URL)"]
+    fn wss_round_trip() {
+        let url = std::env::var("SW_WSS_URL").unwrap();
+        let mut ws = WebSocket::connect(&url, &[], 5.0).unwrap();
+        assert_eq!(ws.recv(Duration::from_secs(5)), Ok(Some("hi".into())));
+        assert!(ws.handle().send_text("echo me"));
+        assert_eq!(ws.recv(Duration::from_secs(5)), Ok(Some("echo me".into())));
+        assert_eq!(ws.recv(Duration::from_secs(5)), Ok(None));
+        ws.close();
+    }
 }
