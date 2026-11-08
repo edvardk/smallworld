@@ -289,6 +289,16 @@ impl ClientCodes {
     }
 }
 
+/// `ClientCodes(s, post_json).run(stop)` for `daemon::run` (started when `CLIENT=1`).
+///
+/// # Errors
+/// None (the loop runs until `stop`).
+#[allow(clippy::unnecessary_wraps)] // daemon::LoopFn
+pub fn client_loop(d: &crate::daemon::Daemon) -> AResult<()> {
+    ClientCodes::for_link(&d.link).run(&d.warn, &d.stop);
+    Ok(())
+}
+
 #[cfg(test)]
 #[allow(clippy::items_after_statements, clippy::map_unwrap_or)]
 mod tests {

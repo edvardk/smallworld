@@ -1,8 +1,10 @@
 //! The data plane (owner: **data**): metrics + spool (metrics.rs; mc_agent.py 299-595, health.py's parsers in
 //! health.rs), the persistent RCON shared by metrics and `status` (persistent_rcon.rs; mc_rcon.PersistentRcon),
 //! inventory (inventory.rs; 871-937, 1107, 2405-2431), the console tail (tail.rs; 940-1005), /modpack client codes
-//! (client_codes.rs; 2153-2274) and the rejected-logins feed (panel/rejected.rs). The loops (`metrics_loop`,
-//! `inventory_loop`; 2450-2472) take what they need explicitly, so the daemon (link) wires them.
+//! (client_codes.rs; 2153-2274) and the rejected-logins feed (panel/rejected.rs). The loops (`run_metrics_loop`,
+//! `run_inventory_loop`, `ClientCodes::run`; 2450-2472) take what they need explicitly; `metrics_loop`,
+//! `inventory_loop` and `client_codes::client_loop` are their `fn(&Daemon)` entries, and `wire` puts the console
+//! tail into the executor (the daemon calls it in `run`, before the loops).
 
 pub mod client_codes;
 pub mod health;
@@ -60,13 +62,6 @@ pub fn server_dir() -> PathBuf {
     PathBuf::from(std::ffi::OsStr::from_bytes(&dir))
 }
 
-/// `Agent.ws_connected` as the metrics loop reads it.
-pub type WsFlag = Arc<dyn Fn() -> bool + Send + Sync>;
-
-/// `Agent.panel_state()` for the inventory (data's `inventory::panel_state`, with the daemon's GitHub/product/
-/// self-test parts bound).
-pub type PanelStateFn = Arc<dyn Fn() -> AResult<Obj> + Send + Sync>;
-
 /// The metrics loop's state (`Agent.counters`, `Agent.spool`).
 pub struct Metrics {
     pub counters: Mutex<metrics::Counters>,
@@ -85,7 +80,13 @@ impl Metrics {
 
 /// `Agent.metrics_loop` (runs until `stop`): one sample every `METRICS_INTERVAL_S`, measured from the round's
 /// start, at least 1 s apart; a failed round is printed and the loop goes on.
-pub fn metrics_loop(link: &Link, m: &Metrics, warn: &Warnings, ws: &WsFlag, stop: &Event) {
+pub fn run_metrics_loop(
+    link: &Link,
+    m: &Metrics,
+    warn: &Warnings,
+    ws: &dyn Fn() -> bool,
+    stop: &Event,
+) {
     let interval = link.settings.metrics_interval_s;
     while !stop.is_set() {
         let started = Instant::now();
@@ -150,10 +151,10 @@ pub const INVENTORY_MIN_GAP_S: f64 = 5.0;
 
 /// `Agent.inventory_loop` (runs until `stop`): the inventory every `INVENTORY_S` or when `due` is set (at most
 /// one push per `INVENTORY_MIN_GAP_S`); 60 s after an `IngestError`.
-pub fn inventory_loop(
+pub fn run_inventory_loop(
     link: &Link,
     server_dir: Option<&Path>,
-    panel_state: &PanelStateFn,
+    panel_state: &dyn Fn() -> AResult<Obj>,
     warn: &Warnings,
     due: &Event,
     stop: &Event,
@@ -189,4 +190,87 @@ pub fn panic_text(p: &Box<dyn std::any::Any + Send>) -> String {
         .or_else(|| p.downcast_ref::<String>().cloned())
         .unwrap_or_default();
     format!("Exception: {msg}")
+}
+
+// --- the daemon's entries (daemon::run) ---------------------------------------------------------------------
+
+use crate::daemon::Daemon;
+use std::sync::OnceLock;
+
+/// What the daemon's other owners add to `Agent.panel_state()`: (`self.github is not None`, `product_state()`,
+/// `selftest_state.public()`). Set once by the integration (sync/misc); until then (false, null, null).
+pub type PanelExtrasFn = Arc<dyn Fn() -> AResult<(bool, Value, Value)> + Send + Sync>;
+pub static PANEL_EXTRAS: OnceLock<PanelExtrasFn> = OnceLock::new();
+
+static METRICS: OnceLock<Metrics> = OnceLock::new();
+static TAIL: OnceLock<Arc<tail::ConsoleTail>> = OnceLock::new();
+
+/// `Agent.counters` and `Agent.spool` (one daemon per process).
+pub fn metrics_state(d: &Daemon) -> &'static Metrics {
+    METRICS.get_or_init(|| Metrics::new(&d.settings.state_dir))
+}
+
+/// `Agent.tail = ConsoleTail(self)` and the executor's `self.tail.request`: the tail reads `Agent.ws` through
+/// `Daemon::ws_sender` (a weak reference: the daemon owns the executor that owns the tail).
+pub fn wire(d: &Arc<Daemon>) {
+    let weak = Arc::downgrade(d);
+    let settings = d.settings.clone();
+    let t = TAIL.get_or_init(|| {
+        Arc::new(tail::ConsoleTail::new(
+            Arc::new(move || {
+                weak.upgrade()
+                    .and_then(|d| d.ws_sender())
+                    .map(|w| w as Arc<dyn crate::link::ws::WsSender>)
+            }),
+            Arc::new(move || {
+                crate::ship::scrub::Scrubber::new(crate::ship::scrub::known_secrets(
+                    &settings,
+                    &crate::settings::process_env(),
+                ))
+            }),
+            Arc::clone(&d.stop),
+        ))
+    });
+    crate::daemon::lock(&d.executor).tail = Some(t.tail_fn());
+}
+
+/// `Agent.metrics_loop` for `daemon::run` (`sample["ws"] = self.ws_connected`).
+///
+/// # Errors
+/// None (the loop runs until `stop`).
+#[allow(clippy::unnecessary_wraps)] // daemon::LoopFn
+pub fn metrics_loop(d: &Daemon) -> AResult<()> {
+    let ws = || d.ws_connected.load(std::sync::atomic::Ordering::SeqCst);
+    run_metrics_loop(&d.link, metrics_state(d), &d.warn, &ws, &d.stop);
+    Ok(())
+}
+
+/// `Agent.panel_state()` for this daemon (data's part plus `PANEL_EXTRAS`).
+///
+/// # Errors
+/// What Python raises on hand-broken state files.
+pub fn daemon_panel_state(d: &Daemon) -> AResult<Obj> {
+    let (configured, product, selftest) = match PANEL_EXTRAS.get() {
+        Some(f) => f()?,
+        None => (false, Value::Null, Value::Null),
+    };
+    inventory::panel_state(&d.panel, configured, product, selftest)
+}
+
+/// `Agent.inventory_loop` for `daemon::run`.
+///
+/// # Errors
+/// None (the loop runs until `stop`).
+#[allow(clippy::unnecessary_wraps)] // daemon::LoopFn
+pub fn inventory_loop(d: &Daemon) -> AResult<()> {
+    let state = || daemon_panel_state(d);
+    run_inventory_loop(
+        &d.link,
+        d.panel.server_dir.as_deref(),
+        &state,
+        &d.warn,
+        &d.inventory_due,
+        &d.stop,
+    );
+    Ok(())
 }
