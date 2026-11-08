@@ -42,6 +42,18 @@ pub trait TokenSource: Send + Sync {
     }
 }
 
+/// misc's `TokenCache` (minted by the Worker; a 401 invalidates it once).
+impl TokenSource for crate::misc::token::TokenCache {
+    fn token(&self) -> AResult<String> {
+        self.get().map_err(|e| github_error(e.0))
+    }
+
+    fn invalidate(&self) -> bool {
+        crate::misc::token::TokenCache::invalidate(self);
+        true
+    }
+}
+
 /// `lambda: token`.
 pub struct FixedToken(pub String);
 

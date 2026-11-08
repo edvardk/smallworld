@@ -11,6 +11,9 @@ pub mod py;
 pub mod round;
 pub mod world;
 
+#[cfg(test)]
+mod mixed;
+
 use crate::jobs::Event;
 use crate::panel::pending::Pending;
 use crate::settings::{Env, Settings};
@@ -76,21 +79,56 @@ impl PanelSync {
     }
 }
 
-/// `Agent.panel_loop`: every PANEL_SYNC_S until `stop`, one round; a failed round is printed and the loop goes
-/// on (`panel sync failed: <class>: <message>`).
-pub fn panel_loop(p: &PanelSync, pending: &Pending, stop: &Event) {
+/// `Agent.panel_loop` as a daemon loop: `Agent.github` (`github_from_env(fetch_token=self.github_token)`, the
+/// token cache over `POST /agent/github-token`), then `run_panel_loop` until `daemon.stop`.
+///
+/// A GITHUB_API_URL `github_from_env` refuses stops the agent at start in Python (`Agent.__init__`); here the
+/// panel loop alone prints it once and ends (PORTING.md "Divergences").
+///
+/// # Errors
+/// None (the signature is the daemon's `LoopFn`).
+#[allow(clippy::unnecessary_wraps)]
+pub fn panel_loop(daemon: &crate::daemon::Daemon) -> AResult<()> {
+    use crate::misc::token::{FetchFn, TokenCache};
+    let link = daemon.link.clone();
+    let fetch: FetchFn = Arc::new(move || {
+        link.post_json(
+            "/agent/github-token",
+            &serde_json::json!({"agent": crate::types::VERSION}),
+        )
+        .map_err(|e| e.to_string())
+    });
+    let tokens: Arc<dyn TokenSource> = Arc::new(TokenCache::with_fetch(fetch));
+    let due = Arc::clone(&daemon.inventory_due);
+    let sync = match PanelSync::new(
+        &daemon.settings,
+        &crate::settings::process_env(),
+        Some(tokens),
+        Arc::new(move || due.set()),
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("panel sync: {}", py::exc_line(&e));
+            return Ok(());
+        }
+    };
+    run_panel_loop(&sync, &daemon.panel.pending, &daemon.stop);
+    Ok(())
+}
+
+/// The loop itself: every PANEL_SYNC_S until `stop`, one round; a failed round is printed and the loop goes on
+/// (`panel sync failed: <class>: <message>`).
+pub fn run_panel_loop(p: &PanelSync, pending: &Pending, stop: &Event) {
     while !stop.wait(p.sync_s) {
         match catch_unwind(AssertUnwindSafe(|| p.round(pending, crate::sys::now()))) {
             Ok(Ok(true)) => (p.changed)(),
             Ok(Ok(false)) => {}
             Ok(Err(e)) => eprintln!("panel sync failed: {}", py::exc_line(&e)),
             Err(panic) => {
-                let why = panic
-                    .downcast_ref::<String>()
-                    .cloned()
-                    .or_else(|| panic.downcast_ref::<&str>().map(|s| (*s).to_string()))
-                    .unwrap_or_default();
-                eprintln!("panel sync failed: RuntimeError: {why}");
+                eprintln!(
+                    "panel sync failed: panic: {}",
+                    crate::daemon::panic_text(&*panic)
+                );
             }
         }
     }
