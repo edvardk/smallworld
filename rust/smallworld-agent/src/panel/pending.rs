@@ -93,6 +93,16 @@ impl Pending {
         Ok(out)
     }
 
+    /// `with pending.locked(): snap = pending.load()`: the sync round's snapshot (the lock is released before
+    /// any network call; the result is merged back with `update` + `sync::round::merge_sync`).
+    ///
+    /// # Errors
+    /// `load`'s.
+    pub fn snapshot(&self) -> AResult<Obj> {
+        let _held = self.lock.lock();
+        self.load()
+    }
+
     /// `save(data)`: only under the lock (`update` does both).
     ///
     /// # Errors
