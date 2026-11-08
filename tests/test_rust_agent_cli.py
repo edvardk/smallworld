@@ -276,9 +276,9 @@ def _host_opt_entries(box_opt: Path) -> str:
     binds = []
     for entry in sorted(Path("/opt").iterdir()) if Path("/opt").is_dir() else []:
         target = box_opt / entry.name
-        if target.exists() or not entry.is_dir():
-            continue
-        target.mkdir()
+        if not entry.is_dir() or (target.exists() and any(target.iterdir())):
+            continue  # the box's own entries (never empty) win; an empty dir is a placeholder from an earlier run
+        target.mkdir(exist_ok=True)
         binds.append(f"mount --rbind {entry} {target} && ")
     return "".join(binds)
 
