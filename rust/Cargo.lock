@@ -3,5 +3,9 @@
 version = 4
 
 [[package]]
+name = "smallworld-map"
+version = "0.1.0"
+
+[[package]]
 name = "smallworld-rcon"
 version = "0.1.0"

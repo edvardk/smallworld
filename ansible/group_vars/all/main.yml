@@ -34,6 +34,11 @@ restic_sha256:
 mc_smallworld_rcon_sha256:
   amd64: 8a54a2e167576bc2cda22040dd6df5797a4ea5cf704bbb58dd8ad161d6925324
   arm64: 42cee5b1aeefc1fb12453a1f057c2025f2a808cd48575c5b97ad9275952be01a
+# v1.4: smallworld-map (rust/smallworld-map), the world map pre-renderer (role map, docs/rust/smallworld-map.md): same
+# reproducible build and committed binaries; the map role checks this pin before installing it.
+mc_smallworld_map_sha256:
+  amd64: a330ee1df67c60ec755622d89c504005a3ab9e73fa7c5f803b8d2067da7e0113
+  arm64: f718659f769ea7fb0f12098b5690000adee138369f59ae827489efa8e398dd41
 
 # --- OS tuning -----------------------------------------------------------------------------------
 base_zram_enabled: true

@@ -609,3 +609,19 @@ def test_smallworld_rcon_pins_match_the_committed_binaries() -> None:
     defaults = yaml.safe_load((REPO / "ansible/roles/base/defaults/main.yml").read_text())
     for arch, target in build_rust.TARGETS.items():
         assert f"'{arch}': '{target}'" in defaults["base_rcon_target"]
+
+
+def test_smallworld_map_pins_match_the_committed_binaries() -> None:
+    """v1.4: group_vars mc_smallworld_map_sha256 (what the map role checks before installing) is the sha256 of each
+    rust/dist/smallworld-map-<target> (scripts/build_rust.py builds every BINARIES entry for every target)."""
+    import hashlib
+
+    sys.path.insert(0, str(REPO / "scripts"))
+    import build_rust
+
+    assert build_rust.BINARIES["smallworld-map"] == "mc_smallworld_map_sha256"
+    pins = GROUP_VARS["mc_smallworld_map_sha256"]
+    assert set(pins) == set(build_rust.TARGETS)
+    for arch, target in build_rust.TARGETS.items():
+        data = (REPO / "rust/dist" / f"smallworld-map-{target}").read_bytes()
+        assert hashlib.sha256(data).hexdigest() == pins[arch], f"{target}: run python scripts/build_rust.py build"

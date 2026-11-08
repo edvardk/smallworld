@@ -3,7 +3,7 @@
 # crates.io dependencies (std only; tests/test_rust_rcon.py checks Cargo.toml and Cargo.lock), and the binaries in
 # dist/ are rebuilt byte for byte by `python scripts/build_rust.py check`.
 [workspace]
-members = ["smallworld-rcon"]
+members = ["smallworld-rcon", "smallworld-map"]
 resolver = "2"
 
 # What scripts/build_rust.py builds: small, static, reproducible. No unwinding (a panic aborts: the binary has no
