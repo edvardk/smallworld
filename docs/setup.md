@@ -327,7 +327,8 @@ Setup pauses here until you have a server. Press Enter at the IPv4 prompt to sto
 VPS shares its vCores with other customers and costs less. Minecraft runs its world on one thread and is sensitive
 to stolen CPU time, so dedicated cores are the recommendation; a VPS works for a small group (`mc-health` reports
 CPU steal and suggests a move if it hurts). Any provider works: a public IPv4 (IPv6 recommended), Debian 13/12 or
-Ubuntu 24.04, amd64 or arm64, at least 4 GB RAM (8 GB recommended).
+Ubuntu 24.04, amd64 or arm64, at least 4 GB RAM (8 GB recommended; on 2-4 GB set `performance.vm: small`,
+[operations](operations.md#small-vm-preset-v15)).
 
 The steps below use netcup as the example provider (its control panel is the SCP, Server Control Panel); other
 providers have the same steps under other names.

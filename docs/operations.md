@@ -14,10 +14,12 @@ Contents:
 [mcctl commands](#mcctl-commands) ·
 [What runs by itself](#what-runs-by-itself) ·
 [Backups and restore drills](#backups-and-restore-drills) ·
+[Smooth backups](#smooth-backups-v15) ·
 [The Experience tab](#the-experience-tab) ·
 [What telemetry costs](#what-telemetry-costs) ·
 [Performance profile](#performance-profile) ·
 [Performance tuning](#performance-tuning) ·
+[Small-VM preset](#small-vm-preset-v15) ·
 [The client modpack and /view](#the-client-modpack-and-view) ·
 [Day-to-day tasks](#day-to-day) ·
 [Alerts](#alerts) ·
@@ -406,7 +408,7 @@ the *target* release's schema migration and validation itself. When the checkout
 
 | What | When | Notes |
 |---|---|---|
-| Hourly backup | every hour (+ up to 5 min random delay) | restic to R2; the lock keeps every snapshot at least 7 days |
+| Hourly backup | every hour (+ up to 5 min random delay) | restic to R2; the lock keeps every snapshot at least 7 days. v1.5: skipped while nobody plays and nothing changed (a real backup at least daily), deferred up to 15 min while players see lag ([Smooth backups](#smooth-backups-v15)) |
 | Prune | Sundays 03:30 | between backups |
 | Health check + self-heal | every 5 minutes | restarts a crashed server, dumps and restarts a frozen one; at most 3 restarts a day, then Discord |
 | Chunk pre-generation | every 5 minutes, only with nobody online | each bordered dimension up to its border, then the frontier ahead of the players; paused around backups ([Pre-generation](#pre-generation)) |
@@ -416,7 +418,7 @@ the *target* release's schema migration and validation itself. When the checkout
 | Product updates | the same slot | a newer **patch** release moves the pin by itself; minor and major releases open a pull request for you |
 | A restart a deploy left for the maintenance window | `maintenance.window`'s start (then every 15 minutes inside it) | only with a window and a pending restart ([Maintenance window](#maintenance-window-v13)); any earlier start of the server applies it too |
 | Reboots for OS updates | checked every 30 minutes | only inside `automation.reboot_window` (04:30-06:00 local), with nobody online, no backup or restore running and the server not stopped on purpose; **never forced**: still pending after 3 days, Discord reminds you daily |
-| Backup check + expiry check | Mondays | `restic check` on 5 % of the data and a restore of the newest snapshot (must be < 2 h old); credential expiry (`expiry.yml`), domain expiry (RDAP) and the watchdog's freshness. Problems go to Discord and the run turns red |
+| Backup check + expiry check | Mondays | `restic check` on 5 % of the data and a restore of the newest snapshot (must be < 2 h old, or < 26 h right after the hourly backup skipped an unchanged world); credential expiry (`expiry.yml`), domain expiry (RDAP) and the watchdog's freshness. Problems go to Discord and the run turns red |
 | World map pre-render (v1.4) | nightly, `map.schedule` (`*-*-* 04:23` host time, up to 10 min random delay) | reads only the regions that changed since the last run, at idle priority ([World map](#world-map-v14)) |
 | Security updates on the box | daily (Debian unattended upgrades) | Tailscale is held at its pinned version (bump the pin for Tailscale security fixes: [reference.md](reference.md#bumping-versions)) |
 
@@ -482,6 +484,39 @@ the pre-render wherever a held map redraws, so a stale tile only lasts until the
   show-restic -C $C`).
 - **A new machine** restores the newest snapshot automatically before its first start; with `world.expected:
   true` (set by setup after the first backup) the deploy fails rather than generate a new world when it can't.
+
+## Smooth backups (v1.5)
+
+The hourly backup used to be the same spike every hour: `save-off`, `save-all flush` (the server's main thread
+waits until every chunk is on disk), restic reading and uploading, `save-on`. Since v1.5 a run **the timer
+started** is smoother; everything else that starts `mc-backup.service` (`mcctl backup now`, the panel, Discord's
+`/backup now`, a restart's "back up first", `mcctl migrate`'s final backup, a world switch) still backs up at once.
+The `server.yml` fields, all under `backups` (defaults first):
+
+| Field | Default | What it does |
+|---|---|---|
+| `skip_when_idle` | `true` | skip the run when nobody is online, no pre-generation task runs and no file the backup would read changed (path, size and modification time, the same metadata restic uses) since the last successful backup. The skip counts as fresh: the watchdog gets an OK heartbeat and the weekly backup test accepts a snapshot up to 24 h older. A real backup still runs at least every 24 h |
+| `defer_when_busy` | `true` | with players online and the server lagging (TPS under 18 or MSPT over 40 ms over the last minute, or a tick spike in the last 5 s: average over 50 ms or one tick of 100 ms or more), look again every minute ... |
+| `max_defer_minutes` | `15` | ... at most this long, then back up anyway. The schema keeps it inside the watchdog's grace (it alerts after `monitoring.alerts.backup_period_minutes` + 30 minutes without a backup): at most 20 with the hourly defaults |
+| `gentle_save` | `true` | `save-all` without `flush`: the chunks are serialized and the server's IO threads write them while the main thread goes on. The backup waits until the world's files have been quiet for 2 s; only if they are still being written after 15 s (players exploring keep writing chunks as they unload) does it fall back to `save-all flush`. `false` = always `save-all flush`, as before |
+| `upload_limit_kib` | `0` | restic's `--limit-upload` in KiB/s; 0 = unlimited. Spares a thin uplink, but saving stays off for the whole run, so a slower upload is a longer window in which a crash loses progress |
+
+Why these defaults: the skip only ever leaves out a snapshot identical to the last one, the deferral is bounded and
+never applies with nobody online, and the gentle save falls back to the old flush whenever it can't confirm the
+writes have landed, so none of them weakens what a snapshot contains; an upload limit has a real cost (above) and
+the right value depends on the host, so it stays off.
+
+**What you see.** `journalctl -u mc-backup` says `backup skipped: nobody played and nothing changed since the last
+backup 3.0 h ago (812 files)`, `backup deferred: TPS 16.2 (1 min); next look in 60 s` and, for every backup, `save:
+gentle (save-all, files quiet after 0.6 s)` or `save: flush (world files still being written 15 s after save-all)`
+before the `save-off window:` line. The record lives in `/var/lib/mc-snapshots/backup-state.json`. A pre-generation
+task still pauses for the backup and continues after it ([Pre-generation](#pre-generation)); a running task counts
+as a change, so it never lets a run skip.
+
+**Caveats.** A manual "back up now" while a scheduled run is deferring joins that run (systemd runs one at a time),
+so it can wait up to `max_defer_minutes`. The skip relies on the server's own pause when empty (vanilla
+`pause-when-empty-seconds`, 60 s, which the product leaves at its default): a world that keeps ticking with nobody
+online changes its files and is backed up every hour, as before.
 
 ## The Experience tab
 
@@ -610,6 +645,33 @@ you really want `relatime` back, then `sudo mount -o remount,relatime /`.
 
 CI measures the collectors on every product change (`bench-gc` in the e2e-mock workflow: G1 vs ZGC, with and
 without the CPU split where the runner has 3+ CPUs, same synthetic load); the job's summary has the numbers and the recommendation.
+
+## Small-VM preset (v1.5)
+
+`performance.vm: small` (default `default`, which changes nothing) tunes the box for 2-4 GB of RAM. Each value
+below only fills in what you haven't set yourself:
+
+| What | default | small |
+|---|---|---|
+| Heap (`jvm.heap_mb: auto`) | RAM - max(2816 MB, 30 %) | RAM - max(1024 MB, 40 %): 2304 MB on a 4 GB host (3.9 GB usable), 1536 MB on 3 GB, 768 MB on 2 GB |
+| restic (`mc-backup`, `mc-prune`, `mc-backup-check`) | restic's defaults | one core (`GOMAXPROCS=1`), one file read at a time (`RESTIC_READ_CONCURRENCY=1`), 2 S3 connections instead of 5, Go memory limit 192 MiB, cgroup `MemoryHigh=256M`; `mc-backup` also `MemoryMax=512M` |
+| `mc-health` | no cap | `MemoryMax=128M` (health.py needs 30-40 MB) |
+| Map renderer (`mc-map`) | `MemoryMax=512M` | 64 MB per `map.threads` + 64 MB (128 MB at the default 1 thread: the renderer's design budget) |
+| Pre-generation pace | Paper's chunk workers (`auto`) | 1 chunk worker (`performance.chunk_threads` still wins) |
+| View distance | the profile's (vanilla 10, balanced 8) | at most 8 (the simulation distance never above it) |
+
+**Assumptions** behind the heap: the JVM needs about 0.5-0.6 GB outside the heap that doesn't grow with it
+(metaspace, code cache, thread stacks, network buffers) plus 10-15 % of the heap for the garbage collector (the
+1.5 GB measured next to a 5.75 GB G1 heap on the 8 GB box, [reference](reference.md#design-notes), fits that line);
+the OS about 250 MB, tailscaled 50 MB, the Rust agent 14 MB (v1.4's parity runs; the telemetry sidecar is gone), and
+restic is held near 192 MiB. On 2 GB that leaves a 768 MB heap: enough for one or two players at view distance 8,
+not more; 4 GB is the recommended minimum ([setup](setup.md)). The map renderer runs at idle priority at night and
+stays inside its cap; restic on one core takes longer but leaves the other core to the server (it already runs at
+a tenth of the server's CPU weight). The garbage collector stays `jvm.gc` (ZGC by default); on a heap under 2 GB
+G1 (`jvm.gc: g1`) uses less memory for the same world, at the cost of its 20-60 ms pauses.
+
+**Switch**: `mcctl config set performance.vm small -C $C`, push (a deploy with an announced restart, since the
+heap and view distance change).
 
 ## The client modpack and /view
 

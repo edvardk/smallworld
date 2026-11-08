@@ -13,7 +13,9 @@ off-site repository (R2), in this order:
    directory's file system (the unit's private /var/tmp, on the server's disk);
 4. restore.py's --verify-into: the newest snapshot restored with --verify, its file list compared, 20
    checksums sampled, a usable world (level.dat + region files), and the snapshot no older than
-   --max-age-hours (the unit passes twice the backup period: backups have stopped otherwise).
+   --max-age-hours (the unit passes twice the backup period: backups have stopped otherwise). v1.5: when the
+   timer's run skipped the backup within that time (nobody played, the world unchanged: backup-state.json),
+   backups haven't stopped, so the newest snapshot may be up to notify.BACKUP_SKIP_MAX_HOURS older.
 
 The scratch copy is deleted afterwards, whatever happened. A failure goes to Discord in the alert template
 (scripts/alerts.py; DISCORD_WEBHOOK_URL from restic.env, empty = only the journal) and fails the unit. Nothing
@@ -28,6 +30,7 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -64,6 +67,23 @@ def _verify(target: Path, max_age_hours: float) -> None:
     import restore  # the box's restore.py (imports grp: Linux only), next to this script
 
     restore.verify_into(target, max_age_hours=max_age_hours)
+
+
+def allowed_age_hours(
+    max_age_hours: float, state_file: Path | None = None, now: float | None = None
+) -> float:
+    """v1.5: the newest snapshot's allowed age. A skip recorded within max_age_hours (backup.py on the timer:
+    nothing changed since the last backup) adds BACKUP_SKIP_MAX_HOURS, the longest a skip lets the gap grow; a
+    stale or missing record (the timer stopped) leaves the plain limit."""
+    try:
+        state = json.loads((state_file or notify.BACKUP_STATE_FILE).read_text())
+    except (OSError, ValueError):
+        return max_age_hours
+    last_skip = state.get("last_skip") if isinstance(state, dict) else None
+    now = time.time() if now is None else now
+    if isinstance(last_skip, int | float) and 0 <= now - last_skip <= max_age_hours * 3600:
+        return max_age_hours + notify.BACKUP_SKIP_MAX_HOURS
+    return max_age_hours
 
 
 def restic(run: Run, step: str, *args: str) -> str:
@@ -126,7 +146,10 @@ def main(argv: list[str] | None = None) -> int:
         print("a restore is running (restore.lock held): skipped")
         return 0
     try:
-        check(scratch=args.scratch, max_age_hours=args.max_age_hours)
+        max_age = allowed_age_hours(args.max_age_hours)
+        if max_age != args.max_age_hours:
+            print(f"the timer skipped an unchanged world recently: newest snapshot may be {max_age:g} h old")
+        check(scratch=args.scratch, max_age_hours=max_age)
     except Failed as e:
         text = alert(e.step, e.detail)
         print(text, file=sys.stderr)

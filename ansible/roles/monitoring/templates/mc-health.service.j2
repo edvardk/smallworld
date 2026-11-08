@@ -17,6 +17,10 @@ StateDirectory=mc-health
 ExecStart={{ mc_bin_dir }}/health.py
 # P13: timely priority (has a deadline; the JVM still wins 10:1), see mc_timely_priority.
 {{ mc_timely_priority | join('\n') }}
+{% if monitoring_health_memory_max_mb %}
+# v1.5 performance.vm small: health.py needs ~30-40 MB; the cap keeps a runaway from squeezing the JVM.
+MemoryMax={{ monitoring_health_memory_max_mb }}M
+{% endif %}
 {% if mc_helper_cpus %}
 AllowedCPUs={{ mc_helper_cpus }}
 {% endif %}

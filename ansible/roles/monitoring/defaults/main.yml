@@ -9,3 +9,5 @@ monitoring_pregen_enabled: true
 monitoring_pregen_frontier: true
 monitoring_pregen_margin: 1024
 monitoring_pregen_max_radius: 10000
+# v1.5 performance.vm small (mcctl render VM_RESOURCES): mc-health's MemoryMax in MB; 0 = none (default preset).
+monitoring_health_memory_max_mb: 0

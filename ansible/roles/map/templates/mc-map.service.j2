@@ -22,10 +22,10 @@ StateDirectoryMode=0750
 {% for d in mc_map_dimensions %}
 ExecStart={{ mc_bin_dir }}/smallworld-map render --world {{ mc_server_dir }}/{{ mc_level_name }} --out {{ mc_map_dir }} --palette {{ mc_map_palette }} --dimensions {{ d.id }} --threads {{ mc_map_threads }}{{ (' --radius ' ~ d.radius) if d.radius else '' }}
 {% endfor %}
-# The design budget (docs/reference.md "World map"): < 64 MB per thread; state is saved per region, so a run cut
-# short resumes the next night. The 4 h cap is TimeoutStartSec: a Type=oneshot unit is "starting" until its
+# The design budget (docs/reference.md "World map"): < 64 MB per thread (v1.5: performance.vm small caps it at
+# that, map_memory_max_mb); state is saved per region, so a run cut short resumes the next night. The 4 h cap is TimeoutStartSec: a Type=oneshot unit is "starting" until its
 # ExecStart lines finish, and systemd ignores RuntimeMaxSec= for it (v1.4.1 fix: v1.4.0's render had no cap).
-MemoryMax=512M
+MemoryMax={{ map_memory_max_mb }}M
 TimeoutStartSec=4h
 OOMScoreAdjust=800
 # P13: idle priority (never competes with the tick), see mc_helper_priority.
