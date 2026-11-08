@@ -301,3 +301,6 @@ Gotchas the goldens encode (keep them; both are logged as known issues to fix in
 - 2026-11-08, `sys.rs`: add `monotonic()` (CLOCK_MONOTONIC, for `unit_uptime_s`) and `disk_usage(path)`
   (`shutil.disk_usage`); `systemd.rs`: `run` becomes `pub(crate)` (data's `systemctl show` queries). Additive. data.
 - 2026-11-08, `jobs.rs`: add `Event::clear` (`threading.Event.clear`, for `inventory_due`). Additive. data.
+- 2026-11-08, `daemon.rs`: `run` starts `data::client_codes::client_loop` when `settings.client` and calls
+  `data::wire` (the executor's tail through `ws_sender`) before the loops; `Daemon::new` takes
+  `data::status_sample()`; `data` leaves `NOT_PORTED`. data.

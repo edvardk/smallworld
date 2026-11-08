@@ -27,7 +27,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 /// Modules still stubs (each owner removes its name when ported; `main` refuses to start while any remain).
-pub const NOT_PORTED: [&str; 5] = ["ship", "data", "actions", "sync", "misc"];
+pub const NOT_PORTED: [&str; 4] = ["ship", "actions", "sync", "misc"];
 
 /// The test-only switch (see the module comment).
 pub const ALLOW_STUBS_ENV: &str = "SMALLWORLD_AGENT_ALLOW_STUBS";
@@ -98,11 +98,7 @@ impl Daemon {
         // `Executor(lambda: collect(Counters()), self.tail.request, self.panel, self.telemetry)`: data wires the
         // console tail (`ConsoleTail.request`, which needs `Daemon::ws`); the telemetry view is actions' (the
         // sidecar's online.json), `None` until then.
-        // `Counters()`: data owns its shape (a unit struct while it is a stub).
-        #[allow(clippy::default_constructed_unit_structs)]
-        let sample: crate::actions::SampleFn = Arc::new(|| {
-            crate::data::metrics::collect(&mut crate::data::metrics::Counters::default())
-        });
+        let sample = crate::data::status_sample();
         let executor = Executor::new(sample, None, Some(Arc::clone(&panel)), None);
         Self {
             settings,
@@ -189,7 +185,12 @@ pub fn run(daemon: &Arc<Daemon>) -> std::io::Result<()> {
         ("panel", Box::new(crate::sync::panel_loop)),
         // ("selftest", crate::misc::selftest::selftest_loop): misc declares it
     ];
-    // if daemon.settings.client: ("client", crate::data::client_codes::client_loop): data declares it
+    let mut loops = loops;
+    if daemon.settings.client {
+        loops.push(("client", Box::new(crate::data::client_codes::client_loop)));
+    }
+    // `Executor(..., self.tail.request, ...)`: the console tail reads `Agent.ws` (data)
+    crate::data::wire(daemon);
     for (name, f) in loops {
         spawn_loop(name, daemon, f)?;
     }
