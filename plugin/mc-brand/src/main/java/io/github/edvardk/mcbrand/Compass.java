@@ -1,6 +1,7 @@
 package io.github.edvardk.mcbrand;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -24,7 +25,7 @@ import org.bukkit.scheduler.BukkitTask;
 
 /**
  * v1.3: the friend compass, a boss bar per player (the action bar stays free; Hud's top bar is another boss bar).
- * The line itself is {@link Wayfinding#strip}: cardinal points and every other online player's name at their
+ * The line itself is {@link CompassStrip#strip}: cardinal points and every other online player's name at their
  * bearing, the one faced in the centre with ▼, the distance and ↑/↓; players in other dimensions after a bar as
  * "name (Nether)" without a distance (a bearing across dimensions means nothing).
  *
@@ -41,13 +42,24 @@ import org.bukkit.scheduler.BukkitTask;
  * other players' movement redraws every viewer at most every {@link #SLOW_TICKS} ticks, also on demand. With
  * nobody moving no task runs. A redraw is one strip layout per dirty viewer (a few dozen items, no IO); the boss
  * bar's name is sent only when the rendered line differs from the last one sent, so turning less than a pixel's
- * worth (0.75 degrees: {@link Wayfinding#WIDTH_PX} px for 2 x {@link Wayfinding#HALF_FOV} degrees) sends nothing.
+ * worth (0.75 degrees: {@link CompassStrip#WIDTH_PX} px for 2 x {@link CompassStrip#HALF_FOV} degrees) sends nothing.
  * The line is drawn by the server, so what a player sees still trails their turn by their ping plus up to a tick.
+ *
+ * <p>v1.5, the client compass: a player whose Smallworld mod announced the compass capability
+ * ({@link Smallworld#capability}; {@link Wayfinding#compassMode}) gets no boss bar. mc-brand tells the mod to draw
+ * ({@code smallworld:compass}: on/off, max_range, distance_rounding, height_threshold, the colours) and sends the
+ * other players' positions ({@code smallworld:friends}: exactly whom the boss bar would show, {@link
+ * Wayfinding#friends}), at most every {@link #FRIENDS_TICKS} ticks while someone moves and only when the bytes
+ * changed; the mod draws {@link CompassStrip}'s layout every frame from the local yaw (no ping, no pixel steps).
+ * Preferences ({@code /compass on|off|auto}, the precedence) decide whether there is a compass at all, exactly as
+ * for the boss bar; the mod just follows the on/off it is sent. Players without the mod, or with mod 1.0.0, keep
+ * the boss bar.
  */
 final class Compass {
     static final long DECIDE_TICKS = 40L;
     static final long FAST_TICKS = 1L; // v1.4.1: the next tick (was 4: 5 updates a second felt laggy)
     static final long SLOW_TICKS = 20L;
+    static final long FRIENDS_TICKS = 4L; // v1.5: the client compass's positions, at most 5 a second
 
     enum Pref { AUTO, ON, OFF }
 
@@ -59,11 +71,16 @@ final class Compass {
     private final Map<UUID, Component> lines = new HashMap<>();
     private final Set<UUID> dirty = new HashSet<>();
     private final Set<UUID> hidden = new HashSet<>(); // cache of the PDC flag for online players
+    private final Set<UUID> drawn = new HashSet<>(); // v1.5: players whose mod draws the compass (we sent "draw")
+    private final Map<UUID, byte[]> sentFriends = new HashMap<>(); // v1.5: the last positions sent to each
+    private final Set<UUID> settled = new HashSet<>(); // v1.5: the decision window after the join has closed
     private BukkitTask fast;
     private BukkitTask slow;
+    private BukkitTask friendsTask;
     private boolean othersMoved;
     long renders;
     long updates;
+    long friendsSent; // v1.5
 
     Compass(BrandPlugin plugin, Settings settings) {
         this.plugin = plugin;
@@ -95,6 +112,13 @@ final class Compass {
         };
     }
 
+    /** v1.5: who draws this player's compass now: nobody, wait (hello pending), the boss bar or their mod. */
+    Wayfinding.CompassMode mode(Player p) {
+        Wayfinding.Capability cap = plugin.clientCapability(p);
+        return Wayfinding.compassMode(wants(p), cap == Wayfinding.Capability.YES,
+                cap == Wayfinding.Capability.UNKNOWN && !settled.contains(p.getUniqueId()));
+    }
+
     // --- lifecycle -------------------------------------------------------------------------------------------------
 
     void join(Player p) {
@@ -107,6 +131,7 @@ final class Compass {
         }
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (p.isOnline()) {
+                settled.add(p.getUniqueId()); // v1.5: no hello by now = no client compass (the boss bar)
                 apply(p);
             }
         }, DECIDE_TICKS);
@@ -120,19 +145,29 @@ final class Compass {
     }
 
     private void apply(Player p) {
-        boolean want = wants(p);
-        boolean showing = bars.containsKey(p.getUniqueId());
-        if (want && !showing) {
-            BossBar bar = BossBar.bossBar(Component.empty(), 0f, BossBar.Color.WHITE, BossBar.Overlay.PROGRESS);
-            bars.put(p.getUniqueId(), bar);
-            render(p, bar);
-            p.showBossBar(bar);
-        } else if (!want && showing) {
-            hide(p);
+        Wayfinding.CompassMode mode = mode(p);
+        UUID id = p.getUniqueId();
+        boolean bar = bars.containsKey(id);
+        if (mode == Wayfinding.CompassMode.SERVER && !bar) {
+            BossBar b = BossBar.bossBar(Component.empty(), 0f, BossBar.Color.WHITE, BossBar.Overlay.PROGRESS);
+            bars.put(id, b);
+            render(p, b);
+            p.showBossBar(b);
+        } else if (mode != Wayfinding.CompassMode.SERVER && bar) {
+            hideBar(p);
+        }
+        // v1.5: the mod draws it; turned on and off with smallworld:compass, never both compasses at once
+        boolean client = drawn.contains(id);
+        if (mode == Wayfinding.CompassMode.CLIENT && !client) {
+            drawn.add(id);
+            p.sendPluginMessage(plugin, Smallworld.COMPASS, state(true));
+            sendFriends(p, true);
+        } else if (mode != Wayfinding.CompassMode.CLIENT && client) {
+            stopClient(p);
         }
     }
 
-    private void hide(Player p) {
+    private void hideBar(Player p) {
         BossBar bar = bars.remove(p.getUniqueId());
         lines.remove(p.getUniqueId());
         dirty.remove(p.getUniqueId());
@@ -141,17 +176,43 @@ final class Compass {
         }
     }
 
+    /** v1.5: tell the mod to stop drawing (its last positions are dropped with it). */
+    private void stopClient(Player p) {
+        drawn.remove(p.getUniqueId());
+        sentFriends.remove(p.getUniqueId());
+        if (p.isOnline()) {
+            p.sendPluginMessage(plugin, Smallworld.COMPASS, state(false));
+        }
+    }
+
+    /** v1.5: the smallworld:compass payload: on/off, this server's compass settings and colours. */
+    byte[] state(boolean draw) {
+        return Wire.encode(new Wire.Compass(draw ? Wire.COMPASS_DRAW : 0, s.compassMaxRange(), s.compassRounding(),
+                s.compassHeight(), s.text().value(), s.accent().value(), s.secondary().value(), s.subtle().value()));
+    }
+
     void quit(Player p) {
-        hide(p);
+        hideBar(p);
+        drawn.remove(p.getUniqueId());
+        sentFriends.remove(p.getUniqueId());
+        settled.remove(p.getUniqueId());
         hidden.remove(p.getUniqueId());
         othersMoved();
     }
 
     void hideAll() {
         for (Player p : Bukkit.getOnlinePlayers()) {
-            hide(p);
+            hideBar(p);
+            if (drawn.contains(p.getUniqueId())) {
+                stopClient(p); // a disabled or reloading mc-brand leaves no compass behind
+            }
         }
         bars.clear();
+        drawn.clear();
+        sentFriends.clear();
+        if (friendsTask != null) {
+            friendsTask.cancel();
+        }
         if (fast != null) {
             fast.cancel();
         }
@@ -164,7 +225,7 @@ final class Compass {
 
     /** PlayerMoveEvent / teleport / world change: this player turned or moved. */
     void moved(Player p) {
-        if (bars.isEmpty()) {
+        if (bars.isEmpty() && drawn.isEmpty()) {
             return;
         }
         if (bars.containsKey(p.getUniqueId())) {
@@ -172,6 +233,9 @@ final class Compass {
             if (fast == null) {
                 fast = Bukkit.getScheduler().runTaskLater(plugin, this::flushFast, FAST_TICKS);
             }
+        }
+        if (drawn.contains(p.getUniqueId())) {
+            friendsDue(); // v1.5: the mod turns by itself; moving changes who is in range, or the dimension
         }
         if (!hidden(p)) {
             othersMoved();
@@ -182,6 +246,36 @@ final class Compass {
         othersMoved = true;
         if (slow == null && !bars.isEmpty()) {
             slow = Bukkit.getScheduler().runTaskLater(plugin, this::flushSlow, SLOW_TICKS);
+        }
+        friendsDue();
+    }
+
+    /** v1.5: positions go out at most every FRIENDS_TICKS ticks, one-shot, only while someone moves. */
+    private void friendsDue() {
+        if (friendsTask == null && !drawn.isEmpty()) {
+            friendsTask = Bukkit.getScheduler().runTaskLater(plugin, this::flushFriends, FRIENDS_TICKS);
+        }
+    }
+
+    private void flushFriends() {
+        friendsTask = null;
+        for (UUID id : new ArrayList<>(drawn)) {
+            Player v = Bukkit.getPlayer(id);
+            if (v != null) {
+                sendFriends(v, false);
+            }
+        }
+    }
+
+    /** v1.5: this viewer's positions, sent when they differ from the last ones sent (or {@code force}). */
+    private void sendFriends(Player v, boolean force) {
+        Location at = v.getLocation();
+        byte[] b = Wire.encode(Wayfinding.friends(v.getWorld().getKey().toString(), at.getX(), at.getZ(),
+                s.compassMaxRange(), visible(v)));
+        if (force || !Arrays.equals(b, sentFriends.get(v.getUniqueId()))) {
+            sentFriends.put(v.getUniqueId(), b);
+            v.sendPluginMessage(plugin, Smallworld.FRIENDS, b);
+            friendsSent++;
         }
     }
 
@@ -213,23 +307,29 @@ final class Compass {
 
     // --- the line --------------------------------------------------------------------------------------------------
 
-    private void render(Player v, BossBar bar) {
-        renders++;
-        Location at = v.getLocation();
-        String world = v.getWorld().getKey().toString();
-        List<Wayfinding.Target> targets = new ArrayList<>();
+    /**
+     * The other players this viewer's compass may show, boss bar and client compass alike: not the viewer, not
+     * {@code /compass hide}, not a spectator or invisible (XaeroMap.shown), not hidden from the viewer.
+     */
+    private List<Wayfinding.Seen> visible(Player v) {
+        List<Wayfinding.Seen> out = new ArrayList<>();
         for (Player o : Bukkit.getOnlinePlayers()) {
             if (o == v || hidden(o) || !XaeroMap.shown(o) || !v.canSee(o)) {
                 continue;
             }
-            String ow = o.getWorld().getKey().toString();
             Location ol = o.getLocation();
-            targets.add(ow.equals(world)
-                    ? new Wayfinding.Target(o.getName(), ol.getX() - at.getX(), ol.getY() - at.getY(),
-                            ol.getZ() - at.getZ(), null)
-                    : new Wayfinding.Target(o.getName(), 0, 0, 0, ow));
+            out.add(new Wayfinding.Seen(o.getName(), o.getWorld().getKey().toString(), ol.getX(), ol.getY(),
+                    ol.getZ()));
         }
-        Component line = component(Wayfinding.strip(at.getYaw(), targets, config()));
+        return out;
+    }
+
+    private void render(Player v, BossBar bar) {
+        renders++;
+        Location at = v.getLocation();
+        List<CompassStrip.Target> targets = Wayfinding.targets(v.getWorld().getKey().toString(), at.getX(),
+                at.getY(), at.getZ(), visible(v));
+        Component line = component(CompassStrip.strip(at.getYaw(), targets, config()));
         if (!line.equals(lines.get(v.getUniqueId()))) {
             lines.put(v.getUniqueId(), line);
             bar.name(line);
@@ -237,13 +337,13 @@ final class Compass {
         }
     }
 
-    Wayfinding.Config config() {
-        return new Wayfinding.Config(s.compassMaxRange(), s.compassRounding(), s.compassHeight());
+    CompassStrip.Config config() {
+        return new CompassStrip.Config(s.compassMaxRange(), s.compassRounding(), s.compassHeight());
     }
 
-    Component component(Wayfinding.Strip strip) {
+    Component component(CompassStrip.Strip strip) {
         TextComponent.Builder b = Component.text();
-        for (Wayfinding.Segment seg : strip.segments()) {
+        for (CompassStrip.Segment seg : strip.segments()) {
             b.append(switch (seg.kind()) {
                 case GAP -> Component.text(seg.text());
                 case BOLD_GAP -> Component.text(seg.text()).decoration(TextDecoration.BOLD, true);
@@ -265,8 +365,7 @@ final class Compass {
             p.sendMessage(Component.text("The compass is off on this server.", s.subtle()));
             return;
         }
-        String sub = args.length > 0 ? args[0].toLowerCase(Locale.ROOT)
-                : bars.containsKey(p.getUniqueId()) ? "off" : "on";
+        String sub = args.length > 0 ? args[0].toLowerCase(Locale.ROOT) : showing(p) ? "off" : "on";
         PersistentDataContainer pdc = p.getPersistentDataContainer();
         switch (sub) {
             case "on", "off" -> {
@@ -280,7 +379,8 @@ final class Compass {
                 pdc.remove(prefKey);
                 apply(p);
                 p.sendMessage(Component.text("Compass: automatic (" + (wants(p) ? "on" : "off")
-                        + " for your client).", s.subtle()));
+                        + " for your client" + (mode(p) == Wayfinding.CompassMode.CLIENT ? ", drawn by the Smallworld mod"
+                        : "") + ").", s.subtle()));
             }
             case "hide" -> {
                 pdc.set(hiddenKey, PersistentDataType.BYTE, (byte) 1);
@@ -304,16 +404,44 @@ final class Compass {
         return bars.size();
     }
 
+    /** v1.5: players whose mod draws the compass. */
+    int clientShowing() {
+        return drawn.size();
+    }
+
+    /** Whether this player has a compass now, boss bar or client-drawn (the bare /compass toggles it). */
+    boolean showing(Player p) {
+        return bars.containsKey(p.getUniqueId()) || drawn.contains(p.getUniqueId());
+    }
+
     /** For /mcbrand selftest: a fixed scene (tests/e2e/brand_check.py compares the line). */
     String selftest() {
-        List<Wayfinding.Target> scene = List.of(
-                new Wayfinding.Target("Alex", 3, 20, -120, null), // north, above
-                new Wayfinding.Target("Sam", 200, 0, 0, null), // east
-                new Wayfinding.Target("Kim", 0, 0, 0, "minecraft:the_nether"));
-        Wayfinding.Strip st = Wayfinding.strip(180f, scene, new Wayfinding.Config(1000, 5, 8));
+        List<CompassStrip.Target> scene = List.of(
+                new CompassStrip.Target("Alex", 3, 20, -120, null), // north, above
+                new CompassStrip.Target("Sam", 200, 0, 0, null), // east
+                new CompassStrip.Target("Kim", 0, 0, 0, "minecraft:the_nether"));
+        CompassStrip.Strip st = CompassStrip.strip(180f, scene, new CompassStrip.Config(1000, 5, 8));
         return "compass [" + st.plain().strip().replaceAll(" {2,}", " ") + "] focus " + st.focus() + ", width "
-                + Wayfinding.lineWidth(st.segments()) + ", default " + Wayfinding.compassByDefault(false, false) + "/"
+                + CompassStrip.lineWidth(st.segments()) + ", default " + Wayfinding.compassByDefault(false, false) + "/"
                 + Wayfinding.compassByDefault(false, true) + "/" + Wayfinding.compassByDefault(true, true)
-                + ", showing " + bars.size() + " renders " + renders + " updates " + updates;
+                + ", showing " + bars.size() + " renders " + renders + " updates " + updates
+                + "; client compass " + clientSelftest();
+    }
+
+    /**
+     * v1.5, for /mcbrand selftest: the mode table (no compass wanted; a vanilla client; a mod client before its
+     * hello; mod 1.0.0; a mod with the capability), the state and friends payloads for a fixed scene
+     * (WayfindingFixtures prints the same; tests/e2e/brand_check.py compares) and the counters.
+     */
+    String clientSelftest() {
+        String modes = Wayfinding.compassMode(false, true, false) + "/" + Wayfinding.compassMode(true, false, false)
+                + "/" + Wayfinding.compassMode(true, false, true) + "/" + Wayfinding.compassMode(true, false, false)
+                + "/" + Wayfinding.compassMode(true, true, false);
+        java.util.HexFormat hex = java.util.HexFormat.of();
+        byte[] st = Wire.encode(new Wire.Compass(Wire.COMPASS_DRAW, 1000, 5, 8, 0xFFFFFF, 0xFFAA00, 0xAAAAAA,
+                0x777777));
+        byte[] fr = Wire.encode(Wayfinding.friends("minecraft:overworld", 0.5, 0.5, 1000, Wayfinding.SELFTEST_SCENE));
+        return "modes " + modes + ", state " + hex.formatHex(st) + ", friends " + hex.formatHex(fr) + ", drawn "
+                + drawn.size() + " sent " + friendsSent;
     }
 }

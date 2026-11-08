@@ -6,6 +6,22 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Added
+
+- A smooth friend compass for players with the Smallworld client mod: the mod (1.1.0, in the client pack) draws
+  the compass itself every frame from where the player looks, so it no longer trails a turn by the ping or moves
+  in GUI-pixel steps, and nearby friends move every frame. Same place (the boss-bar compass's row, under the HUD
+  bar when that is shown), same look and layout (one `CompassStrip.java`, shared verbatim by mc-brand and the
+  mod), same `branding.compass` settings (`max_range`, `distance_rounding`, `height_threshold`, colours) and the
+  same `/compass on|off|auto|hide|show`. mc-brand then shows that player no boss-bar compass. Players without
+  the mod, or with mod 1.0.0, keep the server-drawn compass exactly as before. Defaults are unchanged: the
+  compass stays off by default for the mod together with Xaero's maps (`/compass on` gives them the smooth one).
+- Two new mod channels and a hello capability (`client/mod/WIRE.md` "The client compass"): the hello appends
+  `capabilities` (bit 0: the mod draws the compass; a 1.0.0 hello decodes as none), `smallworld:compass` (on/off
+  and the settings) and `smallworld:friends` (exactly whom the boss bar would show: same visibility and range,
+  positions in 1/16 block; rate-limited to every 4 ticks while someone moves, only when changed). `/mcbrand
+  status` counts client compasses and position messages; the selftest prints the decision and both payloads.
+
 ## [1.4.1] - 2026-11-08
 
 ### Added

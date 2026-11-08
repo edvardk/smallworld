@@ -127,6 +127,13 @@ distance (rounded) and an arrow when they are well above or below; players in ot
 bar, without a distance. `/compass on|off` (per player, remembered), `/compass hide` (stay off everyone else's
 compass and map), `/compass auto` (back to the default below).
 
+**Smooth with the Smallworld mod** (v1.5, mod 1.1.0, in the client pack): the mod draws the same compass itself,
+every frame from where the player is looking, so it turns with the mouse instead of trailing by the ping and
+gliding instead of stepping a pixel at a time; nearby friends move every frame too. Same place, same look (only
+the empty bar under it is gone), same settings, same `/compass` commands; the server just sends the mod who is
+where, a few times a second while anyone moves. Players without the mod, or with an older one, keep the
+server-drawn compass exactly as before. Never both at once.
+
 **`/map`** gives a personal **pocket map**: it re-centres on the player about once a second while held (in the off
 hand it's a minimap), shows every other player as a named arrow (a dot at the edge beyond the map) and fills in
 the terrain as the player explores, like any vanilla map. `/map zoom` cycles the scale. One per player, free to
@@ -144,7 +151,8 @@ again when one registers late):
 
 | Client | Compass | `/map` |
 |---|---|---|
-| Smallworld client mod + Xaero's maps (the client pack) | off: friends are on Xaero's minimap | works, not suggested |
+| Smallworld client mod + Xaero's maps (the client pack) | off: friends are on Xaero's minimap (`/compass on`: the smooth one, drawn by the mod) | works, not suggested |
+| Smallworld client mod 1.1.0+, no Xaero's | on, drawn by the mod (v1.5) | works, not suggested |
 | Xaero's maps, no Smallworld mod | on | works (friend arrows on top of Xaero's) |
 | No mods | on | works, and a one-line tip at join suggests it |
 

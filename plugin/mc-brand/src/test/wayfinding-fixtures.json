@@ -1,7 +1,91 @@
 {
   "arrow": [[0.000000, 8, ""], [8.000000, 8, ""], [8.500000, 8, "\u2191"], [-9.000000, 8, "\u2193"], [30.000000, 8, "\u2191"]],
   "bearing": [[0.000000, -10.000000, 0.000000], [10.000000, 0.000000, 90.000000], [0.000000, 10.000000, 180.000000], [-10.000000, 0.000000, 270.000000], [5.000000, -5.000000, 45.000000], [-3.000000, 7.000000, 203.198591], [0.000100, 100.000000, 179.999943]],
+  "capability": {
+    "0/false/false": "NO",
+    "0/false/true": "NO",
+    "0/true/false": "NO",
+    "0/true/true": "NO",
+    "1/false/false": "UNKNOWN",
+    "1/false/true": "YES",
+    "1/true/false": "UNKNOWN",
+    "1/true/true": "YES",
+    "2/false/false": "NO",
+    "2/false/true": "NO",
+    "2/true/false": "NO",
+    "2/true/true": "NO",
+    "3/false/false": "UNKNOWN",
+    "3/false/true": "YES",
+    "3/true/false": "UNKNOWN",
+    "3/true/true": "YES",
+    "null/false/false": "NO",
+    "null/false/true": "NO",
+    "null/true/false": "UNKNOWN",
+    "null/true/true": "UNKNOWN"
+  },
   "channels": [["smallworld:config", true, false], ["xaerominimap:main", false, true], ["xaeroworldmap:main", false, true], ["xaerobetterpvp:main", false, true], ["xaerolib:main", false, true], ["fabric:registry/sync", false, false], ["minecraft:brand", false, false], ["notxaero:main", false, false]],
+  "client_compass": [
+    {
+      "config": [1000, 5, 8],
+      "focus": "\u25bcAlex 120m\u2191",
+      "friends": "136d696e6563726166743a6f766572776f726c640304416c657800f40cc00ad4eaffff0f0353616d00c4258008d4f9ffff0f034b696d146d696e6563726166743a7468655f6e6574686572000000",
+      "placed": [["CARDINAL", "W", 0, 6], ["TICK", "\u00b7", 19, 2], ["TICK", "\u00b7", 39, 2], ["CARDINAL", "NW", 54, 12], ["TICK", "\u00b7", 79, 2], ["FOCUS", "\u25bcAlex 120m\u2191", 90, 61], ["TICK", "\u00b7", 159, 2], ["CARDINAL", "NE", 174, 12], ["TICK", "\u00b7", 199, 2], ["PLAYER", "Sam", 222, 18]],
+      "plain": "                 W   \u00b7    \u00b7   NW   \u00b7  \u25bcAlex 120m\u2191  \u00b7   NE   \u00b7     Sam | Kim (Nether)",
+      "viewer": [100.250000, 64.000000, -50.750000, "minecraft:overworld"],
+      "what": "facing north, Alex ahead and above, Sam east, Kim in the Nether",
+      "yaw": 180.000000
+    },
+    {
+      "config": [1000, 5, 8],
+      "focus": "",
+      "friends": "136d696e6563726166743a6f766572776f726c6400",
+      "placed": [["NORTH", "N", 0, 6], ["TICK", "\u00b7", 19, 2], ["TICK", "\u00b7", 39, 2], ["CARDINAL", "NE", 54, 12], ["TICK", "\u00b7", 79, 2], ["TICK", "\u00b7", 99, 2], ["CARDINAL", "E", 117, 6], ["TICK", "\u00b7", 139, 2], ["TICK", "\u00b7", 159, 2], ["CARDINAL", "SE", 174, 12], ["TICK", "\u00b7", 199, 2], ["TICK", "\u00b7", 219, 2], ["CARDINAL", "S", 234, 6]],
+      "plain": "N   \u00b7    \u00b7   NE   \u00b7    \u00b7    E    \u00b7    \u00b7   SE   \u00b7    \u00b7   S",
+      "viewer": [100.250000, 64.000000, -50.750000, "minecraft:overworld"],
+      "what": "facing east, nobody",
+      "yaw": -90.000000
+    },
+    {
+      "config": [1000, 5, 8],
+      "focus": "\u25bcLow 45m\u2193",
+      "friends": "136d696e6563726166743a6f766572776f726c6402034c6f7700e4088003c4fdffff0f06426568696e6400e4128008b4f3ffff0f",
+      "placed": [["CARDINAL", "SE", 0, 12], ["TICK", "\u00b7", 19, 2], ["TICK", "\u00b7", 39, 2], ["CARDINAL", "S", 57, 6], ["TICK", "\u00b7", 79, 2], ["FOCUS", "\u25bcLow 45m\u2193", 94, 52], ["TICK", "\u00b7", 159, 2], ["CARDINAL", "W", 177, 6], ["TICK", "\u00b7", 199, 2], ["TICK", "\u00b7", 219, 2], ["CARDINAL", "NW", 228, 12]],
+      "plain": "SE  \u00b7    \u00b7    S    \u00b7   \u25bcLow 45m\u2193   \u00b7    W    \u00b7    \u00b7  NW",
+      "viewer": [100.250000, 64.000000, -50.750000, "minecraft:overworld"],
+      "what": "facing south-west, one out of range, one behind, one faced below",
+      "yaw": 45.000000
+    },
+    {
+      "config": [1000, 5, 8],
+      "focus": "\u25bcBob 100m",
+      "friends": "136d696e6563726166743a6f766572776f726c640503426f6200840d800894edffff0f03416e6e00a40b800894edffff0f024379116d696e6563726166743a7468655f656e6400000003446565116d696e6563726166743a7468655f656e6400000003457665146d696e6563726166743a7468655f6e6574686572000000",
+      "placed": [["CARDINAL", "W", 0, 6], ["TICK", "\u00b7", 19, 2], ["TICK", "\u00b7", 39, 2], ["CARDINAL", "NW", 54, 12], ["TICK", "\u00b7", 79, 2], ["FOCUS", "\u25bcBob 100m", 94, 52], ["TICK", "\u00b7", 159, 2], ["CARDINAL", "NE", 174, 12], ["TICK", "\u00b7", 199, 2], ["TICK", "\u00b7", 219, 2], ["CARDINAL", "E", 234, 6]],
+      "plain": "                              W   \u00b7    \u00b7   NW   \u00b7   \u25bcBob 100m   \u00b7   NE   \u00b7    \u00b7   E | Cy (End), Dee (End) +1",
+      "viewer": [100.250000, 64.000000, -50.750000, "minecraft:overworld"],
+      "what": "two near the centre: the closer to it is faced",
+      "yaw": 180.000000
+    },
+    {
+      "config": [100, 1, 8],
+      "focus": "",
+      "friends": "136d696e6563726166743a6f766572776f726c64010350697000c511e80685f2ffff0f",
+      "placed": [["TICK", "\u00b7", 15, 2], ["TICK", "\u00b7", 35, 2], ["CARDINAL", "NW", 50, 12], ["TICK", "\u00b7", 75, 2], ["TICK", "\u00b7", 95, 2], ["NORTH", "N", 113, 6], ["TICK", "\u00b7", 135, 2], ["PLAYER", "Pip\u2193", 150, 20], ["TICK", "\u00b7", 195, 2], ["TICK", "\u00b7", 215, 2], ["CARDINAL", "E", 233, 6]],
+      "plain": "   \u00b7    \u00b7   NW   \u00b7    \u00b7    N    \u00b7   Pip\u2193      \u00b7    \u00b7    E",
+      "viewer": [100.250000, 64.000000, -50.750000, "minecraft:overworld"],
+      "what": "a sixteenth of a block: 1/16 positions, turned a little",
+      "yaw": 183.370000
+    }
+  ],
+  "compass_mode": {
+    "false/false/false": "NONE",
+    "false/false/true": "NONE",
+    "false/true/false": "NONE",
+    "false/true/true": "NONE",
+    "true/false/false": "SERVER",
+    "true/false/true": "WAIT",
+    "true/true/false": "CLIENT",
+    "true/true/true": "CLIENT"
+  },
   "cursor": [
     [[10.000000, -20.000000, 90.000000, 0, 0, 0], [20, -39, 4, true]],
     [[1000.000000, 0.000000, 0.000000, 0, 0, 0], [127, 0, 0, false]],
@@ -48,6 +132,7 @@
   "precedence": [[false, false, "none", true, true], [false, true, "xaero", true, false], [true, false, "smallworld", true, false], [true, true, "smallworld+xaero", false, false]],
   "prerender": [-128, 127, -256, -1, 0, 1, 5864743, 4415005, true, false, true],
   "relative": [[10.000000, 350.000000, 20.000000], [350.000000, 10.000000, -20.000000], [180.000000, 0.000000, 180.000000], [0.000000, 180.000000, 180.000000], [90.000000, 90.000000, 0.000000], [271.000000, 90.000000, -179.000000]],
+  "selftest_friends": "136d696e6563726166743a6f766572776f726c640304416c65780038c00a88f1ffff0f0353616d008819800808034b696d146d696e6563726166743a7468655f6e6574686572000000",
   "snap": [[-0.500000, 0, -1], [13.900000, 2, 12], [-17.000000, 3, -24], [64.000000, 4, 64]],
   "strip": [
     {

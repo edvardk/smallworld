@@ -203,6 +203,17 @@ def main() -> int:
             "v1.3: the compass line for a fixed scene (Wayfinding's fixtures) and the precedence",
         ),
         (
+            "caps 0/1, capability NO/UNKNOWN/NO/UNKNOWN/YES",
+            "v1.5: the hello's capabilities (a 1.0.0 hello has none) and the capability decision",
+        ),
+        (
+            "client compass modes NONE/SERVER/WAIT/SERVER/CLIENT, state 01e8070508ffffff0780d4fe07aad5aa05f7eedd03,"
+            " friends 136d696e6563726166743a6f766572776f726c640304416c65780038c00a"
+            "88f1ffff0f0353616d008819800808034b696d146d696e6563726166743a7468655f6e6574686572000000, drawn ",
+            "v1.5: who draws the compass (no compass, vanilla, waiting for the hello, mod 1.0.0, mod 1.1.0) and"
+            " the smallworld:compass / smallworld:friends payloads (WayfindingFixtures' selftest_friends)",
+        ),
+        (
             "pocket map cursors 20,-39,4 127,0,0e 36,36,14, snap -1/12",
             "v1.3: vanilla's map-cursor arithmetic (on the map, the edge dot) and whole-pixel centres",
         ),

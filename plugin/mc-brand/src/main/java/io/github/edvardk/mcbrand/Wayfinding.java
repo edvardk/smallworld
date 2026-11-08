@@ -6,288 +6,73 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * v1.3: the pure logic of the friend compass, the pocket map's cursors and the client-mod precedence (no Bukkit or
- * Adventure types, so {@code CompassFixtures} runs it on the plain JDK and tests/test_wayfinding.py checks its
- * output with an independent Python implementation).
- *
- * <p>Angles: Minecraft's yaw is 0 = south (+Z), 90 = west, -90 = east, 180 = north. Compass bearings here are
- * degrees clockwise from north (north = -Z): 0 N, 90 E, 180 S, 270 W. A viewer facing yaw {@code y} faces bearing
- * {@code y + 180}.
- *
- * <p>The strip is laid out in font pixels (the vanilla default font's advance widths: {@link #advance}), because the
- * client centres the boss bar's text as a whole and the font is not monospaced. {@link #WIDTH_PX} pixels cover
- * {@link #HALF_FOV} degrees each side of the facing direction; every item is centred on its bearing, items never
- * overlap (lower priority ones are left out: the faced player, then the others nearest first, then N/E/S/W, then
- * NE/SE/SW/NW, then the 15-degree ticks), and the gaps are filled with spaces (4 px) and bold spaces (5 px), so
- * the centre of the strip is the centre of the screen. Glyphs outside ASCII (the arrows) are estimates: a pixel or
- * two off at most.
+ * v1.3: the pure logic of the pocket map's cursors and the client-mod precedence (no Bukkit or Adventure types, so
+ * {@code WayfindingFixtures} runs it on the plain JDK and tests/test_wayfinding.py checks its output with an
+ * independent Python implementation). v1.5: the compass strip itself is {@link CompassStrip}, shared verbatim with
+ * the client mod; {@link #compassMode} decides who draws a player's compass.
  */
 final class Wayfinding {
     private Wayfinding() {}
 
-    static final int WIDTH_PX = 240;
-    static final double HALF_FOV = 90.0;
-    /** A target within this many degrees of the facing direction is "the one faced": ▼ name, distance. */
-    static final double FOCUS_DEG = 8.0;
-    static final int MIN_SPACING_PX = 3;
-    static final int MAX_AWAY = 2;
-    static final String FOCUS_MARK = "▼"; // ▼
-    static final String UP = "↑"; // ↑
-    static final String DOWN = "↓"; // ↓
-    static final String TICK = "·"; // ·
+    // --- who the compass shows (v1.5: one list for both compasses) ---------------------------------------------
 
-    // --- angles and distances ------------------------------------------------------------------------------------
+    /**
+     * Another online player the viewer's compass may show (Compass.visible: not the viewer, not /compass hide, not
+     * a spectator or invisible, not hidden from the viewer), with their dimension key and position.
+     */
+    record Seen(String name, String dimension, double x, double y, double z) {}
 
-    /** Compass bearing (0..360, clockwise from north) of the offset (dx, dz). */
-    static double bearing(double dx, double dz) {
-        double deg = Math.toDegrees(Math.atan2(dx, -dz));
-        return deg < 0 ? deg + 360.0 : deg;
+    /** v1.5: the selftest's and the fixtures' scene, the viewer at (0.5, 64, 0.5) in the overworld. */
+    static final List<Seen> SELFTEST_SCENE = List.of(
+            new Seen("Alex", "minecraft:overworld", 3.5, 84, -119.5), // north, above
+            new Seen("Sam", "minecraft:overworld", 200.5, 64, 0.5), // east
+            new Seen("Far", "minecraft:overworld", 5000, 64, 5000), // out of range: not sent
+            new Seen("Kim", "minecraft:the_nether", 10, 70, 10)); // elsewhere: no position
+
+    /** The horizontal distance exactly as {@link CompassStrip.Target#horizontal} computes it. */
+    private static double horizontal(Seen o, double x, double z) {
+        double dx = o.x() - x;
+        double dz = o.z() - z;
+        return Math.sqrt(dx * dx + dz * dz);
     }
 
-    /** The bearing a viewer with this yaw faces (0..360). */
-    static double facing(double yaw) {
-        return normalize360(yaw + 180.0);
-    }
-
-    static double normalize360(double deg) {
-        double d = deg % 360.0;
-        return d < 0 ? d + 360.0 : d;
-    }
-
-    /** {@code bearing} relative to {@code facing}: -180 (exclusive) .. 180, negative = to the left. */
-    static double relative(double bearing, double facing) {
-        double r = normalize360(bearing - facing);
-        return r > 180.0 ? r - 360.0 : r;
-    }
-
-    /** Distance rounded to a multiple of {@code rounding} (half up); at least {@code rounding} = "&lt;N". */
-    static long rounded(double distance, int rounding) {
-        int r = Math.max(1, rounding);
-        return Math.round(distance / r) * r;
-    }
-
-    static String distance(double distance, int rounding) {
-        long v = rounded(distance, rounding);
-        return v < Math.max(1, rounding) ? "<" + Math.max(1, rounding) + "m" : v + "m";
-    }
-
-    /** ↑ / ↓ when the target is more than {@code threshold} blocks above / below, else "". */
-    static String arrow(double dy, int threshold) {
-        return dy > threshold ? UP : dy < -threshold ? DOWN : "";
-    }
-
-    /** "Nether", "End", "Overworld", or the key's path for a custom dimension. */
-    static String dimensionName(String key) {
-        return switch (key) {
-            case "minecraft:the_nether" -> "Nether";
-            case "minecraft:the_end" -> "End";
-            case "minecraft:overworld" -> "Overworld";
-            default -> key.substring(key.indexOf(':') + 1);
-        };
-    }
-
-    // --- the font ------------------------------------------------------------------------------------------------
-
-    /** Advance width in GUI pixels of one character in the vanilla default font (not bold; bold adds 1). */
-    static int advance(int cp) {
-        return switch (cp) {
-            case ' ' -> 4;
-            case '!', ',', '.', ':', ';', '|', 'i', '\'', 0x00b7 -> 2;
-            case '`', 'l' -> 3;
-            case '"', '(', ')', '*', 'I', '[', ']', 't', '{', '}' -> 4;
-            case '<', '>', 'f', 'k' -> 5;
-            case '@', '~' -> 7;
-            default -> 6; // letters, digits, '_', and (estimated) the arrows
-        };
-    }
-
-    static int width(String s) {
-        return s.codePoints().map(Wayfinding::advance).sum();
-    }
-
-    // --- the strip -----------------------------------------------------------------------------------------------
-
-    /** One other player as the viewer sees them; {@code dimension} is null in the viewer's own dimension. */
-    record Target(String name, double dx, double dy, double dz, String dimension) {
-        double horizontal() {
-            return Math.sqrt(dx * dx + dz * dz);
+    /** The boss bar's targets for a viewer at (x, y, z) in {@code world}: offsets here, the dimension elsewhere. */
+    static List<CompassStrip.Target> targets(String world, double x, double y, double z, List<Seen> others) {
+        List<CompassStrip.Target> out = new ArrayList<>();
+        for (Seen o : others) {
+            out.add(o.dimension().equals(world)
+                    ? new CompassStrip.Target(o.name(), o.x() - x, o.y() - y, o.z() - z, null)
+                    : new CompassStrip.Target(o.name(), 0, 0, 0, o.dimension()));
         }
+        return out;
     }
 
-    record Config(int maxRange, int rounding, int heightThreshold) {}
-
-    enum Kind { GAP, BOLD_GAP, TICK, NORTH, CARDINAL, PLAYER, FOCUS, AWAY }
-
-    /** A piece of the line: text of one kind (the plugin colours each kind). */
-    record Segment(Kind kind, String text) {}
-
-    /** A placed item: its text and left edge in pixels (for the fixtures). */
-    record Placed(Kind kind, String text, int left, int width) {}
-
-    record Strip(List<Segment> segments, List<Placed> placed, String focus) {
-        String plain() {
-            StringBuilder b = new StringBuilder();
-            for (Segment s : segments) {
-                b.append(s.text());
-            }
-            return b.toString();
-        }
-    }
-
-    private record Item(Kind kind, String text, double centre, int priority, double order) {}
-
-    static final String[] POINTS = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
-
-    static double pixel(double rel) {
-        return WIDTH_PX / 2.0 + rel / HALF_FOV * (WIDTH_PX / 2.0);
-    }
-
-    /** The compass line for a viewer with this yaw. */
-    static Strip strip(double yaw, List<Target> targets, Config c) {
-        double face = facing(yaw);
-        List<Item> items = new ArrayList<>();
-        Target focus = null;
-        double focusRel = 0;
-        List<Target> here = new ArrayList<>();
-        List<Target> away = new ArrayList<>();
-        for (Target t : targets) {
-            if (t.dimension() != null) {
-                away.add(t);
-            } else if (t.horizontal() <= c.maxRange()) {
-                here.add(t);
+    /**
+     * v1.5: the {@code smallworld:friends} payload for the same viewer: exactly whom the boss bar would show
+     * ({@link CompassStrip#strip} drops players here beyond {@code maxRange}; players elsewhere carry no position),
+     * those here nearest first, then those elsewhere by name, at most {@link Wire#MAX_FRIENDS}. The order is fixed,
+     * so an unchanged scene encodes to the same bytes (Compass sends only changes).
+     */
+    static Wire.Friends friends(String world, double x, double z, int maxRange, List<Seen> others) {
+        List<Seen> here = new ArrayList<>();
+        List<Seen> away = new ArrayList<>();
+        for (Seen o : others) {
+            if (!o.dimension().equals(world)) {
+                away.add(o);
+            } else if (horizontal(o, x, z) <= maxRange) {
+                here.add(o);
             }
         }
-        here.sort(Comparator.comparingDouble(Target::horizontal).thenComparing(Target::name));
-        for (Target t : here) {
-            double rel = relative(bearing(t.dx(), t.dz()), face);
-            if (Math.abs(rel) <= FOCUS_DEG && (focus == null || Math.abs(rel) < Math.abs(focusRel) - 1e-9)) {
-                focus = t;
-                focusRel = rel;
-            }
+        here.sort(Comparator.comparingDouble((Seen o) -> horizontal(o, x, z)).thenComparing(Seen::name));
+        away.sort(Comparator.comparing(Seen::name));
+        List<Wire.Friend> out = new ArrayList<>();
+        for (Seen o : here) {
+            out.add(new Wire.Friend(o.name(), "", Wire.fixed(o.x()), Wire.fixed(o.y()), Wire.fixed(o.z())));
         }
-        String focusText = null;
-        if (focus != null) {
-            focusText = FOCUS_MARK + focus.name() + " " + distance(focus.horizontal(), c.rounding())
-                    + arrow(focus.dy(), c.heightThreshold());
-            items.add(new Item(Kind.FOCUS, focusText, pixel(0), 0, 0));
+        for (Seen o : away) {
+            out.add(new Wire.Friend(o.name(), o.dimension(), 0, 0, 0));
         }
-        for (int i = 0; i < POINTS.length; i++) {
-            double rel = relative(i * 45.0, face);
-            if (Math.abs(rel) <= HALF_FOV) {
-                items.add(new Item(i == 0 ? Kind.NORTH : Kind.CARDINAL, POINTS[i], pixel(rel), i % 2 == 0 ? 2 : 3, i));
-            }
-        }
-        int rank = 0;
-        for (Target t : here) {
-            rank++;
-            if (t == focus) {
-                continue;
-            }
-            double rel = relative(bearing(t.dx(), t.dz()), face);
-            if (Math.abs(rel) <= HALF_FOV) {
-                items.add(new Item(Kind.PLAYER, t.name() + arrow(t.dy(), c.heightThreshold()), pixel(rel), 1, rank));
-            }
-        }
-        for (int deg = 15; deg < 360; deg += 15) {
-            if (deg % 45 != 0) {
-                double rel = relative(deg, face);
-                if (Math.abs(rel) <= HALF_FOV) {
-                    items.add(new Item(Kind.TICK, TICK, pixel(rel), 4, deg));
-                }
-            }
-        }
-        items.sort(Comparator.comparingInt(Item::priority).thenComparingDouble(Item::order));
-        List<Placed> placed = new ArrayList<>();
-        for (Item it : items) {
-            int w = width(it.text());
-            int left = (int) Math.round(it.centre() - w / 2.0);
-            left = Math.max(0, Math.min(WIDTH_PX - w, left));
-            boolean free = true;
-            for (Placed p : placed) {
-                if (left < p.left() + p.width() + MIN_SPACING_PX && p.left() < left + w + MIN_SPACING_PX) {
-                    free = false;
-                    break;
-                }
-            }
-            if (free) {
-                placed.add(new Placed(it.kind(), it.text(), left, w));
-            }
-        }
-        placed.sort(Comparator.comparingInt(Placed::left));
-
-        String awayText = awayText(away);
-        List<Segment> out = new ArrayList<>();
-        int awayWidth = awayText.isEmpty() ? 0 : width(awayText);
-        gap(out, awayWidth); // mirrors the suffix, so the strip's centre stays the screen's
-        int x = 0;
-        for (Placed p : placed) {
-            gap(out, p.left() - x);
-            out.add(new Segment(p.kind(), p.text()));
-            x = p.left() + p.width();
-        }
-        gap(out, WIDTH_PX - x);
-        if (!awayText.isEmpty()) {
-            out.add(new Segment(Kind.AWAY, awayText));
-        }
-        return new Strip(List.copyOf(out), List.copyOf(placed), focusText);
-    }
-
-    /** " | Alex (Nether), Sam (End) +2": players in other dimensions, no bearing, no distance. */
-    static String awayText(List<Target> away) {
-        if (away.isEmpty()) {
-            return "";
-        }
-        List<Target> sorted = new ArrayList<>(away);
-        sorted.sort(Comparator.comparing(Target::name, String.CASE_INSENSITIVE_ORDER));
-        StringBuilder b = new StringBuilder(" | ");
-        for (int i = 0; i < Math.min(MAX_AWAY, sorted.size()); i++) {
-            if (i > 0) {
-                b.append(", ");
-            }
-            b.append(sorted.get(i).name()).append(" (").append(dimensionName(sorted.get(i).dimension())).append(')');
-        }
-        if (sorted.size() > MAX_AWAY) {
-            b.append(" +").append(sorted.size() - MAX_AWAY);
-        }
-        return b.toString();
-    }
-
-    /** Fills {@code px} pixels with spaces (4 px) and bold spaces (5 px); a gap of 1-3, 6, 7 or 11 px is rounded. */
-    static void gap(List<Segment> out, int px) {
-        if (px <= 0) {
-            return;
-        }
-        int[] best = null;
-        for (int target : new int[] {px, px - 1, px + 1, px - 2, px + 2, px - 3}) {
-            for (int bold = 0; bold < 4 && target >= 0; bold++) {
-                int rest = target - 5 * bold;
-                if (rest >= 0 && rest % 4 == 0) {
-                    best = new int[] {rest / 4, bold};
-                    break;
-                }
-            }
-            if (best != null) {
-                break;
-            }
-        }
-        if (best == null) {
-            return;
-        }
-        if (best[0] > 0) {
-            out.add(new Segment(Kind.GAP, " ".repeat(best[0])));
-        }
-        if (best[1] > 0) {
-            out.add(new Segment(Kind.BOLD_GAP, " ".repeat(best[1])));
-        }
-    }
-
-    /** The pixel width the client draws for these segments (bold spaces are 5 px). */
-    static int lineWidth(List<Segment> segments) {
-        int w = 0;
-        for (Segment s : segments) {
-            w += width(s.text()) + (s.kind() == Kind.BOLD_GAP ? s.text().length() : 0);
-        }
-        return w;
+        return new Wire.Friends(world, out.subList(0, Math.min(Wire.MAX_FRIENDS, out.size())));
     }
 
     // --- the pocket map's cursors --------------------------------------------------------------------------------
@@ -351,6 +136,46 @@ final class Wayfinding {
     /** The compass by default (without /compass on|off): off only for the Smallworld mod together with Xaero's. */
     static boolean compassByDefault(boolean ourMod, boolean xaero) {
         return !(ourMod && xaero);
+    }
+
+    /** v1.5: can this client draw the compass itself? UNKNOWN until its hello and channel registrations are in. */
+    enum Capability { YES, NO, UNKNOWN }
+
+    /**
+     * v1.5: the capability decision, pure (the selftest, WayfindingFixtures): a hello with
+     * {@link Wire#CAP_COMPASS} and both compass channels registered is YES; that hello without the channels yet,
+     * or no hello yet from a client that registered a smallworld channel, is UNKNOWN (Compass waits, at most until
+     * its decision window closes); everything else (no mod, mod 1.0.0) is NO: the boss bar, as before.
+     */
+    static Capability capability(Integer capabilities, boolean ourChannel, boolean compassChannels) {
+        if (capabilities == null) {
+            return ourChannel ? Capability.UNKNOWN : Capability.NO;
+        }
+        if ((capabilities & Wire.CAP_COMPASS) == 0) {
+            return Capability.NO;
+        }
+        return compassChannels ? Capability.YES : Capability.UNKNOWN;
+    }
+
+    /** v1.5: who draws a player's compass (Compass.apply). */
+    enum CompassMode { NONE, WAIT, SERVER, CLIENT }
+
+    /**
+     * v1.5: who draws a player's compass. {@code want}: their /compass choice, else the precedence
+     * ({@link #compassByDefault}). {@code capable}: the mod's hello carried the compass capability (WIRE.md
+     * {@code capabilities} bit 0) and the client registered the compass channels, so the mod draws it every frame
+     * (CLIENT); otherwise mc-brand's boss bar does (SERVER), exactly as before v1.5 (no mod, or a mod older than
+     * 1.1.0). {@code pending}: the client registered a smallworld channel but its hello has not come yet and the
+     * decision window after the join is open: WAIT rather than flash a boss bar the hello would take away.
+     */
+    static CompassMode compassMode(boolean want, boolean capable, boolean pending) {
+        if (!want) {
+            return CompassMode.NONE;
+        }
+        if (capable) {
+            return CompassMode.CLIENT;
+        }
+        return pending ? CompassMode.WAIT : CompassMode.SERVER;
     }
 
     /** The one-line /map tip at join: only for clients with neither mod. */

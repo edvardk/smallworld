@@ -538,6 +538,17 @@ What the mc-telemetry plugin, mc-agent's telemetry and the Worker's experience s
   Cloudflare-account compromise could swap the pack only together with its sha1 in `server.properties`, i.e. with a
   deploy; a swapped file alone fails the client's hash check. Players may decline the pack
   (`require-resource-pack=false`).
+- **The client compass (v1.5)** adds two server -> client plugin channels (`client/mod/WIRE.md`). What changes is
+  precision, not who is visible: the boss-bar compass shows bearings and, for the player faced, a rounded
+  distance; `smallworld:friends` gives a mod client the positions (1/16 block) of exactly the players that compass
+  would show (not spectators, invisible players, `/compass hide` or players hidden from the viewer; in the same
+  dimension only within `branding.compass.max_range`, default 1000 blocks; elsewhere only the dimension). A
+  modified client can read those coordinates, as it already could read Xaero's tracked-player packets
+  (v1.2) and entity positions within tracking range. Players who don't want to be located use `/compass hide`
+  (also off the pocket map and Xaero's); operators can lower `max_range` or turn the compass off. It is sent only
+  to clients that announced the capability and registered both channels, after their hello; a non-mod client
+  never receives it. The client's only new input is the hello's `capabilities` VarInt, a flag that decides
+  whether that player's own compass is a boss bar or drawn by their mod.
 
 ## The client modpack, its setup page and the artifact mirror (v1.1)
 
