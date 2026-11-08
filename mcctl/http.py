@@ -122,6 +122,7 @@ class _HTTPSHandler(urllib.request.HTTPSHandler):
     def __init__(self) -> None:
         super().__init__()
         self.tls = ssl.create_default_context()
+        self.tls.minimum_version = ssl.TLSVersion.TLSv1_2  # the default since Python 3.10, made explicit
 
     def https_open(self, req: urllib.request.Request) -> http.client.HTTPResponse:
         return self.do_open(_HTTPSConnection, req, context=self.tls)  # type: ignore[no-any-return]

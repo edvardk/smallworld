@@ -777,8 +777,9 @@ function go(id, focus = false) {
 
 // --- views -------------------------------------------------------------------------------------------------------
 
-const V = {};
-const LOADERS = {};
+// Null-prototype maps, read only with a tab id from TABS: no inherited names can be looked up or called.
+const V = Object.create(null);
+const LOADERS = Object.create(null);
 
 function banners(o) {
   const ws = (o.warnings || []).map((w) => {
@@ -2175,8 +2176,9 @@ function paintView(full) {
   main.setAttribute("aria-labelledby", `tab-${current}`);
   const view = main.firstElementChild;
   const fresh = full || !view || view.dataset.tab !== current;
-  if (fresh) main.innerHTML = `<div class="view" data-tab="${current}">${V[current]()}</div>`;
-  else patch(view, V[current]());
+  const paint = Object.hasOwn(V, current) ? V[current] : V.overview;
+  if (fresh) main.innerHTML = `<div class="view" data-tab="${current}">${paint()}</div>`;
+  else patch(view, paint());
   applyDyn(main);
   watchCharts(main, fresh);
   if (current === "overview") paintOverview();
@@ -2191,10 +2193,11 @@ function once(el) {
   WIRED.add(el);
   return true;
 }
-const loaded = {};
+const loaded = Object.create(null);
 const loading = new Set();
 const needsLoad = (id) => !loaded[id] || Date.now() - loaded[id] > POLL_MS;
 async function load(id) {
+  if (!Object.hasOwn(LOADERS, id)) return;
   loading.add(id);
   try {
     await LOADERS[id]();
