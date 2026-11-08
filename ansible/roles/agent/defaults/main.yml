@@ -16,5 +16,3 @@ agent_segment_s: 300
 # v1.3: the Mojang name lookup's endpoints (comma-separated); empty = api.mojang.com, then
 # api.minecraftservices.com (scripts/mc_agent.py MOJANG_LOOKUPS). Only the e2e-mock run sets it (a loopback mock).
 agent_mojang_lookup_urls: ""
-# v1.4: the telemetry sidecar (mc-telemetry.service) runs where the Rust agent does and experience telemetry is on.
-agent_sidecar: "{{ mc_panel_mode == 'cloudflare' and mc_agent_implementation == 'rust' and mc_experience_enabled | bool }}"

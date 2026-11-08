@@ -1264,7 +1264,7 @@ def implementation() -> str:
 
 
 def implementation_checks() -> None:
-    """v1.4: the unit, the entry point and the telemetry sidecar match agent.implementation. The rounds are the
+    """v1.4: the unit, the entry point match agent.implementation (no telemetry unit: in-process). The rounds are the
     same for both implementations (black box); the e2e's rust shards deploy with agent.implementation: rust."""
     impl = implementation()
     print(f"agent.implementation: {impl}")
@@ -1277,16 +1277,9 @@ def implementation_checks() -> None:
     st = AGENT_BIN.stat() if AGENT_BIN.exists() else None
     expect(st is not None and st.st_uid == 0 and st.st_mode & 0o777 == 0o755,
            f"smallworld-agent is installed (root, 0755) whichever runs: {oct(st.st_mode) if st else 'missing'}")  # fmt: skip
-    sidecar = show("mc-telemetry.service", "LoadState", "ActiveState", "User", "MainPID")
-    if impl == "rust":
-        expect(sidecar.get("ActiveState") == "active" and sidecar.get("User") == "mcops",
-               f"the telemetry sidecar runs as mcops ({sidecar})")  # fmt: skip
-        spid = sidecar.get("MainPID", "0")
-        expect(
-            as_minecraft_read(f"/proc/{spid}/environ") == 13, "minecraft can't read the sidecar's environment"
-        )
-    else:
-        expect(sidecar.get("LoadState") == "not-found", f"no telemetry sidecar in python mode ({sidecar})")
+    sidecar = show("mc-telemetry.service", "LoadState")
+    expect(sidecar.get("LoadState") == "not-found",
+           f"no telemetry unit in {impl} mode: mc-agent runs the telemetry in-process ({sidecar})")  # fmt: skip
 
 
 def setup() -> None:

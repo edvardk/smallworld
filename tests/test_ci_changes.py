@@ -27,7 +27,7 @@ def load(name: str) -> dict:
         (["docs/images/brand-server-icon.png"], {"code", "plugin"}),
         (["template/README.md"], {"code", "e2e"}),
         (["tests/test_docs.py"], {"code"}),
-        (["ansible/roles/agent/tasks/main.yml"], {"code", "e2e", "e2e_full"}),  # v1.4: the telemetry sidecar
+        (["ansible/roles/agent/tasks/main.yml"], {"code", "e2e", "e2e_full"}),  # v1.4: rust mode too
         (["ansible/roles/minecraft/tasks/main.yml"], {"code", "e2e", "e2e_full"}),
         (["ansible/group_vars/all/main.yml"], {"code", "e2e", "plugin", "rust"}),
         (["plugin/mc-brand/src/main/java/X.java"], {"code", "e2e", "e2e_full", "plugin"}),
