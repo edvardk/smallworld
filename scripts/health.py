@@ -1112,13 +1112,16 @@ CHUNKY_PROGRESS = re.compile(
 FRONTIER_STEP = 256
 FRONTIER_MARGIN = 1024  # = schema world.pregenerate.margin's default
 FRONTIER_MAX_RADIUS = 10000  # = schema world.pregenerate.max_radius's default
-# Region folders per dimension, inside its Bukkit world folder (world/, world_nether/, world_the_end/):
-# Paper's layout first, then vanilla's newer dimensions/<namespace>/<name>/ nesting (restore.py check_world
-# accepts both).
+# Region folders per dimension. Since 26.x every dimension lives under the one world folder (level-name):
+# <level>/dimensions/minecraft/<dimension>/region, the overworld included (seen in a world written by the
+# pinned Purpur 26.3; Paper's WorldFolderMigration moves older worlds there at start-up). The Bukkit world
+# names Chunky takes are unchanged (PaperWorldLoader.defaultWorldName: <level>, <level>_nether,
+# <level>_the_end). Fallback for a pre-26 world, in the Bukkit world's own folder: the overworld's
+# <level>/region, <level>_nether/DIM-1/region, <level>_the_end/DIM1/region.
 REGION_DIRS = {
-    "overworld": ("region", "dimensions/minecraft/overworld/region"),
-    "the_nether": ("DIM-1/region", "dimensions/minecraft/the_nether/region"),
-    "the_end": ("DIM1/region", "dimensions/minecraft/the_end/region"),
+    "overworld": "region",
+    "the_nether": "DIM-1/region",
+    "the_end": "DIM1/region",
 }
 REGION_FILE = re.compile(r"r\.(-?\d+)\.(-?\d+)\.mca")
 REGION_HEADER = 4096  # 1024 chunk locations x 4 bytes (3-byte sector offset, 1-byte length; 0 = no chunk)
@@ -1165,17 +1168,35 @@ def chunk_reach(cx: int, cz: int) -> int:
     return max(cx * 16 + 16 if cx >= 0 else -cx * 16, cz * 16 + 16 if cz >= 0 else -cz * 16)
 
 
-def region_dir(server_dir: Path, d: FrontierDim) -> Path | None:
-    """The dimension's region folder, refused if any part of it under the server dir is a symlink (the JVM can
-    write there: never list a folder elsewhere)."""
-    for rel in REGION_DIRS[d.dimension]:
-        path = server_dir / d.world / rel
+BUKKIT_SUFFIX = {"overworld": "", "the_nether": "_nether", "the_end": "_the_end"}
+
+
+def region_dir(server_dir: Path, d: FrontierDim, level: str | None = None) -> Path | None:
+    """The dimension's region folder (26.x layout first, then the pre-26 one), refused if any part of it
+    under the server dir is a symlink (the JVM can write there: never list a folder elsewhere). `level`:
+    level-name (else derived from the Bukkit world name)."""
+    suffix = BUKKIT_SUFFIX[d.dimension]
+    if not level:
+        level = d.world[: len(d.world) - len(suffix)] if suffix and d.world.endswith(suffix) else d.world
+    for rel in (
+        f"{level}/dimensions/minecraft/{d.dimension}/region",
+        f"{d.world}/{REGION_DIRS[d.dimension]}",
+    ):
+        path = server_dir / rel
         try:
-            if path.is_dir() and path.resolve() == server_dir.resolve() / d.world / rel:
+            if path.is_dir() and path.resolve() == server_dir.resolve() / rel:
                 return path
         except OSError:
             continue
     return None
+
+
+def level_name(server_dir: Path) -> str | None:
+    """server.properties' level-name (the one world folder since 26.x), None if unreadable."""
+    try:
+        return mc_rcon.read_properties(server_dir / "server.properties").get("level-name") or None
+    except (OSError, ValueError):
+        return None
 
 
 def read_region_header(path: Path) -> bytes:
@@ -1233,7 +1254,7 @@ def frontier_env(disk_ok: bool = True, server_dir: Path | None = None) -> Fronti
         dims,
         margin=int(env_float("PREGEN_MARGIN", FRONTIER_MARGIN)),
         max_radius=int(env_float("PREGEN_MAX_RADIUS", FRONTIER_MAX_RADIUS)),
-        explored=lambda d: explored_radius(region_dir(root, d)),
+        explored=lambda d: explored_radius(region_dir(root, d, level_name(root))),
         allowed=disk_ok,
     )
 

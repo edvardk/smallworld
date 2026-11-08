@@ -898,7 +898,7 @@ def test_explored_radius_from_region_names_and_headers(tmp_path) -> None:
     )
 
 
-def test_frontier_env_and_region_dirs(monkeypatch, tmp_path) -> None:
+def test_frontier_env(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv(
         "PREGEN_FRONTIER", "world:overworld:5000,world_the_end:the_end:,bad:x:1,w;rm:overworld:"
     )
@@ -906,21 +906,51 @@ def test_frontier_env_and_region_dirs(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("PREGEN_MAX_RADIUS", "3000")
     f = health.frontier_env(server_dir=tmp_path)
     assert f is not None and f.dims == [OVER, END] and (f.margin, f.max_radius) == (512, 3000)
-    (tmp_path / "world_the_end" / "DIM1" / "region").mkdir(parents=True)
-    _region(tmp_path / "world_the_end" / "DIM1" / "region" / "r.1.0.mca", [(0, 0)])
-    assert f.explored(END) == 32 * 16 + 16 and f.explored(OVER) is None
-    nested = tmp_path / "world" / "dimensions" / "minecraft" / "overworld" / "region"
-    nested.mkdir(parents=True)
-    assert health.region_dir(tmp_path, OVER) == nested
-    elsewhere = tmp_path / "elsewhere"
-    elsewhere.mkdir()
-    (tmp_path / "world_nether").mkdir()
-    (tmp_path / "world_nether" / "DIM-1").symlink_to(elsewhere, target_is_directory=True)
-    (elsewhere / "region").mkdir()
-    nether = health.FrontierDim("world_nether", "the_nether")
-    assert health.region_dir(tmp_path, nether) is None  # a planted symlink: never listed
+    assert f.explored(END) is None and f.explored(OVER) is None  # no world yet
     monkeypatch.setenv("PREGEN_FRONTIER", "")
     assert health.frontier_env() is None
+
+
+def test_region_dirs_26x_layout_under_one_world_folder(monkeypatch, tmp_path) -> None:
+    """26.x (the pinned Purpur 26.3, seen in a real world): every dimension under <level-name>/dimensions/minecraft/,
+    the overworld included, while Chunky's Bukkit names stay world / world_nether / world_the_end."""
+    (tmp_path / "server.properties").write_text("level-name=survival\n")
+    root = tmp_path / "survival" / "dimensions" / "minecraft"
+    for dim in ("overworld", "the_nether", "the_end"):
+        (root / dim / "region").mkdir(parents=True)
+    (tmp_path / "survival" / "level.dat").write_bytes(b"")
+    _region(root / "the_end" / "region" / "r.1.0.mca", [(0, 0)])
+    _region(root / "overworld" / "region" / "r.-1.0.mca", [(0, 0)])
+    monkeypatch.setenv("PREGEN_FRONTIER", "survival:overworld:5000,survival_nether:the_nether:1250,"
+                       "survival_the_end:the_end:")  # fmt: skip
+    f = health.frontier_env(server_dir=tmp_path)
+    assert f is not None
+    over, nether, end = f.dims
+    assert health.region_dir(tmp_path, over, "survival") == root / "overworld" / "region"
+    assert health.region_dir(tmp_path, nether, "survival") == root / "the_nether" / "region"
+    assert health.region_dir(tmp_path, end) == root / "the_end" / "region"  # level derived from the name
+    assert f.explored(end) == 32 * 16 + 16 and f.explored(over) == 32 * 16 and f.explored(nether) == 0
+    # the 26.x folder wins over a stale pre-26 one left next to it
+    (tmp_path / "survival_the_end" / "DIM1" / "region").mkdir(parents=True)
+    assert health.region_dir(tmp_path, end, "survival") == root / "the_end" / "region"
+
+
+def test_region_dirs_pre26_fallback_and_symlinks(tmp_path) -> None:
+    (tmp_path / "world" / "region").mkdir(parents=True)
+    (tmp_path / "world_the_end" / "DIM1" / "region").mkdir(parents=True)
+    _region(tmp_path / "world_the_end" / "DIM1" / "region" / "r.1.0.mca", [(0, 0)])
+    assert health.region_dir(tmp_path, OVER, "world") == tmp_path / "world" / "region"
+    assert health.region_dir(tmp_path, END, "world") == tmp_path / "world_the_end" / "DIM1" / "region"
+    assert health.explored_radius(health.region_dir(tmp_path, END, "world")) == 32 * 16 + 16
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "region").mkdir(parents=True)
+    (tmp_path / "world_nether").mkdir()
+    (tmp_path / "world_nether" / "DIM-1").symlink_to(elsewhere, target_is_directory=True)
+    nether = health.FrontierDim("world_nether", "the_nether")
+    assert health.region_dir(tmp_path, nether, "world") is None  # a planted symlink: never listed
+    (tmp_path / "world" / "dimensions").symlink_to(elsewhere, target_is_directory=True)
+    (elsewhere / "minecraft" / "the_nether" / "region").mkdir(parents=True)
+    assert health.region_dir(tmp_path, nether, "world") is None
 
 
 def test_main_writes_the_status_line(monkeypatch, tmp_path) -> None:
@@ -1019,8 +1049,10 @@ def test_backup_hold_stops_frontier_expansion_too(monkeypatch, tmp_path) -> None
     monkeypatch.setenv("PREGEN_WORLDS", "")
     monkeypatch.setenv("PREGEN_FRONTIER", "world_the_end:the_end:")
     monkeypatch.setattr(health.mc_rcon, "SERVER_DIR", tmp_path)
-    (tmp_path / "world_the_end" / "DIM1" / "region").mkdir(parents=True)
-    _region(tmp_path / "world_the_end" / "DIM1" / "region" / "r.0.0.mca", [(3, 0)])
+    (tmp_path / "server.properties").write_text("level-name=world\n")
+    end = tmp_path / "world" / "dimensions" / "minecraft" / "the_end" / "region"  # the 26.x layout
+    end.mkdir(parents=True)
+    _region(end / "r.0.0.mca", [(3, 0)])
     hold = tmp_path / "pregen-hold.json"
     monkeypatch.setattr(notify, "PREGEN_HOLD_FILE", hold)
     monkeypatch.setattr(health, "admin_stopped", lambda path=None: False)
