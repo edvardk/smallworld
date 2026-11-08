@@ -62,6 +62,9 @@ pub struct Daemon {
     pub executor: Mutex<Executor>,
     /// The self-test, the Mojang lookup and the product version this process started with (misc).
     pub misc: Arc<Misc>,
+    /// `Agent.telemetry`: the experience telemetry (`EXPERIENCE=1`), its own thread; `player_message` reads its
+    /// online map, the logs loop feeds its overhead card.
+    pub telemetry: Option<Arc<crate::telemetry::Telemetry>>,
 }
 
 /// `Agent.report_job(job)`: `POST /ingest/job` (failures only logged: the inventory carries the job too), then
@@ -110,17 +113,20 @@ impl Daemon {
         // `Executor(lambda: collect(Counters()), self.tail.request, self.panel, self.telemetry)`: data wires the
         // console tail (`ConsoleTail.request`, which needs `Daemon::ws`); the telemetry view (actions') is below.
         let sample = crate::data::status_sample();
-        // `self.telemetry = self.make_telemetry() if s.experience else None`: in rust mode telemetry is the
-        // Python sidecar; the agent keeps `Messages` and reads its online.json (actions/telemetry.rs). A bad
-        // MESSAGE_* number is `int()`'s ValueError, as in Python.
-        let telemetry: Option<Arc<dyn crate::actions::Telemetry>> = if settings.experience {
-            Some(Arc::new(crate::actions::telemetry::Sidecar::from_env(
-                &process_env(),
-            )?))
+        // `self.telemetry = self.make_telemetry() if s.experience else None`: in-process, as in Python (the
+        // telemetry module; `run` starts its thread). A bad SEGMENT_*/BACKFILL_PAUSE_S/MESSAGE_* number is
+        // `int()`/`float()`'s ValueError: the agent doesn't start, as in Python.
+        let telemetry = if settings.experience {
+            let mut t = crate::telemetry::make_telemetry(&settings, &process_env(), link.clone())?;
+            t.stop = Arc::clone(&stop); // `self.telemetry.stop = self.stop`
+            Some(Arc::new(t))
         } else {
             None
         };
-        let executor = Executor::new(sample, None, Some(Arc::clone(&panel)), telemetry);
+        let view: Option<Arc<dyn crate::actions::Telemetry>> = telemetry
+            .as_ref()
+            .map(|t| Arc::clone(t) as Arc<dyn crate::actions::Telemetry>);
+        let executor = Executor::new(sample, None, Some(Arc::clone(&panel)), view);
         Ok(Self {
             settings,
             stop,
@@ -134,6 +140,7 @@ impl Daemon {
             panel,
             executor: Mutex::new(executor),
             misc,
+            telemetry,
         })
     }
 
@@ -178,6 +185,18 @@ pub fn selftest_loop(d: &Daemon) -> AResult<()> {
     Ok(())
 }
 
+/// `Telemetry.run` (its rounds catch their own failures).
+///
+/// # Errors
+/// None (the `LoopFn` shape).
+#[allow(clippy::unnecessary_wraps)]
+pub fn telemetry_loop(d: &Daemon) -> AResult<()> {
+    if let Some(t) = &d.telemetry {
+        t.run();
+    }
+    Ok(())
+}
+
 /// A loop's entry point (runs until `daemon.stop`): a module's `fn(&Daemon) -> AResult<()>`, or a closure that
 /// adapts a loop with its own signature.
 pub type LoopFn = Box<dyn Fn(&Daemon) -> AResult<()> + Send>;
@@ -206,8 +225,7 @@ fn spawn_loop(name: &'static str, daemon: &Arc<Daemon>, f: LoopFn) -> std::io::R
         .map(|_| ())
 }
 
-/// `Agent.run()`: the loops, then wait for `stop`. Telemetry (`EXPERIENCE=1`) is the Python sidecar
-/// (`mc-telemetry.service`) in rust mode, not a thread here.
+/// `Agent.run()`: the loops (with telemetry's when `EXPERIENCE=1`), then wait for `stop`.
 pub fn run(daemon: &Arc<Daemon>) -> std::io::Result<()> {
     let loops: Vec<(&'static str, LoopFn)> = vec![
         ("metrics", Box::new(crate::data::metrics_loop)),
@@ -218,6 +236,9 @@ pub fn run(daemon: &Arc<Daemon>) -> std::io::Result<()> {
         ("selftest", Box::new(selftest_loop)),
     ];
     let mut loops = loops;
+    if daemon.telemetry.is_some() {
+        loops.push(("telemetry", Box::new(telemetry_loop)));
+    }
     if daemon.settings.client {
         loops.push(("client", Box::new(crate::data::client_codes::client_loop)));
     }

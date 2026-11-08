@@ -2289,7 +2289,7 @@ def make_telemetry(
     cls: type[telemetry.Telemetry] = telemetry.Telemetry,
 ) -> telemetry.Telemetry:
     """P13: snapshots -> minute rows (live to the Worker), segments (R2 + the box's copy), backfill. The
-    Python agent runs it in-process; v1.4's sidecar (`mc_agent.py telemetry`, rust mode) on its own."""
+    agent runs it in-process (as smallworld-agent does); `mc_agent.py telemetry` on its own."""
     e = os.environ
     cfg = telemetry.Config.from_env(dict(e), mc_rcon.SERVER_DIR, e.get("LEVEL_NAME") or "world")
     msgs = telemetry.Messages(
@@ -2797,20 +2797,18 @@ def main() -> int:
     return 0
 
 
-# --- v1.4: the telemetry sidecar (agent.implementation rust) ----------------------------------------------
-# The Rust agent doesn't port telemetry.py (design §1.3): `mc_agent.py telemetry` runs it in
-# mc-telemetry.service, with the same inputs and outputs as inside the Python agent (make_telemetry), plus
-# what the Rust agent needs from it and what the Python agent fed it in-process:
-#   - online.json: who is online by the latest snapshot ({uuid: {u, n, tips, join}}, rewritten after every
-#     poll, atomically, 0640), for the Rust agent's player_message (rust/smallworld-agent/src/actions/
-#     telemetry.rs reads it; older than 30 s = nobody online);
-#   - systemd's per-run resource lines (Overhead.observe_journal, which the Python agent's logs loop feeds)
-#     from a journal reader of its own (SYSLOG_IDENTIFIER=systemd, cursor in journal.json, every LOG_BATCH_S);
-#   - the overhead card also measures this unit (SIDECAR_UNITS).
-# The Python agent never runs it (python mode: nothing changes, one process as before).
+# --- v1.4: `mc_agent.py telemetry`, the telemetry alone ---------------------------------------------------
+# The telemetry in a process of its own, with the same inputs and outputs as inside the agent
+# (make_telemetry), plus what a separate process needs: online.json (who is online by the latest snapshot,
+# {uuid: {u, n, tips, join}}, rewritten after every poll, atomically, 0640), its own reader of systemd's
+# per-run resource lines (Overhead.observe_journal, which the agent's logs loop feeds in-process;
+# SYSLOG_IDENTIFIER=systemd, cursor in journal.json, every LOG_BATCH_S), and itself in the overhead card
+# (SIDECAR_UNITS). No unit runs it: both agents run the telemetry in-process (the Rust one: smallworld-
+# agent's telemetry module). It is the entry point the telemetry parity harness drives
+# (tests/telemetry_parity), as `smallworld-agent telemetry` is on the Rust side.
 
 SIDECAR_DIR = Path("/var/lib/mc-telemetry")  # StateDirectory=mc-telemetry (the Python agent's segments/ too)
-ONLINE_FILE = SIDECAR_DIR / "online.json"  # = rust actions::telemetry::ONLINE_FILE
+ONLINE_FILE = SIDECAR_DIR / "online.json"  # = rust telemetry::sidecar::ONLINE_FILE
 SIDECAR_JOURNAL_STATE = SIDECAR_DIR / "journal.json"
 SIDECAR_UNITS = (*telemetry.OVERHEAD_UNITS, "mc-telemetry.service")
 SIDECAR_JOURNAL_MATCH = "SYSLOG_IDENTIFIER=systemd"
@@ -2823,13 +2821,13 @@ def online_map(online: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
 
 
 def write_online(path: Path, online: dict[str, dict[str, Any]]) -> None:
-    """Atomic (tmp + rename), 0640 like the verdicts: the Rust agent (the same ops user) reads it."""
+    """Atomic (tmp + rename), 0640 like the verdicts."""
     telemetry._atomic_text(path, json.dumps(online_map(online), sort_keys=True))
 
 
 class SidecarTelemetry(telemetry.Telemetry):
     """Telemetry that also publishes its online map after every poll (even a failed one: a fresh file means a
-    live sidecar; a stale one, the Rust agent reads as nobody online)."""
+    live process)."""
 
     online_file: Path = ONLINE_FILE
 
@@ -2871,7 +2869,7 @@ def overhead_loop(s: Settings, t: telemetry.Telemetry, stop: threading.Event, st
 
 
 def telemetry_main() -> int:
-    """`mc_agent.py telemetry`: the sidecar (mc-telemetry.service, rust mode with experience on)."""
+    """`mc_agent.py telemetry`: the telemetry alone (see above; the parity harness's entry point)."""
     try:
         settings = Settings.from_env()
         if not settings.experience:

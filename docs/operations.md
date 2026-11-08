@@ -92,21 +92,22 @@ deploy removes every live player it doesn't list (pending panel adds still count
 mc-agent comes in two implementations (reference.md "Two agent implementations"): `python` (`scripts/mc_agent.py`,
 the default) and `rust` (`smallworld-agent`, the port; the default becomes `rust` in a later release, after a soak).
 Both run as `mcops` in the same sandbox and share every state file (`/var/lib/mc-agent/`, `pending.json`, the job
-lock, the markers), so switching either way loses nothing and needs nothing but a deploy.
+lock, the markers, the telemetry's `telemetry-id.json` and segments), so switching either way loses nothing and
+needs nothing but a deploy. Both run the experience telemetry inside the agent process: there is no telemetry unit
+to watch.
 
 - **Switch:** `mcctl config set agent.implementation rust -C $C`, then publish and deploy as for any change (push
   to main, or `mcctl deploy -C $C`). The deploy points `/opt/minecraft/bin/mc-agent` at the binary, rewrites
-  `mc-agent.service` (`ExecStart=.../smallworld-agent run`) and restarts it; with experience telemetry on it then
-  starts `mc-telemetry.service`, which runs the telemetry the Python agent ran in-process (after the agent's
-  restart, so the two never write the telemetry's files at once). Nothing else changes: the panel, Discord and
-  mcctl's actions work the same.
-- **Check:** `systemctl status mc-agent mc-telemetry` on the box (the agent's line `mc-agent 1.x.y: pushing to
+  `mc-agent.service` (`ExecStart=.../smallworld-agent run`) and restarts it; the telemetry restarts with it, in the
+  same process. (A box that ran a v1.4 pre-release has its old `mc-telemetry.service` stopped and removed first.)
+  Nothing else changes: the panel, Discord and mcctl's actions work the same.
+- **Check:** `systemctl status mc-agent` on the box (the agent's line `mc-agent 1.x.y: pushing to
   ...` at start is the same), `cat /opt/minecraft/product-version.json` (`"agent": {"implementation": "rust",
   "sha256": ...}`), and the panel's Health tab (metrics arriving, Versions row green). `readlink
   /opt/minecraft/bin/mc-agent` names the implementation mcctl's actions run.
-- **Roll back:** `mcctl config set agent.implementation python -C $C` and deploy. The deploy stops and removes
-  `mc-telemetry.service` first, then restarts mc-agent as the Python script with its in-process telemetry.
-  If a deploy is impossible and the Rust agent misbehaves, `sudo systemctl stop mc-agent mc-telemetry` on the box
+- **Roll back:** `mcctl config set agent.implementation python -C $C` and deploy: mc-agent restarts as the Python
+  script, with its in-process telemetry, on the same files.
+  If a deploy is impossible and the Rust agent misbehaves, `sudo systemctl stop mc-agent` on the box
   silences it (the server and its backups don't depend on it; the panel then shows the host's agent as down)
   until the next deploy.
 

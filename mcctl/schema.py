@@ -619,9 +619,9 @@ class Agent:
     implementation: Literal["python", "rust"] = opt(
         "python",
         doc="v1.4: which mc-agent runs on the box (panel mode cloudflare) and answers mcctl's actions: "
-        "python (scripts/mc_agent.py) or rust (smallworld-agent, the port; the experience telemetry then "
-        "runs in its own unit, mc-telemetry.service). Both read and write the same state, so switching back "
-        "is a deploy. The default becomes rust in a later release, after a soak.",
+        "python (scripts/mc_agent.py) or rust (smallworld-agent, the port). Either runs the experience "
+        "telemetry in-process. Both read and write the same state, so switching back is a deploy. "
+        "The default becomes rust in a later release, after a soak.",
     )
 
 

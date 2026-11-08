@@ -5,6 +5,8 @@
 //! smallworld-agent                                  # the daemon (mc-agent.service): Worker link, data plane
 //! smallworld-agent cli mcctl:USER ACTION [ARGS_JSON] # one action for mcctl over SSH (restart, plugin, moderate,
 //!                                                   # world_create|switch|delete) or a list (worlds, plugins)
+//! smallworld-agent telemetry                        # the experience telemetry alone (mc_agent.py telemetry; the
+//!                                                   # daemon runs it in-process, no unit runs this)
 //! ```
 //!
 //! Same command line as `mc_agent.py` (its `__main__`: `cli` as the first argument selects `cli_main(argv[2:])`,
@@ -39,6 +41,7 @@ mod ship;
 mod sync;
 mod sys;
 mod systemd;
+mod telemetry;
 mod types;
 mod unicode;
 mod worlds;
@@ -67,6 +70,9 @@ fn main() -> ExitCode {
     } else if argv.get(1).map(String::as_str) == Some("selftest-scrub") && argv.len() == 2 {
         // Hidden, test-only (PORTING.md "Divergences"): the scrubber and journal_entry on stdin, a pure function.
         ship::selftest_scrub(&mut std::io::stdin(), &mut std::io::stdout())
+    } else if argv.get(1).map(String::as_str) == Some("telemetry") {
+        // mc_agent.py's `telemetry` subcommand (telemetry_main): the telemetry alone (telemetry/sidecar.rs).
+        telemetry::sidecar::main()
     } else {
         daemon::main()
     };

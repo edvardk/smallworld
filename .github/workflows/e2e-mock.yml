@@ -115,7 +115,7 @@ jobs:
   #   telemetry-brand: telemetry, then branding (heavy half only);
   #   migrate-p16:     migrate container -> container, then P16 on the migrated box (heavy half only);
   #   impl: rust       (v1.4) the deployment says agent.implementation: rust (`mcctl config set` before the
-  #                    render): the Rust mc-agent, the `mc-agent cli` entry point and the mc-telemetry sidecar run
+  #                    render): the Rust mc-agent (its telemetry in-process) and the `mc-agent cli` entry point run
   #                    the same black-box rounds (agent-a also scores the agent's units live: hardening_check.py
   #                    --agent; telemetry-brand runs the telemetry half only).
   # A heavy shard in an essential run skips every step (done in seconds); the matrix stays static. Each check
@@ -376,7 +376,7 @@ jobs:
             -e MC_SECRET_DISCORD_WEBHOOK_URL -e MC_SECRET_AGENT_TOKEN -e MC_SECRET_COMMAND_HMAC_KEY \
             mc-e2e python3 /src/product/tests/e2e/agent_check.py --rounds "$ROUNDS"
 
-      # v1.4: the Rust agent and its telemetry sidecar in their sandbox, live (the core shard checks the Python
+      # v1.4: the Rust agent (its telemetry in-process) in its sandbox, live (the core shard checks the Python
       # agent's): the exposure gate, mcops + the journal group, environment unreadable from minecraft, the running
       # binary under its seccomp filter with no_new_privs and MemoryDenyWriteExecute.
       - name: The Rust agent's units (systemd-analyze gate, sandbox, privilege separation)
@@ -395,6 +395,8 @@ jobs:
       - name: Experience telemetry checks (plugin, agent, Worker, verdicts, /lag, backfill)
         if: matrix.shard == 'telemetry-brand' && env.FULL != 'false'
         timeout-minutes: 25
+        env:
+          E2E_AGENT_IMPL: ${{ matrix.impl }}  # v1.4: rust = smallworld-agent's in-process telemetry is what ships
         run: python tests/e2e/telemetry_check.py mc-e2e
 
       # P17 acceptance: the mc-brand plugin on the real Purpur (enabled with the deploy's settings, pinned jar and
@@ -545,7 +547,7 @@ jobs:
         if: failure()
         run: |
           for box in mc-e2e mc-e2e-new; do
-            docker exec "$box" journalctl -u minecraft -u mc-backup -u mc-health -u mc-agent -u mc-telemetry -u mc-restore-apply \
+            docker exec "$box" journalctl -u minecraft -u mc-backup -u mc-health -u mc-agent -u mc-restore-apply \
               -u 'mc-restore@*' -u mc-plugins-apply -u mc-reboot-gate --no-pager -n 600 || true
           done
 

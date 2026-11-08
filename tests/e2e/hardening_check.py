@@ -23,9 +23,11 @@ Checks the hardening site.yml applied, on the live systemd, against the product'
     /opt/ansible/bin/python tests/e2e/hardening_check.py /src/product          # everything (core shard)
     /opt/ansible/bin/python tests/e2e/hardening_check.py /src/product --agent  # v1.4: the agent's units only
 
-v1.4 `--agent` (the e2e's rust shards): mc-agent and, when installed, the telemetry sidecar: the exposure gate,
-running as mcops with the journal group, environment unreadable from minecraft, and the live process under its
-seccomp filter with no_new_privs and MemoryDenyWriteExecute (the Rust binary in that sandbox, design §5).
+v1.4 `--agent` (the e2e's rust shards): mc-agent, which runs the experience telemetry in-process in either
+implementation (no telemetry unit of its own): the exposure gate, running as mcops with the journal group, the
+telemetry's state and verdict directories in its sandbox, environment unreadable from minecraft, and the live
+process under its seccomp filter with no_new_privs and MemoryDenyWriteExecute (the Rust binary in that sandbox,
+design §5).
 """
 
 from __future__ import annotations
@@ -60,11 +62,7 @@ THRESHOLDS = {
     "mc-map.service": 2.5,  # v1.4: the world map pre-render (map_check.py runs it)
     "minecraft.service": 4.5,
 }
-# v1.4: units only some deployments install, scored where they are
-OPTIONAL_THRESHOLDS = {
-    "mc-telemetry.service": 2.5,  # the telemetry sidecar (agent.implementation rust with experience on)
-}
-AGENT_UNITS = ("mc-agent.service", "mc-telemetry.service")
+AGENT_UNITS = ("mc-agent.service",)
 SECRET_FILES = (
     "/etc/minecraft/restic.env",
     "/etc/minecraft/health.env",
@@ -152,13 +150,22 @@ def gate(unit: str, limit: float) -> None:
 
 
 def agent_checks() -> None:
-    """v1.4: the agent's units as they run (either implementation; the sidecar where installed)."""
+    """v1.4: the agent's units as they run (either implementation, the telemetry in-process)."""
+    expect(
+        not installed("mc-telemetry.service"),
+        "no telemetry unit of its own: mc-agent runs the telemetry in-process (both implementations)",
+    )
     for unit in AGENT_UNITS:
         if not installed(unit):
             print(f"(skipped: {unit} is not installed)")
             continue
-        gate(unit, {**THRESHOLDS, **OPTIONAL_THRESHOLDS}[unit])
-        props = show(unit, "ActiveState", "User", "SupplementaryGroups", "MemoryDenyWriteExecute", "MainPID")
+        gate(unit, THRESHOLDS[unit])
+        props = show(unit, "ActiveState", "User", "SupplementaryGroups", "MemoryDenyWriteExecute", "MainPID",
+                     "StateDirectory", "ReadWritePaths")  # fmt: skip
+        expect(props.get("StateDirectory", "").split() == ["mc-agent", "mc-telemetry"],
+               f"{unit}: telemetry-id.json and the segments are in its state ({props.get('StateDirectory')})")  # fmt: skip
+        expect("/run/mc-verdicts" in props.get("ReadWritePaths", "").split(),
+               f"{unit}: verdicts.tsv and messages.tsv are writable ({props.get('ReadWritePaths')})")  # fmt: skip
         expect(
             props.get("ActiveState") == "active" and props.get("User") == "mcops",
             f"{unit} runs as mcops ({props})",
@@ -193,9 +200,6 @@ def checks(product: Path) -> None:
     # --- systemd sandbox ----------------------------------------------------------------------------
     for unit, limit in THRESHOLDS.items():
         gate(unit, limit)
-    for unit, limit in OPTIONAL_THRESHOLDS.items():
-        if installed(unit):
-            gate(unit, limit)
     agent_checks()
     pid = show("minecraft.service", "MainPID")["MainPID"]
     status = Path(f"/proc/{pid}/status").read_text()

@@ -32,9 +32,11 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 - **Rust agent behind a switch:** `server.yml` `agent.implementation: python | rust` (default `python`; it becomes
   `rust` in a later release, after a soak). `rust` runs **smallworld-agent** (`rust/smallworld-agent`), the complete
   port of the on-box agent (`mc_agent.py` and the agent half of `mc_panel.py`): every Worker request, signed
-  command, panel action, job, Git sync, self-test, metric, log batch (with the scrubber), inventory and console
-  tail, proved against the Python agent by the black-box parity harness (`tests/agent_parity`: all 25 scenarios
-  run against the committed release binary in CI) plus test vectors and differential fuzzing. Both
+  command, panel action, job, Git sync, self-test, metric, log batch (with the scrubber), inventory, console
+  tail and the player-experience telemetry (`scripts/telemetry.py`: minute rows, segments, backfill, verdicts,
+  in-game messages), proved against the Python agent by the black-box parity harnesses (`tests/agent_parity`: all
+  26 scenarios, `tests/telemetry_parity`: all 13, run against the committed release binary in CI) plus test vectors
+  and differential fuzzing. Both
   implementations read and write the same state, so switching back is a deploy (docs/operations.md "Switching the
   agent's implementation"). Shared code in `rust/smallworld-core` (smallworld-rcon's RCON client moved there;
   smallworld-rcon stays dependency-free). The agent uses a small pinned crate set (ureq + rustls/ring with the system
@@ -46,10 +48,11 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
     copied) and `/opt/minecraft/bin/mc-agent`, a symlink to the chosen implementation: mcctl's actions run
     `mc-agent cli` (falling back to `mc_agent.py cli` on a box deployed before this release), and `mc-run` names
     its unit `mc-agent-cli-*` for any of the three paths.
-  - In rust mode with experience telemetry on, the telemetry (`scripts/telemetry.py`, unchanged) runs in its own
-    unit, **`mc-telemetry.service`** (`mc_agent.py telemetry`: the ops user, the standard sandbox, the same inputs and
-    outputs as in-process, plus `/var/lib/mc-telemetry/online.json` for the Rust agent's in-game messages and its
-    own reader of systemd's resource lines; the overhead card shows it). Python mode is unchanged: one process.
+  - Both implementations run the experience telemetry in-process: one process, the same unit, state directories
+    (`telemetry-id.json`, the segments) and sandbox, so the telemetry's identity and backlog carry over a switch.
+    There is no telemetry unit; a box that ran a pre-release `mc-telemetry.service` has it stopped and removed by
+    the deploy. `smallworld-agent telemetry` mirrors `mc_agent.py telemetry` (the telemetry alone, the telemetry
+    parity harness's entry point; no unit runs either).
   - `product-version.json` records `agent: {implementation, sha256}` (the binary's pin in rust mode).
   - e2e: the agent-a, agent-b and telemetry-brand shards also run with `agent.implementation: rust` (in parallel;
     the required `e2e` check needs them), and agent-a scores the Rust agent's units live.

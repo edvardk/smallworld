@@ -335,7 +335,7 @@
 # v1.4: smallworld-agent, the Rust port of mc_agent.py (rust/smallworld-agent/PORTING.md, docs/rust/agent.md), checked
 # against its pin like smallworld-rcon. On every box: mcctl's actions (`mc-agent cli`) run in every panel mode, and a
 # switch of agent.implementation (or a rollback) is then only the symlink below and the unit. A new binary restarts
-# mc-agent (and the telemetry sidecar) where it runs: the handler pair in the agent role.
+# mc-agent where it runs: the handler pair in the agent role.
 - name: Read the sha256 of the smallworld-agent binary for this architecture (on the controller)
   ansible.builtin.stat:
     path: "{{ base_agent_src }}"

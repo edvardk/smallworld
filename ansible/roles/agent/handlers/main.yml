@@ -20,20 +20,3 @@
     daemon_reload: true
   when: agent_unit_for_code_change.stat.exists
   listen: mc-agent code changed
-
-# v1.4: the telemetry sidecar (rust mode) runs telemetry.py and reads agent.env: a code change (the base role's
-# scripts, binary, product version) or a new environment restarts it too, after mc-agent (handlers run in this
-# order), and only where it is installed.
-- name: Is the telemetry sidecar installed?
-  ansible.builtin.stat:
-    path: /etc/systemd/system/mc-telemetry.service
-  register: agent_sidecar_for_change
-  listen: [mc-agent code changed, mc-telemetry changed]
-
-- name: Restart the telemetry sidecar
-  ansible.builtin.systemd_service:
-    name: mc-telemetry.service
-    state: restarted
-    daemon_reload: true
-  when: agent_sidecar_for_change.stat.exists
-  listen: [mc-agent code changed, mc-telemetry changed]

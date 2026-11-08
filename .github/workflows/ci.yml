@@ -136,8 +136,9 @@ jobs:
           path: ~/.terraform.d/plugin-cache
           key: terraform-providers-${{ runner.os }}-${{ hashFiles('terraform/.terraform.lock.hcl') }}
 
-      # tests/agent_parity runs mc-agent in `unshare -rm` (docs/ci.md "The agent parity harness"): Ubuntu 24.04
-      # restricts unprivileged user namespaces through AppArmor.
+      # tests/agent_parity and tests/telemetry_parity run mc-agent and the telemetry sidecar in `unshare -rm`
+      # (docs/ci.md "The agent parity harness"): Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor.
+      # Both harnesses run inside `pytest -q` (Python implementation; AGENT_PARITY_REQUIRE makes a skip a failure).
       - name: Allow unprivileged user namespaces (agent parity harness)
         if: env.CODE == 'true'
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
@@ -434,8 +435,8 @@ jobs:
       - name: Parity scenarios against the Rust agent
         env:
           RUST_PARITY_SCENARIOS: >-
-            auth_settings backup cli client_codes console countdown_cancel locks logs_rejected lookup
-            nonce_store pending_expiry plugin poll_fallback restore selftest_failures selftest_ok
+            auth_settings backup cli client_codes console countdown_cancel experience locks logs_rejected
+            lookup nonce_store pending_expiry plugin poll_fallback restore selftest_failures selftest_ok
             state_roundtrip status stop_start tail verify whitelist_pr world_pr worlds ws_reconnect
         run: |
           read -ra scenarios <<< "$RUST_PARITY_SCENARIOS"
@@ -445,6 +446,20 @@ jobs:
 
       - name: smallworld-map byte for byte against the reference renderer (v1.4)
         run: pytest -q tests/test_rust_map.py
+
+      # The telemetry parity harness (tests/telemetry_parity: `<bin> telemetry`, the module the daemon runs
+      # in-process) against the committed Rust agent: every scenario (tests/test_telemetry.py keeps this list equal
+      # to its goldens).
+      - name: Telemetry parity scenarios against the Rust agent
+        env:
+          RUST_TELEMETRY_SCENARIOS: >-
+            backfill_errors backfill_quiet bad_snapshots identity lag minute_row online overhead segments
+            sessions startup_errors state_roundtrip
+        run: |
+          read -ra scenarios <<< "$RUST_TELEMETRY_SCENARIOS"
+          k=$(printf '%s\n' "${scenarios[@]}" | sed 's/.*/test_telemetry_scenario[&]/' | paste -sd' ' | sed 's/ / or /g')
+          pytest -q tests/telemetry_parity/test_telemetry_parity.py -k "$k" --impl=rust \
+            --agent-bin="$PWD/rust/dist/smallworld-agent-x86_64-unknown-linux-musl"
 
   # v1.2: the world library's seed catalogue (worlds/seeds.yml). Boots the pinned server jar once per seed
   # (throwaway world, RCON on 127.0.0.1 with a random password), runs each claim's /locate and fails when a claim

@@ -41,7 +41,7 @@ answer is "everything changed".
   | `agent-b` | `agent_check.py --rounds b`: mc-agent's pushes and first commands, then the rounds backup/restore, world library | always | ~10 min |
   | `telemetry-brand` | experience telemetry, then branding | heavy half | ~11 min |
   | `migrate-p16` | migrate container -> container, then the P16 knobs on the migrated box | heavy half | ~10 min |
-  | `agent-a, rust`, `agent-b, rust`, `telemetry-brand, rust` | v1.4: the same shards with `agent.implementation: rust` (`mcctl config set` before the render): the Rust mc-agent, `mc-agent cli` and the `mc-telemetry` sidecar through the same black-box rounds; `agent-a, rust` also scores the agent's units live (`hardening_check.py --agent`); `telemetry-brand, rust` runs the telemetry half only | like their Python shard | in parallel: no extra wall time |
+  | `agent-a, rust`, `agent-b, rust`, `telemetry-brand, rust` | v1.4: the same shards with `agent.implementation: rust` (`mcctl config set` before the render): the Rust mc-agent (its telemetry in-process) and `mc-agent cli` through the same black-box rounds; `agent-a, rust` also scores the agent's units live (`hardening_check.py --agent`); `telemetry-brand, rust` runs the telemetry half only | like their Python shard | in parallel: no extra wall time |
 
   The times are a measured full run (v1.2.2: core 10, the one `agent` shard 16, telemetry-brand 11, migrate-p16
   9.5); v1.3 cut `agent` in two by its rounds. Each agent shard repeats the shared part (the agent's sandbox, the
@@ -131,6 +131,51 @@ run in parallel threads.
   properties, constants): `python scripts/parity_vectors.py` writes `tests/agent_parity/vectors/*.json` for
   `cargo test`; `tests/agent_parity/test_vectors.py` fails when they are stale. Files marked
   `unicode_sensitive` are only compared on a Python with the Unicode version they were generated with.
+
+## The telemetry parity harness
+
+`tests/telemetry_parity/` is the same bar for the player-experience telemetry (`scripts/telemetry.py`, ported to
+Rust in v1.4.0): it runs an implementation as `<bin> telemetry`, the telemetry alone in a process (Python:
+`scripts/mc_agent.py telemetry`; both agents run the same code in-process, and no unit runs this entry point), and
+compares what it does with golden traces from Python. Part of the normal `pytest -q` on Linux, about 55 s (the scenarios run in parallel threads; the
+slowest wait for a 30 s segment flush).
+
+- **Reuses the agent harness** (`tests/agent_parity`): the namespace box (`nsinit.py`; plus
+  `/var/lib/mc-telemetry`), `FakeWorker` (scripted `/ingest/experience` replies with verdicts, 5xx and 429, and
+  `/ingest/segment`), fake `systemctl` (several units: one block each, as `systemctl show` prints them) and
+  `journalctl`, `AgentProc`, the `--impl` / `--agent-bin` / `--update-golden` options (`--update-golden` is
+  refused with `--impl=rust`) and `AGENT_PARITY_REQUIRE=1`. The scenarios write the mc-telemetry plugin's
+  snapshots into the box's `/run/mc-telemetry` (atomically, as `Writer.java` does).
+- **Time control without a test hook.** A minute row closes when a snapshot of a later minute arrives, or at
+  the first read loop after the minute is 75 s old; the snapshots carry fixed timestamps in January 2026, so
+  rows are deterministic and close at the latest one read loop (5 s, `Config.read_s`, not configurable) after
+  their snapshots appear. agent.env's own knobs are set to their minimums: `SEGMENT_S=30`, `LOG_BATCH_S=10`
+  (the overhead journal round), `BACKFILL_PAUSE_S=0`. A scenario waits for an event (a request, a rewritten
+  `online.json`: one per read loop) before its next input. What would take minutes of real time (the
+  back-off ladder, the row give-up after `BACKFILL_ROW_GIVE_UP` server errors) is in the vectors instead: `Pacer`
+  and `Backfill.run_once` decision traces with an injected clock. No production code changed for it.
+- **Scenarios**: `minute_row` (snapshots -> row -> POST -> `verdicts.tsv`), `sessions`, `lag`, `overhead`,
+  `segments` (flush, PUT, retention by `SEGMENT_DAYS` / `SEGMENT_CAP_MB`), `backfill_quiet` (only in quiet
+  time; a player online stops it), `backfill_errors` (failed PUT, batch halving, back-off), `bad_snapshots`
+  (`MAX_SNAPSHOT_BYTES`, the name pattern, an older timestamp, symlink, FIFO, junk fields, a plugin restart),
+  `identity`, `online` (`online.json`), `state_roundtrip` (Python -> implementation -> Python: identity,
+  backlog, segments) and `startup_errors`. `Messages` (player_message's rate limits) isn't reachable from the
+  telemetry alone (player_message runs in the agent): vectors here, and the agent harness's `experience`
+  scenario (the daemon with its in-process telemetry).
+- **The Rust gate**: ci.yml's `rust` job runs every scenario against the committed release binary
+  (`RUST_TELEMETRY_SCENARIOS`, kept equal to the goldens by `tests/test_telemetry.py`); `cargo test` replays the
+  vectors (`rust/smallworld-agent/src/telemetry/vectors.rs`).
+- **Traces**: every Worker request (status, auth, user agent, body; a row in full the first time, then
+  `{"ref": id}` when an equal copy is backfilled or archived), the files the runs changed (mode; segments as
+  decompressed NDJSON, JSON parsed and byte-exact), the fake systemctl/journalctl calls, stdout/stderr and exit
+  codes. Normalised: `ovh.*.cpu_pct` (a counter delta over wall-clock time), the backlog's byte counts (gzip
+  sizes aren't part of the contract), the `verdicts.tsv` header's time, a random installation id.
+- **Vectors**: `python scripts/telemetry_vectors.py` writes `tests/telemetry_parity/vectors/*.json` (text,
+  snapshot, minute, overhead, segments, backfill, verdicts, identity) for `cargo test`;
+  `tests/telemetry_parity/test_telemetry_vectors.py` fails when they are stale. `python_raises` entries are
+  inputs on which Python raises (reported, not a contract).
+- **Rust in CI**: ci.yml runs it for Python only for now; the port adds its scenarios to the rust job (a list
+  beside `RUST_PARITY_SCENARIOS`) with `pytest tests/telemetry_parity --impl=rust --agent-bin=PATH`.
 
 ## Guards against wasted minutes
 

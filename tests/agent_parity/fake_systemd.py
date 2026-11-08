@@ -5,7 +5,8 @@ shebang for the test interpreter and CTL set to its control directory. Every cal
 CTL/calls.jsonl; what it answers comes from CTL/systemd.json, read on every call so a scenario can change
 it between steps:
 
-    {"show": {unit: {prop: value}}, "is_active": {unit: state},
+    {"show": {unit: {prop: value}} (several units: one block each, as systemctl prints them),
+     "is_active": {unit: state},
      "actions": {"<verb> <unit>": {"exit": n, "write": {path: text}, "steps": [lines], "block": path}},
      "steps": {unit: [journal lines for `journalctl -u UNIT --since ...`]},
      "journal": host path of the `journalctl -o json` fixture (one JSON object per line, with __CURSOR),
@@ -47,7 +48,15 @@ def systemctl(argv: list[str], cfg: dict) -> int:
     if args[:1] == ["show"]:
         props = [args[i + 1] for i, a in enumerate(args) if a == "-p" and i + 1 < len(args)]
         props = [p for item in props for p in item.split(",")]
-        unit = next((a for a in args[1:] if a.endswith(".service")), "")
+        units = [a for a in args[1:] if a.endswith(".service")]
+        if len(units) > 1:  # one block per unit, blank-line separated, Id = the unit (telemetry's overhead)
+            blocks = []
+            for u in units:
+                have = {"Id": u} | cfg.get("show", {}).get(u, {})
+                blocks.append("\n".join(f"{p}={have.get(p, '')}" for p in props))
+            print("\n\n".join(blocks))
+            return 0
+        unit = units[0] if units else ""
         have = cfg.get("show", {}).get(unit, {})
         if "--value" in args:
             print("\n".join(str(have.get(p, "")) for p in props))

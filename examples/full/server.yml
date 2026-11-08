@@ -35,7 +35,7 @@ performance:
   cpu_affinity: split
   noatime: true
 panel: {mode: cloudflare}   # access.emails: [admin.email] (derived)
-# v1.4: the Rust agent (smallworld-agent) and its telemetry sidecar; the default is python until after a soak.
+# v1.4: the Rust agent (smallworld-agent, telemetry in-process); the default is python until after a soak.
 agent: {implementation: rust}
 experience: {enabled: true}
 alerts: {discord: true}
