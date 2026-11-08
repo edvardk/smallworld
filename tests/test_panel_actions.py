@@ -343,6 +343,53 @@ class RacingGitHub:
         return {"number": 7, "url": "u/7", "branch": "panel/world-7"}
 
 
+@pytest.mark.parametrize("again", ["add", "remove"])
+def test_the_whitelist_revert_race(tmp_path: Path, again: str) -> None:
+    """v1.5, the revert race: the sync round sees the panel PR closed unmerged while, meanwhile (it is out on
+    the network), the admin changes the same player again in the panel. The revert used to come from the
+    round's stale snapshot: an add made again was undone on the live server (`whitelist remove`) while
+    pending.json kept it for the next PR. Now only entries still as the snapshot had them are reverted; the newer
+    change stands, live and in pending.json. (A remove recorded since: the stale revert would `whitelist add`
+    them back; it isn't run either.) An unchanged entry of the same PR is still reverted."""
+    path = tmp_path / "pending.json"
+    agent, panel = mc_panel.Pending(path), mc_panel.Pending(path)
+    agent.record("add", "Felix_2011", UUID_C, "admin@x", 1.0)
+    agent.record("add", "jonas_r", UUID_B, "admin@x", 2.0)
+    racing = RacingGitHub(path.with_name("pending.json.lock"), lambda: None)
+    assert mc_panel.sync_pending(agent, racing, 100.0)  # type: ignore[arg-type]
+    assert {e["pr"] for e in agent.load()["entries"]} == {1}
+    racing.states[1] = "closed"
+    racing.meanwhile = lambda: panel.record(again, "Felix_2011", UUID_C, "admin@x", 150.0)
+    rcon: list[str] = []
+    alerts: list[str] = []
+
+    def fake_rcon(line: str) -> str:
+        rcon.append(line)
+        return "ok"
+
+    mc_panel.sync_pending(agent, racing, 100.0 + mc_panel.PR_CHECK_S, alert=alerts.append, rcon=fake_rcon,  # type: ignore[arg-type]
+                          batch_s=10_000)  # fmt: skip
+    assert rcon == ["whitelist remove jonas_r"]  # Felix's newer change isn't undone
+    entries = agent.load()["entries"]
+    assert [(e["name"], e["op"], e["pr"]) for e in entries] == [("Felix_2011", again, None)]
+    assert "remove jonas_r" in alerts[0]
+    assert "remove Felix_2011" not in alerts[0] and "add Felix_2011" not in alerts[0]
+    assert all(racing.unlocked)  # still no lock held across GitHub
+
+
+def test_the_whitelist_action_holds_the_pending_lock_across_its_rcon_command() -> None:
+    """The other half of the revert race fix: the panel's whitelist action reads pending.json under the lock
+    before its RCON command and records under the same lock, so a revert (under the lock too) can't fall in
+    between."""
+    import inspect
+
+    src = inspect.getsource(mc_agent.Executor.do_whitelist)
+    assert src.index("with panel.pending.update() as pending:") < src.index(
+        'r.command(f"whitelist {op} {name}")'
+    )
+    assert "mc_panel.record_entry(pending," in src and "panel.pending.record(" not in src
+
+
 def test_two_pending_instances_on_one_file_lose_nothing(tmp_path: Path) -> None:
     """mc-agent's Pending and `mc_agent.py cli`'s, interleaved: each records against the file as it is."""
     path = tmp_path / "pending.json"

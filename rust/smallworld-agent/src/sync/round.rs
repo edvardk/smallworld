@@ -107,6 +107,25 @@ pub fn revert_live(
     Ok((reverted, failed))
 }
 
+/// mc_panel.py `closed_error(number, failed)`: pending.json's `error` after a panel PR was closed unmerged.
+pub fn closed_error(number: i64, failed: &[String]) -> String {
+    let mut error =
+        format!("pull request #{number} was closed without merging: reverted on the server");
+    if !failed.is_empty() {
+        let _ = write!(
+            error,
+            " (couldn't revert {}: the next deploy follows Git)",
+            failed.join(", ")
+        );
+    }
+    error
+}
+
+/// A panel PR the round found closed unmerged: its number and entries (reverted at the merge, v1.5).
+type Closed = Option<(i64, Vec<Value>)>;
+/// `revert_live`'s (reverted, failed).
+type Reverted = (Vec<String>, Vec<String>);
+
 /// What a round calls out to (`alert`, `log`, `rcon`) and its timings.
 pub struct Round<'a> {
     /// `notify.discord`.
@@ -213,6 +232,7 @@ pub fn sync_pending(
             "dropped",
         );
     }
+    let mut closed: Closed = None;
     match gh {
         None => {
             data.insert(
@@ -221,7 +241,7 @@ pub fn sync_pending(
             );
         }
         Some(gh) => {
-            if let Err(e) = github_part(&mut data, gh, now, r) {
+            if let Err(e) = github_part(&mut data, gh, now, r, &mut closed) {
                 if !caught(&e) {
                     return Err(e);
                 }
@@ -235,16 +255,59 @@ pub fn sync_pending(
     if obj_eq(&data, &snap) {
         return Ok(false);
     }
-    pending.update(|current| -> AResult<bool> {
-        let merged = merge_sync(current, &snap, &data)?;
+    // v1.5 (the revert race): the revert runs here, under the pending lock (the panel's whitelist action holds
+    // it across its RCON command and record), for the entries still as the snapshot had them only
+    let (changed, outcome) = pending.update(|current| -> AResult<(bool, Option<Reverted>)> {
+        let mut merged = merge_sync(current, &snap, &data)?;
+        let mut outcome = None;
+        if let Some((number, rejected)) = &closed {
+            let now_entries = entries(current);
+            let still: Vec<Value> = rejected
+                .iter()
+                .filter(|e| {
+                    let uuid = e.get("uuid");
+                    now_entries
+                        .iter()
+                        .rev()
+                        .find(|c| c.get("uuid") == uuid)
+                        .is_some_and(|c| py_eq(c, e))
+                })
+                .cloned()
+                .collect();
+            let (reverted, failed) = revert_live(&still, r.rcon)?;
+            if get(&merged, "error") == &json!(closed_error(*number, &[])) {
+                merged.insert("error".into(), json!(closed_error(*number, &failed)));
+            }
+            outcome = Some((reverted, failed));
+        }
         let changed = !obj_eq(&merged, current);
         *current = merged;
-        Ok(changed)
-    })?
+        Ok((changed, outcome))
+    })??;
+    if let (Some((number, _)), Some((reverted, failed))) = (&closed, outcome) {
+        (r.alert)(&rejected_alert(*number, &reverted, &failed));
+        let list = |l: &[String]| py_repr(&json!(l));
+        (r.log)(
+            &format!(
+                "panel PR #{number} closed unmerged; reverted {} failed {}",
+                list(&reverted),
+                list(&failed)
+            ),
+            "whitelist-pr",
+            "reverted",
+        );
+    }
+    Ok(changed)
 }
 
 /// The `try:` block of `sync_pending`.
-fn github_part(data: &mut Obj, gh: &GitHub, now: f64, r: &Round<'_>) -> AResult<()> {
+fn github_part(
+    data: &mut Obj,
+    gh: &GitHub,
+    now: f64,
+    r: &Round<'_>,
+    closed: &mut Closed,
+) -> AResult<()> {
     let mut pr = get(data, "pr").clone();
     if truthy(&pr)
         && truthy(get_attr(&pr, "number")?)
@@ -280,7 +343,6 @@ fn github_part(data: &mut Obj, gh: &GitHub, now: f64, r: &Round<'_>) -> AResult<
                     rejected.push(e);
                 }
             }
-            let (reverted, failed) = revert_live(&rejected, r.rcon)?;
             let mut kept = Vec::new();
             for e in entries(data) {
                 if !py_eq(&pr_entry(&e)?, &nv) {
@@ -288,17 +350,8 @@ fn github_part(data: &mut Obj, gh: &GitHub, now: f64, r: &Round<'_>) -> AResult<
                 }
             }
             *entries_mut(data) = kept;
-            let mut error = format!(
-                "pull request #{number} was closed without merging: reverted on the server"
-            );
-            if !failed.is_empty() {
-                let _ = write!(
-                    error,
-                    " (couldn't revert {}: the next deploy follows Git)",
-                    failed.join(", ")
-                );
-            }
-            data.insert("error".into(), json!(error));
+            // the revert's failures: when it runs (at the merge)
+            data.insert("error".into(), json!(closed_error(number, &[])));
             let why = format!("PR #{number} closed");
             let mut gone = Vec::new();
             for e in &rejected {
@@ -307,17 +360,7 @@ fn github_part(data: &mut Obj, gh: &GitHub, now: f64, r: &Round<'_>) -> AResult<
                 );
             }
             append_expired(data, gone)?;
-            (r.alert)(&rejected_alert(number, &reverted, &failed));
-            let list = |l: &[String]| py_repr(&json!(l));
-            (r.log)(
-                &format!(
-                    "panel PR #{number} closed unmerged; reverted {} failed {}",
-                    list(&reverted),
-                    list(&failed)
-                ),
-                "whitelist-pr",
-                "reverted",
-            );
+            *closed = Some((number, rejected));
             data.insert("pr".into(), Value::Null);
             pr = Value::Null;
         }
@@ -533,6 +576,74 @@ mod tests {
             batch_s: 60.0,
             pr_check_s: 120.0,
         });
+    }
+
+    /// A token source that runs `meanwhile` once, on the round's first GitHub call: what the panel does while
+    /// the sync loop is out on the network.
+    struct Meanwhile(Mutex<Option<Box<dyn FnOnce() + Send>>>);
+
+    impl super::super::github::TokenSource for Meanwhile {
+        fn token(&self) -> AResult<String> {
+            if let Some(f) = self.0.lock().unwrap().take() {
+                f();
+            }
+            Ok("t".into())
+        }
+        fn invalidate(&self) -> bool {
+            false
+        }
+    }
+
+    /// v1.5, the revert race (tests/test_panel_actions.py `test_the_whitelist_revert_race`): a player changed
+    /// again in the panel while the round finds the PR closed keeps the newer change; an unchanged entry of the
+    /// same PR is still reverted.
+    #[test]
+    fn the_whitelist_revert_race() {
+        for again in ["add", "remove"] {
+            let d = dir(&format!("race-{again}"));
+            let p = Pending::new(d.join("pending.json"));
+            p.record("add", "alice", A, "panel:a", 1.0).unwrap();
+            p.record("add", "bob", B, "panel:b", 2.0).unwrap();
+            let mut l = p.load().unwrap();
+            for e in l.get_mut("entries").unwrap().as_array_mut().unwrap() {
+                e["pr"] = json!(5);
+            }
+            l.insert("pr".into(), json!({"number": 5, "checked": 0.0}));
+            p.update(|data| *data = l).unwrap();
+            let fake = Fake::new();
+            fake.route(
+                "GET /repos/o/cfg/pulls/5",
+                200,
+                &json!({"state": "closed", "merged": false}),
+            );
+            let path = d.join("pending.json");
+            let g = gh(
+                &fake,
+                Arc::new(Meanwhile(Mutex::new(Some(Box::new(move || {
+                    Pending::new(path)
+                        .record(again, "alice", A, "panel:a", 150.0)
+                        .unwrap();
+                }))))),
+            );
+            let c = calls();
+            round(&c, |r| {
+                let r = Round {
+                    batch_s: 10_000.0,
+                    ..*r
+                };
+                sync_pending(&p, Some(&g), 500.0, &r).unwrap();
+            });
+            assert_eq!(*c.rcon.lock().unwrap(), vec!["whitelist remove bob"]);
+            let l = p.load().unwrap();
+            let e = &l["entries"].as_array().unwrap()[..];
+            assert_eq!(e.len(), 1);
+            assert_eq!(
+                (&e[0]["name"], &e[0]["op"], &e[0]["pr"]),
+                (&json!("alice"), &json!(again), &Value::Null)
+            );
+            assert!(!c.alerts.lock().unwrap()[0].contains(" alice"));
+            std::fs::remove_dir_all(d).unwrap();
+        }
     }
 
     #[test]

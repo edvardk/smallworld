@@ -98,6 +98,31 @@ impl Executor {
                 )));
             }
         }
+        // v1.5 (the revert race): the pending lock is held from the RCON command to the record, so the sync
+        // loop's revert of a closed panel PR (also under the lock) can't undo this change from a stale view
+        let login = self.login.clone();
+        let (reply, real) = panel
+            .pending
+            .update(|pending| -> AResult<(String, String)> {
+                let (reply, real, uuid) = self.whitelist_live(op, name, before)?;
+                let now = (panel.clock)();
+                crate::panel::pending::record_entry(pending, op, &real, &uuid, &login, now);
+                Ok((reply, real))
+            })??;
+        panel.rejected.drop_name(&real)?;
+        (panel.changed)();
+        Ok(format!(
+            "{reply} (live now; recorded for players.yml in Git)"
+        ))
+    }
+
+    /// The RCON half of `do_whitelist` (under the pending lock): (reply, name, uuid).
+    fn whitelist_live(
+        &self,
+        op: &str,
+        name: &str,
+        before: Option<Obj>,
+    ) -> AResult<(String, String, String)> {
         let mut r = smallworld_core::mcrcon::connect()?;
         let line = format!("whitelist {op} {name}");
         let reply = prefix_cp(
@@ -138,14 +163,7 @@ impl Executor {
                 "whitelist: no UUID for {name} in whitelist.json"
             )));
         }
-        panel
-            .pending
-            .record(op, &real, &uuid, &self.login, (panel.clock)())?;
-        panel.rejected.drop_name(&real)?;
-        (panel.changed)();
-        Ok(format!(
-            "{reply} (live now; recorded for players.yml in Git)"
-        ))
+        Ok((reply, real, uuid))
     }
 
     /// `do_rejected_dismiss(args)`: drops a name from the rejected-logins list.

@@ -1597,24 +1597,27 @@ class Executor:
                 raise Rejected(
                     f"whitelist: {name} is an operator; operators are managed in players.yml (Git)"
                 )
-        with mc_rcon.connect() as r:
-            reply = mc_rcon.strip_formatting(r.command(f"whitelist {op} {name}"))[:300]
-        entry = None
-        for _ in range(10):  # the server writes whitelist.json right after the command
-            entry = self._whitelisted(name)
-            if (entry is not None) == (op == "add"):
-                break
-            time.sleep(0.5)
-        if op == "add" and entry is None:
-            raise Rejected(f"whitelist: the server didn't add {name} ({reply or 'no reply'})")
-        if op == "remove" and entry is not None:
-            raise Rejected(f"whitelist: the server didn't remove {name} ({reply or 'no reply'})")
-        source = entry if op == "add" else before
-        assert source is not None
-        uuid, real = str(source.get("uuid", "")), str(source.get("name") or name)
-        if not mc_panel.UUID.fullmatch(uuid):
-            raise Rejected(f"whitelist: no UUID for {name} in whitelist.json")
-        panel.pending.record(op, real, uuid, self.login, panel.clock())
+        # v1.5 (the revert race): the pending lock is held from the RCON command to the record, so the sync
+        # loop's revert of a closed panel PR (also under the lock) can't undo this change from a stale view
+        with panel.pending.update() as pending:
+            with mc_rcon.connect() as r:
+                reply = mc_rcon.strip_formatting(r.command(f"whitelist {op} {name}"))[:300]
+            entry = None
+            for _ in range(10):  # the server writes whitelist.json right after the command
+                entry = self._whitelisted(name)
+                if (entry is not None) == (op == "add"):
+                    break
+                time.sleep(0.5)
+            if op == "add" and entry is None:
+                raise Rejected(f"whitelist: the server didn't add {name} ({reply or 'no reply'})")
+            if op == "remove" and entry is not None:
+                raise Rejected(f"whitelist: the server didn't remove {name} ({reply or 'no reply'})")
+            source = entry if op == "add" else before
+            assert source is not None
+            uuid, real = str(source.get("uuid", "")), str(source.get("name") or name)
+            if not mc_panel.UUID.fullmatch(uuid):
+                raise Rejected(f"whitelist: no UUID for {name} in whitelist.json")
+            mc_panel.record_entry(pending, op, real, uuid, self.login, panel.clock())
         panel.rejected.drop(real)
         panel.changed()
         return f"{reply} (live now; recorded for players.yml in Git)"
