@@ -17,14 +17,14 @@ divergences are listed under "Divergences"; add one only with a reason and a tes
 | `smallworld-core` (rust/smallworld-core) | phase 1 | done: RCON, server.properties, `pystr`, `pyjson`, `fsx`, `flock`, `audit`, `paths` |
 | `cli.rs` | phase 1 | **done**, differential tests in `tests/test_rust_agent_cli.py` |
 | `types.rs`, `sys.rs`, `unicode.rs`, `settings.rs`, `http.rs`, `notify.rs`, `systemd.rs`, `worlds.rs` | phase 1 | done (shared) |
-| `jobs.rs` | jobs | runner done (foreground + background, cancel); daemon wiring of reports open |
+| `jobs.rs` | jobs | **done**: runner (foreground + background, cancel, announcements); the daemon's reports are link's `daemon::report_job` |
 | `panel/plugins.rs`, `panel/pending.rs` | phase 1 / sync | done (`record`, `record_world`, `update`); `merge_sync` is sync's |
 | `actions/` | actions | restart, plugin, moderate, world_* done; the rest stubs |
 | `link/`, `daemon.rs` | link | stubs |
 | `ship/` | ship | stubs |
 | `data/`, `panel/rejected.rs` | data | stubs |
 | `sync/` | sync | stubs |
-| `misc/` | misc | stubs |
+| `misc/` | misc | **done** (vectors pass; wiring for the daemon: `misc::Misc`, see "misc" below) |
 
 Stubs return `AgentError::NotPorted("module::fn")` (or, where the final signature is infallible, a safe
 placeholder documented as such, e.g. the scrubber redacts everything). `daemon::NOT_PORTED` lists the modules
@@ -167,7 +167,9 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
 
 ### jobs (job runner integration)
 
-- The runner is ported (`jobs.rs`, unit tests). Left: the daemon's `report` (`POST /ingest/job` via link,
+- **Done** (see Status): link's `Daemon::new` builds the runner as below and reports through
+  `daemon::report_job`; a SIGTERM in the daemon just stops it (Python's job threads are daemon threads: nothing
+  more is reported, the kernel drops job.lock); the cli cancels a countdown (cli.rs). Was left: the daemon's `report` (`POST /ingest/job` via link,
   `inventory_due`), `Panel.jobs` built with `background: true` and `JOB_LOCK_FILE`, the polkit units each job
   uses (already fixed per action), cancel from the panel (`do_cancel`), job report ordering under load.
 - Proof: scenarios 7 (countdown, players online, cancel, busy), 9, 10, 11, 23 (cross-implementation locks:
@@ -197,6 +199,26 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
 - Must: the token in memory only, never echoed (`token_shape`); the self-test read-only; budget constants equal
   Python's (`schema.budget` >= `daily_budget`, tests/test_agent.py).
 - Proof: vectors for `token_shape`/`TOKEN_RE`, `TokenCache` expiry parse, the budget constants; scenarios 5, 6.
+- **Done.** Vectors pass: `tokens.json` (TOKEN_RE, token_shape, expires_at incl. fullwidth digits, `:60`,
+  `24:00` fallback), `constants.json` (misc constants, budget model, `daily_budget` cases, Settings clamps),
+  `texts.json` `selftest_alert`/`selftest_back_alert`. Self-test follows rust-rcon's fix (`last_panel`: 60 s
+  from the last on-demand run). Integration (link's `Daemon::new` / `run`, data's inventory, actions):
+  ```text
+  let misc = Arc::new(Misc::new(&env, &settings.state_dir, misc::github_token_fetch(link.clone()))?); // Err = Agent() raising
+  misc.wire(&mut panel);                                          // Panel.selftest + Panel.lookup
+  ("selftest", |d| { d.misc.selftest.run_loop(&d.stop, &d.inventory_due); Ok(()) })   // a loop thread
+  inventory: "product": misc.product_state(), "selftest": misc.selftest.state.public()?
+  do_lookup:  Ok(misc::lookup::reply_json(&lookup(get(args, "name"))?))   // Python's key order, not serde's
+  do_selftest: panel.selftest("panel")?, (panel.changed)(), "passed[ (an earlier run: one per minute)]: steps" | "failed at {error or 'an unknown step'}"
+  do_cancel:  self.need_panel("cancel")?.jobs.cancel(&self.login)
+  ```
+  Checked on a throw-away merge with link + sync (stub gate, a fake startup push in place of data's loops, the
+  three actions above): `lookup`, `selftest_ok`, `selftest_failures` and `countdown_cancel` match their goldens
+  except the inventory/metrics/rcon-stats parts (data) and `countdown_cancel`'s `start`/`stop` busy refusals
+  (actions). Not in `RUST_PARITY_SCENARIOS` yet: they need data and actions.
+- `selftest.rs` keeps its own copy of alerts.py `render` (`render_alert`) for the two self-test texts; sync's
+  alert texts use the same template. Both are pinned by `texts.json`; fold into one at integration.
+- `GhRepo::from_env` repeats `github_from_env`'s checks (sync's `GitHub` carries the same repo/api/branch).
 
 ## Parity gate (tests/agent_parity)
 
@@ -256,6 +278,9 @@ Gotchas the goldens encode (keep them; both are logged as known issues to fix in
   it can't happen on a local file).
 - Unicode tables are the crates' (pinned), Python's the interpreter's; parity is over code points assigned in
   the oldest supported table (Unicode 14).
+- Self-test probe (misc): a GitHub reply that isn't JSON reads as `ValueError("Expecting value: line 1 column 1
+  (char 0)")` whatever the actual JSONDecodeError position; base64 and the subscript errors follow CPython's
+  texts for the common cases. Only the step's `detail` text can differ, never the outcome.
 - argv that isn't UTF-8 is decoded lossily (Python: surrogateescape); such an argument can't match `CLI_LOGIN`
   or parse as JSON in either.
 
@@ -271,6 +296,9 @@ Gotchas the goldens encode (keep them; both are logged as known issues to fix in
 
 (One line per change to a shared file after phase 1: date, file, what, who.)
 
+- 2026-11-08, `tests/agent_parity/golden/selftest_{ok,failures}.json`: regenerated from Python after merging
+  rust-rcon (selftest.json records `last_panel`). misc.
+- 2026-11-08, `daemon.rs` `NOT_PORTED`: `misc` removed. misc.
 - 2026-11-08, `tests/agent_parity/fakes.py` `make_cert`: a CA + leaf instead of a self-signed CA certificate
   (rustls refuses the latter). phase 1.
 - 2026-11-08, core `flock.rs` tests and `jobs.rs` test `the_file_lock_is_shared_across_runners`: retry the
