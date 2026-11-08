@@ -6,7 +6,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 
-/** The three channels as Fabric payloads: each one's bytes are exactly Wire's layout (client/mod/WIRE.md). */
+/** The channels as Fabric payloads: each one's bytes are exactly Wire's layout (client/mod/WIRE.md). */
 final class Payloads {
     private Payloads() {}
 
@@ -41,6 +41,30 @@ final class Payloads {
 
         @Override
         public Type<Config> type() {
+            return TYPE;
+        }
+    }
+
+    /** v1.5: the client compass's state (server to client). */
+    record Compass(Wire.Compass value) implements CustomPacketPayload {
+        static final Type<Compass> TYPE = new Type<>(Identifier.fromNamespaceAndPath(NAMESPACE, "compass"));
+        static final StreamCodec<FriendlyByteBuf, Compass> CODEC =
+                raw(p -> Wire.encode(p.value()), b -> new Compass(Wire.decodeCompass(b)));
+
+        @Override
+        public Type<Compass> type() {
+            return TYPE;
+        }
+    }
+
+    /** v1.5: the client compass's positions (server to client). */
+    record Friends(Wire.Friends value) implements CustomPacketPayload {
+        static final Type<Friends> TYPE = new Type<>(Identifier.fromNamespaceAndPath(NAMESPACE, "friends"));
+        static final StreamCodec<FriendlyByteBuf, Friends> CODEC =
+                raw(p -> Wire.encode(p.value()), b -> new Friends(Wire.decodeFriends(b)));
+
+        @Override
+        public Type<Friends> type() {
             return TYPE;
         }
     }

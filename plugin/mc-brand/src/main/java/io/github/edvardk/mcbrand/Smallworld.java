@@ -30,6 +30,10 @@ import org.bukkit.plugin.messaging.PluginMessageListener;
  *       boss bar's title (both at y = 3). The config's HUD flag is always cleared ({@link #playerConfig}), /hud off
  *       included: the mod never draws its own FPS (client.fps.hud is now the server's default for the HUD's fps
  *       part, rendered into branding.hud.parts).
+ *   <li>v1.5: the client compass. A hello whose {@code capabilities} has bit 0 ({@link Wire#CAP_COMPASS}, mod
+ *       1.1.0+) from a client that registered {@code smallworld:compass} and {@code smallworld:friends} gets its
+ *       compass drawn by the mod every frame ({@link Compass}: the state on {@code smallworld:compass}, the
+ *       positions on {@code smallworld:friends}) instead of the boss bar; anything else keeps the boss bar.
  * </ul>
  *
  * <p>Bukkit's Messenger calls listeners on the main thread. Per hello: one decode of a few bytes, one map put and
@@ -40,12 +44,14 @@ final class Smallworld implements PluginMessageListener {
     static final String HELLO = "smallworld:hello";
     static final String CONFIG = "smallworld:config";
     static final String FPS = "smallworld:fps"; // v1.4.1: also shown in the HUD
+    static final String COMPASS = "smallworld:compass"; // v1.5: the client compass's state
+    static final String FRIENDS = "smallworld:friends"; // v1.5: the client compass's positions
     static final Pattern TOKEN = Pattern.compile("^[A-Za-z0-9._+-]{1,64}$");
     static final String OUTDATED = "Your {server} pack is out of date: a newer one is on the setup page.";
 
     enum PackStatus { NONE, CURRENT, OUTDATED, UNKNOWN }
 
-    record Client(String modVersion, String tier, String pack) {}
+    record Client(String modVersion, String tier, String pack, int capabilities) {}
 
     private final BrandPlugin plugin;
     private final Settings s;
@@ -66,6 +72,8 @@ final class Smallworld implements PluginMessageListener {
         m.registerIncomingPluginChannel(plugin, HELLO, this);
         m.registerIncomingPluginChannel(plugin, FPS, this);
         m.registerOutgoingPluginChannel(plugin, CONFIG);
+        m.registerOutgoingPluginChannel(plugin, COMPASS);
+        m.registerOutgoingPluginChannel(plugin, FRIENDS);
     }
 
     void stop() {
@@ -73,6 +81,8 @@ final class Smallworld implements PluginMessageListener {
         m.unregisterIncomingPluginChannel(plugin, HELLO, this);
         m.unregisterIncomingPluginChannel(plugin, FPS, this);
         m.unregisterOutgoingPluginChannel(plugin, CONFIG);
+        m.unregisterOutgoingPluginChannel(plugin, COMPASS);
+        m.unregisterOutgoingPluginChannel(plugin, FRIENDS);
         clients.clear();
         fps.clear();
     }
@@ -122,7 +132,7 @@ final class Smallworld implements PluginMessageListener {
 
     private void hello(Player p, Wire.Hello h) {
         hellos++;
-        Client c = new Client(token(h.modVersion()), token(h.tier()), token(h.pack()));
+        Client c = new Client(token(h.modVersion()), token(h.tier()), token(h.pack()), h.capabilities());
         clients.put(p.getUniqueId(), c);
         plugin.onSmallworldHello(p);
         sendConfig(p);
@@ -189,6 +199,14 @@ final class Smallworld implements PluginMessageListener {
         return clients.get(id);
     }
 
+    /** v1.5: {@link Wayfinding#capability} for this player now. */
+    Wayfinding.Capability capability(Player p) {
+        Client c = clients.get(p.getUniqueId());
+        java.util.Set<String> channels = p.getListeningPluginChannels();
+        return Wayfinding.capability(c == null ? null : c.capabilities(), channels.stream().anyMatch(Wayfinding::isOurs),
+                channels.contains(COMPASS) && channels.contains(FRIENDS));
+    }
+
     void forget(Player p) {
         clients.remove(p.getUniqueId());
         fps.remove(p.getUniqueId());
@@ -205,6 +223,11 @@ final class Smallworld implements PluginMessageListener {
                 + status(packs, "medium", "26.3-ffffffffffff") + "/" + status(packs, "medium", "") + "/"
                 + status(Map.of(), "medium", h.pack()) + ", config " + java.util.HexFormat.of().formatHex(config(5, true))
                 + ", player config " + java.util.HexFormat.of().formatHex(playerConfig(5))
+                + ", caps " + Wire.decodeHello(example).capabilities() + "/"
+                + Wire.decodeHello(java.util.HexFormat.of().parseHex(java.util.HexFormat.of().formatHex(example)
+                        + "01")).capabilities() + ", capability " + Wayfinding.capability(null, false, false) + "/"
+                + Wayfinding.capability(null, true, false) + "/" + Wayfinding.capability(0, true, true) + "/"
+                + Wayfinding.capability(1, true, false) + "/" + Wayfinding.capability(1, true, true)
                 + ", hellos " + hellos + " fps reports " + fpsReports + " malformed " + malformed;
     }
 }

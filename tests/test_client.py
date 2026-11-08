@@ -329,7 +329,7 @@ def test_launcher_zip_is_reproducible_and_installs_like_the_launcher_expects() -
             assert all(n.startswith(root) for n in names[1:])
             mods = {n.removeprefix(root + "mods/") for n in names if n.startswith(root + "mods/")}
             mirrored = {f["filename"] for f in p["files"] if f["mirror"] and f["path"].startswith("mods/")}
-            assert mods == mirrored and "smallworld-1.0.0.jar" in mods
+            assert mods == mirrored and "smallworld-1.1.0.jar" in mods
             assert not any("xaero" in n for n in names)  # All Rights Reserved: never in the zip
             opts = z.read(root + "options.txt").decode()
             assert "key_key.smoothCamera:key.keyboard.unknown" in opts.splitlines()  # F8 unbound

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "id": "smallworld",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Smallworld",
-  "description": "Tells a Smallworld server which client pack you run and your frames per second, and shows your FPS next to the top HUD bar. Sends nothing to other servers.",
+  "description": "Tells a Smallworld server which client pack you run and your frames per second, shows your FPS next to the top HUD bar, and draws the server's friend compass smoothly every frame. Sends nothing to other servers.",
   "license": "MIT",
   "contact": {
     "sources": "https://github.com/edvardk/smallworld"

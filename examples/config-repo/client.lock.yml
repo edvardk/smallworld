@@ -513,14 +513,14 @@ files:
   project_url: https://github.com/edvardk/smallworld
   source_url: https://github.com/edvardk/smallworld/tree/main/client/mod
   licence: MIT
-  version: 1.0.0
+  version: 1.1.0
   path: client/mod/dist/smallworld.jar
-  filename: smallworld-1.0.0.jar
+  filename: smallworld-1.1.0.jar
   url: ''
-  size: 39830
-  sha1: 5f52e2ddd85e8aebb8e08ef03315122f7880b058
-  sha512: 6177a2782ad8e9ab7fe3f5742d6e96516d6d79ba498f5cbad1a95ee4638261ab64eccc65b3c177e527b9a178b3933dcaf13c321afcc4162f756b66d28899bf0b
-  sha256: 509ab811cfaa97c67730cbe17fdce2fc3abab2b8f2636f351aee7f18d36fe45e
+  size: 97718
+  sha1: 17d3059bfeff4e1708136a927d66281fb2c6aa55
+  sha512: 7c649e778d4f8b1bdd1efc0fdb20f71b74c71d4da0c7538c01eee8e4c66b98fafafe67d6060ed5fa09786dcee91a17b4e0c8cf54937595c7bd97755f49e74c75
+  sha256: 8f20a9011908dfbb7e8b95fc42cfc3323aa80ac555a3581aa2a2cace56f330dc
   mirror: true
   tiers:
   - low

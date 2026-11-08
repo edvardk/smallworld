@@ -3,7 +3,8 @@
 The wire format is decoded here by an independent Python implementation against the fixtures the Java side
 prints (WireFixtures.java, compared byte for byte by `build_client_mod.py check`); the pins agree with the
 client lock and the plugin JDK; and, when the pinned inputs are cached (or SMALLWORLD_BUILD_CHECK=1 allows the
-downloads), the committed jar is rebuilt and compared.
+downloads), the committed jar is rebuilt and compared. v1.5: the client compass's channels (smallworld:compass,
+smallworld:friends, the hello's capabilities) and the parity of the mod's strip with mc-brand's boss bar.
 """
 
 from __future__ import annotations
@@ -27,6 +28,9 @@ BUILD = yaml.safe_load((MOD / "build.yml").read_text())
 FIXTURES = json.loads((REPO / BUILD["fixtures"]).read_text())
 MAX_UTF = 64
 MAX_FPS = 10_000
+MAX_FRIENDS = 100
+CAP_COMPASS = 1
+BRAND_FIXTURES = json.loads((REPO / "plugin/mc-brand/src/test/wayfinding-fixtures.json").read_text())
 
 
 # --- an independent implementation of WIRE.md ---
@@ -78,11 +82,27 @@ class Reader:
         return s
 
 
+COMPASS_FIELDS = ("flags", "max_range", "rounding", "height_threshold")
+
+
 def encode(channel: str, f: dict[str, Any]) -> bytes:
     if channel == "hello":
-        return write_varint(f["protocol"]) + b"".join(
-            write_utf(f[k]) for k in ("mod_version", "tier", "pack")
+        return (
+            write_varint(f["protocol"])
+            + b"".join(write_utf(f[k]) for k in ("mod_version", "tier", "pack"))
+            + write_varint(f["capabilities"])
         )
+    if channel == "compass":
+        colors = [int(c) for c in f["colors"].split(",")]
+        return b"".join(write_varint(v) for v in [*(f[k] for k in COMPASS_FIELDS), *colors])
+    if channel == "friends":
+        people = [p for p in f["friends"].split(";") if p]
+        out = write_utf(f["dimension"]) + write_varint(len(people))
+        for p in people:
+            name, rest = p.split("@", 1)
+            dim, xyz = rest.rsplit(":", 1)
+            out += write_utf(name) + write_utf(dim) + b"".join(write_varint(int(v)) for v in xyz.split(","))
+        return out
     if channel == "fps":
         return write_varint(max(0, min(MAX_FPS, f["fps"])))
     return b"".join(write_varint(f[k]) for k in ("protocol", "interval_seconds", "flags"))
@@ -91,7 +111,35 @@ def encode(channel: str, f: dict[str, Any]) -> bytes:
 def decode(channel: str, data: bytes) -> dict[str, Any]:
     r = Reader(data)
     if channel == "hello":
-        return {"protocol": r.varint(), "mod_version": r.utf(), "tier": r.utf(), "pack": r.utf()}
+        out: dict[str, Any] = {
+            "protocol": r.varint(),
+            "mod_version": r.utf(),
+            "tier": r.utf(),
+            "pack": r.utf(),
+        }
+        out["capabilities"] = r.varint() if r.pos < len(data) else 0  # mod 1.0.0 had no capabilities
+        out["compass"] = bool(out["capabilities"] & CAP_COMPASS)
+        return out
+    if channel == "compass":
+        v = [r.varint() for _ in range(8)]
+        return {
+            "flags": v[0],
+            "draw": bool(v[0] & 1),
+            "max_range": v[1],
+            "rounding": v[2],
+            "height_threshold": v[3],
+            "colors": ",".join(map(str, v[4:])),
+        }
+    if channel == "friends":
+        dimension = r.utf()
+        n = r.varint()
+        if not 0 <= n <= MAX_FRIENDS:
+            raise ValueError(f"bad friend count {n}")
+        people = []
+        for _ in range(n):
+            name, dim = r.utf(), r.utf()
+            people.append(f"{name}@{dim}:{r.varint()},{r.varint()},{r.varint()}")
+        return {"dimension": dimension, "friends": ";".join(people)}
     if channel == "fps":
         return {"fps": r.varint()}
     out = {"protocol": r.varint(), "interval_seconds": r.varint(), "flags": r.varint()}
@@ -111,7 +159,53 @@ def test_wire_fixtures_round_trip(case: dict[str, Any]) -> None:
         assert encode(case["channel"], case["input"]) == data
     # re-encoding what was decoded gives the same bytes (minus a newer peer's trailing fields)
     again = encode(case["channel"], case["decoded"])
+    if case["channel"] == "hello" and len(again) > len(data):
+        again = again[:-1]  # a 1.0.0 hello: no capabilities on the wire, decoded as 0
     assert data.startswith(again)
+
+
+def test_hello_capabilities_and_old_mods() -> None:
+    """v1.5: the capability flag decides who draws the compass; a 1.0.0 hello (no field) has none."""
+    hellos = [c for c in FIXTURES["cases"] if c["channel"] == "hello"]
+    assert any(c["decoded"]["compass"] and c["decoded"]["mod_version"] == "1.1.0" for c in hellos)
+    old = [c for c in hellos if "input" not in c]
+    assert old and old[0]["decoded"]["capabilities"] == 0 and not old[0]["decoded"]["compass"]
+    wire = (MOD / "src/main/java/io/github/edvardk/smallworld/client/SmallworldClient.java").read_text()
+    assert "local.pack(), Wire.CAP_COMPASS)" in wire  # the mod always announces it
+
+
+def test_client_compass_matches_the_boss_bar() -> None:
+    """v1.5: for mc-brand's own fixture scenes, the mod decodes the same smallworld:friends bytes and lays out
+    exactly the boss bar's strip (same items, same pixels, same focus): shared test vectors, both JVMs."""
+    server = {c["what"]: c for c in BRAND_FIXTURES["client_compass"]}
+    client = [c for c in FIXTURES["compass"] if c["dimension"] == "minecraft:overworld"]
+    assert len(client) == len(server) >= 5
+    for c in client:
+        s = server[c["what"]]
+        assert c["friends"] == s["friends"], c["what"]  # the vectors are mc-brand's bytes
+        assert (c["placed"], c["plain"], c["focus"]) == (s["placed"], s["plain"], s["focus"]), c["what"]
+        decoded = decode("friends", bytes.fromhex(c["friends"]))
+        assert decoded["dimension"] == s["viewer"][3]
+    # the range is applied before sending: the out-of-range player never reaches the client
+    sw = next(c for c in client if "out of range" in c["what"])
+    assert "Far@" not in decode("friends", bytes.fromhex(sw["friends"]))["friends"]
+    # just through a portal (the message still for the overworld): the players there show as elsewhere
+    portal = [c for c in FIXTURES["compass"] if c["dimension"] == "minecraft:the_nether"]
+    assert portal and portal[0]["plain"].endswith(" | Alex (Overworld), Sam (Overworld)")
+    assert portal[0]["focus"] == ""
+
+
+def test_the_mod_draws_with_fabric_hud_api_and_no_mixins() -> None:
+    src = (MOD / "src/main/java/io/github/edvardk/smallworld/client").glob("*.java")
+    text = "\n".join(p.read_text() for p in src)
+    assert "Mixin" not in text and "mixin" not in json.loads(
+        (MOD / "src/main/resources/fabric.mod.json").read_text()
+    )
+    client = (MOD / "src/main/java/io/github/edvardk/smallworld/client/SmallworldClient.java").read_text()
+    assert 'Identifier.fromNamespaceAndPath(Payloads.NAMESPACE, "compass"), compass::draw)' in client
+    assert "VanillaHudElements.BOSS_BAR" in client
+    hud = (MOD / "src/main/java/io/github/edvardk/smallworld/client/CompassHud.java").read_text()
+    assert "CompassStrip.strip(" in hud and "p.exact()" in hud  # the boss bar's layout, drawn sub-pixel
 
 
 @pytest.mark.parametrize("case", FIXTURES["malformed"], ids=lambda c: f"{c['channel']}-{c['hex'][:16]}")
@@ -126,10 +220,20 @@ def test_wire_constants_and_doc_agree() -> None:
     assert FIXTURES["max_utf_bytes"] == MAX_UTF == int(re.search(r"MAX_UTF_BYTES = (\d+);", wire)[1])
     assert f"MAX_FPS = {MAX_FPS:_};" in wire
     doc = (MOD / "WIRE.md").read_text()
-    for channel in ("smallworld:hello", "smallworld:fps", "smallworld:config"):
+    for channel in (
+        "smallworld:hello",
+        "smallworld:fps",
+        "smallworld:config",
+        "smallworld:compass",
+        "smallworld:friends",
+    ):
         assert channel in doc
-    for case in FIXTURES["cases"][:1]:  # the doc's worked example is a real fixture
+    hellos = [c for c in FIXTURES["cases"] if c["channel"] == "hello"]
+    for case in [c for c in hellos if "input" not in c] + hellos[
+        3:4
+    ]:  # the doc's worked examples are fixtures
         assert case["hex"] in doc.replace(" ", "")
+    assert f"MAX_FRIENDS = {MAX_FRIENDS};" in wire and f"CAP_COMPASS = {CAP_COMPASS};" in wire
     for name in ("smallworld-pack.json", "smallworld.json"):
         assert name in doc
         assert (

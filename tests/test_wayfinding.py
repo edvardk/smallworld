@@ -91,7 +91,7 @@ def test_fixtures_are_wired_into_the_build() -> None:
     src = (
         REPO / "plugin/mc-brand/src/test/java/io/github/edvardk/mcbrand/WayfindingFixtures.java"
     ).read_text()
-    assert "Wayfinding.strip(" in src and "System.out.print(json(out, 0))" in src
+    assert "CompassStrip.strip(" in src and "System.out.print(json(out, 0))" in src
     script = (REPO / "scripts/build_plugin.py").read_text()
     assert (
         'build_cfg.get("fixtures_main")' in script
@@ -487,3 +487,78 @@ def test_spawn_hologram_heals_and_reports_where_it_is() -> None:
     assert 'r"help at \\[(-?\\d+) (-?\\d+) (-?\\d+)"' in check
     assert 'rcon(box, f"forceload add {x} {z}")' in check and "forceload add ~ ~" not in check
     assert "time.monotonic() + 30" in check
+
+
+# --- v1.5: the client compass (the mod draws it; client/mod/WIRE.md "The client compass") --------------------------
+
+
+def _mode(want: bool, capable: bool, pending: bool) -> str:
+    if not want:
+        return "NONE"
+    return "CLIENT" if capable else "WAIT" if pending else "SERVER"
+
+
+def _capability(caps: int | None, ours: bool, channels: bool) -> str:
+    if caps is None:
+        return "UNKNOWN" if ours else "NO"
+    if not caps & 1:
+        return "NO"
+    return "YES" if channels else "UNKNOWN"
+
+
+def test_client_compass_decision_tables() -> None:
+    """Who draws: a mod client with the capability gets the client compass, everyone else the boss bar."""
+    for key, mode in FIX["compass_mode"].items():
+        want, capable, pending = (v == "true" for v in key.split("/"))
+        assert mode == _mode(want, capable, pending), key
+    for key, cap in FIX["capability"].items():
+        c, ours, channels = key.split("/")
+        assert cap == _capability(None if c == "null" else int(c), ours == "true", channels == "true"), key
+    # the plan's cases: vanilla -> boss bar, mod 1.0.0 -> boss bar, mod 1.1.0 -> the mod draws
+    assert FIX["capability"]["null/false/false"] == "NO"  # vanilla: no hello, no channels
+    assert FIX["capability"]["0/true/true"] == "NO"  # mod 1.0.0: hello without the capability
+    assert FIX["capability"]["1/true/true"] == "YES"  # mod 1.1.0
+    assert FIX["compass_mode"]["true/false/false"] == "SERVER"
+    assert FIX["compass_mode"]["true/true/false"] == "CLIENT"
+    assert FIX["compass_mode"]["false/true/false"] == "NONE"  # /compass off wins for the mod too
+
+
+def _friends(hexstr: str) -> tuple[str, list[tuple[str, str, int, int, int]]]:
+    from test_client_mod import Reader
+
+    r = Reader(bytes.fromhex(hexstr))
+    dim, n = r.utf(), r.varint()
+    return dim, [(r.utf(), r.utf(), r.varint(), r.varint(), r.varint()) for _ in range(n)]
+
+
+def test_friends_payload_is_what_the_boss_bar_shows() -> None:
+    """The positions the mod gets: in range only, in 1/16 block, nearest first, elsewhere by name (no position)."""
+    for case in FIX["client_compass"]:
+        vx, _vy, vz, world = case["viewer"]
+        dim, friends = _friends(case["friends"])
+        assert dim == world
+        here = [f for f in friends if f[1] == ""]
+        away = [f for f in friends if f[1] != ""]
+        assert friends == here + away and [f[0] for f in away] == sorted(f[0] for f in away)
+        assert all(f[2:] == (0, 0, 0) for f in away)
+        dists = [math.hypot(f[2] / 16 - vx, f[4] / 16 - vz) for f in here]
+        assert dists == sorted(dists) and all(d <= case["config"][0] for d in dists)
+        # every player the boss bar places is in the payload
+        names = {f[0] for f in friends}
+        for kind, text, *_ in case["placed"]:
+            if kind in ("PLAYER", "FOCUS"):
+                assert text.lstrip("▼").split(" ")[0].rstrip("↑↓") in names
+    dim, friends = _friends(FIX["selftest_friends"])
+    assert [f[0] for f in friends] == ["Alex", "Sam", "Kim"]  # "Far" is out of range
+
+
+def test_selftest_prints_the_client_compass_fixtures() -> None:
+    """tests/e2e/brand_check.py looks for the same payload bytes on a real Purpur (the selftest line)."""
+    e2e = (REPO / "tests/e2e/brand_check.py").read_text().replace('"\n            "', "")
+    assert f"friends {FIX['selftest_friends']}, drawn " in e2e
+    compass = (BRAND / "Compass.java").read_text()
+    assert 'Wayfinding.friends("minecraft:overworld", 0.5, 0.5, 1000, Wayfinding.SELFTEST_SCENE)' in compass
+    fixtures = (
+        REPO / "plugin/mc-brand/src/test/java/io/github/edvardk/mcbrand/WayfindingFixtures.java"
+    ).read_text()
+    assert '"minecraft:overworld", 0.5, 0.5, 1000, Wayfinding.SELFTEST_SCENE)' in fixtures

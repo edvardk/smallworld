@@ -831,7 +831,18 @@ picture). The compass is a boss bar of its own (under or over the HUD's top bar)
 turns or moves (v1.4.1: on the next tick, up to 20 times a second; it was every 4 ticks) or someone else moves (at most once a second); nothing runs while nobody
 moves (`/mcbrand status`: `compass showing/renders/updates`). Who gets it by default follows the client: off for
 the Smallworld mod together with Xaero's maps, on otherwise (`branding.compass.default_on: false` makes it
-opt-in for everyone); players override it with `/compass on|off`. The pocket map is one map id per player (kept
+opt-in for everyone); players override it with `/compass on|off`. v1.5, the client compass: who gets a compass is
+decided exactly as above; who *draws* it is the client's. A client whose Smallworld mod (1.1.0+, the client pack)
+announced the compass capability in its hello gets no boss bar: mc-brand tells the mod to draw
+(`smallworld:compass`, with `max_range`, `distance_rounding`, `height_threshold` and the branding colours) and
+sends it the positions of exactly the players the boss bar would show (`smallworld:friends`: same visibility
+rules, same range; at most every 4 ticks while someone moves, only when changed). The mod draws the same strip
+(the same `CompassStrip.java`) every frame, in the same row. Vanilla clients and mod 1.0.0 keep the boss bar.
+The default is unchanged (off for mod + Xaero's: Xaero's minimap already shows friends; `/compass on` gives them
+the smooth compass). `/compass` (`on`, `off`, `auto`, `hide`, `show`, and bare `/compass` to toggle) works the
+same for both; `/compass auto` says "drawn by the Smallworld mod" when it is. `/mcbrand status`: `compass
+showing/renders/updates` (boss bars) and `client`/`friends sent` (the mod's); the selftest prints the decision
+table and both payloads ([WIRE.md](../client/mod/WIRE.md#the-client-compass-v15)). The pocket map is one map id per player (kept
 in the player's data), so `/map` never piles up map files; while it is held mc-brand re-centres it and draws the
 old picture shifted until vanilla has redrawn the terrain (vanilla only draws while a map is held, 128 blocks
 around the player). The client-mod detection reads the channels the client registers (`smallworld:*` = the
