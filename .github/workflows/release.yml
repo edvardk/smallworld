@@ -1,11 +1,24 @@
 name: release
 
-# Push a tag vX.Y.Z on main (after bumping the version and the CHANGELOG, see scripts/release.py): runs CI,
-# checks the tag against pyproject.toml / mcctl.__version__ / CHANGELOG.md, and creates the GitHub release.
+# Runs CI, checks the tag against pyproject.toml / mcctl.__version__ / CHANGELOG.md, and creates the GitHub
+# release. Two ways in (docs/reference.md "Releasing"):
+#   - workflow_call from autotag.yml: a merge to main that raised the version (scripts/release.py ship) is tagged
+#     there with GITHUB_TOKEN, and a tag pushed with GITHUB_TOKEN starts no workflow, so autotag calls this one
+#     with the tag as an input;
+#   - push of a tag vX.Y.Z by a person (the fallback, scripts/release.py tag --push).
 # Config repos then pin the tag's commit SHA (their weekly update task opens the PR, P11).
 on:
   push:
     tags: ["v*.*.*"]
+  workflow_call:
+    inputs:
+      tag:
+        description: The release tag vX.Y.Z (autotag.yml has just created it on the commit being released)
+        type: string
+        required: true
+    secrets:
+      PUBLISH_DENYLIST: # ci.yml's publication job (autotag.yml passes it explicitly)
+        required: false
 
 permissions:
   contents: read
@@ -13,6 +26,8 @@ permissions:
 jobs:
   ci:
     uses: ./.github/workflows/ci.yml
+    with:
+      full: true # everything: a release isn't scoped to the last diff
     permissions:
       contents: write # requested by the reusable workflow's panel-merge job (P10; never runs from here)
       pull-requests: write # same
@@ -29,17 +44,18 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.tag || github.ref }}
           persist-credentials: false
 
       - name: Check the tag matches the version and the changelog
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: python3 scripts/release.py check "$TAG"
 
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           python3 scripts/release.py notes "${TAG#v}" > "$RUNNER_TEMP/notes.md"
           # Release checksums (design §7 supply chain): the source archive of the tagged commit and its

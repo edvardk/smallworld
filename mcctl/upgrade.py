@@ -41,6 +41,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from mcctl import configrepo, gate, init, migrations, product, schema, updates, yamledit
@@ -132,6 +133,17 @@ def _publish(ctx: init.Ctx, branch: str, title: str, body: str, paths: Sequence[
 # --- product -------------------------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class Upgraded:
+    """The pull request a product upgrade opened (v1.5: `mcctl rollout` follows it)."""
+
+    url: str
+    branch: str
+    to: str
+    sha: str
+    unattended: bool  # a pure patch bump on update/*: `server / gate` merges it (auto-merge on)
+
+
 def product_upgrade(
     ctx: init.Ctx,
     to: str | None,
@@ -140,6 +152,19 @@ def product_upgrade(
     dry_run: bool = False,
     runner: ProductRunner = run_in_product,
 ) -> int:
+    product_upgrade_pr(ctx, to, sha, dry_run=dry_run, runner=runner)
+    return 0
+
+
+def product_upgrade_pr(
+    ctx: init.Ctx,
+    to: str | None,
+    sha: str | None,
+    *,
+    dry_run: bool = False,
+    runner: ProductRunner = run_in_product,
+) -> Upgraded | None:
+    """`mcctl upgrade [--to vX.Y.Z]`: the pull request moving the pin, or None for a dry run."""
     ui = ctx.ui
     repo = ctx.repo()
     pin = repo.pin
@@ -174,7 +199,7 @@ def product_upgrade(
         ui.say(f"  {n}. {line}")
     if dry_run:
         ui.say("(dry run: nothing was changed)")
-        return 0
+        return None
     start = _clean(ctx)
     _branch(ctx, branch)
     new_pin = configrepo.Pin(pin.repository, sha, to)
@@ -235,7 +260,7 @@ def product_upgrade(
         _abandon(ctx, start, branch)
         raise
     ui.ok(f"pull request: {url}")
-    return 0
+    return Upgraded(url, branch, to, sha, unattended)
 
 
 def schema_migrate(root: Path, old: str, product_root: Path | None = None) -> list[str]:

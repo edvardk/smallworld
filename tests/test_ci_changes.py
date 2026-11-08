@@ -55,12 +55,13 @@ def load(name: str) -> dict:
 )
 def test_groups(files: list[str], want: set[str]) -> None:
     got = ci_changes.groups(files)
-    assert set(got) == set(ci_changes.GROUPS)
+    assert set(got) == {*ci_changes.GROUPS, "release"}
     assert {k for k, v in got.items() if v} == want
 
 
 def test_unknown_changes_run_everything() -> None:
-    assert all(ci_changes.groups(None).values())
+    unknown = ci_changes.groups(None)
+    assert unknown.pop("release") is False and all(unknown.values())
 
     def boom(argv: list[str]) -> str:
         raise subprocess.CalledProcessError(128, ["git", *argv])
@@ -85,6 +86,89 @@ def test_pull_request_diffs_the_merge_commit_against_its_base() -> None:
     calls.clear()
     assert ci_changes.changed_files("push", "abc123", git=git) == ["docs/a.md", "mcctl/cli.py"]
     assert calls[-1] == ["diff", "--name-only", "abc123", "HEAD"]
+
+
+BUMP_DIFF = """diff --git a/mcctl/__init__.py b/mcctl/__init__.py
+--- a/mcctl/__init__.py
++++ b/mcctl/__init__.py
+@@ -3 +3 @@
+-__version__ = "1.4.0"
++__version__ = "1.5.0"
+diff --git a/pyproject.toml b/pyproject.toml
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -7 +7 @@ name = "smallworld-mc"
+-version = "1.4.0"
++version = "1.5.0"
+"""
+BUMP_FILES = ["CHANGELOG.md", "README.md", "mcctl/__init__.py", "pyproject.toml"]
+
+
+def test_a_version_bump_alone_runs_lint_and_the_release_check_only() -> None:
+    """v1.5: `release.py ship --standalone`'s pull request: nothing heavy, `release` on."""
+    got = ci_changes.groups(BUMP_FILES, BUMP_DIFF)
+    assert got.pop("release") is True and not any(got.values())
+    assert ci_changes.groups(["pyproject.toml", "CHANGELOG.md", "docs/reference.md"], BUMP_DIFF)["release"]
+    # anything else in the version files is code: a dependency, an option, a second variable
+    for extra in (
+        '+    "rich==14.0.0",',
+        '+addopts = "-q"',
+        '+__all__ = ["x"]',
+        '-requires-python = ">=3.12"',
+    ):
+        got = ci_changes.groups(BUMP_FILES, BUMP_DIFF + extra + "\n")
+        assert got["release"] is False and got["code"] and got["e2e"], extra
+    # another path, no pyproject change, an empty or unknown diff: not a bump
+    for files, diff in (
+        ([*BUMP_FILES, "mcctl/cli.py"], BUMP_DIFF),
+        (["mcctl/__init__.py", "CHANGELOG.md"], BUMP_DIFF),
+        (BUMP_FILES, ""),
+        (BUMP_FILES, None),
+    ):
+        got = ci_changes.groups(files, diff)
+        assert got["release"] is False and got["code"], files
+    assert not ci_changes.version_only("+++ b/pyproject.toml\n--- a/pyproject.toml\n")
+
+
+def test_the_version_diff_is_taken_like_the_changed_files() -> None:
+    calls: list[list[str]] = []
+
+    def git(argv: list[str]) -> str:
+        calls.append(argv)
+        return BUMP_DIFF
+
+    assert ci_changes.version_diff("pull_request", "", git=git) == BUMP_DIFF
+    assert ci_changes.version_diff("push", "abc", git=git) == BUMP_DIFF
+    assert calls == [
+        ["diff", "-U0", "HEAD^1", "HEAD", "--", "pyproject.toml", "mcctl/__init__.py"],
+        ["diff", "-U0", "abc", "HEAD", "--", "pyproject.toml", "mcctl/__init__.py"],
+    ]
+    assert ci_changes.version_diff("release", "abc", git=git) is None  # release.yml's `full`: everything
+    assert ci_changes.changed_files("release", "abc", git=git) is None
+
+    def boom(argv: list[str]) -> str:
+        raise subprocess.CalledProcessError(128, ["git", *argv])
+
+    assert ci_changes.version_diff("pull_request", "", git=boom) is None
+
+
+def test_a_bump_skips_e2e_and_runs_the_release_check() -> None:
+    ci = load("ci.yml")
+    assert ci["jobs"]["changes"]["outputs"]["release"] == "${{ steps.changes.outputs.release }}"
+    step = next(s for s in ci["jobs"]["lint"]["steps"] if s.get("name", "").startswith("release.py check"))
+    assert step["if"] == "needs.changes.outputs.release == 'true'"
+    assert step["run"].strip() == "python3 scripts/release.py check"
+    # release.yml asks for everything; its `full` input becomes an event ci_changes.py doesn't scope
+    assert ci["on"]["workflow_call"]["inputs"]["full"] == {
+        "description": "Run everything, whatever the last diff touched (release.yml)",
+        "type": "boolean",
+        "default": False,
+    }
+    what = next(s for s in ci["jobs"]["changes"]["steps"] if s.get("id") == "changes")
+    assert what["env"]["EVENT"] == "${{ inputs.full && 'release' || github.event_name }}"
+    decide = next(s for s in load("e2e-mock.yml")["jobs"]["changes"]["steps"] if s.get("id") == "decide")
+    assert decide["env"]["CHG_RELEASE"] == "${{ steps.changes.outputs.release }}"
+    assert 'if [ "$CHG_RELEASE" = true ]; then e2e=false; full=false;' in decide["run"]
 
 
 def test_every_product_job_has_a_timeout_and_runs_are_cancelled_when_obsolete() -> None:
@@ -146,7 +230,7 @@ def test_e2e_triggers_and_benches() -> None:
     decide = next(s for s in wf["jobs"]["changes"]["steps"] if s.get("id") == "decide")
     # every pull request runs e2e (its heavy half when it touches what that exercises) and never benches; the
     # nightly run is the whole e2e
-    assert 'pull_request) e2e=true; full="$CHG_FULL" ;;' in decide["run"]
+    assert 'else e2e=true; full="$CHG_FULL"; fi ;;' in decide["run"]  # v1.5: unless a version bump alone
     assert "else e2e=true; full=true; fi ;;" in decide["run"]
     assert decide["run"].startswith("bench=false\n")
     # the self-hosted runner only for trusted code: never a fork's pull request (H1)

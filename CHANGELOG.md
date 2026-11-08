@@ -8,6 +8,25 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ### Added
 
+- Shipping an update in two steps ([operations: Shipping an update](docs/operations.md#shipping-an-update)).
+  `scripts/release.py ship X.Y.Z` on the last feature branch merges a freshly fetched `origin/main` in (never a
+  rebase), bumps the version and the changelog, commits "Release X.Y.Z", pushes and opens the pull request (or
+  names the open one) through `gh`; `--standalone` cuts `release-X.Y.Z` from the fetched `origin/main` when no
+  feature PR is pending, `--auto-merge` turns on auto-merge. It refuses a dirty tree, an empty `[Unreleased]`, a
+  version not greater than the latest tag and an existing tag, each with the fix.
+- Auto-tag on merge: the new `autotag.yml` tags `vX.Y.Z` when a push to main raises `pyproject.toml`'s version
+  above every `v*` tag and `release.py check` passes, then calls `release.yml` (now also `workflow_call`); a
+  re-run or a push without a version change does nothing. `release.py tag` stays as the manual fallback.
+  `mcctl product-setup` splits the `v*` tag ruleset: creation for the admin and GitHub Actions, moving and
+  deleting for the admin only (run `mcctl product-setup` once).
+- CI for a version bump alone (only version lines of `pyproject.toml` / `mcctl/__init__.py`, plus docs): lint's
+  docs half and `release.py check`, no full suite, controller matrix or e2e (`scripts/ci_changes.py` `release`).
+- `mcctl rollout [--to vX.Y.Z] [--dry-run]` in a config repo: fetch and fast-forward main (refused when dirty,
+  ahead or diverged), open the pin PR (or use the open one), follow its checks, merge after a typed tag (or report
+  the gate's auto-merge), watch the deploy, pull, then the new pin's `render`, `plan` and `apply` (its own typed
+  confirmation). For minor/major releases and Worker changes; patch releases still roll out by themselves. In
+  the dashboard's command palette as "Updates: rollout preview" and "Terminal: roll out the latest release".
+
 - Which parts of the HUD players see: `name`, `players` (or `online`), `health`, `tps`, `mspt`, `ping`, `fps`
   (top bar and sidebar alike; the sidebar's title stays, and a top bar with every part hidden shows just the
   server name). New `server.yml` field `branding.hud.parts` sets the server's default (default: every part, so

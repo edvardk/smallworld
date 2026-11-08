@@ -115,7 +115,7 @@ def release_commit(work: Path, version: str = "1.3.0") -> None:
 def test_bump(tmp_path, capsys) -> None:
     work, _ = make_repo(tmp_path)
     assert release.main(["bump", "1.3.0", "--date", "2026-11-08"], work, git) == 0
-    assert "release.py tag v1.3.0" in capsys.readouterr().out
+    assert "autotag.yml tags v1.3.0" in capsys.readouterr().out
     assert release.check("v1.3.0", work) == []
     assert release.pyproject_version(work) == release.package_version(work) == "1.3.0"
     assert 'name = "smallworld-mc"\nversion = "1.3.0"\n' in (work / "pyproject.toml").read_text()
@@ -306,3 +306,217 @@ def test_tag_custom_remote_and_fetch_failure(tmp_path) -> None:
     _, errors = release.tag(None, work, "nowhere", git)
     assert len(errors) == 1 and errors[0].startswith("git fetch nowhere main failed")
     assert release.main(["tag", "--remote", "upstream"], work, git) == 0
+
+
+# --- ship (v1.5): the bump rides a pull request; gh is a fake (nothing real is contacted) ------------------
+
+
+class FakeGh:
+    """`gh pr view|create|merge`: records each call; `open_pr` makes `pr view` find an open pull request."""
+
+    def __init__(self, open_pr: str = "", create_rc: int = 0) -> None:
+        self.open_pr, self.create_rc = open_pr, create_rc
+        self.calls: list[list[str]] = []
+
+    def __call__(self, args: Sequence[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        args = list(args)
+        self.calls.append(args)
+        if args[:2] == ["pr", "view"]:
+            if self.open_pr:
+                return subprocess.CompletedProcess(
+                    args, 0, f'{{"url": "{self.open_pr}", "state": "OPEN"}}', ""
+                )
+            return subprocess.CompletedProcess(args, 1, "", "no pull requests found for branch")
+        if args[:2] == ["pr", "create"]:
+            out = "https://github.com/o/r/pull/41\n" if not self.create_rc else ""
+            return subprocess.CompletedProcess(args, self.create_rc, out, "boom" if self.create_rc else "")
+        if args[:2] == ["pr", "merge"]:
+            return subprocess.CompletedProcess(args, 0, "", "")
+        return subprocess.CompletedProcess(args, 1, "", f"fake gh: unexpected {args}")
+
+    def created(self) -> list[list[str]]:
+        return [c for c in self.calls if c[:2] == ["pr", "create"]]
+
+
+def tag_origin(work: Path, name: str = "v1.2.2") -> None:
+    must(work, "tag", "-a", name, "-m", f"Smallworld {name}")
+    must(work, "push", "-q", "origin", name)
+
+
+def feature_repo(tmp_path: Path, unreleased: str = UNRELEASED) -> tuple[Path, Path, str]:
+    """origin/main moved on (someone else's merge) after `feature` branched off; v1.2.2 tagged."""
+    work, origin = make_repo(tmp_path, unreleased)
+    tag_origin(work)
+    must(work, "switch", "-qc", "feature")
+    (work / "feature.txt").write_text("feature\n")
+    must(work, "add", "feature.txt")
+    must(work, "commit", "-qm", "a feature")
+    feature = must(work, "rev-parse", "HEAD")
+    must(work, "switch", "-q", "main")
+    (work / "other.txt").write_text("merged meanwhile\n")
+    must(work, "add", "other.txt")
+    must(work, "commit", "-qm", "another merge")
+    must(work, "push", "-q", "origin", "main")
+    must(work, "switch", "-q", "feature")
+    return work, origin, feature
+
+
+def test_ship_merges_main_in_bumps_commits_pushes_and_opens_the_pr(tmp_path, capsys) -> None:
+    work, origin, feature = feature_repo(tmp_path)
+    gh = FakeGh()
+    assert release.main(["ship", "1.3.0", "--date", "2026-11-08"], work, git, gh=gh) == 0
+    out = capsys.readouterr().out
+    assert "merged origin/main" in out and "opened https://github.com/o/r/pull/41" in out
+    # merged, never rebased: the feature commit is kept as it was, origin/main is an ancestor
+    head = must(work, "rev-parse", "HEAD")
+    assert must(work, "log", "-1", "--format=%s") == "Release 1.3.0"
+    assert git(["merge-base", "--is-ancestor", feature, head], work).returncode == 0
+    assert git(["merge-base", "--is-ancestor", must(origin, "rev-parse", "main"), head], work).returncode == 0
+    assert must(work, "log", "-1", "--format=%P", "HEAD~1").count(" ") == 1  # HEAD~1 is the merge commit
+    assert release.check("v1.3.0", work) == []
+    assert must(origin, "rev-parse", "feature") == head  # pushed
+    (create,) = gh.created()
+    assert create[create.index("--head") + 1] == "feature" and create[create.index("--base") + 1] == "main"
+    assert create[create.index("--title") + 1] == "Release 1.3.0"
+    assert "- Added a thing." in create[create.index("--body") + 1]
+    assert not [c for c in gh.calls if c[:2] == ["pr", "merge"]]
+
+
+def test_ship_names_the_open_pr_and_turns_on_auto_merge(tmp_path, capsys) -> None:
+    work, _, _ = feature_repo(tmp_path)
+    must(work, "merge", "-q", "--no-edit", "origin/main")  # already up to date with main: no merge commit
+    before = must(work, "rev-parse", "HEAD")
+    gh = FakeGh(open_pr="https://github.com/o/r/pull/40")
+    assert release.ship("1.3.0", work, auto_merge=True, git=git, gh=gh) == []
+    out = capsys.readouterr().out
+    assert "already contains origin/main" in out and "pull/40" in out and "auto-merge is on" in out
+    assert must(work, "rev-parse", "HEAD~1") == before and gh.created() == []
+    assert ["pr", "merge", "https://github.com/o/r/pull/40", "--auto", "--merge"] in gh.calls
+
+
+def test_ship_standalone_cuts_from_the_fetched_origin_main_never_local_main(tmp_path) -> None:
+    """The stale-main failure: a leftover local commit on main must not end up in the release branch."""
+    work, origin = make_repo(tmp_path)
+    tag_origin(work)
+    other = tmp_path / "other"
+    must(tmp_path, "clone", "-q", origin.as_posix(), other.as_posix())
+    (other / "x.txt").write_text("x\n")
+    must(other, "add", "x.txt")
+    must(other, "commit", "-qm", "merged on GitHub")
+    must(other, "push", "-q", "origin", "main")
+    (work / "leftover.txt").write_text("stale\n")
+    must(work, "add", "leftover.txt")
+    must(work, "commit", "-qm", "leftover on local main")
+    gh = FakeGh()
+    assert release.ship("1.3.0", work, standalone=True, date="2026-11-08", git=git, gh=gh) == []
+    assert must(work, "branch", "--show-current") == "release-1.3.0"
+    assert must(work, "rev-parse", "HEAD~1") == must(origin, "rev-parse", "main")
+    assert not (work / "leftover.txt").exists()
+    assert must(origin, "log", "-1", "--format=%s", "release-1.3.0") == "Release 1.3.0"
+    (create,) = gh.created()
+    assert create[create.index("--head") + 1] == "release-1.3.0"
+
+
+@pytest.mark.parametrize("where", ["main", "detached"])
+def test_ship_refuses_main_and_detached_without_standalone(tmp_path, where) -> None:
+    work, _ = make_repo(tmp_path)
+    tag_origin(work)
+    if where == "detached":
+        must(work, "switch", "-q", "--detach", "HEAD")
+    errors = release.ship("1.3.0", work, git=git, gh=FakeGh())
+    assert len(errors) == 1 and "--standalone" in errors[0]
+    assert release.pyproject_version(work) == "1.2.2"
+
+
+def test_ship_refusals_leave_the_repository_as_it_was(tmp_path) -> None:
+    work, _, _ = feature_repo(tmp_path, unreleased="")
+    head = must(work, "rev-parse", "HEAD")
+    gh = FakeGh()
+    # empty Unreleased: found after the merge, which is undone
+    errors = release.ship("1.3.0", work, git=git, gh=gh)
+    assert errors == ["CHANGELOG.md's `## [Unreleased]` section is empty: nothing to release"]
+    assert must(work, "rev-parse", "HEAD") == head and must(work, "status", "--porcelain") == ""
+    # standalone: back where it started, the branch deleted
+    assert release.ship("1.3.0", work, standalone=True, git=git, gh=gh) == errors
+    assert must(work, "branch", "--show-current") == "feature"
+    assert "release-1.3.0" not in must(work, "branch", "--list")
+    # not newer than the latest tag; the tag exists on origin; locally
+    assert release.ship("1.2.2", work, git=git, gh=gh) == [
+        "tag v1.2.2 already exists on origin: pick the next version"
+    ]
+    assert release.ship("1.2.1", work, git=git, gh=gh) == [
+        "version 1.2.1 isn't greater than the latest release tag v1.2.2"
+    ]
+    must(work, "tag", "v1.3.0")
+    assert "already exists locally" in release.ship("1.3.0", work, git=git, gh=gh)[0]
+    # a dirty tree
+    (work / "notes.txt").write_text("x\n")
+    assert release.ship("1.4.0", work, git=git, gh=gh) == [
+        "the working tree has uncommitted changes (commit or stash them first)"
+    ]
+    assert gh.calls == [] and must(work, "rev-parse", "HEAD") == head
+
+
+def test_ship_refuses_a_conflicting_merge(tmp_path) -> None:
+    work, _, _ = feature_repo(tmp_path)
+    (work / "other.txt").write_text("conflicting\n")
+    must(work, "add", "other.txt")
+    must(work, "commit", "-qm", "conflict")
+    head = must(work, "rev-parse", "HEAD")
+    (errors,) = release.ship("1.3.0", work, git=git, gh=FakeGh())
+    assert "conflicts" in errors and "git merge origin/main" in errors
+    assert must(work, "rev-parse", "HEAD") == head and must(work, "status", "--porcelain") == ""
+
+
+# --- autotag (v1.5): what autotag.yml decides for a commit on main --------------------------------------
+
+
+def test_autotag_decides_tag_release_or_nothing(tmp_path, capsys, monkeypatch) -> None:
+    work, _ = make_repo(tmp_path)
+    tag_origin(work)
+    # v1.2.2 names HEAD: a re-run there only makes sure the GitHub release exists
+    assert release.autotag(work, "origin", git) == ("release", "v1.2.2", [])
+    (work / "f.txt").write_text("f\n")
+    must(work, "add", "f.txt")
+    must(work, "commit", "-qm", "a feature merge, no version change")
+    assert release.autotag(work, "origin", git) == ("none", "v1.2.2", [])
+    release_commit(work)  # the merged bump
+    out = tmp_path / "gh-output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+    assert release.main(["autotag"], work, git) == 0
+    assert out.read_text() == "action=tag\ntag=v1.3.0\n"
+    assert capsys.readouterr().out == "action=tag\ntag=v1.3.0\n"
+    must(work, "tag", "-a", "v1.3.0", "-m", "x")
+    must(work, "push", "-q", "origin", "v1.3.0")
+    assert release.autotag(work, "origin", git) == ("release", "v1.3.0", [])  # a re-run on the tagged commit
+
+
+def test_autotag_none_for_an_older_version_and_error_for_a_broken_bump(tmp_path) -> None:
+    work, _ = make_repo(tmp_path)
+    tag_origin(work, "v1.4.0")
+    assert release.autotag(work, "origin", git) == ("none", "v1.2.2", [])
+    text = (work / "pyproject.toml").read_text().replace('version = "1.2.2"', 'version = "1.5.0"', 1)
+    (work / "pyproject.toml").write_text(text)
+    must(work, "commit", "-qam", "half a bump")
+    action, name, errors = release.autotag(work, "origin", git)
+    assert (action, name) == ("none", "v1.5.0") and len(errors) == 2  # __version__ and the changelog
+    assert release.main(["autotag"], work, git) == 1
+    _, errors = release.remote_tags("nowhere", work, git)
+    assert errors and errors.startswith("git ls-remote nowhere failed")
+
+
+def test_remote_tags_peel_annotated_tags_and_sort_by_semver(tmp_path) -> None:
+    work, _ = make_repo(tmp_path)
+    tag_origin(work, "v1.10.0")
+    must(work, "tag", "v1.9.0")  # lightweight
+    must(work, "push", "-q", "origin", "v1.9.0")
+    tags, err = release.remote_tags("origin", work, git)
+    head = must(work, "rev-parse", "HEAD")
+    assert err is None and tags == {"v1.10.0": head, "v1.9.0": head}
+    assert release.latest(tags) == "v1.10.0" and release.latest({}) is None
+
+
+def test_check_defaults_to_the_pyproject_version(tmp_path) -> None:
+    work, _ = make_repo(tmp_path)
+    release_commit(work)
+    assert release.main(["check"], work, git) == 0

@@ -388,6 +388,7 @@ The ones you will use (all take `-C $C`; the complete list is in [reference.md](
 | `mcctl restore --list \| --to /var/tmp/DIR \| --live ID` | list snapshots (the last pre-upgrade one marked), restore into a scratch directory and verify, or restore the live world (typed confirmation, safety snapshot first) |
 | `mcctl stop [--reason T]`, `mcctl start` | stop on purpose (self-heal, the watchdog and deploys leave it stopped; the reason is recorded) / start again |
 | `mcctl upgrade [--to vX.Y.Z] \| --minecraft-version V [--dry-run]` | a pull request moving the product pin, or upgrading Minecraft (boot-tested; you merge) |
+| `mcctl rollout [--to vX.Y.Z] [--dry-run]` | v1.5: a product release end to end: pull, pin PR, its checks, your typed merge (or the gate's), the deploy, then `render`, `plan` and `apply` (typed) ([Shipping an update](#shipping-an-update)) |
 | `mcctl migrate --to IP [--ipv6 IP] [--dry-run]`, `mcctl retire-old` | move to a new machine, resumable, with rollback ([reference.md](reference.md#move-to-a-new-vps)) |
 | `mcctl secrets rotate NAME [--dry-run]` | replace a generated secret (`rcon`, `heartbeat`, `agent-token`, `command-hmac`, `r2`, `restic-key`): typed apply, then a deploy |
 | `mcctl secrets show-restic` | print the restic password once, to a terminal only |
@@ -401,6 +402,27 @@ commit your config repo pins: if you started another version, mcctl re-runs itse
 pinned one (`~/.cache/mcctl/<sha>`). A product `upgrade` (`--to`) runs the checkout you start it from, and runs
 the *target* release's schema migration and validation itself. When the checkout you run is *newer* than the pin, `mcctl setup` and `mcctl doctor
 --fix` offer to move the pin forward to it (typed `yes`; forward only, pushed commits only).
+
+## Shipping an update
+
+v1.5, for whoever develops the product: two steps from a finished feature branch to a running server.
+
+1. **Release it** (product repo, on the last feature branch):
+   `python3 scripts/release.py ship X.Y.Z` (add `--auto-merge` to merge once CI is green). It merges a freshly
+   fetched `origin/main` in, moves `## [Unreleased]` to `## [X.Y.Z] - <today>`, sets the version, commits
+   "Release X.Y.Z", pushes and opens (or reuses) the pull request. **Merge it**: `autotag.yml` tags `vX.Y.Z` and
+   `release.yml` publishes the release. Nothing left to tag by hand. With no feature PR pending,
+   `ship X.Y.Z --standalone` makes a `release-X.Y.Z` branch from `origin/main` (its CI is lint plus the release
+   check).
+2. **Roll it out** (config repo), only for a **minor or major** release or one that changes the **Worker**:
+   `mcctl rollout`. It fetches and fast-forwards main (refusing a dirty, ahead or diverged one), opens the pin
+   PR (`mcctl upgrade`), follows its checks, merges after you type the tag (or reports the gate's auto-merge),
+   watches the deploy, pulls again, runs `render` and `plan` from the new pin and, after a yes, `apply` with its
+   own typed confirmation. `--dry-run` shows the steps.
+
+**Patch releases** need no step 2: the weekly update task opens the pin PR, `server / gate` merges it and the
+merge deploys ([What runs by itself](#what-runs-by-itself)). If a patch changes the Worker, run `mcctl rollout`
+afterwards (it sees the pin is current and goes straight to render, plan and apply).
 
 ## What runs by itself
 

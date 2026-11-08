@@ -12,6 +12,7 @@
   product-setup, config             productsetup, configedit
   migrate, retire-old               migrate
   upgrade, lock, schema-migrate     upgrade (+ migrations)
+  rollout                           rollout (v1.5: upgrade + publish's checks/deploy + plan/apply)
   secrets, discord                  rotate, integrations (+ dashlane)
   players, restore                  players, restorecmd
   publish                           publish (v1.3: preview, validate, PR / main / deploy)
@@ -746,6 +747,12 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
     )
 
 
+def cmd_rollout(args: argparse.Namespace) -> int:
+    from mcctl import rollout
+
+    return _p12("rollout", lambda: rollout.run(_ctx(args), args.to, dry_run=args.dry_run))
+
+
 def _lock_update(args: argparse.Namespace, version: str | None) -> int:
     from mcctl import upgrade
 
@@ -1205,6 +1212,15 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--allow-paper", action="store_true", help="Minecraft: Paper if Purpur has no build")
     sp.add_argument("--dry-run", action="store_true", help="print the exact sequence, change nothing")
     sp.set_defaults(func=cmd_upgrade)
+
+    sp = sub.add_parser(
+        "rollout",
+        help="v1.5: a release end to end: sync, pin PR, merge, deploy, render, plan, apply (typed)",
+    )
+    with_config(sp)
+    sp.add_argument("--to", metavar="vX.Y.Z", help="product release (default: the latest)")
+    sp.add_argument("--dry-run", action="store_true", help="print the steps, change nothing")
+    sp.set_defaults(func=cmd_rollout)
 
     sp = sub.add_parser("lock", help="lock files: `lock update [--minecraft-version V]` (a PR)")
     lsub = sp.add_subparsers(dest="action", required=True, metavar="ACTION")

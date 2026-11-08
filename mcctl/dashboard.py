@@ -1020,6 +1020,9 @@ ACTIONS: tuple[Action, ...] = (
     ),
     Action("metrics", "Metrics: player experience, last 7 days", "`mcctl metrics summary`"),
     Action("upgrade-preview", "Updates: product update preview", "`mcctl upgrade --dry-run`"),
+    Action(
+        "rollout-preview", "Updates: rollout preview", "`mcctl rollout --dry-run`: the latest release's steps"
+    ),
     Action("lock-preview", "Updates: mod lock update preview", "`mcctl lock update --dry-run`"),
     Action("config-get", "Config: show a setting", "`mcctl config get PATH`"),
     Action("dashlane", "Secrets: Dashlane items", "which items .env's credentials need (names only)"),
@@ -1042,6 +1045,11 @@ ACTIONS: tuple[Action, ...] = (
         "`mcctl publish` with its own questions (Terraform apply)",
     ),
     Action("term-console", "Terminal: console prompt", "`mcctl console`: a prompt sending each line"),
+    Action(
+        "term-rollout",
+        "Terminal: roll out the latest release",
+        "`mcctl rollout`: pin PR, your typed merge, the deploy, then plan and apply (typed)",
+    ),
 )
 ACTION_KEYS = {a.key: a for a in ACTIONS}
 NEEDS_SERVER = {
@@ -2154,6 +2162,9 @@ class Dashboard(App[int]):
     def do_upgrade_preview(self) -> None:
         self.modal_output("Product update: preview", ["upgrade", "--dry-run"])
 
+    def do_rollout_preview(self) -> None:
+        self.modal_output("Rollout: preview", ["rollout", "--dry-run"])
+
     def do_lock_preview(self) -> None:
         self.modal_output("Mod lock update: preview", ["lock", "update", "--dry-run"])
 
@@ -2221,6 +2232,9 @@ class Dashboard(App[int]):
 
     def do_term_publish(self) -> None:
         self.in_terminal(["publish"])
+
+    def do_term_rollout(self) -> None:
+        self.in_terminal(["rollout"])
 
     # --- leaving -------------------------------------------------------------------------------------------
 

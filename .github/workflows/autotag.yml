@@ -1,0 +1,87 @@
+name: autotag
+
+# v1.5: merging a version bump releases it (docs/reference.md "Releasing"). On every push to main,
+# `scripts/release.py autotag` compares pyproject.toml's version with the v* tags:
+#   - newer than all of them, and `release.py check` passes: create the annotated tag vX.Y.Z on this commit
+#     (through the GitHub API with GITHUB_TOKEN: no git credentials on the runner), then call release.yml;
+#   - that tag already names this commit (a re-run): call release.yml only if the GitHub release is missing;
+#   - anything else (a feature merge, an older version): nothing. A new version that fails `check` fails here.
+# A tag created with GITHUB_TOKEN starts no workflow (GitHub doesn't trigger runs from GITHUB_TOKEN events), so
+# release.yml isn't started by the tag: it is called here (workflow_call) with the tag as an input. A tag a person
+# pushes (the fallback, `release.py tag --push`) still starts release.yml by itself. The v* tag ruleset lets
+# GitHub Actions create v* tags (`mcctl product-setup`); moving or deleting one stays the admin's.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# One at a time, never cancelled: two quick merges queue (the second sees the first's tag).
+concurrency:
+  group: autotag
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the tag
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      release: ${{ steps.release.outputs.release }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # action=tag|release|none and tag=vX.Y.Z (the remote's tags through `git ls-remote`, the public repository)
+      - name: Does this commit raise the version?
+        id: plan
+        run: python3 scripts/release.py autotag
+
+      - name: Create the annotated tag
+        if: steps.plan.outputs.action == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          obj=$(gh api "repos/$REPO/git/tags" -f tag="$TAG" -f message="Smallworld $TAG" -f object="$SHA" \
+            -f type=commit --jq .sha)
+          if ! gh api "repos/$REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$obj" --silent; then
+            echo "::error::couldn't create $TAG (the v* tag ruleset? \`mcctl product-setup --check\`). Fallback:" \
+              "python3 scripts/release.py tag $TAG --push on this commit"
+            exit 1
+          fi
+          echo "created $TAG on $SHA"
+
+      - name: Is the GitHub release still to make?
+        id: release
+        if: steps.plan.outputs.action != 'none'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$TAG" -R "$REPO" > /dev/null 2>&1; then release=false; else release=true; fi
+          echo "release=$release"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: tag
+    if: needs.tag.outputs.release == 'true'
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+    # The ceiling for release.yml's jobs, as release.yml's own `ci` job grants ci.yml: contents write for the
+    # release (and, like pull-requests and id-token, for the reusable server.yml's jobs that never run from the
+    # product's CI).
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    secrets:
+      PUBLISH_DENYLIST: ${{ secrets.PUBLISH_DENYLIST }} # ci.yml's publication job (docs/publishing.md)

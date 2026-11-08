@@ -104,7 +104,7 @@ def test_base_role_installs_all_server_scripts() -> None:
 
 # Actions secrets of the product repository itself (set by its maintainer, docs/publishing.md), not of a config
 # repo: only the product's own CI uses them, never the reusable workflow.
-PRODUCT_REPO_SECRETS = {"PUBLISH_DENYLIST": {"ci.yml", "release.yml"}}
+PRODUCT_REPO_SECRETS = {"PUBLISH_DENYLIST": {"ci.yml", "release.yml", "autotag.yml"}}
 
 
 def test_actions_secrets_used_by_workflows_exist_in_terraform() -> None:

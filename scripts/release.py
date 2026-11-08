@@ -1,23 +1,32 @@
 #!/usr/bin/env python3
 """Release helper for the product (design §1: semver tags vX.Y.Z, CHANGELOG entry per release).
 
-    release.py check v1.0.0           # tag == pyproject == mcctl.__version__, CHANGELOG has the section
+    release.py ship 1.5.0 [--standalone] [--auto-merge] [--date YYYY-MM-DD]  # bump + commit + push + PR
+    release.py check [v1.0.0]         # tag == pyproject == mcctl.__version__, CHANGELOG has the section
     release.py notes 1.0.0            # print that CHANGELOG section (release notes)
     release.py bump 1.3.0 [--date YYYY-MM-DD]            # set the version, date the Unreleased section
-    release.py tag [v1.3.0] [--remote origin] [--push]   # annotated tag on the tip of <remote>/main
+    release.py autotag [--remote origin]                 # CI (autotag.yml): does main's version need a tag?
+    release.py tag [v1.3.0] [--remote origin] [--push]   # fallback: annotated tag on the tip of <remote>/main
 
-To release (docs/reference.md "Releasing"): on a clean branch, `bump X.Y.Z` (pyproject.toml,
-mcctl/__init__.py, README's version line, `## [Unreleased]` -> `## [X.Y.Z] - YYYY-MM-DD` plus a new empty
-Unreleased section); commit, open the PR, merge; then check out the merged main and run `tag`: it refuses
-unless HEAD is exactly the fetched tip of `<remote>/main`, the tree is clean, `check` passes and the tag is
-new, creates the annotated tag `vX.Y.Z` and prints the push command (`--push` pushes after a typed
-confirmation). release.yml then runs CI, `check`, and creates the GitHub release with the notes.
+To release (docs/reference.md "Releasing"): `ship X.Y.Z` on the last feature branch (it merges a freshly
+fetched `<remote>/main` in if needed, never rebases), or `ship X.Y.Z --standalone` (a `release-X.Y.Z` branch
+from the fetched `<remote>/main`, never from local main) when no feature PR is pending. It runs `bump`
+(pyproject.toml, mcctl/__init__.py, README's version line, `## [Unreleased]` -> `## [X.Y.Z] - YYYY-MM-DD`
+plus a new empty Unreleased section), commits "Release X.Y.Z", pushes, and opens the pull request (or names
+the open one); `--auto-merge` turns on GitHub's auto-merge. Merging it releases: on the push to main,
+autotag.yml runs `autotag` here (pyproject's version newer than every v* tag and `check` passing), creates the
+annotated tag vX.Y.Z on that commit and calls release.yml (CI, `check`, the GitHub release with the notes).
+`tag` is the manual fallback (a tag pushed by a person starts release.yml by itself): it refuses unless HEAD
+is exactly the fetched tip of `<remote>/main`, the tree is clean, `check` passes and the tag is new, creates
+the annotated tag `vX.Y.Z` and prints the push command (`--push` pushes after a typed confirmation).
 """
 
 from __future__ import annotations
 
 import argparse
 import datetime
+import json
+import os
 import re
 import subprocess
 import sys
@@ -35,8 +44,19 @@ UNRELEASED = re.compile(r"^## \[Unreleased\][ \t]*\r?\n(.*?)(?=^## |\Z)", re.M |
 GitRunner = Callable[[Sequence[str], Path], "subprocess.CompletedProcess[str]"]
 
 
+# gh argv (without "gh") and the working directory -> the completed process (same contract as GitRunner).
+GhRunner = GitRunner
+
+
 def run_git(args: Sequence[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=False)
+
+
+def run_gh(args: Sequence[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(["gh", *args], cwd=cwd, capture_output=True, text=True, check=False)
+    except OSError as e:  # gh isn't installed
+        return subprocess.CompletedProcess(["gh", *args], 127, "", str(e))
 
 
 def pyproject_version(root: Path = ROOT) -> str:
@@ -185,10 +205,9 @@ def bump_next_steps(version: str) -> str:
     return (
         f"Bumped to {version}. Next:\n"
         f"  git diff                       # review\n"
-        f'  git commit -am "release: v{version}"\n'
-        f"  open a PR, let CI pass, merge it\n"
-        f"  git switch main && git pull    # (or: git fetch origin && git switch --detach origin/main)\n"
-        f"  python3 scripts/release.py tag v{version}"
+        f'  git commit -am "Release {version}"\n'
+        f"  push, open a PR, let CI pass, merge it: autotag.yml tags v{version} and releases it\n"
+        f"(`release.py ship {version}` does all of this in one step)"
     )
 
 
@@ -255,6 +274,196 @@ def push(
     return None
 
 
+# --- ship: the bump rides a pull request; autotag: CI tags the merge -------------------------------------
+
+
+def remote_tags(remote: str, root: Path, git: GitRunner) -> tuple[dict[str, str], str | None]:
+    """The remote's vX.Y.Z tags -> the commit each names (annotated tags peeled), or (empty, error)."""
+    ls = git(["ls-remote", "--tags", remote, "refs/tags/v*"], root)
+    if ls.returncode != 0:
+        return {}, f"git ls-remote {remote} failed: {ls.stderr.strip()}"
+    tags: dict[str, str] = {}
+    for line in ls.stdout.splitlines():
+        sha, _, ref = line.partition("\t")
+        name = ref.removeprefix("refs/tags/")
+        peeled = name.endswith("^{}")
+        name = name.removesuffix("^{}")
+        if TAG.fullmatch(name) and (peeled or name not in tags):
+            tags[name] = sha.strip()
+    return tags, None
+
+
+def latest(tags: dict[str, str]) -> str | None:
+    """The highest vX.Y.Z (semver order), or None."""
+    return max(tags, key=lambda t: semver(t[1:]), default=None)
+
+
+def fetch_main(remote: str, root: Path, git: GitRunner) -> tuple[str, str | None]:
+    """Fetch `<remote>/main` (never trusting local main): (its commit, error)."""
+    tracking = f"refs/remotes/{remote}/main"
+    fetch = git(["fetch", "--quiet", "--no-tags", remote, f"+refs/heads/main:{tracking}"], root)
+    if fetch.returncode != 0:
+        return "", f"git fetch {remote} main failed: {fetch.stderr.strip()}"
+    return git(["rev-parse", "--verify", f"{tracking}^{{commit}}"], root).stdout.strip(), None
+
+
+def _branch(root: Path, git: GitRunner) -> str | None:
+    """The checked-out branch, or None on a detached HEAD."""
+    res = git(["symbolic-ref", "--quiet", "--short", "HEAD"], root)
+    if res.returncode != 0:
+        return None
+    return res.stdout.strip() or None
+
+
+def ship(
+    version: str,
+    root: Path = ROOT,
+    *,
+    standalone: bool = False,
+    auto_merge: bool = False,
+    date: str | None = None,
+    remote: str = "origin",
+    git: GitRunner = run_git,
+    gh: GhRunner = run_gh,
+    say: Callable[[str], None] = print,
+) -> list[str]:
+    """Bump to `version` on the current feature branch (merged up to the fetched `<remote>/main`) or, with
+    `standalone`, on a new `release-X.Y.Z` branch cut from it; commit, push, open (or name) the pull request.
+    Returns errors; a refusal before the commit leaves the repository as it was."""
+    if not VERSION.fullmatch(version):
+        return [f"version {version!r} isn't X.Y.Z"]
+    tag_name = f"v{version}"
+    if (why := dirty(root, git)) is not None:
+        return [why]
+    branch = _branch(root, git)
+    if not standalone and branch is None:
+        return [
+            "HEAD is detached: switch to your feature branch, or use --standalone (a release-X.Y.Z branch)"
+        ]
+    if not standalone and branch == "main":
+        return [
+            "you're on main: run this on the last feature branch (the bump rides its pull request), or use "
+            "--standalone (a release-X.Y.Z branch from the fetched origin/main)"
+        ]
+    main_sha, err = fetch_main(remote, root, git)
+    if err:
+        return [err]
+    tags, err = remote_tags(remote, root, git)
+    if err:
+        return [err]
+    errors: list[str] = []
+    top = latest(tags)
+    if tag_name in tags:
+        errors.append(f"tag {tag_name} already exists on {remote}: pick the next version")
+    elif top is not None and semver(version) <= semver(top[1:]):
+        errors.append(f"version {version} isn't greater than the latest release tag {top}")
+    elif git(["rev-parse", "--quiet", "--verify", f"refs/tags/{tag_name}"], root).returncode == 0:
+        errors.append(f"tag {tag_name} already exists locally (`git tag -d {tag_name}` if it's a leftover)")
+    if errors:
+        return errors
+
+    start = git(["rev-parse", "--verify", "HEAD"], root).stdout.strip()
+    origin_ref = branch or start  # where a refused standalone run goes back to
+    if standalone:
+        branch = f"release-{version}"
+        if git(["rev-parse", "--quiet", "--verify", f"refs/heads/{branch}"], root).returncode == 0:
+            return [f"branch {branch} exists already: delete it (`git branch -D {branch}`) or use it"]
+        made = git(["switch", "--quiet", "--no-track", "--create", branch, main_sha], root)
+        if made.returncode != 0:
+            return [f"git switch -c {branch} failed: {made.stderr.strip()}"]
+        say(f"on {branch}, cut from {remote}/main ({main_sha[:12]})")
+
+        def undo() -> None:
+            git(["checkout", "--quiet", origin_ref], root)
+            git(["branch", "--quiet", "-D", branch], root)
+
+    else:
+        merged_in = git(["merge-base", "--is-ancestor", main_sha, "HEAD"], root).returncode == 0
+        if not merged_in:
+            merge = git(["merge", "--quiet", "--no-edit", f"refs/remotes/{remote}/main"], root)
+            if merge.returncode != 0:
+                git(["merge", "--abort"], root)
+                return [
+                    f"merging {remote}/main into {branch} conflicts: merge it yourself "
+                    f"(`git merge {remote}/main`), commit, and run this again"
+                ]
+            say(f"merged {remote}/main ({main_sha[:12]}) into {branch}")
+        else:
+            say(f"{branch} already contains {remote}/main ({main_sha[:12]})")
+
+        def undo() -> None:
+            git(["reset", "--quiet", "--hard", start], root)
+
+    errors = bump(version, root, date, git)
+    if errors:
+        undo()
+        return errors
+    title = f"Release {version}"
+    commit = git(["commit", "--quiet", "--all", "--message", title], root)
+    if commit.returncode != 0:
+        undo()
+        return [f"git commit failed: {(commit.stderr or commit.stdout).strip()}"]
+    say(f"committed {title!r} on {branch}")
+    pushed = git(["push", "--quiet", "--set-upstream", remote, f"HEAD:refs/heads/{branch}"], root)
+    if pushed.returncode != 0:
+        return [
+            f"git push {remote} {branch} failed: {pushed.stderr.strip()} "
+            f"(the commit is made: push it with `git push -u {remote} {branch}`)"
+        ]
+    say(f"pushed {branch}")
+    view = gh(["pr", "view", branch, "--json", "url,state"], root)
+    url = ""
+    if view.returncode == 0:
+        try:
+            data = json.loads(view.stdout)
+        except ValueError:
+            data = {}
+        if isinstance(data, dict) and data.get("state") == "OPEN":
+            url = str(data.get("url") or "")
+    if url:
+        say(f"the open pull request carries the release now: {url}")
+    else:
+        body = (
+            f"Releases {tag_name}: merging this tags it and creates the GitHub release (autotag.yml -> "
+            f"release.yml).\n\n{notes(version, _read(root / 'CHANGELOG.md')) or ''}\n"
+        )
+        pr = gh(["pr", "create", "--base", "main", "--head", branch, "--title", title, "--body", body], root)
+        if pr.returncode != 0:
+            why = pr.stderr.strip()
+            return [f"pushed {branch}, but `gh pr create` failed: {why} (open the PR on GitHub)"]
+        url = pr.stdout.strip().splitlines()[-1] if pr.stdout.strip() else ""
+        say(f"opened {url}")
+    if auto_merge:
+        am = gh(["pr", "merge", url or branch, "--auto", "--merge"], root)
+        if am.returncode != 0:
+            return [f"`gh pr merge --auto --merge` failed: {am.stderr.strip()} (merge {url} once CI passed)"]
+        say("auto-merge is on: it merges (and releases) once the required checks pass")
+    else:
+        say(f"merge it once CI passes: that tags {tag_name} and releases it")
+    return []
+
+
+def autotag(
+    root: Path = ROOT, remote: str = "origin", git: GitRunner = run_git
+) -> tuple[str, str, list[str]]:
+    """What autotag.yml does for HEAD (a commit on main): ("tag", tag, []) when pyproject's version is newer
+    than every v* tag on `remote` and `check` passes; ("release", tag, []) when that tag already names HEAD
+    (a re-run: the workflow makes sure the GitHub release exists); ("none", tag, []) otherwise. A new version
+    that fails `check` is an error (main says "release" but can't be released)."""
+    name = f"v{pyproject_version(root)}"
+    tags, err = remote_tags(remote, root, git)
+    if err:
+        return "none", name, [err]
+    head = git(["rev-parse", "--verify", "HEAD^{commit}"], root).stdout.strip()
+    if name in tags:
+        return ("release" if tags[name] == head else "none"), name, []
+    top = latest(tags)
+    if top is not None and semver(name[1:]) <= semver(top[1:]):
+        return "none", name, []
+    errors = [f"check {name}: {e}" for e in check(name, root)]
+    return ("none" if errors else "tag"), name, errors
+
+
 def _fail(errors: Sequence[str]) -> int:
     for e in errors:
         print(f"release: {e}", file=sys.stderr)
@@ -266,23 +475,58 @@ def main(
     root: Path = ROOT,
     git: GitRunner = run_git,
     ask: Callable[[str], str] = input,
+    gh: GhRunner = run_gh,
 ) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("check").add_argument("tag")
+    s = sub.add_parser("ship", help="bump, commit, push and open the release PR (merging it releases)")
+    s.add_argument("version", help="X.Y.Z, greater than the latest v* tag")
+    s.add_argument(
+        "--standalone",
+        action="store_true",
+        help="no pending feature PR: a release-X.Y.Z branch from the fetched <remote>/main",
+    )
+    s.add_argument("--auto-merge", action="store_true", help="auto-merge (gh pr merge --auto --merge)")
+    s.add_argument("--date", help="the release date, YYYY-MM-DD (default: today)")
+    s.add_argument("--remote", default="origin", help="the remote to fetch main from and push to")
+    sub.add_parser("check").add_argument("tag", nargs="?", help="vX.Y.Z (default: v<pyproject.toml version>)")
+    a = sub.add_parser("autotag", help="CI (autotag.yml): action=tag|release|none and tag= for HEAD")
+    a.add_argument("--remote", default="origin", help="the remote whose v* tags count (default: origin)")
     sub.add_parser("notes").add_argument("version")
     b = sub.add_parser("bump", help="set the version and date the CHANGELOG's Unreleased section")
     b.add_argument("version", help="X.Y.Z, greater than the current version")
     b.add_argument("--date", help="the release date, YYYY-MM-DD (default: today)")
-    t = sub.add_parser("tag", help="create the annotated tag vX.Y.Z on the tip of <remote>/main")
+    t = sub.add_parser(
+        "tag", help="fallback (autotag.yml tags merges): the annotated tag vX.Y.Z on the tip of <remote>/main"
+    )
     t.add_argument("tag", nargs="?", help="vX.Y.Z (default: v<pyproject.toml version>)")
     t.add_argument(
         "--remote", default="origin", help="the remote whose main HEAD must equal (default: origin)"
     )
     t.add_argument("--push", action="store_true", help="push the tag after a typed confirmation")
     args = p.parse_args(argv)
+    if args.cmd == "ship":
+        errors = ship(
+            args.version,
+            root,
+            standalone=args.standalone,
+            auto_merge=args.auto_merge,
+            date=args.date,
+            remote=args.remote,
+            git=git,
+            gh=gh,
+        )
+        return _fail(errors) if errors else 0
     if args.cmd == "check":
-        errors = check(args.tag, root)
+        errors = check(args.tag or f"v{pyproject_version(root)}", root)
+        return _fail(errors) if errors else 0
+    if args.cmd == "autotag":
+        action, name, errors = autotag(root, args.remote, git)
+        lines = [f"action={action}", f"tag={name}"]
+        print("\n".join(lines))
+        if out := os.environ.get("GITHUB_OUTPUT"):
+            with open(out, "a", encoding="utf-8") as fh:
+                fh.write("\n".join(lines) + "\n")
         return _fail(errors) if errors else 0
     if args.cmd == "bump":
         errors = bump(args.version, root, args.date, git)
