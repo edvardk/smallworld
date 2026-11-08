@@ -377,3 +377,27 @@ def test_crate_rules() -> None:
         assert "#![forbid(unsafe_code)]" in (RUST / "smallworld-map" / f).read_text()
     region = (RUST / "smallworld-map/src/region.rs").read_text()
     assert "read_exact_at" in region, "positioned reads only (never mmap: the server truncates region files)"
+
+
+def test_e2e_map_check_reads_the_right_selftest_line() -> None:
+    """tests/e2e/map_check.py picks PreRender/MapRoom's selftest line, not the pocket map's (which also mentions
+    "prerender"): the two lines as the e2e server printed them (CI, PR #18)."""
+    spec = importlib.util.spec_from_file_location("map_check", REPO / "tests/e2e/map_check.py")
+    assert spec and spec.loader
+    mc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mc)
+    pocket = (
+        "mc-brand selftest: pocket map cursors 20,-39,4 127,0,0e 36,36,14, snap -1/12, maps 0 given 0 removed 0 "
+        "recentres 0; prerender painted 0 match n/a of 0 px; help /rules /map /compass /hud /view, hologram lines 6"
+    )
+    pre = (
+        "mc-brand selftest: prerender on [overworld=gen1 the_end=none] colours true tiles cached 0 read 0 rejected "
+        "0; map room on 3x2 border at [-16 64 10] live 6/6 spawned 6 swept 0 repaints 0"
+    )
+    out = mc.prerender_line(f"{pocket}\n{pre}\nmc-brand selftest: links 0 (ours 0), rules 4\n")
+    assert out == pre
+    assert mc.prerender_line(pocket) == ""
+    plugin = (REPO / "plugin/mc-brand/src/main/java/io/github/edvardk/mcbrand/BrandPlugin.java").read_text()
+    assert '"mc-brand selftest: " + prerender.selftest() + "; " + mapRoom.selftest()' in plugin
+    pr = (REPO / "plugin/mc-brand/src/main/java/io/github/edvardk/mcbrand/PreRender.java").read_text()
+    assert 'return "prerender " + (enabled ? "on" : "off") + " ["' in pr

@@ -81,6 +81,17 @@ def render(box: str) -> list[dict]:
     return [json.loads(line) for line in journal.splitlines() if line.startswith('{"dimension"')]
 
 
+# The selftest line PreRender.selftest + MapRoom.selftest print (BrandPlugin): "mc-brand selftest: prerender on
+# [overworld=gen1 the_end=none] ...; map room on 3x2 border at [x y z] live n/m ...". The pocket map's own line also
+# says "prerender painted ..." (its match rate), so the line is picked by its head, not by the word.
+PRERENDER_LINE = re.compile(r"^mc-brand selftest: prerender (?:on|off) \[")
+
+
+def prerender_line(selftest: str) -> str:
+    """The pre-render / map room line of /mcbrand selftest's output ("" if absent)."""
+    return next((ln for ln in selftest.splitlines() if PRERENDER_LINE.match(ln.strip())), "")
+
+
 def main() -> int:
     box = sys.argv[1]
     timer = sh(
@@ -127,7 +138,7 @@ def main() -> int:
     # mc-brand: meta.json is read at most once a minute and off the main thread.
     line, deadline = "", time.monotonic() + 90
     while time.monotonic() < deadline:
-        line = next((ln for ln in rcon(box, "mcbrand selftest").splitlines() if "prerender " in ln), "")
+        line = prerender_line(rcon(box, "mcbrand selftest"))
         if re.search(r"overworld=gen\d+", line):
             break
         time.sleep(5)
@@ -140,7 +151,10 @@ def main() -> int:
     expect(room is not None, f"the e2e config's map room is on ({line[-160:]!r})")
     if room:
         w, h, x, z = int(room.group(1)), int(room.group(2)), room.group(3), room.group(5)
-        print("  " + rcon(box, f"forceload add {x} {z}").strip(), flush=True)
+        # The wall spans `w` frames sideways from its bottom centre (east-west or north-south by its facing): its
+        # frames can sit in two chunks, so force-load the square around the anchor that holds them all.
+        x0, z0, x1, z1 = int(x) - w, int(z) - w, int(x) + w, int(z) + w
+        print("  " + rcon(box, f"forceload add {x0} {z0} {x1} {z1}").strip(), flush=True)
         live, deadline = None, time.monotonic() + 30
         while time.monotonic() < deadline:  # the chunk loads asynchronously; the room's check runs every 5 s
             live = re.search(r"live (\d+)/(\d+)", rcon(box, "mcbrand selftest"))
@@ -150,7 +164,7 @@ def main() -> int:
         expect(live is not None and int(live.group(1)) == w * h, f"every map room frame is live ({live})")
         frames = rcon(box, "execute if entity @e[type=minecraft:item_frame]")
         expect("Test passed" in frames, f"item frames exist ({frames.strip()!r})")
-        rcon(box, f"forceload remove {x} {z}")
+        rcon(box, f"forceload remove {x0} {z0} {x1} {z1}")
     for f in failures:
         print("FAILED:", f)
     return 1 if failures else 0
