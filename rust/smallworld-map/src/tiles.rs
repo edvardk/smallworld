@@ -69,7 +69,12 @@ impl Tile {
     /// Parses a tile file; `None` if it isn't one (wrong size, magic or scale).
     #[must_use]
     pub fn decode(data: &[u8]) -> Option<Tile> {
-        if data.len() != SIZE || &data[..8] != MAGIC || data[8] > 4 {
+        if data.len() != SIZE
+            || &data[..8] != MAGIC
+            || data[8] > 4
+            || data[10] != 0
+            || data[11] != 0
+        {
             return None;
         }
         let i32_at =

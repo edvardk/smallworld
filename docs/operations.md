@@ -304,10 +304,44 @@ the *target* release's schema migration and validation itself. When the checkout
 | A restart a deploy left for the maintenance window | `maintenance.window`'s start (then every 15 minutes inside it) | only with a window and a pending restart ([Maintenance window](#maintenance-window-v13)); any earlier start of the server applies it too |
 | Reboots for OS updates | checked every 30 minutes | only inside `automation.reboot_window` (04:30-06:00 local), with nobody online, no backup or restore running and the server not stopped on purpose; **never forced**: still pending after 3 days, Discord reminds you daily |
 | Backup check + expiry check | Mondays | `restic check` on 5 % of the data and a restore of the newest snapshot (must be < 2 h old); credential expiry (`expiry.yml`), domain expiry (RDAP) and the watchdog's freshness. Problems go to Discord and the run turns red |
+| World map pre-render (v1.4) | nightly, `map.schedule` (`*-*-* 04:23` host time, up to 10 min random delay) | reads only the regions that changed since the last run, at idle priority ([World map](#world-map-v14)) |
 | Security updates on the box | daily (Debian unattended upgrades) | Tailscale is held at its pinned version (bump the pin for Tailscale security fixes: [reference.md](reference.md#bumping-versions)) |
 
 Never automatic: a new Minecraft version (`mcctl upgrade --minecraft-version`), minor/major product releases,
 and anything in `server.yml`.
+
+## World map (v1.4)
+
+`mc-map.timer` runs `smallworld-map` every night (`map.schedule`): it reads the region files of the Overworld and
+the End (never the Nether) and writes map tiles to `/var/lib/mc-map`. mc-brand paints them into pocket maps where a
+player hasn't been yet, and onto the spawn map room's wall (`branding.map_room`). Vanilla's live colours replace
+the pre-render wherever a held map redraws, so a stale tile only lasts until the player walks past.
+
+- **What it costs.** A first run (after the deploy that turns it on, a world switch or a palette change) reads every
+  fully generated chunk: a few minutes per 10,000 × 10,000 blocks on one core. Later runs only read the region
+  files whose chunks changed: usually seconds. It runs at idle priority (Nice 19, idle IO), so the server always
+  wins; `map.threads` only shortens the first run.
+- **Disk.** One tile is 256 KB. At the default borders (Overworld radius 5000, End 3000) that is about 700 tiles,
+  ≈ 180 MB, plus ~30 KB of state per region in `/var/lib/mc-map/.work`. All-empty tiles (End void) aren't written.
+  Nothing there is backed up: it is regenerated from the world.
+- **Is it working?** `journalctl -u mc-map` shows one JSON line per dimension and run (`regions_rendered`,
+  `chunks_full`, `chunks_failed`, `unknown_states`, `tiles_written`, `seconds`); `/mcbrand selftest` shows
+  `prerender on [overworld=genN the_end=genM]`, the map room's frames and, after a player held a pocket map, how
+  many of vanilla's pixels the pre-render matched (100 % unless the world changed since the render). On the box,
+  `sudo -u mcmap /opt/minecraft/bin/smallworld-map stats --out /var/lib/mc-map` summarises the tiles and
+  `stats --world /opt/minecraft/server/world` counts chunks by status.
+- **Render now:** `sudo systemctl start mc-map.service`. **Force a full re-render** (after restoring an old backup
+  into the same folder, or to rule out the cache): `sudo rm -rf /var/lib/mc-map/.work` and start the service; it
+  starts over by itself after a world switch, a new palette (Minecraft version) or a changed radius.
+- **Chunks it skips** are counted, not fatal: proto-chunks (not fully generated: pre-generate with Chunky,
+  `world.pregen`), chunks saved by another game version (drawn once the server has loaded and re-saved them), a
+  chunk the server was writing at that moment (`chunks_failed`: retried next night). `unknown_states` above 0 means
+  the palette doesn't match the world: re-run `scripts/map_palette.py dump` after a version bump.
+- **The map room** spawns its frames whenever its chunk is loaded and removes them with the chunk (they are never
+  saved with the world), so moving it is a server.yml change and a deploy; `branding.map_room.enabled: false` removes
+  it. Build a wall behind it if you want one: fixed frames hang in the air too.
+- **Turn it off:** `map.enabled: false` removes the timer, the binary and `/var/lib/mc-map`; pocket maps go back
+  to vanilla's own terrain.
 
 ## Backups and restore drills
 

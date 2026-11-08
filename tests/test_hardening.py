@@ -37,11 +37,14 @@ UNITS = {
         REPO / "ansible/roles/minecraft/templates/mc-restart-window.service.j2",
         2.5,
     ),
+    # v1.4: the world map pre-render (as mcmap, no network, read-only on the world)
+    "mc-map.service": (REPO / "ansible/roles/map/templates/mc-map.service.j2", 2.5),
     "minecraft.service": (REPO / "ansible/roles/minecraft/templates/minecraft.service.j2", 4.5),
 }
 HARDENING = yaml.safe_load((REPO / "ansible/roles/hardening/defaults/main.yml").read_text())
 FIREWALL = yaml.safe_load((REPO / "ansible/roles/firewall/defaults/main.yml").read_text())
 BACKUPS = yaml.safe_load((REPO / "ansible/roles/backups/defaults/main.yml").read_text())
+MAP = yaml.safe_load((REPO / "ansible/roles/map/defaults/main.yml").read_text())
 
 
 def render(template: Path, **extra: object) -> str:
@@ -71,6 +74,13 @@ def render(template: Path, **extra: object) -> str:
         "mc_client_enabled": False,  # v1.1
         "mc_panel_mode": "cloudflare",
         "mc_watchdog_url": "https://hb.mc.example.com",
+        "mc_level_name": "world",
+        "mc_map_dimensions": [  # v1.4
+            {"id": "minecraft:overworld", "radius": 5000},
+            {"id": "minecraft:the_end", "radius": None},
+        ],
+        "mc_map_threads": 1,
+        "map_inaccessible_paths": MAP["map_inaccessible_paths"],
         **extra,
     }
     # Resolve the group_vars' own templating (mc_bin_dir: "{{ mc_root }}/bin", ...) once.
@@ -97,6 +107,8 @@ def test_every_unit_gets_the_sandbox(unit: str) -> None:
             "mc-plugins-apply.service",
             "mc-world-apply.service",
         )
+        else GROUP_VARS["mc_map_user"]
+        if unit == "mc-map.service"
         else "mcops"
     )
     assert f"User={user}" in text
@@ -104,11 +116,21 @@ def test_every_unit_gets_the_sandbox(unit: str) -> None:
         assert "SupplementaryGroups=minecraft" in text and "EnvironmentFile=" in text
     else:
         assert "EnvironmentFile=" not in text
+    if unit == "mc-map.service":
+        # v1.4: a parser of player-influenced data: its own user (group minecraft for read access), no
+        # credentials, no network, nothing writable but its StateDirectory (ProtectSystem=strict).
+        lines = text.splitlines()
+        for directive in ("Group=minecraft", "PrivateNetwork=true", "IPAddressDeny=any", "StateDirectory=mc-map",
+                          "StateDirectoryMode=0750", "UMask=0027", "RestrictAddressFamilies=AF_UNIX",
+                          "MemoryMax=512M", "RuntimeMaxSec=4h", *GROUP_VARS["mc_helper_priority"]):  # fmt: skip
+            assert directive in lines, directive
+        assert "ReadWritePaths" not in text and "SupplementaryGroups" not in text
+        assert "-/etc/minecraft" in text  # the credentials' directory isn't even visible
 
 
 FENCE_HONOURING = ("minecraft.service", "mc-backup.service", "mc-prune.service", "mc-agent.service",
                    "mc-health.service", "mc-reboot-gate.service", "mc-world.service",
-                   "mc-backup-check.service", "mc-restart-window.service")  # fmt: skip
+                   "mc-backup-check.service", "mc-restart-window.service", "mc-map.service")  # fmt: skip
 
 
 @pytest.mark.parametrize("unit", FENCE_HONOURING)

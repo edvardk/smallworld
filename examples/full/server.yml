@@ -87,5 +87,22 @@ branding:
     max_range: 2000
     distance_rounding: 10
     height_threshold: 8
-  pocket_map: {enabled: true}      # v1.3: /map
+  pocket_map: {enabled: true, prerender: true}   # v1.3: /map; v1.4: unexplored terrain from the nightly map render
+  map_room:                        # v1.4: a 4x3 wall of pre-rendered maps, 6 blocks north of spawn, facing it
+    enabled: true
+    world: overworld
+    at: spawn
+    offset: [0, 0, -6]
+    facing: south
+    width: 4
+    height: 3
+    view: border                   # the whole world border; `spawn` = vanilla's map grid at `scale` around spawn
+    scale: 3
+    cursors: true
+map:                               # v1.4: nightly world map pre-render (pocket map + map room)
+  enabled: true
+  schedule: "*-*-* 02:41"          # quiet hours, before maintenance.window
+  dimensions: [overworld, end]     # never the Nether
+  radius: null                     # null = each dimension's world border
+  threads: 1
 client: {enabled: true}

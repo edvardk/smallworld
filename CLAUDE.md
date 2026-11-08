@@ -54,10 +54,11 @@ Where things are: `docs/map.md` (feature map + phase glossary).
 - Server-side scripts (`mc_rcon`, `notify`, `backup`, `restore`, `health`, `admin`, `mc_agent`, `mc_panel`) are
   stdlib-only, Python >= 3.11.
   The controller (`mcctl`) needs Python >= 3.12 (`mcctl.MIN_PYTHON` = `requires-python`; pinned ansible-core).
-- Rust workspace (v1.4, `rust/`, `docs/rust/smallworld-rcon.md`): the toolchain is pinned exactly in
+- Rust workspace (v1.4, `rust/`, `docs/rust/smallworld-rcon.md`, `docs/rust/smallworld-map.md`): the toolchain is pinned exactly in
   `rust/rust-toolchain.toml` (a stable release at least two weeks old); no crates.io dependencies (std only,
   `unsafe` forbidden; `tests/test_rust_rcon.py`); `Cargo.lock` is committed and builds run `--locked`. The binaries in
-  `rust/dist/` are committed and pinned (`mc_smallworld_rcon_sha256`): after changing Rust code or the toolchain run
+  `rust/dist/` are committed and pinned (`mc_smallworld_rcon_sha256`, `mc_smallworld_map_sha256`; every crate in
+  `build_rust.py`'s `BINARIES`): after changing Rust code or the toolchain run
   `python scripts/build_rust.py build`, update the pins, and make sure `python scripts/build_rust.py check`,
   `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test` pass (ci.yml job `rust`).
   `smallworld-rcon` must stay identical to `mc_rcon.py`'s command line (the differential tests): change both or

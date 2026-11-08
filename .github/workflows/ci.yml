@@ -382,6 +382,9 @@ jobs:
       - name: Differential tests against mc_rcon.py
         run: pytest -q tests/test_rust_rcon.py
 
+      - name: smallworld-map byte for byte against the reference renderer (v1.4)
+        run: pytest -q tests/test_rust_map.py
+
   # v1.2: the world library's seed catalogue (worlds/seeds.yml). Boots the pinned server jar once per seed
   # (throwaway world, RCON on 127.0.0.1 with a random password), runs each claim's /locate and fails when a claim
   # no longer holds or the committed watchdog/panel/seeds.json (the panel's "verified on <version>" badge)

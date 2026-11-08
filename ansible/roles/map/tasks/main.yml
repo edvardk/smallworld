@@ -1,0 +1,115 @@
+# v1.4 (server.yml map): the nightly world map pre-render, docs/reference.md "World map". A static system user
+# (mc_map_user) in group minecraft, the smallworld-map binary (pinned, root-owned), the block palette for this
+# Minecraft version, mc-map.service + mc-map.timer. Its own role rather than a minecraft-role subtask: it has its
+# own user, binary, units and lifecycle (map.enabled false removes it all) and never restarts or reconfigures the
+# server, like the agent and autoreboot roles.
+
+- name: Create the map renderer's system user (group minecraft, read-only on the world)
+  ansible.builtin.user:
+    name: "{{ mc_map_user }}"
+    system: true
+    group: minecraft
+    home: /nonexistent
+    create_home: false
+    shell: /usr/sbin/nologin
+  when: mc_map_enabled
+
+- name: Install the world map renderer
+  when: mc_map_enabled
+  block:
+    # The committed static binary for this box's architecture is checked against its pin on the controller first, so
+    # a binary that isn't the reproducible build (scripts/build_rust.py check) is never installed.
+    - name: Read the sha256 of the smallworld-map binary for this architecture (on the controller)
+      ansible.builtin.stat:
+        path: "{{ map_src }}"
+        checksum_algorithm: sha256
+      delegate_to: localhost
+      become: false
+      register: map_bin
+
+    - name: The smallworld-map binary is the pinned build (a mismatch fails the deploy before anything is installed)
+      ansible.builtin.assert:
+        that:
+          - map_bin.stat.exists
+          - map_bin.stat.checksum == mc_smallworld_map_sha256[map_arch]
+        fail_msg: >-
+          {{ map_src }} is not the build mc_smallworld_map_sha256.{{ map_arch }} pins
+          (run scripts/build_rust.py check in the product checkout).
+        quiet: true
+
+    - name: Install smallworld-map
+      ansible.builtin.copy:
+        src: "{{ map_src }}"
+        dest: "{{ mc_bin_dir }}/smallworld-map"
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Create the palette directory
+      ansible.builtin.file:
+        path: "{{ mc_map_palette | dirname }}"
+        state: directory
+        owner: root
+        group: minecraft
+        mode: "0750"
+
+    - name: Install the block palette and the map colours for this Minecraft version
+      ansible.builtin.copy:
+        src: "{{ map_keys_dir }}/{{ item.src }}"
+        dest: "{{ item.dest }}"
+        owner: root
+        group: minecraft
+        mode: "0640"
+      loop:
+        - {src: map-palette.tsv, dest: "{{ mc_map_palette }}"}
+        - {src: map-colors.tsv, dest: "{{ mc_map_colors }}"}
+      loop_control:
+        label: "{{ item.dest }}"
+
+    - name: Install the map units
+      ansible.builtin.template:
+        src: "{{ item }}.j2"
+        dest: "/etc/systemd/system/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: [mc-map.service, mc-map.timer]
+      notify: Reload systemd for the map units
+
+    - name: Reload systemd before enabling the timer
+      ansible.builtin.meta: flush_handlers
+
+    - name: Enable the map timer
+      ansible.builtin.systemd_service:
+        name: mc-map.timer
+        enabled: true
+        state: started
+
+# map.enabled false: no timer, no units, no output (the tiles are regenerable; the pocket map falls back to vanilla).
+- name: Remove the world map renderer
+  when: not mc_map_enabled
+  block:
+    - name: Is the map timer installed?
+      ansible.builtin.stat:
+        path: /etc/systemd/system/mc-map.timer
+      register: map_timer_unit
+
+    - name: Stop and disable the map timer
+      ansible.builtin.systemd_service:
+        name: mc-map.timer
+        enabled: false
+        state: stopped
+      when: map_timer_unit.stat.exists
+
+    - name: Remove the map units, binary, palette, colours and output
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/systemd/system/mc-map.timer
+        - /etc/systemd/system/mc-map.service
+        - "{{ mc_bin_dir }}/smallworld-map"
+        - "{{ mc_map_palette }}"
+        - "{{ mc_map_colors }}"
+        - "{{ mc_map_dir }}"
+      notify: Reload systemd for the map units

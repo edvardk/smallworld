@@ -185,7 +185,8 @@ def test_no_vault_left() -> None:
     # the removal, and this test has to name the word.
     needle = "vault"
     exempt = {REPO / "docs/design/product-v1.md", REPO / "tests/test_consistency.py"}
-    exempt |= set(REPO.glob("server-config/keys/*/map-palette.tsv"))  # v1.4: the game's own `minecraft:vault` block
+    # v1.4: the game's own `minecraft:vault` block
+    exempt |= set(REPO.glob("server-config/keys/*/map-palette.tsv"))
     skip_dirs = {".git", ".ruff_cache", "__pycache__", ".terraform", ".venv", ".pytest_cache", ".mcctl"}
     skip_dirs |= {"plans"}  # working notes on release branches, never on main (the public squash drops them)
     skip_dirs |= {".claude"}  # agent worktrees: other checkouts of this repo
@@ -625,4 +626,6 @@ def test_smallworld_map_pins_match_the_committed_binaries() -> None:
     assert set(pins) == set(build_rust.TARGETS)
     for arch, target in build_rust.TARGETS.items():
         data = (REPO / "rust/dist" / f"smallworld-map-{target}").read_bytes()
-        assert hashlib.sha256(data).hexdigest() == pins[arch], f"{target}: run python scripts/build_rust.py build"
+        assert hashlib.sha256(data).hexdigest() == pins[arch], (
+            f"{target}: run python scripts/build_rust.py build"
+        )

@@ -22,7 +22,7 @@ mc_telemetry_jar_sha256: "da8a6cfc8ec299bc158a25f18ee472c5bea4d51025fdeab64bf027
 # (scripts/brand_art.py check). v1.2: the optional resource pack's sha1 (mc_brand_pack_sha1: the Worker's
 # /pack/<sha1>.zip and server.properties resource-pack-sha1) is rendered: mcctl render builds the pack from the
 # config repo's art (mcctl/brandpack.py).
-mc_brand_jar_sha256: "c712e48e82a1ff88fcb9356e26b25482f69ff530b4dc0f3e363034c1439416b2"
+mc_brand_jar_sha256: "e4d9dc651f4e8c9b0fd530cfda7e54b80c17b0c1b7224ad6e4fd228bcb3249b1"
 mc_brand_icon_sha256: "939ecfd72097963dd7f221bf7df9972cf6d8f4a58ef9f0cdd7fd546edff52372"
 restic_sha256:
   amd64: f415415624dcc452f2a02b8c33641791a8c6d6d3b65bbb3543fcf9a25151585c
@@ -37,8 +37,8 @@ mc_smallworld_rcon_sha256:
 # v1.4: smallworld-map (rust/smallworld-map), the world map pre-renderer (role map, docs/rust/smallworld-map.md): same
 # reproducible build and committed binaries; the map role checks this pin before installing it.
 mc_smallworld_map_sha256:
-  amd64: c0740fe2bb4cfa011b372453e56d621f00f4097c55f80065f84786d07ef83725
-  arm64: b67d255e9d71ea29458baf7faf55637de51c8551671f6a4cd58596893131b88f
+  amd64: 0dc5733ddacbdafaeac4a1ecb2e5763250b1ea5582c4707efcfcc39a774d2fa1
+  arm64: 43d7a47e5900b2d55df7e01d7ee88911be2b342b9ab70639ea480200b2828789
 
 # --- OS tuning -----------------------------------------------------------------------------------
 base_zram_enabled: true
@@ -65,6 +65,15 @@ mc_rcon_port: 25575
 # server dir, RCON password from server.properties), never the other way round, so code running as
 # `minecraft` can't read their environment (/proc/<pid>/environ) or their files.
 mc_ops_user: mcops
+# v1.4: the world map pre-renderer (role map, mc-map.service) runs as this static system user, in group minecraft
+# (read-only on the world through group permissions and its sandbox): neither minecraft (a parser bug must never be
+# able to write the world) nor the ops user (its credentials). Its tiles go to mc_map_dir, which the JVM reads.
+mc_map_user: mcmap
+mc_map_dir: /var/lib/mc-map   # = the unit's StateDirectory=mc-map; mc-brand's pocket_map.prerender_dir
+# The block palette and map colours for the pinned Minecraft version (server-config/keys/<version>/, map role); the
+# renderer reads the palette, mc-brand the colours.
+mc_map_palette: "{{ mc_root }}/share/map-palette.tsv"
+mc_map_colors: "{{ mc_root }}/share/map-colors.tsv"
 # P11: what mc-reboot-gate starts to reboot (polkit allows the ops user exactly this unit + verb `start`). The e2e run
 # points it at a harmless target instead.
 mc_reboot_target: reboot.target

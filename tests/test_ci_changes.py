@@ -43,6 +43,9 @@ def load(name: str) -> dict:
         (["rust/smallworld-rcon/src/rcon.rs"], {"code", "rust"}),
         (["rust/dist/smallworld-rcon-x86_64-unknown-linux-musl"], {"code", "rust", "e2e"}),
         (["scripts/mc_rcon.py"], {"code", "rust", "e2e"}),
+        (["tests/map_reference.py"], {"code", "rust"}),  # v1.4: smallworld-map's parity tests
+        (["ansible/roles/map/tasks/main.yml"], {"code", "e2e", "e2e_full"}),
+        (["rust/dist/smallworld-map-x86_64-unknown-linux-musl"], {"code", "rust", "e2e", "e2e_full"}),
         (["watchdog/panel/seeds.json"], {"code", "e2e", "e2e_full", "seeds"}),
         (["scripts/boot_test.py"], {"code", "e2e", "seeds"}),
         ([], set()),

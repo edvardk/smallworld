@@ -52,6 +52,7 @@ THRESHOLDS = {
     "mc-world-apply.service": 2.5,
     "mc-backup-check.service": 2.5,  # v1.2: the weekly backup test (was the config repo's Monday Actions job)
     "mc-restart-window.service": 2.5,  # v1.3: the deferred restart (installed with maintenance.window: vars.yml)
+    "mc-map.service": 2.5,  # v1.4: the world map pre-render (map_check.py runs it)
     "minecraft.service": 4.5,
 }
 SECRET_FILES = (

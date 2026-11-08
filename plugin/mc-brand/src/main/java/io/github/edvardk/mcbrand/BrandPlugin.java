@@ -90,6 +90,9 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
     private Holograms holograms;
     private Compass compass;
     private PocketMap pocketMap;
+    private PreRender prerender;
+    private MapRoom mapRoom;
+    private BukkitTask mapRoomTask;
     private BukkitTask hologramTask;
     private final List<ServerLinks.ServerLink> links = new ArrayList<>();
     private Sound joinSound;
@@ -108,7 +111,17 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
         xaero.start();
         holograms = new Holograms(this, s, Help.hologram(s));
         compass = new Compass(this, s);
-        pocketMap = new PocketMap(this, s, compass);
+        // v1.4: the nightly world map pre-render, for the pocket map and the spawn map room
+        prerender = new PreRender(this, s.pocketMapPrerender() || s.mapRoom().enabled(), s.prerenderDir(),
+                s.colorsFile());
+        pocketMap = new PocketMap(this, s, compass,
+                s.pocketMapPrerender() ? prerender : new PreRender(this, false, "", ""));
+        mapRoom = new MapRoom(this, s.mapRoom(), prerender, compass);
+        if (s.mapRoom().enabled()) {
+            mapRoom.start();
+            mapRoomTask = Bukkit.getScheduler().runTaskTimer(this, mapRoom::ensure, MapRoom.ENSURE_TICKS,
+                    MapRoom.ENSURE_TICKS);
+        }
         if (!s.holograms().isEmpty()) {
             holograms.start();
             long every = s.hudSeconds() * 20L;
@@ -128,6 +141,9 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
         addLinks();
         getServer().getPluginManager().registerEvents(this, this);
         getServer().getPluginManager().registerEvents(pocketMap, this);
+        if (s.mapRoom().enabled()) {
+            getServer().getPluginManager().registerEvents(mapRoom, this);
+        }
         for (String name : List.of("rules", "discord", "drink", "hud", "mcbrand", "modpack", "view", "compass", "map",
                 "help")) {
             PluginCommand cmd = getCommand(name);
@@ -155,7 +171,8 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
                 + ", drink " + (s.drinkEnabled() ? "on (/" + s.drinkCommand() + ")" : "off") + ", " + links.size() + " server links"
                 + ", modpack " + (s.clientEnabled() ? "on" : "off") + ", /view " + (s.viewEnabled() ? "up to "
                 + s.viewMax() : "off") + ", compass " + (s.compassEnabled() ? s.compassDefaultOn() ? "on" : "opt-in"
-                : "off") + ", pocket map " + (s.pocketMapEnabled() ? "on" : "off"));
+                : "off") + ", pocket map " + (s.pocketMapEnabled() ? "on" : "off") + ", prerender "
+                + (prerender.enabled() ? "on" : "off") + ", map room " + (s.mapRoom().enabled() ? "on" : "off"));
     }
 
     @Override
@@ -177,6 +194,12 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
         }
         if (hologramTask != null) {
             hologramTask.cancel();
+        }
+        if (mapRoomTask != null) {
+            mapRoomTask.cancel();
+        }
+        if (mapRoom != null && s.mapRoom().enabled()) {
+            mapRoom.stop();
         }
         if (holograms != null) {
             holograms.stop();
@@ -402,6 +425,9 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
     @EventHandler(priority = EventPriority.MONITOR)
     public void onEntitiesLoad(EntitiesLoadEvent e) {
         holograms.loaded(e.getWorld(), e.getChunk().getX(), e.getChunk().getZ(), e.getEntities());
+        if (s.mapRoom().enabled()) {
+            mapRoom.loaded(e.getEntities()); // v1.4: the map room's frames, as the holograms
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -640,6 +666,7 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
             to.sendMessage(Component.text("mc-brand selftest: " + holograms.selftest()));
             to.sendMessage(Component.text("mc-brand selftest: " + compass.selftest()));
             to.sendMessage(Component.text("mc-brand selftest: " + pocketMap.selftest() + "; " + Help.selftest(s)));
+            to.sendMessage(Component.text("mc-brand selftest: " + prerender.selftest() + "; " + mapRoom.selftest()));
             to.sendMessage(Component.text("mc-brand selftest: links " + Bukkit.getServerLinks().getLinks().size()
                     + " (ours " + links.size() + "), rules " + s.rules().size()));
             return;

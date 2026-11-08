@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Nightly world map pre-render (server.yml map.schedule)
+
+[Timer]
+OnCalendar={{ mc_map_schedule }}
+Persistent=true
+RandomizedDelaySec=10m
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

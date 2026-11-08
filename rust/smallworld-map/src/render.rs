@@ -89,6 +89,8 @@ pub struct Summary {
     pub tiles_empty: u64,
     pub generation: u64,
     pub full_render: bool,
+    /// The radius the run used (None: everything).
+    pub radius: Option<i64>,
 }
 
 impl Summary {
@@ -98,7 +100,7 @@ impl Summary {
             "{{\"dimension\":\"{}\",\"full_render\":{},\"regions\":{},\"regions_rendered\":{},\"regions_removed\":{},\
              \"chunks\":{},\"chunks_full\":{},\"chunks_not_full\":{},\"chunks_failed\":{},\"chunks_unsupported\":{},\
              \"chunks_other_version\":{},\"unknown_states\":{},\"tiles_written\":{},\"tiles_empty\":{},\"generation\":{},\
-             \"seconds\":{:.3}}}",
+             \"radius\":{},\"seconds\":{:.3}}}",
             dim.id(),
             self.full_render,
             self.regions,
@@ -114,6 +116,8 @@ impl Summary {
             self.tiles_written,
             self.tiles_empty,
             self.generation,
+            self.radius
+                .map_or_else(|| "null".to_owned(), |r| r.to_string()),
             seconds
         )
     }
@@ -357,6 +361,7 @@ pub fn render_dimension(opts: &Options<'_>, dim: &Dimension) -> io::Result<Summa
     fs::create_dir_all(&work)?;
     let mut summary = Summary {
         full_render: full,
+        radius: opts.radius,
         generation: previous.as_ref().map_or(0, |p| p.generation),
         ..Summary::default()
     };
@@ -430,8 +435,7 @@ pub fn render_dimension(opts: &Options<'_>, dim: &Dimension) -> io::Result<Summa
                            rz: i32,
                            s: u32,
                            block: &[u8],
-                           keep: &[usize],
-                           dv: i32|
+                           keep: &[usize]|
      -> io::Result<()> {
         let key = tile_key(rx, rz, s);
         let tile = cache.entry(key).or_insert_with(|| {
@@ -442,7 +446,8 @@ pub fn render_dimension(opts: &Options<'_>, dim: &Dimension) -> io::Result<Summa
             }
         });
         patch_region(tile, rx, rz, s, block, keep);
-        tile.data_version = tile.data_version.max(dv);
+        // The spec: the palette's DataVersion (only chunks at it are drawn).
+        tile.data_version = opts.palette.data_version;
         tile.rendered_at = opts.now;
         let left = waiting.get_mut(&key).expect("tile counted");
         *left -= 1;
@@ -461,16 +466,8 @@ pub fn render_dimension(opts: &Options<'_>, dim: &Dimension) -> io::Result<Summa
     for &(rx, rz) in &removed {
         for s in 0..SCALES {
             let n = REGION >> s;
-            if let Err(e) = write_block(
-                &mut cache,
-                &mut summary,
-                rx,
-                rz,
-                s,
-                &vec![0u8; n * n],
-                &[],
-                0,
-            ) {
+            if let Err(e) = write_block(&mut cache, &mut summary, rx, rz, s, &vec![0u8; n * n], &[])
+            {
                 io_error.get_or_insert(e);
             }
         }
@@ -578,7 +575,6 @@ pub fn render_dimension(opts: &Options<'_>, dim: &Dimension) -> io::Result<Summa
                     s,
                     &done.pixels[s as usize],
                     &done.keep,
-                    done.state.data_version,
                 ) {
                     io_error.get_or_insert(e);
                 }
@@ -729,13 +725,14 @@ fn write_meta(
         .map_or_else(|| "null".to_owned(), |r| r.to_string());
     let text = format!(
         "{{\"format\":1,\"dimension\":\"{}\",\"generation\":{generation},\"world\":{{\"dev\":{},\"ino\":{}}},\
-         \"minecraft_version\":\"{}\",\"data_version\":{},\"rendered_at\":{},\"radius\":{radius},\"regions\":{regions},\
+         \"minecraft_version\":\"{}\",\"data_version\":{},\"palette_sha256\":\"{}\",\"rendered_at\":{},\"radius\":{radius},\"regions\":{regions},\
          \"scales\":[0,1,2,3,4],\"tiles\":{{{}}}}}\n",
         dim.id(),
         world.0,
         world.1,
         opts.palette.minecraft_version.replace(['"', '\\'], ""),
         opts.palette.data_version,
+        opts.palette.sha256,
         opts.now,
         tiles.join(",")
     );

@@ -245,6 +245,101 @@ def test_compass_does_no_per_tick_work() -> None:
     )
 
 
+def test_pocket_map_centres_on_even_pixels() -> None:
+    """v1.4: the pocket map's centre is a multiple of 2 * 2^scale (Wayfinding.snap(x, scale + 1)), so the dither
+    parity (k1 + l1) & 1 vanilla draws with equals the tiles' (gx + gz) & 1 (docs/reference.md "The pocket map's
+    centre snap"); = map_reference.pocket_centre."""
+    for coord, scale, want in FIX["pocket_centre"]:
+        step = 2 << scale
+        assert want == math.floor(coord) // step * step
+        assert (want // (1 << scale)) % 2 == 0
+    pm = (BRAND / "PocketMap.java").read_text()
+    assert "Wayfinding.snap(at.getX(), sc + 1)" in pm and "Wayfinding.snap(at.getZ(), sc + 1)" in pm
+    assert "Wayfinding.snap(p.getX(), 1)" in pm and "Wayfinding.snap(p.getZ(), 1)" in pm
+    assert "Wayfinding.snap(at.getX(), sc)" not in pm
+
+
+def jdiv(a: int, b: int) -> int:
+    """Java int division (towards zero)."""
+    q = abs(a) // abs(b)
+    return q if (a >= 0) == (b > 0) else -q
+
+
+def test_prerender_window_and_shading() -> None:
+    """v1.4: PreRender's window coordinates (gx = cx / 2^s + k1 - 64, tiles of 512) and vanilla's shading."""
+    g1, g2, g3, t1, t2, t3, low, lowest = FIX["prerender"]
+    assert [g1, g2, g3] == [jdiv(-64, 1) + 0 - 64, jdiv(128, 2) + 127 - 64, jdiv(-4096, 16) + 64 - 64]
+    assert [t1, t2, t3] == [-1 // 512, 511 // 512, 512 // 512]
+
+    def shade(rgb: int, m: int) -> int:
+        return sum(((rgb >> sh & 255) * m // 255) << sh for sh in (16, 8, 0))
+
+    assert low == shade(0x7FB238, 180) == (89 << 16 | 125 << 8 | 39)  # GRASS, LOW: MapPalette's 89,125,39
+    assert lowest == shade(0x7FB238, 135)
+    pre = (BRAND / "PreRender.java").read_text()
+    for needle in (
+        "World.Environment.NETHER",  # never the Nether
+        'Files.getAttribute(world, "unix:dev")',  # world identity (a switch: no stale map)
+        "runTaskAsynchronously",  # file reads off the main thread
+        "MAX_TILES = 16",  # 16 x 256 KB = 4 MB
+        "data.length != SIZE",  # a tile is checked before use
+    ):
+        assert needle in pre, needle
+    pm = (BRAND / "PocketMap.java").read_text()
+    assert "prerender.window(" in pm and "private boolean fill(" in pm and "private void sample(" in pm
+
+
+def test_map_room_geometry() -> None:
+    """v1.4: MapRoom's slots (bottom centre anchor, the viewer's right per facing, rows from the top), vanilla's
+    map grid centres and the border fit, recomputed independently."""
+    right = {"south": (1, 0), "north": (-1, 0), "east": (0, -1), "west": (0, 1)}
+    *walls, (_, centres), (_, border) = FIX["map_room"]
+    for facing, slots in walls:
+        rx, rz = right[facing]
+        for i, got in enumerate(slots):
+            col, top = i % 4, i // 4
+            off = col - (4 - 1) // 2
+            assert got == [col, top, 10 + rx * off, 64 + (3 - 1 - top), -20 + rz * off]
+    for sx, sz, scale, gx, gz, first, last in centres:
+        w = 128 << scale
+
+        def grid(c: int, w: int = w) -> int:
+            return (c + 64) // w * w + w // 2 - 64
+
+        assert (gx, gz) == (grid(sx), grid(sz))
+        assert first == [grid(sx) - 1 * w, grid(sz) - 1 * w]  # width 4, height 3: column 0 is one to the west
+        assert last == [grid(sx) + 2 * w, grid(sz) + 1 * w]
+        assert gx % (2 << scale) == 0 or w // 2 - 64 < 0  # vanilla centres are even pixels too
+    for radius, width, height, bpp, scale, first, last in border:
+        px = 128 * min(width, height)
+        assert bpp == max(1, -(-2 * radius // px))
+        assert scale == min(4, bpp.bit_length() - 1)
+        size = width * 128
+        assert first == (0 - size // 2) * bpp + bpp // 2 and last == (size - 1 - size // 2) * bpp + bpp // 2
+        assert first <= -radius + bpp and last >= radius - 2 * bpp  # the border fits the wall
+
+
+def test_map_room_is_fixed_invulnerable_and_idempotent() -> None:
+    room = (BRAND / "MapRoom.java").read_text()
+    for needle in (
+        "fr.setFixed(true)",
+        "fr.setInvulnerable(true)",
+        "fr.setPersistent(false)",  # never saved with the world: no duplicates, a changed config moves it
+        "fr.getPersistentDataContainer().set(tag, PersistentDataType.STRING, id)",
+        "v.setLocked(true)",  # vanilla never draws on them
+        "super(false);",  # non-contextual: one picture for everyone
+        "public void onBreak(HangingBreakEvent e)",
+        "public void onDamage(EntityDamageEvent e)",
+        "public void onInteract(PlayerInteractEntityEvent e)",
+        "PersistentDataType.INTEGER_ARRAY",  # map ids kept in the world: no new map_N.dat per start
+        "if (ours(e) && !current(e))",  # the sweep
+    ):
+        assert needle in room, needle
+    assert room.count("Bukkit.createMap(") == 1
+    plugin = (BRAND / "BrandPlugin.java").read_text()
+    assert "mapRoom.loaded(e.getEntities())" in plugin and "mapRoom.selftest()" in plugin
+
+
 def test_pocket_map_is_one_per_player_and_drop_safe() -> None:
     pm = (BRAND / "PocketMap.java").read_text()
     for needle in (
@@ -296,7 +391,8 @@ def test_defaults_and_render() -> None:
         "distance_rounding": 5,
         "height_threshold": 8,
     }
-    assert out["pocket_map"] == {"enabled": True}
+    assert out["pocket_map"] == {"enabled": True, "prerender": True}  # v1.4: map.enabled defaults to true
+    assert out["map_room"]["enabled"] is False  # v1.4: off unless configured
     settings = (BRAND / "Settings.java").read_text()
     for key, default in (("max_range", 1000), ("distance_rounding", 5), ("height_threshold", 8)):
         assert f'compass.getInt("{key}", {default})' in settings  # the plugin's fallback = the schema's

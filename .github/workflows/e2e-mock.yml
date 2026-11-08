@@ -217,6 +217,7 @@ jobs:
 
       # v1.2: the drink under its own command name (mc-brand registers it next to /drink: brand_check.py).
       # v1.3: a help board above the world spawn (brand_check.py checks it is live).
+      # v1.4: a 3x2 spawn map room (map_check.py checks its frames are live).
       - name: mcctl validate + render the new config repo
         if: env.ACTIVE == 'true'
         timeout-minutes: 5
@@ -224,6 +225,7 @@ jobs:
           export GIT_AUTHOR_NAME=e2e GIT_AUTHOR_EMAIL=e2e@e2e.test GIT_COMMITTER_NAME=e2e GIT_COMMITTER_EMAIL=e2e@e2e.test
           python -m mcctl config set branding.drink.command cocoa -C "$CONFIG"
           python -m mcctl config set branding.holograms '[{at: spawn, help: true}]' -C "$CONFIG"
+          python -m mcctl config set branding.map_room '{enabled: true, at: spawn, width: 3, height: 2}' -C "$CONFIG"
           python -m mcctl validate -C "$CONFIG"
           python -m mcctl render -C "$CONFIG" -o "$RUNNER_TEMP/rendered"
 
@@ -381,6 +383,14 @@ jobs:
         if: matrix.shard == 'telemetry-brand' && env.FULL != 'false'
         timeout-minutes: 15
         run: python tests/e2e/brand_check.py mc-e2e
+
+      # v1.4 acceptance: the world map pre-render (smallworld-map as mcmap, no network): a run's summary, the
+      # tiles' format and permissions, an incremental second run that renders nothing, mc-brand reading the tiles
+      # (selftest) and the e2e config's spawn map room live.
+      - name: World map checks (smallworld-map, tiles, mc-brand pre-render and map room)
+        if: matrix.shard == 'telemetry-brand' && env.FULL != 'false'
+        timeout-minutes: 10
+        run: python tests/e2e/map_check.py mc-e2e
 
       # P11 acceptance: the reboot gate on the live box, with a harmless target standing in for reboot.target
       # (tests/e2e/vars.yml mc_reboot_target; the polkit rule allows exactly that unit): nothing pending -> nothing;

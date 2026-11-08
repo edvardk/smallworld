@@ -25,7 +25,8 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 const USAGE: &str = "usage:
   smallworld-map render --world DIR --out DIR [--palette FILE] [--dimensions overworld,end] [--radius N]
                         [--threads N] [--full] [--rendered-at UNIX_SECONDS]
-  smallworld-map stats  [--world DIR] [--out DIR] [--dimensions overworld,end]";
+  smallworld-map stats  [--world DIR] [--out DIR] [--dimensions overworld,end]
+exit status: 0 rendered (unreadable chunks are counted and retried next run), 1 error, 2 usage";
 /// Where the deploy installs the palette (ansible role `map`).
 const DEFAULT_PALETTE: &str = "/opt/minecraft/share/map-palette.tsv";
 const DEFAULT_DIMENSIONS: &str = "overworld,the_end";

@@ -39,8 +39,10 @@ pub struct Palette {
     blocks: HashMap<String, Block>,
     pub data_version: i32,
     pub minecraft_version: String,
-    /// FNV-1a of the file: a different palette invalidates every cached column.
+    /// FNV-1a of the file: a different palette invalidates every cached state.
     pub fingerprint: u64,
+    /// SHA-256 of the file (meta.json `palette_sha256`).
+    pub sha256: String,
     pub bedrock: u8,
 }
 
@@ -159,6 +161,7 @@ impl Palette {
             data_version,
             minecraft_version,
             fingerprint: fnv1a(text.as_bytes()),
+            sha256: crate::sha256::hex(text.as_bytes()),
             bedrock,
         })
     }

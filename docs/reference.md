@@ -568,10 +568,14 @@ is deleted when a render empties it). Files are written to a temporary name in t
 
 ```
 /var/lib/mc-map/                        mc_map_dir (StateDirectory, 0750 mcmap:minecraft, files 0640)
-  <ns>/<dim>/meta.json                  {"format": 1, "generation": N, "world": {"dev": D, "ino": I},
-                                         "data_version": 5023, "palette_sha256": "...", "rendered_at": T}
+  <ns>/<dim>/meta.json                  {"format": 1, "dimension": "minecraft:overworld", "generation": N,
+                                         "world": {"dev": D, "ino": I}, "minecraft_version": "26.3",
+                                         "data_version": 5023, "palette_sha256": "...", "rendered_at": T,
+                                         "radius": R|null, "regions": n, "scales": [0..4], "tiles": {"0": n0, ...}}
   <ns>/<dim>/s<scale>/<tx>.<tz>.swt     the tiles, e.g. minecraft/overworld/s0/-1.0.swt
-  .work/<ns>/<dim>/...                  the renderer's own state (per-chunk timestamps, column cache); private
+  .work/<ns>/<dim>/dimension.state      the renderer's own state: fingerprint (palette, renderer version, radius),
+  .work/<ns>/<dim>/r.<x>.<z>.state        world identity, generation; per region: mtime, size, chunk timestamps,
+                                         complete flag, edge rows (binary, versioned); .work/lock (one run at a time)
 ```
 
 `<ns>/<dim>` is the dimension's key (`minecraft:the_end` → `minecraft/the_end`). `world` is the world folder's
@@ -584,12 +588,15 @@ didn't touch may be older, and a chunk that can't be read right now keeps its pr
 
 1. A full render when there is no state, the world identity, the palette's sha256 or the renderer's format
    changed: the dimension's tiles and state are deleted first.
-2. Otherwise a region file is looked at only when its size or mtime changed; in it, a chunk is dirty when its
-   header timestamp changed, it appeared, or it disappeared (location 0 or the region file is gone). A dirty
-   chunk is read again; if it can't be read now (torn write, wrong slot), its previous pixels stay and it stays
-   dirty for the next run.
-3. A dirty chunk's pixels are recomputed at every scale (0 where it isn't drawable any more), and so is the
-   brightness of the top pixel row of the chunk south of it (its `d0` changed).
+2. Otherwise a region file is looked at only when its size or mtime changed, and read again only when one of its
+   1024 header timestamps changed too (a region file that appeared or disappeared counts as changed; its state
+   is `.work/<ns>/<dim>/r.<x>.<z>.state`). A changed region is read whole: every chunk is re-decoded (≈ 0.3 s per
+   region), which gives the same pixels as re-reading only the dirty chunks. A chunk that can't be read now (torn
+   write, wrong slot, unreadable stream) keeps its previous pixels and leaves the region incomplete, so the next
+   run reads it again.
+3. A changed region's pixels are recomputed at every scale (0 where nothing is drawable any more); the top pixel
+   row of the region south of it is re-shaded when this region's bottom row heights changed (its `d0`), from that
+   region's saved top-row aggregates, without reading it.
 4. Touched tiles are written (renamed into place), then `meta.json` with `generation + 1`, then the state. A run
    that touched nothing leaves `meta.json` alone.
 
@@ -618,6 +625,67 @@ agree only when `cx / i + cz / i` is even. So pocket maps are centred on multipl
 (`RECENTRE_PX` = 4 is already even). Vanilla-grid maps already have even centres. The reference is
 `map_reference.pocket_centre`; `tests/test_map_reference.py` shows that the tiles equal vanilla's own pixels for
 even centres and differ for odd ones.
+
+### The renderer, its unit and server.yml
+
+```
+smallworld-map render --world DIR --out DIR [--palette FILE] [--dimensions overworld,end] [--radius N]
+                      [--threads N] [--full] [--rendered-at UNIX_SECONDS]
+smallworld-map stats  [--world DIR] [--out DIR] [--dimensions overworld,end]
+```
+
+`render` prints one JSON line per dimension (`regions`, `regions_rendered`, `regions_removed`, `chunks`,
+`chunks_full`, `chunks_not_full`, `chunks_failed`, `chunks_unsupported` (LZ4 is read; 127 custom isn't),
+`chunks_other_version`, `unknown_states`, `tiles_written`, `tiles_empty`, `generation`, `radius`, `seconds`); exit 0 when
+every dimension was rendered, 1 on an error (palette, output, another run holding `.work/lock`), 2 on a usage
+error. `--radius` keeps chunks within N blocks of 0,0 (a square); `--threads` workers take regions north to south
+(`std::thread::scope`), the main thread writes tiles as soon as every region they wait for is done. The Rust is
+walked through in [rust/smallworld-map.md](rust/smallworld-map.md).
+
+Role `map` (`ansible/roles/map`, after `agent` in `site.yml`; its own role: own user, binary, units and life cycle,
+and it never touches the server): user `mcmap` (`mc_map_user`, group `minecraft`), `/opt/minecraft/bin/smallworld-map`
+(pin `mc_smallworld_map_sha256`, root 0755), `mc_map_palette` / `mc_map_colors` (`/opt/minecraft/share/`, from
+`server-config/keys/<minecraft_version>/`), `mc-map.service` (one `ExecStart` per dimension with its radius;
+sandbox in [SECURITY.md](../SECURITY.md#the-world-map-v14)) and `mc-map.timer` (`OnCalendar=map.schedule`,
+`Persistent`, `RandomizedDelaySec=10m`). `map.enabled: false` removes all of it and the output.
+
+server.yml (`mcctl/schema.py`):
+
+```yaml
+map:
+  enabled: true                    # the nightly pre-render; false removes it
+  schedule: "*-*-* 04:23"          # systemd OnCalendar, host time zone; keep it out of maintenance.window
+  dimensions: [overworld, end]     # never the Nether
+  radius: null                     # null = the active world's border, else world.border_radius (none: everything)
+  threads: 1
+branding:
+  pocket_map: {enabled: true, prerender: true}
+  map_room:                        # off by default; places entities in the live world
+    enabled: true
+    world: overworld               # one of map.dimensions
+    at: spawn                      # or x/y/z of the bottom centre frame
+    offset: [0, 0, -6]             # with at: spawn
+    facing: south                  # the maps face the viewer
+    width: 4                       # 1..8 frames
+    height: 3                      # 1..6 frames
+    view: border                   # border: the world border fitted to the wall; spawn: vanilla's grid at `scale`
+    scale: 3
+    cursors: false                 # online players as cursors
+```
+
+### The spawn map room
+
+`MapRoom.java`: `width × height` item frames; slot `i` is column `i % width` (the viewer's left to right) and row
+`i / width` (top to bottom); the bottom centre frame (`(width - 1) / 2`, the bottom row) is at the spawn + offset or
+x/y/z, and "right" is +x facing south, −x north, −z east, +z west. The wall reads like a map whatever it faces:
+north at the top, west on the viewer's left. `view: spawn` gives each frame the vanilla map centred on spawn's grid
+cell at `scale` plus `(column − (width − 1) / 2, row − (height − 1) / 2)` cells, painted from the tiles pixel for
+pixel; `view: border` fits the square `[−radius, radius]` to the wall at `bpp = ceil(2 · radius / (128 ·
+min(width, height)))` blocks per pixel, sampled from tile scale `min(4, floor(log2 bpp))`. The frames are fixed,
+invulnerable, silent and non-persistent (respawned when their chunk's entities load; a sweep removes any of ours
+that isn't the current wall); the MapViews are created once, their ids kept in the world's PDC
+(`mcbrand:map_room_maps`), locked, with one non-contextual renderer each that repaints when `generation` changes.
+`tests/test_wayfinding.py` recomputes this geometry from `WayfindingFixtures`' output.
 
 ### Golden tests
 

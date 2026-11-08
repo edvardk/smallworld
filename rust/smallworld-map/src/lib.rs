@@ -13,5 +13,6 @@ pub mod palette;
 pub mod region;
 pub mod render;
 pub mod scale;
+pub mod sha256;
 pub mod state;
 pub mod tiles;

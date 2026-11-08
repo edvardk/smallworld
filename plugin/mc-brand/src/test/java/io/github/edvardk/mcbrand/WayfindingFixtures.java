@@ -87,6 +87,15 @@ public final class WayfindingFixtures {
             snaps.add(List.of(sn[0], (int) sn[1], Wayfinding.snap(sn[0], (int) sn[1])));
         }
         out.put("snap", snaps);
+        // v1.4: the pocket map's centre snaps to 2 pixels (Wayfinding.snap(x, scale + 1)); the pre-render window
+        // and shading; the map room's geometry
+        List<Object> centres = new ArrayList<>();
+        for (double[] c : new double[][] {{-0.5, 0}, {13.9, 0}, {13.9, 2}, {-17, 3}, {1000.2, 4}, {-1, 1}}) {
+            centres.add(List.of(c[0], (int) c[1], Wayfinding.snap(c[0], (int) c[1] + 1)));
+        }
+        out.put("pocket_centre", centres);
+        out.put("prerender", PreRender.fixtures());
+        out.put("map_room", MapRoom.fixtures());
 
         List<Object> mods = new ArrayList<>();
         for (boolean ours : new boolean[] {false, true}) {

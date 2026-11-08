@@ -116,6 +116,13 @@ def test_fixture_tiles_equal_the_reference(tmp_path: Path) -> None:
     rust = tile_files(tmp_path)
     assert rust, "the fixture renders tiles"
     assert_same(rust, reference_files(FIXTURE, dims))
+    # meta.json (docs/reference.md "Directory layout"): what mc-brand checks before using the tiles.
+    meta = json.loads((tmp_path / "minecraft/overworld/meta.json").read_text())
+    st = FIXTURE.stat()
+    assert meta["format"] == 1 and meta["generation"] == 1
+    assert meta["world"] == {"dev": st.st_dev, "ino": st.st_ino}
+    assert meta["palette_sha256"] == hashlib.sha256(PALETTE.read_bytes()).hexdigest()
+    assert meta["data_version"] == ref.Palette.load(PALETTE).data_version and meta["rendered_at"] == 0
 
 
 @needs_binary

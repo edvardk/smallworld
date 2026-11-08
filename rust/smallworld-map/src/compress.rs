@@ -264,7 +264,7 @@ pub fn inflate(data: &[u8], limit: usize) -> Result<(Vec<u8>, usize)> {
         buf: 0,
         cnt: 0,
     };
-    let mut out = Vec::with_capacity(data.len().saturating_mul(4).min(limit));
+    let mut out = Vec::with_capacity(data.len().saturating_mul(6).min(limit)); // chunks inflate ~7x
     loop {
         let last = bits.get(1)?;
         match bits.get(2)? {

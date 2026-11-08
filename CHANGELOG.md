@@ -18,12 +18,35 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   `docs/rust/smallworld-rcon.md`.
 - `notify.py restart-alert SECONDS ONLINE`: posts the deploy-restart note to Discord (what `countdown` posts;
   smallworld-rcon, which has no TLS, runs it).
+- **World map (v1.4):** a nightly pre-render of the Overworld and the End (never the Nether) into map tiles with
+  the exact colours vanilla maps draw, and two uses in mc-brand:
+  - **`smallworld-map`** (`rust/smallworld-map`, docs/rust/smallworld-map.md): std only, `unsafe` forbidden, never
+    `mmap`; hand-written NBT reader, DEFLATE/zlib/gzip/LZ4Block decoders with every checksum verified, region
+    reader tolerant of the server writing (torn chunks retried next run), 26.x palettes, vanilla's
+    `MapItem.update` (see-through blocks, water depth, north shading, majority at scales 1-4); 512 × 512 tiles per
+    scale 0-4 written atomically; incremental by region mtime and chunk timestamps; `--threads`. Byte for byte
+    equal to `tests/map_reference.py` on the golden fixture and on generated worlds (`tests/test_rust_map.py`);
+    fuzz tests. Static binaries in `rust/dist/`, pinned (`mc_smallworld_map_sha256`).
+  - **Role `map`:** user `mcmap` (group `minecraft`), `mc-map.service` (no network, read-only on the world, idle
+    priority, 512 MB, within the hardening gate) and `mc-map.timer`; server.yml `map: {enabled, schedule,
+    dimensions, radius, threads}` (on by default, nightly at 04:23).
+  - **Pocket map:** unexplored terrain comes from the pre-render (`branding.pocket_map.prerender`, default on);
+    vanilla's live colours still take over wherever the map redraws. Tiles are read off the main thread into a
+    4 MB cache, never in the Nether, never after a world switch until the next render; `/mcbrand selftest` reports
+    how often vanilla's pixels match the pre-render.
+  - **Spawn map room** (`branding.map_room`, off by default): a wall of fixed, invulnerable item frames with maps of
+    the whole world border or vanilla's map grid around spawn, refreshed after each render; never duplicated, moved
+    by a config change.
 - **World map groundwork:** `scripts/map_palette.py dump|check` writes the block colour table the v1.4 map
   renderer will use (`server-config/keys/<version>/map-palette.tsv`, `map-colors.tsv`) from a build-time dump of
   the pinned jar's block registry (pinned JDK, pinned jars only, no network, no server or world); CI re-dumps and
   compares. Spec: docs/reference.md "World map".
 
 ### Changed
+
+- mc-brand's pocket map centres on even pixels (`Wayfinding.snap(x, scale + 1)`), so its dither parity is the
+  tiles'; the picture re-centres every 2 · 2^scale blocks instead of 2^scale.
+- `scripts/build_rust.py` builds every binary of the workspace (`BINARIES`: smallworld-rcon, smallworld-map).
 
 - The deploy's countdown, world borders and game rules, the `mc` helper (and with it `mcctl rcon`) and
   `minecraft.service`'s `ExecStop` call `/opt/minecraft/bin/smallworld-rcon` (root-owned, 0755; the base role

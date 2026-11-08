@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import net.kyori.adventure.text.Component;
@@ -63,6 +64,12 @@ import org.bukkit.persistence.PersistentDataType;
  *       a pointer on the map, an off-map dot at the edge beyond it. Updated every {@link #CURSOR_TICKS} ticks
  *       while the map renders.
  *   <li>{@code /map zoom} cycles the scale (1, 2, 4, 8, 16 blocks per pixel); the picture starts over.
+ *   <li>v1.4: <b>pre-rendered terrain</b> ({@link PreRender}, branding.pocket_map.prerender): where the picture
+ *       has no pixel (after a re-centre, a zoom, a world change or at start-up where vanilla has none), the
+ *       nightly render's pixel is painted instead of "unexplored", through the same overlay, so vanilla's live
+ *       colour still takes over wherever it redraws. Centres snap to whole multiples of 2 pixels
+ *       ({@code Wayfinding.snap(x, scale + 1)}): the tiles' dither parity is then vanilla's own. Never in the
+ *       Nether; nothing until the tiles are read (off the main thread) or when they belong to another world.
  * </ul>
  *
  * <p>Cost: Paper renders a map only while it is in an inventory (at most every 5 ticks unless vanilla changed it);
@@ -75,22 +82,28 @@ final class PocketMap implements Listener {
     static final int RECENTRE_TICKS = 20;
     static final int CURSOR_TICKS = 10;
     static final int SETTLE_TICKS = 20;
+    static final int SAMPLE_TICKS = 100;
     static final MapView.Scale[] SCALES = MapView.Scale.values();
 
     private final BrandPlugin plugin;
     private final Settings s;
     private final Compass compass;
+    private final PreRender prerender;
     private final NamespacedKey tagKey;
     private final NamespacedKey idKey;
     private final Map<Integer, Render> renderers = new HashMap<>();
     long given;
     long removed;
     long recentres;
+    long prerendered;
+    long matched;
+    long compared;
 
-    PocketMap(BrandPlugin plugin, Settings settings, Compass compass) {
+    PocketMap(BrandPlugin plugin, Settings settings, Compass compass, PreRender prerender) {
         this.plugin = plugin;
         this.s = settings;
         this.compass = compass;
+        this.prerender = prerender;
         this.tagKey = new NamespacedKey(plugin, "pocket_map");
         this.idKey = new NamespacedKey(plugin, "pocket_map_id");
     }
@@ -120,8 +133,8 @@ final class PocketMap implements Listener {
         if (view == null) {
             view = Bukkit.createMap(p.getWorld());
             view.setScale(MapView.Scale.CLOSEST);
-            view.setCenterX(Wayfinding.snap(p.getX(), 0));
-            view.setCenterZ(Wayfinding.snap(p.getZ(), 0));
+            view.setCenterX(Wayfinding.snap(p.getX(), 1)); // v1.4: even pixels (scale 0 + 1)
+            view.setCenterZ(Wayfinding.snap(p.getZ(), 1));
             p.getPersistentDataContainer().set(idKey, PersistentDataType.INTEGER, view.getId());
         }
         view.setTrackingPosition(true);
@@ -274,6 +287,9 @@ final class PocketMap implements Listener {
         private int lastPz;
         private int lastCursors = Integer.MIN_VALUE;
         private int lastRecentre = Integer.MIN_VALUE;
+        private int lastSample = Integer.MIN_VALUE;
+        private long preGen = Long.MIN_VALUE;
+        private boolean wantPre = true;
 
         Render(UUID owner) {
             super(true);
@@ -297,6 +313,10 @@ final class PocketMap implements Listener {
                 recentre(view, viewer);
             }
             boolean changed = pixels(view, canvas, viewer, held, now);
+            if (held && now - lastSample >= SAMPLE_TICKS && prerender.usable(view.getWorld())) {
+                lastSample = now;
+                sample(view, canvas);
+            }
             if (changed || now - lastCursors >= CURSOR_TICKS) {
                 lastCursors = now;
                 cursors(view, canvas, viewer);
@@ -310,8 +330,8 @@ final class PocketMap implements Listener {
             }
             int sc = view.getScale().getValue();
             Location at = p.getLocation();
-            int nx = Wayfinding.snap(at.getX(), sc);
-            int nz = Wayfinding.snap(at.getZ(), sc);
+            int nx = Wayfinding.snap(at.getX(), sc + 1); // v1.4: even pixels, the tiles' dither parity
+            int nz = Wayfinding.snap(at.getZ(), sc + 1);
             int limit = RECENTRE_PX << sc;
             if (Math.abs(nx - view.getCenterX()) >= limit || Math.abs(nz - view.getCenterZ()) >= limit) {
                 view.setCenterX(nx);
@@ -332,9 +352,11 @@ final class PocketMap implements Listener {
                 world = wid;
                 cx = view.getCenterX();
                 cz = view.getCenterZ();
+                wantPre = true;
                 return true;
             }
             if (reset || shift) {
+                byte[] pre = prerender.window(w, sc, view.getCenterX(), view.getCenterZ());
                 Color[] cur = new Color[N];
                 for (int i = 0; i < N; i++) {
                     Color base = canvas.getBasePixelColor(i & 127, i >> 7);
@@ -347,9 +369,14 @@ final class PocketMap implements Listener {
                     for (int x = 0; x < 128; x++) {
                         int ox = x + dx;
                         int oz = y + dz;
-                        shown[y * 128 + x] = !reset && ox >= 0 && ox < 128 && oz >= 0 && oz < 128 ? cur[oz * 128 + ox]
+                        Color c = !reset && ox >= 0 && ox < 128 && oz >= 0 && oz < 128 ? cur[oz * 128 + ox]
                                 : UNEXPLORED;
-                        canvas.setPixelColor(x, y, shown[y * 128 + x]);
+                        if ((c == UNEXPLORED || c.getAlpha() == 0) && pre != null) {
+                            Color pc = prerender.color(pre[y * 128 + x] & 255);
+                            c = pc != null ? pc : c;
+                        }
+                        shown[y * 128 + x] = c;
+                        canvas.setPixelColor(x, y, c);
                     }
                 }
                 Arrays.fill(overlay, true);
@@ -360,7 +387,23 @@ final class PocketMap implements Listener {
                 world = wid;
                 cx = view.getCenterX();
                 cz = view.getCenterZ();
+                wantPre = pre == null;
+                preGen = prerender.generation(w);
                 return true;
+            }
+            long gen = prerender.generation(w);
+            if (gen != preGen) {
+                preGen = gen;
+                wantPre = gen >= 0;
+            }
+            if (wantPre && prerender.usable(w)) {
+                byte[] pre = prerender.window(w, sc, cx, cz);
+                if (pre != null) {
+                    wantPre = false;
+                    if (fill(canvas, pre)) {
+                        return true;
+                    }
+                }
             }
             if (overlayCount == 0) {
                 return false;
@@ -410,6 +453,70 @@ final class PocketMap implements Listener {
                 }
             }
             return false;
+        }
+
+        /**
+         * v1.4: paints the pre-render where the picture shows nothing: an overlay pixel still "unexplored", or a
+         * pixel vanilla has never drawn (transparent base). Those become overlay pixels, released to vanilla as
+         * usual. Returns whether anything was painted.
+         */
+        private boolean fill(MapCanvas canvas, byte[] pre) {
+            int painted = 0;
+            for (int i = 0; i < N; i++) {
+                Color pc = prerender.color(pre[i] & 255);
+                if (pc == null) {
+                    continue;
+                }
+                int x = i & 127;
+                int y = i >> 7;
+                if (overlay[i]) {
+                    if (shown[i] != UNEXPLORED && shown[i].getAlpha() != 0) {
+                        continue;
+                    }
+                } else {
+                    Color base = canvas.getBasePixelColor(x, y);
+                    if (base.getAlpha() != 0) {
+                        continue;
+                    }
+                    overlay[i] = true;
+                    overlayCount++;
+                    stale[i] = base;
+                    entered[i] = -1;
+                }
+                shown[i] = pc;
+                canvas.setPixelColor(x, y, pc);
+                painted++;
+            }
+            if (painted > 0) {
+                pending = 1;
+                prerendered += painted;
+            }
+            return painted > 0;
+        }
+
+        /**
+         * v1.4, /mcbrand selftest: where vanilla has drawn the current picture (released pixels with a colour) and
+         * the pre-render has a pixel, how often the two agree (100 % unless the world changed since the render).
+         */
+        private void sample(MapView view, MapCanvas canvas) {
+            byte[] pre = prerender.window(view.getWorld(), scale, cx, cz);
+            if (pre == null) {
+                return;
+            }
+            for (int i = 0; i < N; i++) {
+                if (overlay[i]) {
+                    continue;
+                }
+                Color pc = prerender.color(pre[i] & 255);
+                Color base = canvas.getBasePixelColor(i & 127, i >> 7);
+                if (pc == null || base.getAlpha() == 0) {
+                    continue;
+                }
+                compared++;
+                if (base.getRGB() == pc.getRGB()) {
+                    matched++;
+                }
+            }
         }
 
         private void cursors(MapView view, MapCanvas canvas, Player p) {
@@ -521,6 +628,8 @@ final class PocketMap implements Listener {
         }
         return "pocket map cursors " + String.join(" ", c) + ", snap " + Wayfinding.snap(-0.5, 0) + "/"
                 + Wayfinding.snap(13.9, 2) + ", maps " + renderers.size() + " given " + given + " removed " + removed
-                + " recentres " + recentres;
+                + " recentres " + recentres + "; prerender painted " + prerendered + " match "
+                + (compared == 0 ? "n/a" : String.format(Locale.ROOT, "%.1f%%", 100.0 * matched / compared))
+                + " of " + compared + " px";
     }
 }

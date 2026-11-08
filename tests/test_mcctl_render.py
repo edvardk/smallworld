@@ -128,6 +128,10 @@ P6_GROUP_VARS = {
     "mc_logs_max_rows_per_day",
     "mc_reboot_window",  # P11
     "mc_maintenance_window",  # v1.3
+    "mc_map_enabled",  # v1.4: the world map pre-render (role map)
+    "mc_map_schedule",
+    "mc_map_dimensions",
+    "mc_map_threads",
     "mc_maintenance_timezone",
     "mc_maintenance_force_minutes",
 }
@@ -197,6 +201,10 @@ EXPECTED_GROUP_VARS = {
     "mc_logs_max_rows_per_day",
     "mc_reboot_window",
     "mc_maintenance_window",  # v1.3: deploys restart only inside it
+    "mc_map_enabled",  # v1.4: role map
+    "mc_map_schedule",
+    "mc_map_dimensions",
+    "mc_map_threads",
     "mc_maintenance_timezone",
     "mc_maintenance_force_minutes",
     "health_mspt_alert",
@@ -246,6 +254,11 @@ GROUP_VARS_CONSTANTS = {
     "mc_telemetry_jar_sha256",  # P13
     "mc_brand_jar_sha256",  # P17
     "mc_smallworld_rcon_sha256",  # v1.4: rust/dist/ binaries (scripts/build_rust.py)
+    "mc_smallworld_map_sha256",  # v1.4: the world map pre-renderer (role map)
+    "mc_map_user",
+    "mc_map_dir",
+    "mc_map_palette",
+    "mc_map_colors",
     "mc_brand_icon_sha256",
     "mc_helper_priority",
     "mc_timely_priority",  # P13 review M1
@@ -445,8 +458,58 @@ def test_auto_heap_formula(ram_mb: int, reserve: int, heap: int, tmp_path) -> No
 def test_border_omits_null_dimensions() -> None:
     data = full_data()
     data["world"] = {"border_radius": {"overworld": None, "end": 300}}
+    data["branding"]["map_room"]["view"] = "spawn"  # view: border needs an overworld border
     gv = render.group_vars(schema.load_server(data))
     assert gv["mc_world_border_radius"] == {"minecraft:the_nether": 1250, "minecraft:the_end": 300}
+    # v1.4: the map renders without a radius where there is no border
+    assert gv["mc_map_dimensions"] == [
+        {"id": "minecraft:overworld", "radius": None},
+        {"id": "minecraft:the_end", "radius": 300},
+    ]
+
+
+def test_world_map_settings() -> None:
+    """v1.4: map.* -> the map role's variables (radius: map.radius, else the active world's border, else
+    world.border_radius); branding.map_room -> mc-brand's map_room; the checks on the map room."""
+    data = full_data()
+    gv = render.group_vars(schema.load_server(data))
+    assert (gv["mc_map_enabled"], gv["mc_map_schedule"], gv["mc_map_threads"]) == (True, "*-*-* 02:41", 1)
+    room = gv["mc_brand"]["map_room"]
+    assert room["enabled"] and room["at"] == "spawn" and room["offset"] == [0, 0, -6] and "x" not in room
+    assert gv["mc_brand"]["pocket_map"] == {"enabled": True, "prerender": True}
+    data["world"] = {
+        "active": "world",
+        "library": [{"name": "world", "border_radius": {"overworld": 700, "nether": None, "end": None}}],
+    }
+    gv = render.group_vars(schema.load_server(data))
+    assert gv["mc_map_dimensions"][0] == {"id": "minecraft:overworld", "radius": 700}
+    assert gv["mc_brand"]["map_room"]["radius"] == 700
+    data["map"]["radius"] = 2000
+    assert render.group_vars(schema.load_server(data))["mc_map_dimensions"][1]["radius"] == 2000
+    # Off: no pre-render in the pocket map, no map room.
+    data["map"]["enabled"] = False
+    data["branding"]["map_room"]["enabled"] = False
+    gv = render.group_vars(schema.load_server(data))
+    assert gv["mc_brand"]["pocket_map"]["prerender"] is False and gv["mc_map_enabled"] is False
+    for change, message in [
+        ({"enabled": True}, "needs map.enabled"),
+        ({"enabled": True, "x": 1}, "both given"),
+        ({"enabled": True, "at": None}, "needs x, y and z"),
+        ({"enabled": True, "offset": [0, 0, 99]}, "-64..64"),
+        ({"enabled": True, "width": 9}, "width"),
+    ]:
+        d = full_data()
+        d["branding"]["map_room"].update(change)
+        if change != {"enabled": True}:
+            d["map"]["enabled"] = True
+        else:
+            d["map"]["enabled"] = False
+        with pytest.raises(schema.SchemaError, match=message):
+            schema.load_server(d)
+    d = full_data()
+    d["map"]["dimensions"] = ["overworld", "nether"]
+    with pytest.raises(schema.SchemaError, match=r"map\.dimensions"):
+        schema.load_server(d)
 
 
 def test_cli_render(config_repo, tmp_path) -> None:
