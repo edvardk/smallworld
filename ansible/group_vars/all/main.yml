@@ -32,8 +32,8 @@ restic_sha256:
 # The base role checks the one for the box's architecture against this pin before installing it (keys: Debian
 # architecture names, as restic_sha256's).
 mc_smallworld_rcon_sha256:
-  amd64: 0cce11ec8a39c1664c18b01aaadd9361beb9002ac8ef91a8a9910736e781190e
-  arm64: 73d23ee03461d9a4b0a28f161e24157009fe6f459dad82f3183824da0d7efc75
+  amd64: 432fffddc002b9d65a2061b1d501520258fcdf5239c8d522a48cacda1066618c
+  arm64: bac51b0c2ceb9b46702d9e96beb2523035d26bbb5c19a8f848bbf1b8895f2673
 # v1.4: smallworld-map (rust/smallworld-map), the world map pre-renderer (role map, docs/rust/smallworld-map.md): same
 # reproducible build and committed binaries; the map role checks this pin before installing it.
 mc_smallworld_map_sha256:
