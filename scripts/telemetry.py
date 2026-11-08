@@ -29,6 +29,7 @@ import contextlib
 import gzip
 import io
 import json
+import math
 import os
 import re
 import secrets
@@ -85,7 +86,16 @@ def clean_text(text: object, limit: int = TEXT_MAX) -> str:
 
 
 def _num(v: object) -> float | None:
-    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+    """A finite float for an int or float (not a bool), else None. v1.4 fix (Python and Rust): `NaN`,
+    `Infinity` or an int too big for a float in a snapshot used to raise from `int()` later (OverflowError,
+    ValueError), so every telemetry round failed at that snapshot and the reader never moved past it."""
+    if not isinstance(v, (int, float)) or isinstance(v, bool):
+        return None
+    try:
+        f = float(v)
+    except OverflowError:
+        return None
+    return f if math.isfinite(f) else None
 
 
 HOT_KEYS = ("ent", "tiles", "vil", "items")

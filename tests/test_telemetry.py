@@ -57,6 +57,25 @@ def test_parse_snapshot_keeps_known_fields_only_and_never_an_ip() -> None:
     assert telemetry.parse_snapshot(json.dumps(bad).encode())["pl"] == []
 
 
+def test_non_finite_numbers_in_a_snapshot_never_stall_the_reader(tmp_path: Path) -> None:
+    """v1.4 fix (Python and Rust, rust/smallworld-agent/src/telemetry/snapshot.rs `num`): NaN, Infinity or an int
+    too big for a float (json.loads accepts all three) read as missing; `int()` of them used to raise, failing
+    every round at that snapshot (the reader never moved past it)."""
+    raw = (
+        json.dumps(snap(1, T0, [pl()]))
+        .replace('"ping": 40', '"ping": Infinity')
+        .replace('"tps": 20.0', '"tps": NaN')
+        .replace('"ticks": 200', '"ticks": ' + "9" * 400)
+    )
+    got = telemetry.parse_snapshot(raw.encode())
+    assert got is not None
+    assert got["pl"][0]["ping"] == 0 and got["srv"]["tps"] is None and got["srv"]["ticks"] is None
+    assert telemetry._fps(float("inf")) is None and telemetry._num(10**400) is None
+    (tmp_path / "snap-1.json").write_text(raw)
+    write_snap(tmp_path, snap(2, T0 + 10000))
+    assert [s["seq"] for s in telemetry.SnapshotReader(tmp_path).read()] == [1, 2]
+
+
 def test_snapshot_reader_reads_new_files_once_and_follows_a_plugin_restart(tmp_path: Path) -> None:
     r = telemetry.SnapshotReader(tmp_path)
     for i in range(3):
