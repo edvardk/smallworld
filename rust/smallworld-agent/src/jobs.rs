@@ -6,15 +6,16 @@
 //! work runs. Every state change goes to `report` (daemon: `POST /ingest/job`; cli: progress lines).
 //!
 //! Owner: jobs. Ported: the whole runner, foreground (`background: false`, the cli) and background (a thread per
-//! job, the daemon); `cancel`; the daemon's job reports (`worker_report`: mc_agent.py `Agent.report_job` over
-//! link's `Link::post_json`) and its runner (`daemon_jobs`: `Jobs(report_job, lock_path=JOB_LOCK_FILE)`).
-//! The daemon (link) builds `Panel.jobs` with `daemon_jobs(worker_report(link, inventory_due))`.
+//! job, the daemon); `cancel`. The daemon's job reports are link's `daemon::report_job` (mc_agent.py
+//! `Agent.report_job`: `POST /ingest/job`, `WARN` "job", then `inventory_due`), the runner it builds
+//! `Jobs::new(report, Some(JOB_LOCK_FILE), true)`; the panel's cancel is actions' `do_cancel` ->
+//! `Jobs::cancel` (an `Action` error becomes `Rejected("cancel: ...")` in `Executor::run`).
 //!
 //! A SIGTERM during a countdown: the cli cancels the job (cli.rs); the daemon just stops (mc_agent.py `main`
 //! sets `stop`, the job threads are daemon threads): nothing more is reported, and the kernel releases
 //! job.lock when the process exits.
 
-use crate::types::{ANNOUNCE_AT, AResult, AgentError, COUNTDOWNS, VERSION, Value};
+use crate::types::{ANNOUNCE_AT, AResult, AgentError, COUNTDOWNS, Value};
 use regex::Regex;
 use serde_json::json;
 use smallworld_core::flock::{JOB_BUSY, JobLockGuard, take_job_lock};
@@ -503,27 +504,6 @@ impl Jobs {
         job.cancel.set();
         Ok(format!("{} cancelled by {login}", job.label.to_lowercase()))
     }
-}
-
-/// mc_agent.py `Agent.report_job(job)`: `POST /ingest/job {agent, job}`; a failure is only logged (one line
-/// while it lasts: `WARN`, key "job"), the inventory carries the job too, and it is pushed now either way.
-pub fn worker_report(link: crate::link::Link, inventory_due: Arc<Event>) -> Report {
-    Arc::new(move |job: &Value| {
-        match link.post_json("/ingest/job", &json!({"agent": VERSION, "job": job})) {
-            Err(e) => crate::misc::warnings::WARN.fail("job", &e.to_string(), false),
-            Ok(_) => crate::misc::warnings::WARN.ok("job"),
-        }
-        inventory_due.set();
-    })
-}
-
-/// The daemon's runner: `mc_panel.Jobs(report, lock_path=JOB_LOCK_FILE)` (background, the cross-process lock).
-pub fn daemon_jobs(report: Report) -> Arc<Jobs> {
-    Jobs::new(
-        report,
-        Some(PathBuf::from(smallworld_core::paths::JOB_LOCK_FILE)),
-        true,
-    )
 }
 
 #[cfg(test)]

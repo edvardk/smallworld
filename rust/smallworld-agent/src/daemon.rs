@@ -16,7 +16,8 @@ use crate::jobs::{Event, Jobs};
 use crate::link::Link;
 use crate::link::verify::Nonces;
 use crate::link::ws::WsHandle;
-use crate::misc::warnings::Warnings;
+use crate::misc::Misc;
+use crate::misc::warnings::{WARN, Warnings};
 use crate::settings::{Settings, process_env};
 use crate::types::{AResult, AgentError, VERSION, Value};
 use serde_json::json;
@@ -27,7 +28,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 /// Modules still stubs (each owner removes its name when ported; `main` refuses to start while any remain).
-pub const NOT_PORTED: [&str; 4] = ["ship", "data", "actions", "misc"];
+pub const NOT_PORTED: [&str; 3] = ["ship", "data", "actions"];
 
 /// The test-only switch (see the module comment).
 pub const ALLOW_STUBS_ENV: &str = "SMALLWORLD_AGENT_ALLOW_STUBS";
@@ -46,7 +47,7 @@ pub struct Daemon {
     /// `Agent.inventory_due`: a state change pushes the inventory now.
     pub inventory_due: Arc<Event>,
     /// mc_agent.py's module-level `WARN`.
-    pub warn: Arc<Warnings>,
+    pub warn: &'static Warnings,
     /// `Agent.ws_connected` (the metrics sample's `ws`).
     pub ws_connected: AtomicBool,
     /// `Agent.ws_established`: the last session got as far as the upgrade.
@@ -59,6 +60,8 @@ pub struct Daemon {
     pub panel: Arc<Panel>,
     /// `Agent.executor` (used by the control thread only).
     pub executor: Mutex<Executor>,
+    /// The self-test, the Mojang lookup and the product version this process started with (misc).
+    pub misc: Arc<Misc>,
 }
 
 /// `Agent.report_job(job)`: `POST /ingest/job` (failures only logged: the inventory carries the job too), then
@@ -74,18 +77,21 @@ pub fn report_job(link: &Link, warn: &Warnings, inventory_due: &Event, job: &Val
 impl Daemon {
     /// `Agent(s)`: loads the nonces (fail closed, audited), builds the panel (background job runner on
     /// `JOB_LOCK_FILE`, job reports to the Worker) and the executor. Starts no thread.
-    pub fn new(settings: Settings) -> Self {
+    ///
+    /// # Errors
+    /// The `ValueError` text of a bad GITHUB_API_URL or MOJANG_LOOKUP_URLS (Python's `Agent(s)` raises it).
+    pub fn new(settings: Settings) -> Result<Self, String> {
         let stop = Arc::new(Event::default());
         let link = Link::new(settings.clone());
         let inventory_due = Arc::new(Event::default());
-        let warn = Arc::new(Warnings::default());
+        let warn: &'static Warnings = &WARN;
         let nonces = Nonces::new(
             Some(settings.state_dir.join("nonces.json")),
             crate::sys::now(),
         );
         let report: crate::jobs::Report = {
-            let (link, warn, due) = (link.clone(), Arc::clone(&warn), Arc::clone(&inventory_due));
-            Arc::new(move |job: &Value| report_job(&link, &warn, &due, job))
+            let (link, due) = (link.clone(), Arc::clone(&inventory_due));
+            Arc::new(move |job: &Value| report_job(&link, warn, &due, job))
         };
         let jobs = Jobs::new(report, Some(PathBuf::from(paths::JOB_LOCK_FILE)), true);
         let mut panel = Panel::new(jobs, &settings.state_dir);
@@ -93,7 +99,13 @@ impl Daemon {
             let due = Arc::clone(&inventory_due);
             Arc::new(move || due.set())
         };
-        // misc wires `panel.selftest` (Agent.run_selftest) and `panel.lookup` (Lookup(lookup_urls())) here.
+        // Agent.github, Agent.selftest_state, Lookup(lookup_urls()), product_started (misc)
+        let misc = Arc::new(Misc::new(
+            &process_env(),
+            &settings.state_dir,
+            crate::misc::github_token_fetch(link.clone()),
+        )?);
+        misc.wire(&mut panel);
         let panel = Arc::new(panel);
         // `Executor(lambda: collect(Counters()), self.tail.request, self.panel, self.telemetry)`: data wires the
         // console tail (`ConsoleTail.request`, which needs `Daemon::ws`); the telemetry view is actions' (the
@@ -104,7 +116,7 @@ impl Daemon {
             crate::data::metrics::collect(&mut crate::data::metrics::Counters::default())
         });
         let executor = Executor::new(sample, None, Some(Arc::clone(&panel)), None);
-        Self {
+        Ok(Self {
             settings,
             stop,
             link,
@@ -116,7 +128,8 @@ impl Daemon {
             nonces: Mutex::new(nonces),
             panel,
             executor: Mutex::new(executor),
-        }
+            misc,
+        })
     }
 
     /// `Agent.ws` for the console tail: the live session's sender, if any.
@@ -148,6 +161,16 @@ pub fn round<T>(what: &str, f: impl FnOnce() -> AResult<T>) -> Option<T> {
             None
         }
     }
+}
+
+/// `Agent.selftest_loop` (misc): daily, the first run SELFTEST_FIRST_S after start.
+///
+/// # Errors
+/// None: each round catches its own failures (the `LoopFn` shape).
+#[allow(clippy::unnecessary_wraps)]
+pub fn selftest_loop(d: &Daemon) -> AResult<()> {
+    d.misc.selftest.run_loop(&d.stop, &d.inventory_due);
+    Ok(())
 }
 
 /// A loop's entry point (runs until `daemon.stop`): a module's `fn(&Daemon) -> AResult<()>`, or a closure that
@@ -187,7 +210,7 @@ pub fn run(daemon: &Arc<Daemon>) -> std::io::Result<()> {
         ("control", Box::new(crate::link::control::control_loop)),
         ("inventory", Box::new(crate::data::inventory_loop)),
         ("panel", Box::new(crate::sync::panel_loop)),
-        // ("selftest", crate::misc::selftest::selftest_loop): misc declares it
+        ("selftest", Box::new(selftest_loop)),
     ];
     // if daemon.settings.client: ("client", crate::data::client_codes::client_loop): data declares it
     for (name, f) in loops {
@@ -233,7 +256,16 @@ pub fn main() -> u8 {
         return 1;
     }
     let host = crate::settings::url_hostname(&settings.ingest_url).unwrap_or_else(|| "None".into());
-    let daemon = Arc::new(Daemon::new(settings));
+    let daemon = match Daemon::new(settings) {
+        Ok(d) => Arc::new(d),
+        Err(e) => {
+            // Agent(s) raising ValueError: an uncaught exception
+            eprintln!("Traceback (most recent call last):");
+            eprintln!("  File \"mc_agent.py\", in main");
+            eprintln!("ValueError: {e}");
+            return 1;
+        }
+    };
     // Before any thread starts: the signal mask is inherited.
     let stop = Arc::clone(&daemon.stop);
     crate::sys::handle_signals(&crate::sys::DAEMON_SIGNALS, move |_| stop.set());
