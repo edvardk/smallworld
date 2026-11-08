@@ -191,6 +191,43 @@ def test_mc_run_transient_units_are_sandboxed() -> None:
         assert f"-p {prop}" in helper, prop
 
 
+@pytest.mark.skipif(shutil.which("sh") is None or shutil.which("date") is None, reason="needs sh and date")
+def test_mc_run_names_only_the_agent_cli_unit(tmp_path: Path) -> None:
+    """v1.4: `mc-run ENV mc_agent.py cli ...` (mcctl's actions) runs in a unit named mc-agent-cli-<pid>-<ns>, so its
+    audit entries carry a product unit in mc-agent's D1 rows; every other command keeps systemd-run's anonymous
+    unit (nothing new is shipped)."""
+    base = (REPO / "ansible/roles/base/tasks/main.yml").read_text()
+    content = base.split("Install `mc-run` helper")[1].split("content: |\n", 1)[1].split("    owner: root")[0]
+    script = "\n".join(line[6:] for line in content.splitlines())
+    script = script.replace("{{ mc_ops_user }}", "mcops").replace("{{ mc_bin_dir }}", "/opt/minecraft/bin")
+    assert "{{" not in script
+    (tmp_path / "mc-run").write_text(script)
+    fake = tmp_path / "bin" / "systemd-run"
+    fake.parent.mkdir()
+    fake.write_text('#!/bin/sh\nfor a in "$@"; do printf \'%s\\n\' "$a"; done\n')
+    fake.chmod(0o755)
+    env = {"PATH": f"{fake.parent}:/usr/bin:/bin"}
+
+    def argv(*args: str) -> list[str]:
+        out = subprocess.run(["sh", str(tmp_path / "mc-run"), "-/etc/minecraft/notify.env", *args],
+                             capture_output=True, text=True, env=env, check=True).stdout  # fmt: skip
+        return out.splitlines()
+
+    cli = argv("/opt/minecraft/bin/mc_agent.py", "cli", "mcctl:x", "status")
+    assert re.fullmatch(r"--unit=mc-agent-cli-\d+-\d{19}", cli[0]), cli[0]
+    import mc_agent
+
+    assert mc_agent.D1_UNITS.match(cli[0].removeprefix("--unit=") + ".service")  # its rows are the product's
+    assert cli[-4:] == ["/opt/minecraft/bin/mc_agent.py", "cli", "mcctl:x", "status"]
+    assert argv("/opt/minecraft/bin/mc_agent.py", "cli")[0] != cli[0]  # a new name every run
+    for other in (["/opt/minecraft/bin/notify.py", "maintenance", "0", "deploy"],
+                  ["/opt/minecraft/bin/mc_agent.py", "status"], ["/usr/bin/python3", "-c", "cli"],
+                  ["/opt/minecraft/bin/smallworld-rcon", "countdown", "60"]):  # fmt: skip
+        got = argv(*other)
+        assert not any(a.startswith("--unit") for a in got), got
+        assert got[0] == "--quiet" and got[-len(other) :] == other
+
+
 @pytest.mark.skipif(shutil.which("systemd-analyze") is None, reason="systemd-analyze not installed")
 @pytest.mark.parametrize("unit", sorted(UNITS))
 def test_systemd_analyze_security_offline_gate(unit: str, tmp_path: Path) -> None:
