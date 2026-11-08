@@ -104,3 +104,73 @@ impl Link {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    fn link_to(reply: &'static str) -> (Link, std::thread::JoinHandle<String>) {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", l.local_addr().unwrap());
+        let h = std::thread::spawn(move || {
+            let (mut s, _) = l.accept().unwrap();
+            let mut buf = Vec::new();
+            let mut c = [0u8; 4096];
+            while !buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                let n = s.read(&mut c).unwrap();
+                buf.extend_from_slice(&c[..n]);
+            }
+            s.write_all(reply.as_bytes()).unwrap();
+            String::from_utf8_lossy(&buf).into_owned()
+        });
+        let t = "t".repeat(32);
+        let env = [
+            ("INGEST_URL", url.as_str()),
+            ("AGENT_TOKEN", t.as_str()),
+            ("COMMAND_HMAC_KEY", t.as_str()),
+        ]
+        .iter()
+        .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+        .collect();
+        (Link::new(Settings::from_env(&env).unwrap()), h)
+    }
+
+    #[test]
+    fn requests_carry_the_token_and_errors_never_do() {
+        let (link, h) =
+            link_to("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        assert_eq!(
+            link.request("GET", "/agent/commands", None, "application/json", 5.0),
+            Ok(serde_json::json!({}))
+        );
+        let head = h.join().unwrap().to_ascii_lowercase();
+        assert!(head.contains(&format!("authorization: bearer {}", "t".repeat(32))));
+        assert!(head.contains("user-agent: smallworld mc-agent"));
+        assert!(!head.contains("content-type"));
+
+        let (link, h) = link_to(
+            "HTTP/1.1 401 Unauthorized\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+        );
+        let e = link
+            .post_json("/ingest/job", &serde_json::json!({}))
+            .unwrap_err();
+        assert_eq!(
+            e,
+            IngestError {
+                message: "POST /ingest/job: HTTP 401".into(),
+                status: Some(401)
+            }
+        );
+        h.join().unwrap();
+
+        let (link, h) =
+            link_to("HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\nnope");
+        let e = link
+            .request("GET", "/x", None, "application/json", 5.0)
+            .unwrap_err();
+        assert_eq!(e.message, "GET /x: reply isn't JSON");
+        h.join().unwrap();
+    }
+}
