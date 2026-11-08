@@ -23,7 +23,15 @@ host:
 # strict_whitelist: explicit, so the golden rendering doesn't move with the default (players never in
 # players.yml are kept and announced; true = players.yml is the whole whitelist).
 minecraft: {version: "26.3", accept_eula: true, motd: "Lighthouse", strict_whitelist: false}
-backups: {bucket: lighthouse-backups}
+# v1.5 smooth backups (the defaults, spelled out): a timer run skips an idle, unchanged world and waits up to 15
+# minutes while players see lag; `save-all` without flush unless the files stay busy; no upload limit.
+backups:
+  bucket: lighthouse-backups
+  skip_when_idle: true
+  defer_when_busy: true
+  max_defer_minutes: 15
+  gentle_save: true
+  upload_limit_kib: 0
 # v1.4: Chunky pre-generation while nobody is online: each bordered dimension up to its border, then 1024 blocks
 # beyond the farthest generated chunk (frontier), never past 10000 blocks from 0,0 (the defaults, spelled out).
 world:
@@ -34,6 +42,7 @@ performance:
   view_distance: 12
   cpu_affinity: split
   noatime: true
+  vm: default   # v1.5: small = the 2-4 GB preset (heap, helper memory caps, view distance <= 8)
 panel: {mode: cloudflare}   # access.emails: [admin.email] (derived)
 # v1.4: the Rust agent (smallworld-agent, telemetry in-process), the default since v1.4.0; python is the fallback.
 agent: {implementation: rust}

@@ -14,11 +14,21 @@ Group={{ mc_ops_user }}
 SupplementaryGroups=minecraft
 EnvironmentFile={{ mc_etc_dir }}/restic.env
 Environment=RESTIC_CACHE_DIR={{ backups_cache_dir }} PYTHONDONTWRITEBYTECODE=1
+{% if backups_restic_gomaxprocs %}
+# v1.5 performance.vm small: restic (Go) on {{ backups_restic_gomaxprocs }} core(s), its GC aiming below the memory limit.
+Environment=GOMAXPROCS={{ backups_restic_gomaxprocs }}
+{% endif %}
+{% if backups_restic_memory_limit_mb %}
+Environment=GOMEMLIMIT={{ backups_restic_memory_limit_mb }}MiB
+{% endif %}
 CacheDirectory=mc-restic
 CacheDirectoryMode=0750
 ExecStart={{ mc_bin_dir }}/backup.py --prune
 # If memory runs out, sacrifice restic rather than the server.
 OOMScoreAdjust=500
+{% if backups_memory_high_mb %}
+MemoryHigh={{ backups_memory_high_mb }}M
+{% endif %}
 # P13: idle priority (never competes with the tick), see mc_helper_priority.
 {{ mc_helper_priority | join('\n') }}
 {% if mc_helper_cpus %}

@@ -52,6 +52,33 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   watchdog's D1 with the admin token in `.env`) that the new `players.yml` doesn't list and the panel has no
   pending change for: a deploy removes those `players.yml` had before (or every one with
   `minecraft.strict_whitelist`); the rest are kept by the whitelist guard, outside Git.
+- Smooth backups (docs/operations.md "Smooth backups"). Only runs `mc-backup.timer` starts are affected; `mcctl
+  backup now`, the panel, Discord, a restart's "back up first", a migration's final backup and a world switch back
+  up at once, as before. New `server.yml` fields under `backups`:
+  - `skip_when_idle` (default `true`): skip the hourly run when nobody is online, no pre-generation task runs and
+    no file the backup would read changed since the last successful backup (a fingerprint in
+    `/var/lib/mc-snapshots/backup-state.json`); a real backup still runs at least every 24 h. The skip sends the
+    watchdog an OK heartbeat, and the weekly backup test then accepts a snapshot up to 24 h older, so neither
+    reports a skip as stopped backups.
+  - `defer_when_busy` (default `true`) and `max_defer_minutes` (default 15, at most what the watchdog's grace
+    allows: 20 with the hourly defaults): with players online and the server lagging (TPS < 18 or MSPT > 40 ms over
+    a minute, or a tick spike in the last 5 s) the run waits a minute at a time, then backs up anyway.
+  - `upload_limit_kib` (default 0 = unlimited): restic's `--limit-upload`.
+- `performance.vm: small` (default `default`, unchanged): a memory preset for 2-4 GB hosts (docs/operations.md
+  "Small-VM preset", with its assumptions): heap auto = RAM - max(1024 MB, 40 %) (2304 MB on a 4 GB host instead
+  of 1024), restic on one core with one reader, 2 S3 connections, a 192 MiB Go memory limit and cgroup caps
+  (`MemoryHigh=256M`; `mc-backup` `MemoryMax=512M`), `mc-health` `MemoryMax=128M`, the map renderer capped at
+  64 MB per thread + 64 MB, one Paper chunk worker (pre-generation's pace) and view distance at most 8, each
+  only where `server.yml` doesn't set the value itself.
+
+### Changed
+
+- The backup saves the world with `save-all` instead of `save-all flush` and waits until the world's files are
+  quiet (2 s), falling back to `save-all flush` when they are still being written after 15 s. In the pinned
+  Purpur, `flush` is what makes the main thread wait for the disk (a tick spike on every backup). New field
+  `backups.gentle_save` (default `true`; `false` = `save-all flush` as before). The journal says which one ran
+  (`save: gentle ...` / `save: flush ...`). The golden render (`tests/fixtures/full-render.json`) gains the new
+  role variables; no existing value moves.
 
 ### Fixed
 

@@ -45,6 +45,20 @@ HARDENING = yaml.safe_load((REPO / "ansible/roles/hardening/defaults/main.yml").
 FIREWALL = yaml.safe_load((REPO / "ansible/roles/firewall/defaults/main.yml").read_text())
 BACKUPS = yaml.safe_load((REPO / "ansible/roles/backups/defaults/main.yml").read_text())
 MAP = yaml.safe_load((REPO / "ansible/roles/map/defaults/main.yml").read_text())
+MONITORING = yaml.safe_load((REPO / "ansible/roles/monitoring/defaults/main.yml").read_text())
+V15_BACKUP_VARS = (
+    "backups_skip_when_idle",
+    "backups_defer_when_busy",
+    "backups_max_defer_minutes",
+    "backups_gentle_save",
+    "backups_upload_limit_kib",
+    "backups_restic_gomaxprocs",
+    "backups_restic_read_concurrency",
+    "backups_restic_s3_connections",
+    "backups_restic_memory_limit_mb",
+    "backups_memory_high_mb",
+    "backups_memory_max_mb",
+)
 
 
 def render(template: Path, **extra: object) -> str:
@@ -82,6 +96,9 @@ def render(template: Path, **extra: object) -> str:
         ],
         "mc_map_threads": 1,
         "map_inaccessible_paths": MAP["map_inaccessible_paths"],
+        "map_memory_max_mb": MAP["map_memory_max_mb"],  # v1.5 (performance.vm)
+        **{k: v for k, v in BACKUPS.items() if k in V15_BACKUP_VARS},  # v1.5 smooth backups, performance.vm
+        "monitoring_health_memory_max_mb": MONITORING["monitoring_health_memory_max_mb"],
         **extra,
     }
     # Resolve the group_vars' own templating (mc_bin_dir: "{{ mc_root }}/bin", ...) once.
@@ -686,3 +703,76 @@ def test_the_jvm_can_read_the_world_map_output() -> None:
                 for wanted in (GROUP_VARS["mc_map_dir"], colors):
                     assert not (wanted + "/").startswith(path.rstrip("/") + "/"), (line, wanted)
     assert "ProtectHome=true" in unit  # /home only: /var/lib and /opt stay visible
+
+
+# --- v1.5: smooth backups' environment and performance.vm small's resource limits -------------------------------
+
+V15_UNITS = (
+    "mc-backup.service",
+    "mc-prune.service",
+    "mc-backup-check.service",
+    "mc-health.service",
+    "mc-map.service",
+)
+
+
+def _small_vm_vars() -> dict[str, object]:
+    from mcctl import render as mcrender
+    from mcctl import schema
+
+    data = yaml.safe_load((REPO / "examples/full/server.yml").read_text())
+    data["performance"] = {"vm": "small"}
+    return mcrender.vm_resources(schema.load_server(data))
+
+
+def test_default_preset_leaves_the_units_as_they_were() -> None:
+    backup_unit = render(UNITS["mc-backup.service"][0]).splitlines()
+    assert (
+        "Environment=BACKUP_SKIP_WHEN_IDLE=1 BACKUP_DEFER_WHEN_BUSY=1 BACKUP_MAX_DEFER_MINUTES=15"
+        in backup_unit
+    )
+    assert "Environment=BACKUP_GENTLE_SAVE=1 BACKUP_UPLOAD_LIMIT_KIB=0" in backup_unit
+    for unit in V15_UNITS:
+        text = render(UNITS[unit][0])
+        for absent in (
+            "GOMAXPROCS",
+            "GOMEMLIMIT",
+            "RESTIC_READ_CONCURRENCY",
+            "MemoryHigh=",
+            "S3_CONNECTIONS",
+        ):
+            assert absent not in text, (unit, absent)
+        assert ("MemoryMax=512M" in text) is (unit == "mc-map.service"), unit  # the map's cap before v1.5
+
+
+@pytest.mark.skipif(shutil.which("systemd-analyze") is None, reason="systemd-analyze not installed")
+@pytest.mark.parametrize("unit", V15_UNITS)
+def test_small_vm_units_pass_the_gate_and_carry_their_limits(unit: str, tmp_path: Path) -> None:
+    small = _small_vm_vars()
+    text = render(UNITS[unit][0], **small)
+    want = {
+        "mc-backup.service": ["Environment=GOMAXPROCS=1", "Environment=GOMEMLIMIT=192MiB", "MemoryHigh=256M",
+                              "MemoryMax=512M", "Environment=RESTIC_READ_CONCURRENCY=1",
+                              "Environment=BACKUP_S3_CONNECTIONS=2"],
+        "mc-prune.service": ["Environment=GOMAXPROCS=1", "Environment=GOMEMLIMIT=192MiB", "MemoryHigh=256M"],
+        "mc-backup-check.service": ["Environment=GOMAXPROCS=1", "Environment=GOMEMLIMIT=192MiB", "MemoryHigh=256M"],
+        "mc-health.service": ["MemoryMax=128M"],
+        "mc-map.service": ["MemoryMax=128M"],  # map.threads 1: 64 MB per thread + 64
+    }[unit]  # fmt: skip
+    for line in want:
+        assert line in text.splitlines(), (unit, line)
+    if unit in ("mc-prune.service", "mc-backup-check.service"):
+        assert "MemoryMax=" not in text  # they must finish; OOMScoreAdjust already sacrifices them first
+    path = tmp_path / unit
+    path.write_text(text)
+    proc = subprocess.run(
+        ["systemd-analyze", "security", "--offline=yes", "--threshold=25", "--no-pager", str(path)],
+        capture_output=True, text=True, check=False,
+    )  # fmt: skip
+    level = re.search(r"Overall exposure level for \S+: (\d+\.\d)", proc.stdout)
+    assert level and float(level.group(1)) <= 2.5 and proc.returncode == 0, proc.stdout[-2000:]
+    assert "Unknown key" not in proc.stderr and "Unknown section" not in proc.stderr, proc.stderr
+    verify = subprocess.run(
+        ["systemd-analyze", "verify", "--man=no", str(path)], capture_output=True, text=True
+    )
+    assert "Unknown key" not in verify.stderr and "Failed to parse" not in verify.stderr, verify.stderr

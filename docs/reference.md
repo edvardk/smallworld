@@ -104,8 +104,12 @@ product/config-repo split, GitHub settings and releasing. New here? Start with t
 - **Tailscale is held at a pinned version** (`tailscale_version`, apt hold), so Tailscale security fixes
   don't arrive with unattended upgrades: watch the [Tailscale security bulletins](https://tailscale.com/security-bulletins)
   and bump the pin by hand (Bumping versions).
-- **Hourly backups.** `backup.py` pauses saving (`save-off`, `save-all flush`), snapshots, then `save-on`
-  in a `finally`. `mc-backup.timer` runs hourly (+ up to 5 min random delay, catches up after downtime); the
+- **Hourly backups.** `backup.py` pauses saving (`save-off`, then `save-all` and a wait for the world's files to
+  go quiet, `save-all flush` only as the fallback: v1.5), snapshots, then `save-on` in a `finally`. v1.5: a run
+  the timer started (`TRIGGER_UNIT=mc-backup.timer`, set by systemd) is skipped when nobody played and no file
+  changed since the last backup (a fingerprint in `/var/lib/mc-snapshots/backup-state.json`; at least one real
+  backup a day) and deferred up to `backups.max_defer_minutes` while players see lag
+  ([operations: Smooth backups](operations.md#smooth-backups-v15)). `mc-backup.timer` runs hourly (+ up to 5 min random delay, catches up after downtime); the
   weekly prune runs Sundays at 03:30, between backups, and restic waits for each other's locks
   (`--retry-lock 30m`) instead of failing.
 - **No silent new world.** On a box without a world, `restore.py --if-missing` restores the newest

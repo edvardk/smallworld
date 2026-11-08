@@ -102,6 +102,25 @@ P17_GROUP_VARS = {"mc_brand_enabled", "mc_brand", "mc_brand_pack"}
 # v1.1: the client modpack (the setup page's host, the artifact mirror; mc-agent's code hand-off)
 V11_TFVARS = {"client_enabled", "client_hostname", "client_title", "client_colors"}
 V11_GROUP_VARS = {"mc_client_enabled"}
+# v1.5: smooth backups (server.yml backups.*) and performance.vm's helper limits (role variables, defaults = the
+# schema's and the default preset's)
+V15_BACKUP_VARS = {
+    "backups_skip_when_idle",
+    "backups_defer_when_busy",
+    "backups_max_defer_minutes",
+    "backups_gentle_save",
+    "backups_upload_limit_kib",
+}
+V15_VM_VARS = {
+    "backups_restic_gomaxprocs",
+    "backups_restic_read_concurrency",
+    "backups_restic_s3_connections",
+    "backups_restic_memory_limit_mb",
+    "backups_memory_high_mb",
+    "backups_memory_max_mb",
+    "monitoring_health_memory_max_mb",
+    "map_memory_max_mb",
+}
 
 P6_TFVARS = (
     {"deployment_name", "watchdog_backup_period_minutes", "watchdog_discord"}
@@ -227,6 +246,8 @@ EXPECTED_GROUP_VARS = {
     *PROFILE_GROUP_VARS,
     *P17_GROUP_VARS,
     *V11_GROUP_VARS,
+    *V15_BACKUP_VARS,
+    *V15_VM_VARS,
 }
 # ansible/group_vars/all/main.yml: product constants only (P3), disjoint from the rendered variables.
 GROUP_VARS_CONSTANTS = {
@@ -707,3 +728,129 @@ def test_render_stamps_the_product_version_for_the_worker(config_repo, tmp_path)
     worker = (REPO / "watchdog/worker.js").read_text()
     assert "version.json" not in worker.split("const ASSET_PATHS = ", 1)[1].split("\n", 1)[0]
     assert '"https://assets.invalid/version.json"' in worker
+
+
+# --- v1.5: smooth backups, the small-VM preset --------------------------------------------------------------------
+
+
+def _role_defaults(role: str) -> dict:
+    return yaml.safe_load((REPO / f"ansible/roles/{role}/defaults/main.yml").read_text())
+
+
+def test_smooth_backups_map_onto_the_backups_role() -> None:
+    """Without backups.* the rendered values are the role's defaults (= the schema's): skip, defer 15 min, gentle
+    save, no upload limit; explicit values come through."""
+    data = full_data()
+    data["backups"] = {"bucket": "lighthouse-backups"}
+    gv = render.group_vars(schema.load_server(data))
+    role = _role_defaults("backups")
+    assert {k: gv[k] for k in V15_BACKUP_VARS} == {k: role[k] for k in V15_BACKUP_VARS} == {
+        "backups_skip_when_idle": True, "backups_defer_when_busy": True, "backups_max_defer_minutes": 15,
+        "backups_gentle_save": True, "backups_upload_limit_kib": 0,
+    }  # fmt: skip
+    data["backups"] |= {"skip_when_idle": False, "defer_when_busy": False, "max_defer_minutes": 5,
+                        "gentle_save": False, "upload_limit_kib": 4096}  # fmt: skip
+    gv = render.group_vars(schema.load_server(data))
+    assert [gv[k] for k in sorted(V15_BACKUP_VARS)] == [False, False, 5, False, 4096]  # sorted by name
+
+
+@pytest.mark.parametrize(
+    ("backups", "alerts", "ok"),
+    [
+        ({}, {}, True),  # hourly, period 60: room for 20 minutes
+        ({"max_defer_minutes": 20}, {}, True),
+        ({"max_defer_minutes": 21}, {}, False),
+        ({"max_defer_minutes": 60}, {"backup_period_minutes": 100}, True),
+        ({"max_defer_minutes": 60, "defer_when_busy": False}, {}, True),  # off: no limit
+        ({"max_defer_minutes": 60, "schedule": "*-*-* 03:00"}, {}, True),  # no fixed period known
+        ({"max_defer_minutes": 0}, {}, False),
+    ],
+)
+def test_max_defer_leaves_room_in_the_watchdogs_grace(backups: dict, alerts: dict, ok: bool) -> None:
+    data = full_data()
+    data["backups"] = {"bucket": "lighthouse-backups", **backups}
+    data.setdefault("monitoring", {})["alerts"] = alerts
+    if ok:
+        schema.load_server(data)
+        return
+    with pytest.raises(schema.SchemaError) as e:
+        schema.load_server(data)
+    assert any(err.startswith("backups.max_defer_minutes") for err in e.value.errors), e.value.errors
+
+
+def test_default_vm_preset_changes_nothing() -> None:
+    data = full_data()
+    data.pop("jvm"), data.pop("performance")
+    cfg = schema.load_server(data)
+    gv = render.group_vars(cfg)
+    assert cfg.performance.vm == "default"
+    assert (gv["mc_heap_reserve_mb"], gv["mc_heap_reserve_pct"], gv["mc_chunk_worker_threads"]) == (
+        2816,
+        30,
+        -1,
+    )
+    assert (gv["mc_view_distance"], gv["mc_simulation_distance"]) == (10, 8)
+    defaults = {**_role_defaults("backups"), **_role_defaults("monitoring"), **_role_defaults("map")}
+    assert {k: gv[k] for k in V15_VM_VARS} == {k: defaults[k] for k in V15_VM_VARS}
+    assert gv["map_memory_max_mb"] == 512 and not any(gv[k] for k in V15_VM_VARS - {"map_memory_max_mb"})
+
+
+def test_small_vm_preset() -> None:
+    data = full_data()
+    data.pop("jvm")
+    data["performance"] = {"vm": "small"}
+    gv = render.group_vars(schema.load_server(data))
+    assert (gv["mc_heap_reserve_mb"], gv["mc_heap_reserve_pct"]) == (1024, 40)
+    assert gv["mc_chunk_worker_threads"] == 1  # auto pinned to one worker: pre-generation's pace
+    assert (gv["mc_view_distance"], gv["mc_simulation_distance"]) == (8, 8)  # vanilla's 10/8, view capped
+    assert {k: gv[k] for k in V15_VM_VARS} == {
+        "backups_restic_gomaxprocs": 1, "backups_restic_read_concurrency": 1, "backups_restic_s3_connections": 2,
+        "backups_restic_memory_limit_mb": 192, "backups_memory_high_mb": 256, "backups_memory_max_mb": 512,
+        "monitoring_health_memory_max_mb": 128, "map_memory_max_mb": 128,
+    }  # fmt: skip
+    # explicit settings win over the preset
+    data["performance"] = {"vm": "small", "profile": "balanced", "view_distance": 12, "chunk_threads": 2}
+    data["map"] = {"threads": 3}
+    gv = render.group_vars(schema.load_server(data))
+    assert (gv["mc_view_distance"], gv["mc_simulation_distance"], gv["mc_chunk_worker_threads"]) == (12, 5, 2)
+    assert gv["map_memory_max_mb"] == 64 * 4
+    data["jvm"] = {"heap_mb": 2048}
+    gv = render.group_vars(schema.load_server(data))
+    assert gv["mc_heap_mb"] == 2048 and "mc_heap_reserve_mb" not in gv
+    data.pop("jvm")
+    data["panel"] = {"mode": "onserver"}
+    data["client"], data["discord"] = {"enabled": False}, {}
+    assert render.group_vars(schema.load_server(data))["mc_heap_reserve_mb"] == 1024 + 768
+
+
+@pytest.mark.parametrize(
+    ("ram_mb", "heap"),
+    [
+        (3915, 2304),  # a "4 GB" VPS (3.9 GB usable): 40 % = 1566 MB reserved
+        (2930, 1536),  # 3 GB
+        (1950, 768),  # 2 GB: the 1024 MB floor; the bare minimum
+    ],
+)
+@pytest.mark.posix_only  # runs ansible-playbook
+def test_small_vm_heap_formula(ram_mb: int, heap: int, tmp_path) -> None:
+    """The minecraft role's own expression with the small preset's reserve (as test_auto_heap_formula)."""
+    import subprocess
+
+    expr = yaml.safe_load((REPO / "ansible/roles/minecraft/defaults/main.yml").read_text())["mc_heap_mb"]
+    play = tmp_path / "p.yml"
+    play.write_text(yaml.safe_dump([{
+        "hosts": "localhost", "connection": "local", "gather_facts": False,
+        "vars": {"ansible_facts": {"memtotal_mb": ram_mb}, "mc_heap_reserve_mb": render.SMALL_HEAP_RESERVE_MB,
+                 "mc_heap_reserve_pct": render.SMALL_HEAP_RESERVE_PCT, "heap": expr},
+        "tasks": [{"ansible.builtin.debug": {"msg": "HEAP={{ heap }}"}}],
+    }]))  # fmt: skip
+    env = {"ANSIBLE_LOCALHOST_WARNING": "false", "ANSIBLE_INVENTORY_UNPARSED_WARNING": "false"}
+    out = subprocess.run(
+        ["ansible-playbook", str(play)], capture_output=True, text=True, env=os.environ | env
+    )
+    assert f"HEAP={heap}" in out.stdout, out.stdout + out.stderr
+
+
+def test_vm_is_validated() -> None:
+    assert schema.field_errors("performance.vm", "tiny")
+    assert not schema.field_errors("performance.vm", "small")

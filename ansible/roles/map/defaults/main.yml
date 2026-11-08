@@ -19,3 +19,6 @@ map_inaccessible_paths:
   - -/var/lib/mc-agent
   - -/var/lib/mc-restore
   - -/var/cache/mc-restic
+# The renderer's MemoryMax in MB (mcctl render: 512 as before v1.5; performance.vm small: 64 per map.threads + 64,
+# the design budget of docs/reference.md "World map").
+map_memory_max_mb: 512

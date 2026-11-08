@@ -21,3 +21,19 @@ backups_check_schedule: "Mon *-*-* 09:41:00 UTC"
 # It fails when the newest snapshot is older than two backup periods (backups have stopped); a custom OnCalendar
 # backups.schedule gets a day and a bit.
 backups_check_max_age_hours: "{{ {'minutely': 2, 'hourly': 2, 'daily': 48, 'weekly': 336}.get(mc_backup_schedule, 26) }}"
+# v1.5 smooth backups (server.yml backups.*, rendered by mcctl render; these defaults = the schema's): mc-backup's
+# BACKUP_* environment, read by scripts/backup.py (only runs the timer started are skipped or deferred).
+backups_skip_when_idle: true
+backups_defer_when_busy: true
+backups_max_defer_minutes: 15
+backups_gentle_save: true
+backups_upload_limit_kib: 0
+# v1.5 performance.vm (mcctl render VM_RESOURCES; these defaults = the default preset, 0 = no limit / restic's own
+# default): GOMAXPROCS, RESTIC_READ_CONCURRENCY, `-o s3.connections`, GOMEMLIMIT (MiB) and the cgroup MemoryHigh
+# (mc-backup, mc-prune, mc-backup-check) / MemoryMax (mc-backup only) in MB.
+backups_restic_gomaxprocs: 0
+backups_restic_read_concurrency: 0
+backups_restic_s3_connections: 0
+backups_restic_memory_limit_mb: 0
+backups_memory_high_mb: 0
+backups_memory_max_mb: 0
