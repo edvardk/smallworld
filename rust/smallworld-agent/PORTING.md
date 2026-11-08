@@ -213,10 +213,10 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
   github_from_env(env, Option<Arc<dyn TokenSource>>)}`. `GitHubError` is `AgentError::Value("GitHubError", msg)`.
   **misc:** `impl TokenSource for TokenCache` (`token()` = `__call__`, `invalidate()` forgets the token and
   returns true); the self-test's `GitHub(lambda: token, ...)` is `GitHub::new(Arc::new(FixedToken(token)), ...)`,
-  `players_on_main()` and `call("GET", path, None)` are public; texts in `sync::alerts`. **link:** build
-  `sync::PanelSync::new(&settings, &env, Some(Arc::new(TokenCache::new(fetch))), inventory_due)` in the daemon
-  (a `ValueError` there is a startup crash, as in `Agent.__init__`), share its `github` with misc's self-test, and
-  run `sync::panel_loop(&panel_sync, &panel.pending, &stop)` on its own thread.
+  `players_on_main()` and `call("GET", path, None)` are public; texts in `sync::alerts`. **link/integration:**
+  `sync::panel_loop(&Daemon) -> AResult<()>` is the daemon's `LoopFn` (`("panel", Box::new(crate::sync::panel_loop))`):
+  it builds `PanelSync::new(&settings, &process_env(), TokenCache over POST /agent/github-token, inventory_due)`
+  and runs `sync::run_panel_loop(&ps, &daemon.panel.pending, &daemon.stop)`.
 
 ### misc (self-test, Mojang lookup, versions, budget, warnings, tokens)
 
