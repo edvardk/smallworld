@@ -121,13 +121,14 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
 - Proof: vectors for `verify` (every refusal), `ws_accept`, `encode_frame` (fixed mask); scenarios 1, 2, 20, 21.
 - **As ported** (for the other modules):
   - `daemon::Daemon` fields: `settings`, `stop: Arc<Event>`, `link: Link`, `inventory_due: Arc<Event>`,
-    `warn: Arc<Warnings>` (Python's `WARN`), `ws_connected`/`ws_established: AtomicBool`, `ws` (the live
+    `warn: &'static Warnings` (= `misc::warnings::WARN`, the one registry, as Python's module-level `WARN`), `ws_connected`/`ws_established: AtomicBool`, `ws` (the live
     session's `Arc<WsHandle>`; `Daemon::ws_sender()` is `Agent.ws` for the console tail), `nonces`, `panel:
-    Arc<Panel>`, `executor: Mutex<Executor>`. A module needing more daemon-wide state (counters, spool, the
+    Arc<Panel>`, `executor: Mutex<Executor>`, `misc: Arc<Misc>` (self-test, lookup, product_started). `Daemon::new` returns
+    `Err(ValueError text)` for a bad GITHUB_API_URL / MOJANG_LOOKUP_URLS (`main` prints a traceback, exits 1). A module needing more daemon-wide state (counters, spool, the
     self-test state, GitHub, the tail) adds a field built in `Daemon::new`, in a small commit of its own.
-  - `Daemon::new` leaves for their owners: `panel.selftest`/`panel.lookup` (misc), `Executor.tail` (data:
+  - `Daemon::new` leaves for their owners: `Executor.tail` (data:
     `ConsoleTail.request`), `Executor.telemetry` (actions). `daemon::run` spawns metrics, logs, control,
-    inventory, panel; **misc declares `misc::selftest::selftest_loop(&Daemon) -> AResult<()>` and data
+    inventory, panel, selftest (`daemon::selftest_loop`); **data declares
     `data::client_codes::client_loop(&Daemon) -> AResult<()>`** (started when `settings.client`), then they are
     added to `run`'s list (commented there).
   - Loops wrap each round in `daemon::round("metrics round failed", || ...)` (prints `{what}: {class}: {e}`,
@@ -227,9 +228,9 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
   `texts.json` `selftest_alert`/`selftest_back_alert`. Self-test follows rust-rcon's fix (`last_panel`: 60 s
   from the last on-demand run). Integration (link's `Daemon::new` / `run`, data's inventory, actions):
   ```text
-  let misc = Arc::new(Misc::new(&env, &settings.state_dir, misc::github_token_fetch(link.clone()))?); // Err = Agent() raising
-  misc.wire(&mut panel);                                          // Panel.selftest + Panel.lookup
-  ("selftest", |d| { d.misc.selftest.run_loop(&d.stop, &d.inventory_due); Ok(()) })   // a loop thread
+  let misc = Arc::new(Misc::new(&env, &settings.state_dir, misc::github_token_fetch(link.clone()))?); // wired in Daemon::new
+  misc.wire(&mut panel);                                          // wired: Panel.selftest + Panel.lookup
+  ("selftest", daemon::selftest_loop)                              // wired (Daemon.misc)
   inventory: "product": misc.product_state(), "selftest": misc.selftest.state.public()?
   do_lookup:  Ok(misc::lookup::reply_json(&lookup(get(args, "name"))?))   // Python's key order, not serde's
   do_selftest: panel.selftest("panel")?, (panel.changed)(), "passed[ (an earlier run: one per minute)]: steps" | "failed at {error or 'an unknown step'}"
@@ -322,6 +323,9 @@ Gotchas the goldens encode (keep them; both are logged as known issues to fix in
 - 2026-11-08, `tests/agent_parity/golden/selftest_{ok,failures}.json`: regenerated from Python after merging
   rust-rcon (selftest.json records `last_panel`). misc.
 - 2026-11-08, `daemon.rs` `NOT_PORTED`: `misc` removed. misc.
+- 2026-11-08, `daemon.rs` misc wiring: `Daemon.misc` (`Misc::new` + `misc.wire(&mut panel)` in `Daemon::new`, which
+  now returns `Result`), `Daemon.warn` is `&'static` `misc::warnings::WARN` (callers unchanged), the `selftest`
+  loop (`daemon::selftest_loop`). misc.
 - 2026-11-08, `tests/agent_parity/fakes.py` `make_cert`: a CA + leaf instead of a self-signed CA certificate
   (rustls refuses the latter). phase 1.
 - 2026-11-08, core `flock.rs` tests and `jobs.rs` test `the_file_lock_is_shared_across_runners`: retry the
