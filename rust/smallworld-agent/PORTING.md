@@ -20,7 +20,7 @@ divergences are listed under "Divergences"; add one only with a reason and a tes
 | `jobs.rs` | jobs | **done**: runner (foreground + background, cancel, announcements); the daemon's reports are link's `daemon::report_job` |
 | `panel/plugins.rs`, `panel/pending.rs` | phase 1 / sync | done (`record`, `record_world`, `update`); `merge_sync` is sync's |
 | `actions/` | actions | restart, plugin, moderate, world_* done; the rest stubs |
-| `link/`, `daemon.rs` | link | stubs |
+| `link/`, `daemon.rs` | link | **done** (verify/ws vectors; envelope, nonce, WebSocket and poll sections of scenarios 1, 2, 20 match golden with stubs elsewhere); final wiring of selftest/client loops waits for misc/data |
 | `ship/` | ship | stubs |
 | `data/`, `panel/rejected.rs` | data | stubs |
 | `sync/` | sync | stubs |
@@ -119,6 +119,29 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
   round; `sys::handle_signals(&DAEMON_SIGNALS, stop)`; `print(f"mc-agent {VERSION}: pushing to {host}")`.
   `report_job` posts `/ingest/job` and sets `inventory_due`.
 - Proof: vectors for `verify` (every refusal), `ws_accept`, `encode_frame` (fixed mask); scenarios 1, 2, 20, 21.
+- **As ported** (for the other modules):
+  - `daemon::Daemon` fields: `settings`, `stop: Arc<Event>`, `link: Link`, `inventory_due: Arc<Event>`,
+    `warn: Arc<Warnings>` (Python's `WARN`), `ws_connected`/`ws_established: AtomicBool`, `ws` (the live
+    session's `Arc<WsHandle>`; `Daemon::ws_sender()` is `Agent.ws` for the console tail), `nonces`, `panel:
+    Arc<Panel>`, `executor: Mutex<Executor>`. A module needing more daemon-wide state (counters, spool, the
+    self-test state, GitHub, the tail) adds a field built in `Daemon::new`, in a small commit of its own.
+  - `Daemon::new` leaves for their owners: `panel.selftest`/`panel.lookup` (misc), `Executor.tail` (data:
+    `ConsoleTail.request`), `Executor.telemetry` (actions). `daemon::run` spawns metrics, logs, control,
+    inventory, panel; **misc declares `misc::selftest::selftest_loop(&Daemon) -> AResult<()>` and data
+    `data::client_codes::client_loop(&Daemon) -> AResult<()>`** (started when `settings.client`), then they are
+    added to `run`'s list (commented there).
+  - Loops wrap each round in `daemon::round("metrics round failed", || ...)` (prints `{what}: {class}: {e}`,
+    a panic as `panic: <text>`). A loop thread that panics or returns `Err` is logged and restarted after 5 s;
+    `Err(NotPorted)` ends it.
+  - `link::command::handle_command` returns `AResult<Value>`: `Err` only for what Python doesn't catch there
+    (`Value`/`Key`/`Crash`), e.g. a non-ASCII `sig` (`hmac.compare_digest`'s `TypeError`), which ends the
+    WebSocket session (a `ValueError` is swallowed there) or the poll round, exactly as in Python.
+  - `jobs::Event` has no `clear()` yet; `inventory_loop` (data) needs one (`inventory_due.clear()`).
+  - **Test-only stubs switch:** a debug build starts the daemon despite `NOT_PORTED` when
+    `SMALLWORLD_AGENT_ALLOW_STUBS=1` (ignored in release builds: `cfg!(debug_assertions)`). The harness passes a
+    fixed environment, so point `--agent-bin` at a wrapper script:
+    `printf '#!/bin/sh\nSMALLWORLD_AGENT_ALLOW_STUBS=1 exec %s "$@"\n' $CARGO_TARGET_DIR/debug/smallworld-agent`.
+  - wss:// is proven by hand against a TLS server (`link::ws::tests::wss_round_trip`, ignored; see its comment).
 
 ### ship (journal shipping + scrubber)
 
