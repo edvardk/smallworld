@@ -1413,6 +1413,11 @@ def test_selftest_and_lookup_actions(tmp_path: Path, monkeypatch) -> None:
     assert runs == ["run"]
     assert agent.run_selftest("daily")["ok"] and runs == ["run", "run"]  # the daily run isn't limited
     assert agent.panel_state()["selftest"]["trigger"] == "daily"
+    # ...and doesn't lift the on-demand limit (e2e agent-a once ran the daily run between two panel runs)
+    assert ex.run({"action": "selftest", "args": {}, "login": "a@x", "id": "4"}).startswith(
+        "passed (an earlier run"
+    )
+    assert runs == ["run", "run"]
     # lookup: the panel's name check through the box
     agent.panel.lookup = lambda name: {"found": False, "via": "api.mojang.com", "asked": name}
     assert json.loads(ex.run({"action": "lookup", "args": {"name": "Steve"}, "login": "a@x", "id": "4"})) == {

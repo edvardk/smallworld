@@ -4,8 +4,8 @@
 //! works, `-5` is a value but `-x` is an unknown option, `--` ends the options, `-h` anywhere prints help. Ansible
 //! and the `mc` helper only use the plain forms, but a drop-in must accept and refuse exactly what the original
 //! does, with the same `error:` line and exit status 2. So this file is a small copy of argparse's algorithm
-//! (Python 3.13's `_parse_known_args`), limited to what mc_rcon.py's parsers use. The usage and help texts are
-//! argparse-like, not byte for byte (no script reads them).
+//! (the `_parse_known_args` of Python 3.13.5, Debian 13's and the binary's spec), limited to what mc_rcon.py's
+//! parsers use. The usage and help texts are argparse-like, not byte for byte (no script reads them).
 
 use crate::pystr::{PyInt, PyStr};
 use std::fmt::Write as _;
@@ -482,12 +482,12 @@ impl<'a> Run<'a> {
             Positional::Subcommand => {
                 let choice = &values[0];
                 let Some(sub) = SUBCOMMANDS.iter().find(|s| choice.eq_str(s)) else {
-                    let choices: Vec<String> =
-                        SUBCOMMANDS.iter().map(|s| format!("'{s}'")).collect();
+                    // The choices unquoted, as the spec Python (Debian 13's 3.13.5) lists them; other patch
+                    // releases quote them (docs/rust/smallworld-rcon.md "Which Python is the spec").
                     let msg = format!(
                         "argument cmd: invalid choice: {} (choose from {})",
                         choice.repr(),
-                        choices.join(", ")
+                        SUBCOMMANDS.join(", ")
                     );
                     return Err(self.fail(&msg));
                 };
@@ -791,14 +791,14 @@ mod tests {
         );
     }
 
-    /// Each case was checked against mc_rcon.py on Python 3.13 (tests/test_rust_rcon.py repeats them live).
+    /// Each case was checked against mc_rcon.py on Python 3.13.5 (tests/test_rust_rcon.py repeats them live).
     #[test]
     fn argparse_edge_cases() {
         let cases: &[(&str, &str)] = &[
             ("", "the following arguments are required: cmd"),
             (
                 "x",
-                "argument cmd: invalid choice: 'x' (choose from 'cmd', 'stop', 'countdown', 'worldborder', 'gamerule')",
+                "argument cmd: invalid choice: 'x' (choose from cmd, stop, countdown, worldborder, gamerule)",
             ),
             ("cmd", "the following arguments are required: command"),
             (
@@ -866,7 +866,7 @@ mod tests {
             ("countdown x -h", "argument seconds: invalid int value: 'x'"),
             (
                 "--cmd list",
-                "argument cmd: invalid choice: 'list' (choose from 'cmd', 'stop', 'countdown', 'worldborder', 'gamerule')",
+                "argument cmd: invalid choice: 'list' (choose from cmd, stop, countdown, worldborder, gamerule)",
             ),
         ];
         for (line, want) in cases {

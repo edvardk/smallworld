@@ -81,13 +81,13 @@ impl Executor {
         ))
     }
 
-    /// `do_lookup`: a Java name -> UUID through Mojang, from this box; compact JSON.
+    /// `do_lookup`: a Java name -> UUID through Mojang, from this box; compact JSON in Python's key order.
     pub(crate) fn do_lookup(&mut self, args: &Obj) -> AResult<String> {
         let panel = self.need_panel("lookup")?;
         let Some(lookup) = panel.lookup.clone() else {
             return Err(rejected("lookup: not available in this agent"));
         };
-        Ok(dumps_compact(&lookup(get(args, "name"))?))
+        Ok(crate::misc::lookup::reply_json(&lookup(get(args, "name"))?))
     }
 
     /// `do_console`: an allowlisted line over a fresh RCON connection; the reply cut to 4000 code points.

@@ -6,7 +6,14 @@
 //! work runs. Every state change goes to `report` (daemon: `POST /ingest/job`; cli: progress lines).
 //!
 //! Owner: jobs. Ported: the whole runner, foreground (`background: false`, the cli) and background (a thread per
-//! job, the daemon); `cancel`. The daemon's `report` (the Worker) and the job reports' wiring are link's.
+//! job, the daemon); `cancel`. The daemon's job reports are link's `daemon::report_job` (mc_agent.py
+//! `Agent.report_job`: `POST /ingest/job`, `WARN` "job", then `inventory_due`), the runner it builds
+//! `Jobs::new(report, Some(JOB_LOCK_FILE), true)`; the panel's cancel is actions' `do_cancel` ->
+//! `Jobs::cancel` (an `Action` error becomes `Rejected("cancel: ...")` in `Executor::run`).
+//!
+//! A SIGTERM during a countdown: the cli cancels the job (cli.rs); the daemon just stops (mc_agent.py `main`
+//! sets `stop`, the job threads are daemon threads): nothing more is reported, and the kernel releases
+//! job.lock when the process exits.
 
 use crate::types::{ANNOUNCE_AT, AResult, AgentError, COUNTDOWNS, Value};
 use regex::Regex;
