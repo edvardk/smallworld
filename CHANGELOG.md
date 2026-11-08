@@ -6,6 +6,28 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Added
+
+- **smallworld-rcon** (`rust/smallworld-rcon`), the product's first Rust component: a drop-in for the command line
+  of `scripts/mc_rcon.py` (`cmd`, `stop`, `countdown`, `worldborder`, `gamerule`) with the same arguments, output,
+  exit statuses, timeouts and RCON packets, proved side by side by `tests/test_rust_rcon.py`. Static musl binaries
+  for x86_64 and aarch64, std only (no dependencies), `unsafe` forbidden, built reproducibly with the pinned
+  toolchain by `scripts/build_rust.py` and committed in `rust/dist/` with their sha256 pinned in
+  `ansible/group_vars/all/main.yml` (`mc_smallworld_rcon_sha256`); CI job `rust` (rustfmt, clippy, unit tests, the
+  byte-for-byte rebuild, the differential tests). A walkthrough for Python programmers:
+  `docs/rust/smallworld-rcon.md`.
+- `notify.py restart-alert SECONDS ONLINE`: posts the deploy-restart note to Discord (what `countdown` posts;
+  smallworld-rcon, which has no TLS, runs it).
+
+### Changed
+
+- The deploy's countdown, world borders and game rules, the `mc` helper (and with it `mcctl rcon`) and
+  `minecraft.service`'s `ExecStop` call `/opt/minecraft/bin/smallworld-rcon` (root-owned, 0755; the base role
+  installs the build for the box's architecture after checking its pin). `ExecStop` falls back to
+  `mc_rcon.py stop` only when the binary gives no answer (missing, wrong architecture, crashed); its own failure
+  is final, as `mc_rcon.py stop`'s was (systemd then sends SIGTERM). The Python module stays for the scripts that
+  import it.
+
 ## [1.3.1] - 2026-11-07
 
 ### Added

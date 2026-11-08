@@ -16,8 +16,12 @@ UMask=0027
 # stopped, whoever starts it (scripts/restart_window.py apply; "-": a failure never keeps the server down).
 ExecStartPre=-{{ mc_bin_dir }}/restart_window.py apply
 ExecStart={{ mc_java_bin }} -Xms{{ mc_heap_mb }}M -Xmx{{ mc_heap_mb }}M {{ mc_jvm_flags | join(' ') }} -Dlog4j.configurationFile={{ mc_root }}/log4j2.xml -jar server.jar --nogui
-# Graceful: save-all flush + stop over RCON, then wait for the JVM ($MAINPID) to exit.
-ExecStop={{ mc_bin_dir }}/mc_rcon.py stop
+# Graceful: save-all flush + stop over RCON, then wait for the JVM ($MAINPID) to exit. v1.4: smallworld-rcon (Rust)
+# does it. Its answer is final when it gave one (0: stopped; 1: RCON failed or the JVM outlived the budget, and
+# systemd SIGTERMs it, which still saves): running mc_rcon.py stop after it would send save-all/stop again past the
+# 110 s budget. Only when the binary could not answer at all (status > 1: missing, wrong architecture, killed,
+# crashed) does mc_rcon.py stop, the same steps in Python, take over (docs/rust/smallworld-rcon.md "The stop path").
+ExecStop=/bin/sh -c '{{ mc_bin_dir }}/smallworld-rcon stop; rc=$$?; [ "$$rc" -le 1 ] && exit "$$rc"; echo "smallworld-rcon stop exited $$rc: falling back to mc_rcon.py stop" >&2; exec {{ mc_bin_dir }}/mc_rcon.py stop'
 Environment=PYTHONDONTWRITEBYTECODE=1
 TimeoutStopSec=120
 SuccessExitStatus=0 143

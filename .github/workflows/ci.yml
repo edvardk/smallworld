@@ -47,6 +47,7 @@ jobs:
       code: ${{ steps.changes.outputs.code }}
       workflows: ${{ steps.changes.outputs.workflows }}
       plugin: ${{ steps.changes.outputs.plugin }}
+      rust: ${{ steps.changes.outputs.rust }}
       seeds: ${{ steps.changes.outputs.seeds }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -324,6 +325,56 @@ jobs:
       # v1.2: the Smallworld client mod (client/mod/build.yml; every input sha256-checked on each use)
       - name: Rebuild the client mod and compare
         run: python scripts/build_client_mod.py check --cache "$RUNNER_TEMP/build-client-mod"
+
+  # v1.4: the Rust workspace (rust/: smallworld-rcon, the drop-in for mc_rcon.py's command line). rustup installs the
+  # toolchain rust/rust-toolchain.toml pins, with clippy, rustfmt and both musl targets (every download checked against
+  # the channel manifest's sha256); then rustfmt, clippy (warnings are errors), the unit tests, the reproducible
+  # rebuild compared byte for byte with rust/dist/ and the group_vars pins (scripts/build_rust.py check), and the
+  # differential tests against mc_rcon.py (tests/test_rust_rcon.py, which lint's pytest also runs). Runs when its
+  # inputs changed (scripts/ci_changes.py group `rust`), and always on releases and dispatches. Like `plugin`, not a
+  # required check.
+  rust:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements/dev.txt
+
+      - name: Install the build script's and the tests' dependencies
+        run: pip install --require-hashes --no-deps -r requirements/dev.txt
+
+      - name: Install the pinned Rust toolchain (rust/rust-toolchain.toml)
+        working-directory: rust
+        run: |
+          rustup toolchain install
+          rustc --version
+
+      - name: rustfmt
+        working-directory: rust
+        run: cargo fmt --all --check
+
+      - name: clippy
+        working-directory: rust
+        run: cargo clippy --locked --offline --all-targets -- -D warnings
+
+      - name: Unit tests
+        working-directory: rust
+        run: cargo test --locked --offline
+
+      - name: Rebuild the binaries and compare
+        run: python scripts/build_rust.py check
+
+      - name: Differential tests against mc_rcon.py
+        run: pytest -q tests/test_rust_rcon.py
 
   # v1.2: the world library's seed catalogue (worlds/seeds.yml). Boots the pinned server jar once per seed
   # (throwaway world, RCON on 127.0.0.1 with a random password), runs each claim's /locate and fails when a claim

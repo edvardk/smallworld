@@ -49,6 +49,18 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "docs/images/brand-*",
         "requirements/validate.txt",
     ),
+    # v1.4 ci.yml job rust: rustfmt, clippy, cargo test, build_rust.py check (the committed binaries and their
+    # pins), the differential tests against mc_rcon.py
+    "rust": (
+        "rust/*",
+        "scripts/build_rust.py",
+        "scripts/mc_rcon.py",
+        "scripts/notify.py",
+        "scripts/alerts.py",
+        "tests/test_rust_rcon.py",
+        "ansible/group_vars/all/main.yml",
+        "requirements/dev.txt",
+    ),
     # v1.2 ci.yml job seeds: re-verify the seed catalogue (/locate) on the pinned server build, so the
     # panel's "verified on <version>" badge stays honest (scripts/seed_check.py)
     "seeds": (
@@ -67,6 +79,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "mcctl/*",
         "scripts/*",
         "plugin/*",
+        "rust/dist/*",
         "server-config/*",
         "template/*",
         "watchdog/*",

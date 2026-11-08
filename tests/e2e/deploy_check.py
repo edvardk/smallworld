@@ -11,6 +11,9 @@ site.yml (same inventory, extra vars, MC_SECRET_* fakes passed by name from the 
         (its key was never removed), so the later checks run unchanged.
         pre-upgrade backup (M3): when the Minecraft version that last ran differs from the lock's, the deploy
         backs the world up before the new jar and records the snapshot in /var/lib/minecraft/pre-upgrade.json.
+        smallworld-rcon (v1.4): the pinned binary for the box's architecture is installed root-owned 0755, answers
+        `cmd list` exactly as mc_rcon.py does (as minecraft, and through `mc`), and a restart's ExecStop is
+        smallworld-rcon's own graceful stop (exit 0, no fallback to mc_rcon.py).
 """
 
 from __future__ import annotations
@@ -19,7 +22,10 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
+
+import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from mcctl import serverops
@@ -122,6 +128,45 @@ def pre_upgrade(box: str) -> None:
     expect(proc.returncode == 0 and "PRE-UPGRADE SNAPSHOT" not in proc.stdout, "the same version: no backup")
 
 
+def rust_rcon(box: str) -> None:
+    """v1.4: smallworld-rcon on the live box, and the stop path through it."""
+    pins = yaml.safe_load(
+        (Path(__file__).resolve().parents[2] / "ansible/group_vars/all/main.yml").read_text()
+    )
+    arch = {"x86_64": "amd64", "aarch64": "arm64"}[sh(box, "uname -m").stdout.strip()]
+    binary = "/opt/minecraft/bin/smallworld-rcon"
+    st = sh(box, f"stat -c '%U:%G %a' {binary} && sha256sum {binary}").stdout.split()
+    expect(st[:2] == ["root:root", "755"], f"smallworld-rcon is root:root 0755 ({st[:2]})")
+    expect(
+        st[2:3] == [pins["mc_smallworld_rcon_sha256"][arch]], f"smallworld-rcon is the pinned {arch} build"
+    )
+    rust = sh(box, f"runuser -u minecraft -- {binary} cmd list")
+    python = sh(box, "runuser -u minecraft -- /opt/minecraft/bin/mc_rcon.py cmd list")
+    expect(
+        rust.returncode == 0
+        and "There are" in rust.stdout
+        and (rust.stdout, rust.stderr) == (python.stdout, python.stderr),
+        f"smallworld-rcon cmd list answers as mc_rcon.py does ({rust.stdout.strip()[:80]})",
+    )
+    expect("There are" in sh(box, "mc list").stdout, "`mc list` (smallworld-rcon through sudo) answers")
+    since = sh(box, "date '+%Y-%m-%d %H:%M:%S'").stdout.strip()
+    expect(sh(box, "systemctl restart minecraft.service").returncode == 0, "minecraft.service restarts")
+    execstop = sh(box, "systemctl show -p ExecStop minecraft.service").stdout
+    expect(
+        "smallworld-rcon stop" in execstop and "status=0" in execstop,
+        f"ExecStop exited 0 ({execstop.strip()})",
+    )
+    journal = sh(box, f"journalctl -u minecraft.service --since '{since}' --no-pager").stdout
+    expect("falling back to mc_rcon.py" not in journal and "RCON stop failed" not in journal,
+           "the stop was smallworld-rcon's own (no fallback, no SIGTERM)")  # fmt: skip
+    deadline = time.monotonic() + 600
+    while (
+        sh(box, f"runuser -u minecraft -- {binary} cmd list").returncode != 0 and time.monotonic() < deadline
+    ):
+        time.sleep(5)
+    expect(time.monotonic() < deadline, "the server answers RCON again after the restart")
+
+
 def chunky(box: str) -> None:
     """health.py's pre-generation matches Chunky's replies over RCON (lang/en.json): check the real plugin answers."""
     reply = sh(box, "runuser -u minecraft -- /opt/minecraft/bin/mc_rcon.py cmd chunky progress").stdout
@@ -148,6 +193,7 @@ def social(box: str) -> None:
 
 if __name__ == "__main__":
     box = sys.argv[1]
+    rust_rcon(box)
     chunky(box)
     social(box)
     rekey(box)

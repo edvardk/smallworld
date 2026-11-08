@@ -1,0 +1,18 @@
+# The product's Rust workspace (v1.4). One crate so far: smallworld-rcon, the drop-in for scripts/mc_rcon.py's
+# command line. Rules (CLAUDE.md "Rust workspace"): the toolchain is pinned in rust-toolchain.toml, there are no
+# crates.io dependencies (std only; tests/test_rust_rcon.py checks Cargo.toml and Cargo.lock), and the binaries in
+# dist/ are rebuilt byte for byte by `python scripts/build_rust.py check`.
+[workspace]
+members = ["smallworld-rcon"]
+resolver = "2"
+
+# What scripts/build_rust.py builds: small, static, reproducible. No unwinding (a panic aborts: the binary has no
+# state to clean up), one codegen unit and fat LTO (deterministic and smallest), symbols stripped.
+[profile.release]
+opt-level = "s"
+codegen-units = 1
+lto = "fat"
+panic = "abort"
+strip = "symbols"
+debug = false
+incremental = false

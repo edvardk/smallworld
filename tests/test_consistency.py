@@ -589,3 +589,23 @@ def test_p13_plugin_collection_survives_a_throwing_getter() -> None:
     fail = _java_method(src, "private void fail(Snapshot s, RuntimeException e)")
     assert "abandon(s);" in fail and "current = null;" in fail and "ERROR_LOG_MS" in fail
     assert "writer.free.offer(s);" in _java_method(src, "private void abandon(Snapshot s)")
+
+
+def test_smallworld_rcon_pins_match_the_committed_binaries() -> None:
+    """v1.4: group_vars mc_smallworld_rcon_sha256 (what the base role checks before installing) is the sha256 of
+    each rust/dist/ binary (which scripts/build_rust.py check rebuilds byte for byte), for every target it builds."""
+    import hashlib
+
+    sys.path.insert(0, str(REPO / "scripts"))
+    import build_rust
+
+    pins = GROUP_VARS["mc_smallworld_rcon_sha256"]
+    assert set(pins) == set(build_rust.TARGETS)
+    for arch, target in build_rust.TARGETS.items():
+        data = (REPO / "rust/dist" / f"smallworld-rcon-{target}").read_bytes()
+        assert hashlib.sha256(data).hexdigest() == pins[arch], (
+            f"{target}: run python scripts/build_rust.py build"
+        )
+    defaults = yaml.safe_load((REPO / "ansible/roles/base/defaults/main.yml").read_text())
+    for arch, target in build_rust.TARGETS.items():
+        assert f"'{arch}': '{target}'" in defaults["base_rcon_target"]

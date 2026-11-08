@@ -399,7 +399,7 @@ jobs:
         timeout-minutes: 10
         run: docker exec mc-e2e python3 /src/product/tests/e2e/restart_window_check.py
 
-      - name: Deploy checks (restic password rotated by any deploy, pre-upgrade backup on a version change)
+      - name: Deploy checks (smallworld-rcon and its stop path, restic password rotated by any deploy, pre-upgrade backup)
         if: matrix.shard == 'core'
         timeout-minutes: 25
         run: python tests/e2e/deploy_check.py mc-e2e

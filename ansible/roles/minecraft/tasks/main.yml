@@ -302,7 +302,7 @@
 
 - name: Set world borders
   ansible.builtin.command: >-
-    {{ mc_bin_dir }}/mc_rcon.py worldborder --dimension {{ item.key }} --radius {{ item.value }}
+    {{ mc_bin_dir }}/smallworld-rcon worldborder --dimension {{ item.key }} --radius {{ item.value }}
   become: true
   become_user: minecraft
   register: mc_border
@@ -316,7 +316,7 @@
 # dimension (Paper keeps them per world); read first, set only a different value: idempotent.
 - name: Set game rules
   ansible.builtin.command: >-
-    {{ mc_bin_dir }}/mc_rcon.py gamerule --name {{ item.key }} --value {{ item.value }}
+    {{ mc_bin_dir }}/smallworld-rcon gamerule --name {{ item.key }} --value {{ item.value }}
     --dimension minecraft:overworld --dimension minecraft:the_nether --dimension minecraft:the_end
   become: true
   become_user: minecraft

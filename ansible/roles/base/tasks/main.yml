@@ -301,6 +301,37 @@
   # agent role (handlers are play-wide) and restarts it only where it's installed.
   notify: mc-agent code changed
 
+# v1.4: smallworld-rcon (rust/smallworld-rcon, docs/rust/smallworld-rcon.md), the Rust drop-in for mc_rcon.py's
+# command line that the minecraft unit's ExecStop, the deploy's countdown/world border/game rules and `mc` call. The
+# committed static binary for this box's architecture is checked against its pin on the controller first, so a
+# binary that isn't the reproducible build (scripts/build_rust.py check) is never installed. Root-owned, 0755: every
+# user runs it, none can change it. mc_rcon.py stays (other scripts import it; ExecStop falls back to it).
+- name: Read the sha256 of the smallworld-rcon binary for this architecture (on the controller)
+  ansible.builtin.stat:
+    path: "{{ base_rcon_src }}"
+    checksum_algorithm: sha256
+  delegate_to: localhost
+  become: false
+  register: base_rcon_bin
+
+- name: The smallworld-rcon binary is the pinned build (a mismatch fails the deploy before anything is installed)
+  ansible.builtin.assert:
+    that:
+      - base_rcon_bin.stat.exists
+      - base_rcon_bin.stat.checksum == mc_smallworld_rcon_sha256[base_rcon_arch]
+    fail_msg: >-
+      {{ base_rcon_src }} is not the build mc_smallworld_rcon_sha256.{{ base_rcon_arch }} pins
+      (run scripts/build_rust.py check in the product checkout).
+    quiet: true
+
+- name: Install smallworld-rcon
+  ansible.builtin.copy:
+    src: "{{ base_rcon_src }}"
+    dest: "{{ mc_bin_dir }}/smallworld-rcon"
+    owner: root
+    group: root
+    mode: "0755"
+
 # v1.3 "versions everywhere": what this deploy installed, for mc-agent's inventory (the panel's Versions row,
 # `mcctl doctor`, `mcctl status`). The version is the product checkout's own (mcctl/__init__.py = pyproject.toml,
 # scripts/release.py), the commit its git HEAD: the config repo's pin in CI and for `mcctl deploy` (which
@@ -408,7 +439,7 @@
     content: |
       #!/bin/sh
       # Run a server console command over RCON.
-      exec sudo -u minecraft {{ mc_bin_dir }}/mc_rcon.py cmd "$@"
+      exec sudo -u minecraft {{ mc_bin_dir }}/smallworld-rcon cmd "$@"
     owner: root
     group: root
     mode: "0755"

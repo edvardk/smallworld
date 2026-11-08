@@ -76,3 +76,16 @@ def test_cli(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(notify, "maintenance", lambda m, r: seen.append((m, r)))
     assert notify.main(["maintenance", "15", "deploy"]) == 0 and seen == [(15, "deploy")]
     assert notify.main(["maintenance", "x", "deploy"]) == 2
+
+
+def test_cli_restart_alert(monkeypatch) -> None:
+    """v1.4: `notify.py restart-alert SECONDS ONLINE` posts exactly what `mc_rcon.py countdown` posts (smallworld-rcon
+    runs it for its countdown: the binary has no TLS)."""
+    import mc_rcon
+
+    seen: list[str] = []
+    monkeypatch.setattr(notify, "discord", seen.append)
+    assert notify.main(["restart-alert", "60", "3"]) == 0
+    assert seen == [mc_rcon.restart_alert(60, 3)]
+    assert notify.main(["restart-alert", "x", "3"]) == 2
+    assert notify.main(["restart-alert", "60"]) == 2 and len(seen) == 1
