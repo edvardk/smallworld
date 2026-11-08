@@ -50,6 +50,19 @@ impl RejectedLogins {
     }
 }
 
+impl RejectedLogins {
+    /// `feed(lines)`: (ts ms, message) lines of minecraft.service; true if the list changed. (ship's logs loop
+    /// calls it; data's port defines the same signature.)
+    ///
+    /// # Errors
+    /// `NotPorted` until data ports it.
+    pub fn feed(&self, _lines: &[(i64, String)]) -> AResult<bool> {
+        Err(AgentError::NotPorted(
+            "panel::rejected::RejectedLogins::feed",
+        ))
+    }
+}
+
 /// mc_panel.py `mask_address(addr)`: "/203.0.113.7:51234" -> "203.0.113.x"; IPv6 -> its /48; else "".
 /// Not ported yet (data); returns "" (reveals nothing) until then.
 pub fn mask_address(_addr: &str) -> String {
