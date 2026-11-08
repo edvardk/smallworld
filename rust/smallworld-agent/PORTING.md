@@ -19,7 +19,7 @@ divergences are listed under "Divergences"; add one only with a reason and a tes
 | `types.rs`, `sys.rs`, `unicode.rs`, `settings.rs`, `http.rs`, `notify.rs`, `systemd.rs`, `worlds.rs` | phase 1 | done (shared) |
 | `jobs.rs` | jobs | **done**: runner (foreground + background, cancel, announcements); the daemon's reports are link's `daemon::report_job` |
 | `panel/plugins.rs`, `panel/pending.rs` | phase 1 / sync | done (`record`, `record_world`, `update`); `merge_sync` is sync's |
-| `actions/` | actions | restart, plugin, moderate, world_* done; the rest stubs |
+| `actions/` | actions | **done**: every `do_<action>`, `Telemetry` (sidecar online.json + `Messages`), console vectors + differential fuzzing; daemon scenarios match golden in their action sections, full gate waits for data (below) |
 | `link/`, `daemon.rs` | link | **done** (verify/ws vectors; envelope, nonce, WebSocket and poll sections of scenarios 1, 2, 20 match golden with stubs elsewhere); final wiring of selftest/client loops waits for misc/data |
 | `ship/` | ship | stubs |
 | `data/`, `panel/rejected.rs` | data | **done**: vectors parsers/round/rejected/constants/client requests + a Python differential corpus; scenario 17 (`client_codes`) passes on its own; 4 (`status`), 14 (`logs_rejected`), `tail` and 24 (`state_roundtrip`) pass in a local merge with ship + actions |
@@ -204,6 +204,31 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
   already in `actions/mod.rs`.
 - Proof: vectors for `check_console` (done here: extend with the harness corpus), `_one_line`; scenarios 3, 5,
   7, 8, 10, 15, 16; `tests/test_agent.py`'s "ACTIONS == do_*" extended to the Rust list.
+- Done (actions owner): `actions/info.rs` (status, selftest, lookup, console, tail, cancel, player_message),
+  `power.rs` (stop + `stop_now`, start, backup), `moderate.rs` (whitelist + `read_json_list`, rejected_dismiss),
+  `restore.rs`, `telemetry.rs`. Vectors: `console.json` (all 230) and `one_line.json` in `cargo test`;
+  `tests/test_rust_agent_console.py` fuzzes the allowlist against Python (Hypothesis) through the hidden
+  `selftest-console`; `tests/test_agent.py::test_rust_agent_actions_match_python` keeps ACTIONS, the dispatch and
+  the `do_*` set equal and stub-free.
+- **For the daemon wiring (link):** `Executor::new(sample, tail, panel, telemetry)` with `sample` = data's
+  `collect(Counters())` (a fresh `Counters`, the shared persistent RCON), `tail` = data's `ConsoleTail.request`
+  (always passed; it refuses itself without the WebSocket), `panel.selftest`/`panel.lookup` = misc's, `panel.changed` = set `inventory_due`;
+  `telemetry` = `Some(Arc::new(actions::telemetry::Sidecar::from_env(&env)?))` when `EXPERIENCE=1` (a bad
+  `MESSAGE_*` value is `main`'s exit 2, like Python's `int()` in `make_telemetry`), else `None`.
+- **The sidecar's `online.json`** (telemetry side, design §1.3): `/var/lib/mc-telemetry/online.json`, a JSON object
+  `{uuid: {"u", "n", "tips", "join"}}` (exactly `Telemetry.online()`), rewritten every poll; readable by mcops.
+  Older than 30 s by mtime, missing or not an object = nobody online. `Messages` state (per-player/broadcast
+  limits, hourly count) is the agent's, in memory, as in Python.
+- Scenario status (2026-11-08, debug build behind the stub gate, on top of link + sync + misc): with a local,
+  uncommitted harness tweak that skips the startup metrics/inventory pushes (data) and drops the data plane's
+  trace parts (inventory notes and pushes, `rcon.stats_connections`, `systemd.probes`, spool.jsonl), these match
+  golden on `notes`, `exits`, `rcon`, `systemd`, `audit`, `files`, job reports and WebSocket results:
+  `console`, `stop_start`, `countdown_cancel`, `backup`, `plugin`, `restore`, `worlds`, `lookup`, `selftest_ok`,
+  `selftest_failures`, `locks`, `whitelist_pr` (the last one with `RejectedLogins::drop_name` returning
+  `Ok(false)` locally: data's stub refuses it). `cli` passes unmodified. **Not yet in `RUST_PARITY_SCENARIOS`:**
+  the gate runs the release dist binary, which refuses to start while `NOT_PORTED` holds ship and data, and
+  every daemon scenario waits for data's startup pushes; add them with data's merge and the dist rebuild.
+  `status`, `tail`, `logs_rejected` (rejected_dismiss) need data's `collect`, `ConsoleTail`, `RejectedLogins`.
 
 ### jobs (job runner integration)
 
@@ -332,6 +357,13 @@ Gotchas the goldens encode (keep them; both are logged as known issues to fix in
   it can't happen on a local file).
 - Unicode tables are the crates' (pinned), Python's the interpreter's; parity is over code points assigned in
   the oldest supported table (Unicode 14).
+- `smallworld-agent selftest-console` (hidden, test-only) reads a JSON array on stdin and prints the console
+  allowlist's outcomes (`actions::console::selftest_main`); Python's agent has no such subcommand (there, any
+  first argument but `cli` runs the daemon). Pure: no RCON, no file, no audit, no program run.
+- `read_json_list` (whitelist/ops checks): `json.loads(bytes)`'s UTF-16/32 auto-detection isn't reproduced
+  (UTF-8, with or without a BOM, is); the server writes UTF-8.
+- `player_message` reads who is online from the telemetry sidecar's `online.json` (stale > 30 s = nobody)
+  instead of the in-process `Telemetry.online()`.
 - Self-test probe (misc): a GitHub reply that isn't JSON reads as `ValueError("Expecting value: line 1 column 1
   (char 0)")` whatever the actual JSONDecodeError position; base64 and the subscript errors follow CPython's
   texts for the common cases. Only the step's `detail` text can differ, never the outcome.
@@ -374,3 +406,9 @@ Gotchas the goldens encode (keep them; both are logged as known issues to fix in
 - 2026-11-08, `daemon.rs`: `run` starts `data::client_codes::client_loop` when `settings.client` and calls
   `data::wire` (the executor's tail through `ws_sender`) before the loops; `Daemon::new` takes
   `data::status_sample()`; `data` leaves `NOT_PORTED`. data.
+- 2026-11-08, core `properties.rs`: `read_untrusted_limit(path, limit)` and `UNTRUSTED_MAX_BYTES` (mc_rcon.py's
+  default 16 MiB); `read_untrusted` now calls it with 1 MiB. Additive. actions.
+- 2026-11-08, `settings.rs`: `int_env` made `pub` (telemetry's `MESSAGE_*` settings). actions.
+- 2026-11-08, `main.rs`: the hidden `selftest-console` subcommand (see "Divergences"). actions.
+- 2026-11-08, `requirements/dev.in` (+ `dev.txt`): `hypothesis==6.169.0` for the differential tests (ship's
+  scrubber fuzzing needs it too: keep one pin). actions.

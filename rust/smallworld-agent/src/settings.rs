@@ -37,7 +37,7 @@ pub fn process_env() -> Env {
 
 /// `int(e.get(name) or default)`: Python's `int()` accepts surrounding whitespace, `_` between digits and a
 /// sign; anything else is a `ValueError` (the daemon then exits 2 with the message).
-fn int_env(e: &Env, name: &str, default: i64) -> Result<i64, String> {
+pub fn int_env(e: &Env, name: &str, default: i64) -> Result<i64, String> {
     let raw = e.get(name).map_or("", String::as_str);
     if raw.is_empty() {
         return Ok(default);

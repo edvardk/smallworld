@@ -28,7 +28,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 /// Modules still stubs (each owner removes its name when ported; `main` refuses to start while any remain).
-pub const NOT_PORTED: [&str; 2] = ["ship", "actions"];
+pub const NOT_PORTED: [&str; 1] = ["ship"];
 
 /// The test-only switch (see the module comment).
 pub const ALLOW_STUBS_ENV: &str = "SMALLWORLD_AGENT_ALLOW_STUBS";
@@ -108,10 +108,19 @@ impl Daemon {
         misc.wire(&mut panel);
         let panel = Arc::new(panel);
         // `Executor(lambda: collect(Counters()), self.tail.request, self.panel, self.telemetry)`: data wires the
-        // console tail (`ConsoleTail.request`, which needs `Daemon::ws`); the telemetry view is actions' (the
-        // sidecar's online.json), `None` until then.
+        // console tail (`ConsoleTail.request`, which needs `Daemon::ws`); the telemetry view (actions') is below.
         let sample = crate::data::status_sample();
-        let executor = Executor::new(sample, None, Some(Arc::clone(&panel)), None);
+        // `self.telemetry = self.make_telemetry() if s.experience else None`: in rust mode telemetry is the
+        // Python sidecar; the agent keeps `Messages` and reads its online.json (actions/telemetry.rs). A bad
+        // MESSAGE_* number is `int()`'s ValueError, as in Python.
+        let telemetry: Option<Arc<dyn crate::actions::Telemetry>> = if settings.experience {
+            Some(Arc::new(crate::actions::telemetry::Sidecar::from_env(
+                &process_env(),
+            )?))
+        } else {
+            None
+        };
+        let executor = Executor::new(sample, None, Some(Arc::clone(&panel)), telemetry);
         Ok(Self {
             settings,
             stop,
