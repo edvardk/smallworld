@@ -3,8 +3,8 @@
 //! shipped as gzipped NDJSON to R2 (`POST /ingest/archive?batch=`) and capped per UTC day to D1
 //! (`POST /ingest/logs`); the cursor moves only once both are delivered (archive.rs, `ship_logs`).
 //!
-//! Not ported on purpose: `ship_logs`'s `observe_all` (telemetry's overhead card). In rust mode telemetry is
-//! the Python sidecar, which reads systemd's resource lines from the journal itself (design §1.3).
+//! `observe_all` (P13, telemetry's overhead card) sees every entry of a batch before scrubbing, as in Python:
+//! the daemon passes the in-process telemetry's `Overhead::observe_journal` (systemd's end-of-run lines).
 
 pub mod archive;
 pub mod journal;
@@ -86,6 +86,9 @@ impl Ingest for Link {
 /// the rejected-logins feed). Errors fail the round as Python's exceptions do.
 pub type Observe<'a> = &'a dyn Fn(&[Obj]) -> Result<(), AgentError>;
 
+/// `observe_all(entries)`: every entry of the batch, read-only, before scrubbing (telemetry's overhead card).
+pub type ObserveAll<'a> = &'a dyn Fn(&[Obj]);
+
 /// `hashlib.sha256((cursor or "").encode()).hexdigest()[:32]`: the archive's idempotency key.
 ///
 /// # Errors
@@ -122,6 +125,7 @@ pub struct ShipParts<'a> {
     /// `scrub` (default: `scrubber_for(s)`, built per batch: known values are re-read every time).
     pub scrub: Option<&'a Scrubber>,
     pub observe: Option<Observe<'a>>,
+    pub observe_all: Option<ObserveAll<'a>>,
     pub cede: &'a mut dyn FnMut(),
 }
 
@@ -140,6 +144,10 @@ pub fn ship_logs(
     let st = LogState::load(path);
     let batch = (parts.read)(&st.cursor)?;
     let (mut entries, cursor, more) = (batch.entries, batch.cursor, batch.full);
+    if let Some(observe_all) = parts.observe_all {
+        let all: Vec<Obj> = entries.iter().map(journal::Entry::to_obj).collect();
+        observe_all(&all);
+    }
     let seen: Vec<Obj> = if parts.observe.is_some() {
         entries
             .iter()
@@ -213,6 +221,7 @@ fn logs_round(
     ingest: &dyn Ingest,
     stop: &crate::jobs::Event,
     observe: Option<Observe<'_>>,
+    observe_all: Option<ObserveAll<'_>>,
 ) -> Result<(), ShipError> {
     let path = s.state_dir.join("logs.json");
     for _ in 0..LOG_CATCHUP_BATCHES {
@@ -235,6 +244,7 @@ fn logs_round(
                 read: &mut read,
                 scrub: None,
                 observe,
+                observe_all,
                 cede: &mut || cede.cede(),
             },
         )?;
@@ -253,12 +263,13 @@ pub fn run_logs_loop(
     stop: &crate::jobs::Event,
     warn: &Warnings,
     observe: Option<Observe<'_>>,
+    observe_all: Option<ObserveAll<'_>>,
 ) {
     #[allow(clippy::cast_precision_loss)]
     let wait = s.log_batch_s as f64;
     while !stop.wait(wait) {
         let round = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            logs_round(s, ingest, stop, observe)
+            logs_round(s, ingest, stop, observe, observe_all)
         }));
         match round {
             Ok(Ok(())) => warn.ok("logs"),
@@ -304,12 +315,18 @@ pub fn observe_logs(daemon: &crate::daemon::Daemon, entries: &[Obj]) -> Result<(
 #[allow(clippy::unnecessary_wraps)] // the daemon's LoopFn type
 pub fn logs_loop(daemon: &crate::daemon::Daemon) -> Result<(), AgentError> {
     let observe = |entries: &[Obj]| observe_logs(daemon, entries);
+    let overhead = daemon
+        .telemetry
+        .as_ref()
+        .map(|t| move |entries: &[Obj]| t.overhead.observe_journal(entries));
+    let observe_all: Option<ObserveAll<'_>> = overhead.as_ref().map(|f| f as ObserveAll<'_>);
     run_logs_loop(
         &daemon.settings,
         &daemon.link,
         &daemon.stop,
         daemon.warn,
         Some(&observe),
+        observe_all,
     );
     Ok(())
 }
@@ -467,6 +484,7 @@ mod tests {
                     read: &mut |_| Ok(batch()),
                     scrub: Some(&scrub),
                     observe: Some(&observe),
+                    observe_all: None,
                     cede: &mut || (),
                 },
             );
@@ -486,6 +504,7 @@ mod tests {
                 read: &mut |_| Ok(batch()),
                 scrub: Some(&scrub),
                 observe: Some(&observe),
+                observe_all: None,
                 cede: &mut || (),
             },
         )
@@ -546,6 +565,7 @@ mod tests {
                 },
                 scrub: Some(&Scrubber::new(vec![])),
                 observe: None,
+                observe_all: None,
                 cede: &mut || (),
             },
         )

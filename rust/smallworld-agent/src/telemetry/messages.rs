@@ -1,43 +1,21 @@
-//! `player_message`'s view of experience telemetry (PORTING.md "actions"; design §1.3): telemetry.py stays a
-//! Python sidecar (`mc-telemetry.service`) in rust mode, so the agent ports only `Messages` (telemetry.py
-//! 848-900: the rate limits and messages.tsv for the mc-telemetry plugin) and reads who is online from the
-//! sidecar's `online.json`.
-//!
-//! `online.json` (the sidecar's side of the contract): a JSON object `{uuid: {"u", "n", "tips", "join"}}`, the
-//! map `Telemetry.online()` returns, rewritten every poll. A file older than `ONLINE_STALE_S` (by mtime), missing
-//! or unreadable means nobody is online (every private message is refused as "player isn't online").
+//! telemetry.py `Messages` (848-900): the in-game messages the Worker asked for (signed `player_message`
+//! commands), rate-limited again here (per player, join grace, tips off, broadcasts, per hour), queued in
+//! `messages.tsv` (0640, the setgid verdict directory) for the mc-telemetry plugin. State in memory, as in
+//! Python. `player_message` gets the online map from the in-process telemetry (`Telemetry::online`, mod.rs).
 
-use super::Telemetry;
+use super::snapshot::clean_str;
 use crate::settings::{Env, int_env};
 use crate::types::{AResult, AgentError, Obj, Value, truthy};
-use smallworld_core::pystr::{isspace, prefix_cp, split_ws};
 use std::collections::HashMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::UNIX_EPOCH;
 
 /// telemetry.py `VERDICT_DIR` (messages.tsv lives there; setgid minecraft).
 pub const VERDICT_DIR: &str = "/run/mc-verdicts";
-/// Where the telemetry sidecar keeps the latest online map.
-pub const ONLINE_FILE: &str = "/var/lib/mc-telemetry/online.json";
-/// An online map older than this is "nobody online".
-pub const ONLINE_STALE_S: f64 = 30.0;
 /// telemetry.py `Messages.EXPIRE_S`.
 pub const EXPIRE_S: f64 = 120.0;
-
-/// telemetry.py `clean_text(text, limit)`: one line for the plugin's TSV files. Every whitespace character
-/// (U+001C..U+001F too) becomes a space, then what `str.isprintable()` refuses goes: after the first step that
-/// is exactly the bad categories (every `Zs` is whitespace), then collapsed and cut to `limit` code points.
-pub fn clean_text(text: &str, limit: usize) -> String {
-    let t: String = text
-        .chars()
-        .map(|c| if isspace(c) { ' ' } else { c })
-        .filter(|&c| !crate::unicode::is_bad_category(c))
-        .collect();
-    prefix_cp(&split_ws(&t).join(" "), limit).to_string()
-}
 
 #[derive(Debug, Clone)]
 struct Queued {
@@ -55,10 +33,9 @@ struct State {
     sent: Vec<f64>,
 }
 
-/// telemetry.py `Messages` with the agent's settings, plus the sidecar's online map.
-pub struct Sidecar {
+/// telemetry.py `Messages` with the agent's settings.
+pub struct Messages {
     pub directory: PathBuf,
-    pub online_file: PathBuf,
     pub per_player_s: i64,
     pub broadcast_s: i64,
     pub join_grace_s: i64,
@@ -66,11 +43,10 @@ pub struct Sidecar {
     state: Mutex<State>,
 }
 
-impl Sidecar {
-    pub fn new(directory: impl Into<PathBuf>, online_file: impl Into<PathBuf>) -> Self {
+impl Messages {
+    pub fn new(directory: impl Into<PathBuf>) -> Self {
         Self {
             directory: directory.into(),
-            online_file: online_file.into(),
             per_player_s: 1800,
             broadcast_s: 1800,
             join_grace_s: 60,
@@ -89,7 +65,7 @@ impl Sidecar {
             .get("VERDICT_DIR")
             .filter(|d| !d.is_empty())
             .map_or(VERDICT_DIR, String::as_str);
-        let mut s = Self::new(dir, ONLINE_FILE);
+        let mut s = Self::new(dir);
         s.per_player_s = int_env(e, "MESSAGE_PER_PLAYER_S", 1800)?.max(60);
         s.broadcast_s = int_env(e, "MESSAGE_BROADCAST_S", 1800)?.max(60);
         s.per_hour = int_env(e, "MESSAGE_PER_HOUR", 20)?.max(1);
@@ -100,22 +76,6 @@ impl Sidecar {
         self.state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-
-    /// The online map, or empty when the file is missing, unreadable, not an object or stale.
-    pub fn online_at(&self, now: f64) -> Obj {
-        let fresh = fs::metadata(&self.online_file)
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-            .is_some_and(|t| now - t.as_secs_f64() <= ONLINE_STALE_S);
-        if !fresh {
-            return Obj::new();
-        }
-        match smallworld_core::pyjson::read_json(&self.online_file) {
-            Some(Value::Object(m)) => m.into_iter().filter(|(_, p)| p.is_object()).collect(),
-            _ => Obj::new(),
-        }
     }
 
     fn write(&self, st: &State) -> AResult<()> {
@@ -141,12 +101,12 @@ fn atomic_text(path: &Path, text: &str) -> std::io::Result<()> {
 }
 
 #[allow(clippy::cast_precision_loss)]
-impl Telemetry for Sidecar {
-    fn online(&self) -> AResult<Obj> {
-        Ok(self.online_at(crate::sys::now()))
-    }
-
-    fn check(&self, to: &str, kind: &str, now: f64, online: &Obj) -> AResult<String> {
+impl Messages {
+    /// `check(to, kind, now, online)`: why not to send, or "".
+    ///
+    /// # Errors
+    /// `Crash` where Python raises (a `join` that isn't a number).
+    pub fn check(&self, to: &str, kind: &str, now: f64, online: &Obj) -> AResult<String> {
         let mut st = self.state();
         st.sent.retain(|t| now - t < 3600.0);
         if i64::try_from(st.sent.len()).unwrap_or(i64::MAX) >= self.per_hour {
@@ -189,7 +149,11 @@ impl Telemetry for Sidecar {
     }
 
     #[allow(clippy::cast_possible_truncation)]
-    fn add(
+    /// `add(msg_id, to, kind, text, hover, now)`.
+    ///
+    /// # Errors
+    /// The `OSError` of writing messages.tsv.
+    pub fn add(
         &self,
         id: &str,
         to: &str,
@@ -205,8 +169,8 @@ impl Telemetry for Sidecar {
             id: id.to_string(),
             to: to.to_string(),
             expires: ((now + EXPIRE_S) * 1000.0) as i64,
-            text: clean_text(text, 256),
-            hover: clean_text(hover, 256),
+            text: clean_str(text, 256),
+            hover: clean_str(hover, 256),
         });
         st.last.insert(to.to_string(), now);
         st.sent.push(now);
@@ -219,8 +183,8 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn sidecar(dir: &Path) -> Sidecar {
-        Sidecar::new(dir, dir.join("online.json"))
+    fn sidecar(dir: &Path) -> Messages {
+        Messages::new(dir)
     }
 
     fn online(v: Value) -> Obj {
@@ -283,16 +247,6 @@ mod tests {
             "hourly message limit reached"
         );
         assert_eq!(s.check("*", "server", now + 4000.0, &on).unwrap(), "");
-        // stale or missing online map: nobody
-        assert!(s.online_at(now).is_empty());
-        fs::write(
-            tmp.join("online.json"),
-            json!({u: {"n": "Bob"}, "x": 5}).to_string(),
-        )
-        .unwrap();
-        let t = crate::sys::now();
-        assert_eq!(s.online_at(t).len(), 1);
-        assert!(s.online_at(t + 31.0).is_empty());
         fs::remove_dir_all(&tmp).unwrap();
     }
 
@@ -301,10 +255,10 @@ mod tests {
         let mut e = Env::new();
         e.insert("MESSAGE_PER_PLAYER_S".into(), "5".into());
         e.insert("MESSAGE_PER_HOUR".into(), " 0 ".into());
-        let s = Sidecar::from_env(&e).unwrap();
+        let s = Messages::from_env(&e).unwrap();
         assert_eq!((s.per_player_s, s.broadcast_s, s.per_hour), (60, 1800, 1));
         assert_eq!(s.directory, PathBuf::from(VERDICT_DIR));
         e.insert("MESSAGE_BROADCAST_S".into(), "x".into());
-        assert!(Sidecar::from_env(&e).is_err());
+        assert!(Messages::from_env(&e).is_err());
     }
 }

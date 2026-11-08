@@ -5,6 +5,7 @@ next step, and mark a trace section timing-dependent (`s.skip`) rather than comp
 from __future__ import annotations
 
 import json
+import re
 import signal
 import sys
 import threading
@@ -924,3 +925,56 @@ def state_roundtrip(s: Scenario) -> None:
         sent.append(msg)
         s.stop_daemon(label)
     s.note("final_pending", norm(pending(s)))
+
+
+# --- P13: the experience telemetry in-process -------------------------------------------------------------
+
+
+@scenario
+def experience(s: Scenario) -> None:
+    """EXPERIENCE=1: the agent runs the telemetry in its own process (Python: a thread of mc_agent.py; Rust: the
+    telemetry module in smallworld-agent's daemon, v1.4, no sidecar): the plugin's snapshots become minute rows
+    for the Worker, and player_message reads who is online from that telemetry (tips, unknown players, rate
+    limits) and queues messages.tsv for the plugin. tests/telemetry_parity proves the module in depth."""
+    t0 = 1_768_471_200_000  # 2026-01-15T10:00:00Z, a minute boundary in the past: rows close at once
+    alice, bob = UUIDS["Alice_Op"], UUIDS["Bob"]
+
+    def pl(u: str, n: str, **kw: Any) -> dict[str, Any]:
+        return {"u": u, "n": n, "ping": 40, "brand": "vanilla", "view": 10, "send": 10, "loc": "en_us",
+                "w": "world", "cx": 0, "cz": 0, "ent": 12, "glide": False, "tips": True, "join": t0 - 600_000,
+                **kw}  # fmt: skip
+
+    def snap(seq: int, ts: int, players: list[dict[str, Any]], **srv: Any) -> dict[str, Any]:
+        base = {"tps": 20.0, "ticks": 200, "mean": 12.5, "p50": 11.0, "p95": 20.0, "p99": 30.0, "p999": 40.0,
+                "max": 45.0, "spikes": [], "heap_used_mb": 2048, "heap_max_mb": 6656,
+                "worlds": [{"n": "world", "chunks": 400, "entities": 300, "tiles": 50, "ticking": 40,
+                            "players": len(players)}]}  # fmt: skip
+        return {"v": 1, "seq": seq, "ts": ts, "win_ms": 10_000, "srv": base | srv, "pl": players}
+
+    s.box.write("/var/lib/mc-agent/telemetry-id.json", json.dumps({"src": "0badc0de", "seq": 3}), 0o600)
+    players = [pl(alice, "Alice_Op", ping=35), pl(bob, "Bob", tips=False, ent=90)]
+    for i, (ts, who, extra) in enumerate([
+        (t0 + 5_000, players, {}),
+        (t0 + 15_000, players, {"spikes": [[t0 + 16_000, 75.55]], "max": 75.55}),
+        (t0 + 65_000, players, {}),
+    ], 1):  # fmt: skip
+        s.box.write(f"/run/mc-telemetry/snap-{i}.json", json.dumps(snap(i, ts, who, **extra)), 0o640)
+    s.begin()
+    s.daemon(
+        EXPERIENCE="1", SEGMENT_S="3600", TELEMETRY_DIR="/run/mc-telemetry", VERDICT_DIR="/run/mc-verdicts"
+    )
+    s.wait(lambda: len(s.worker.requests_to("POST /ingest/experience")) >= 2, 30, "two minute rows")
+    msg = {"kind": "lag", "text": "Lag spike\tfrom the farm", "hover": "/lag for details"}
+    s.note("to_alice", s.cmd("player_message", msg | {"to": alice, "id": "lag-0123abcd"}))
+    s.note("alice_again", s.cmd("player_message", msg | {"to": alice, "id": "lag-0123abce"}))
+    s.note("to_bob_tips_off", s.cmd("player_message", msg | {"to": bob, "id": "lag-0123abcf"}))
+    s.note("to_carol_offline", s.cmd("player_message", msg | {"to": UUIDS["Carol"], "id": "lag-0123abd0"}))
+    s.note("broadcast", s.cmd("player_message", msg | {"to": "*", "kind": "server", "id": "srv-0123abcd"}))
+    s.note(
+        "broadcast_again", s.cmd("player_message", msg | {"to": "*", "kind": "server", "id": "srv-0123abce"})
+    )
+    tsv = s.box.host("/run/mc-verdicts/messages.tsv")
+    s.note("messages_tsv", {"mode": oct(tsv.stat().st_mode & 0o777),
+                            "text": re.sub(r"\t\d{13}\t", "\t<expires>\t", tsv.read_text())})  # fmt: skip
+    tsv.unlink()  # its expiry times are wall-clock: compared normalised above
+    s.stop_daemon()

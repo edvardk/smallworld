@@ -39,6 +39,7 @@ mod ship;
 mod sync;
 mod sys;
 mod systemd;
+mod telemetry;
 mod types;
 mod unicode;
 mod worlds;
@@ -67,6 +68,9 @@ fn main() -> ExitCode {
     } else if argv.get(1).map(String::as_str) == Some("selftest-scrub") && argv.len() == 2 {
         // Hidden, test-only (PORTING.md "Divergences"): the scrubber and journal_entry on stdin, a pure function.
         ship::selftest_scrub(&mut std::io::stdin(), &mut std::io::stdout())
+    } else if argv.get(1).map(String::as_str) == Some("telemetry") {
+        // mc_agent.py's `telemetry` subcommand (telemetry_main): the telemetry alone (telemetry/sidecar.rs).
+        telemetry::sidecar::main()
     } else {
         daemon::main()
     };
