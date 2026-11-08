@@ -135,8 +135,16 @@ jobs:
           path: ~/.terraform.d/plugin-cache
           key: terraform-providers-${{ runner.os }}-${{ hashFiles('terraform/.terraform.lock.hcl') }}
 
+      # tests/agent_parity runs mc-agent in `unshare -rm` (docs/ci.md "The agent parity harness"): Ubuntu 24.04
+      # restricts unprivileged user namespaces through AppArmor.
+      - name: Allow unprivileged user namespaces (agent parity harness)
+        if: env.CODE == 'true'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: pytest
         if: env.CODE == 'true'
+        env:
+          AGENT_PARITY_REQUIRE: "1"
         run: pytest -q
 
       # The watchdog Worker's unit tests (node's built-in runner; no npm packages, no network).
@@ -211,8 +219,14 @@ jobs:
         if: runner.os == 'Linux'
         run: ansible-galaxy collection install -r ansible/requirements.yml
 
+      - name: Allow unprivileged user namespaces (agent parity harness)
+        if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: pytest (everything)
         if: runner.os == 'Linux'
+        env:
+          AGENT_PARITY_REQUIRE: "1"
         run: pytest -q
 
       - name: pytest (the controller's tests that make sense here)

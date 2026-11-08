@@ -1,0 +1,749 @@
+{
+ "notes": {
+  "usage_none": {
+   "exit": 2,
+   "stdout": [
+    "usage: mc_agent.py cli mcctl:USER {restart|plugin|moderate|world_create|world_switch|world_delete} [ARGS_JSON] | mc_agent.py cli mcctl:USER {worlds|plugins}"
+   ]
+  },
+  "usage_login": {
+   "exit": 2,
+   "stdout": [
+    "usage: mc_agent.py cli mcctl:USER {restart|plugin|moderate|world_create|world_switch|world_delete} [ARGS_JSON] | mc_agent.py cli mcctl:USER {worlds|plugins}"
+   ]
+  },
+  "usage_action": {
+   "exit": 2,
+   "stdout": [
+    "usage: mc_agent.py cli mcctl:USER {restart|plugin|moderate|world_create|world_switch|world_delete} [ARGS_JSON] | mc_agent.py cli mcctl:USER {worlds|plugins}"
+   ]
+  },
+  "usage_json": {
+   "exit": 2,
+   "stdout": [
+    "usage: mc_agent.py cli mcctl:USER {restart|plugin|moderate|world_create|world_switch|world_delete} [ARGS_JSON] | mc_agent.py cli mcctl:USER {worlds|plugins}"
+   ]
+  },
+  "usage_array": {
+   "exit": 2,
+   "stdout": [
+    "usage: mc_agent.py cli mcctl:USER {restart|plugin|moderate|world_create|world_switch|world_delete} [ARGS_JSON] | mc_agent.py cli mcctl:USER {worlds|plugins}"
+   ]
+  },
+  "usage_extra": {
+   "exit": 2,
+   "stdout": [
+    "usage: mc_agent.py cli mcctl:USER {restart|plugin|moderate|world_create|world_switch|world_delete} [ARGS_JSON] | mc_agent.py cli mcctl:USER {worlds|plugins}"
+   ]
+  },
+  "plugins": {
+   "exit": 0,
+   "stdout": [
+    "[{\"enabled\": true, \"filename\": \"Chunky-1.4.40.jar\", \"name\": \"chunky\", \"version\": \"1.4.40\"}, {\"enabled\": true, \"filename\": \"spark-1.10.jar\", \"name\": \"spark\", \"version\": \"1.10\"}]"
+   ]
+  },
+  "worlds": {
+   "exit": 0,
+   "stdout": [
+    "{\"active\": \"main\", \"archive_bytes\": 2000, \"archives\": [{\"count\": 1, \"data_version\": 4671, \"name\": \"creative\", \"short_id\": \"cccccccc\", \"size\": 1000, \"time\": \"<iso>\"}, {\"count\": 1, \"data_version\": 9999, \"name\": \"future\", \"short_id\": \"ffffffff\", \"size\": 1000, \"time\": \"<iso>\"}], \"data_version\": 4671, \"deleted\": [\"gone\"], \"library\": [{\"border_radius\": null, \"name\": \"main\", \"pregen\": null, \"preset\": \"survival_smp\", \"seed\": \"42\", \"type\": \"default\"}, {\"border_radius\": null, \"name\": \"creative\", \"pregen\": null, \"preset\": null, \"seed\": \"\", \"type\": \"flat_classic\"}], \"pending\": null, \"since\": \"<iso>\", \"storage_note\": false}"
+   ]
+  },
+  "kick": {
+   "exit": 0,
+   "stdout": [
+    "RESULT ok: ran: kick Bob spam now"
+   ]
+  },
+  "ban_ip_digits": {
+   "exit": 1,
+   "stdout": [
+    "RESULT refused: console: these `ban-ip` arguments are not allowed from the panel"
+   ]
+  },
+  "pardon": {
+   "exit": 0,
+   "stdout": [
+    "RESULT ok: ran: pardon Griefer"
+   ]
+  },
+  "restart": {
+   "exit": 0,
+   "stdout": [
+    "RESULT ok: restarted"
+   ]
+  },
+  "plugin_unconfirmed": {
+   "exit": 1,
+   "stdout": [
+    "RESULT refused: plugin: type \"disable chunky\" to confirm"
+   ]
+  },
+  "plugin": {
+   "exit": 0,
+   "stdout": [
+    "countdown: Restart",
+    "running: Restart",
+    "running: moving the chunky jar (mc-plugins-apply.service)",
+    "running: restarting minecraft.service",
+    "running: waiting for the server to answer RCON",
+    "done: chunky disabled; the server restarted",
+    "RESULT ok: chunky disabled; the server restarted"
+   ]
+  },
+  "world_delete_unconfirmed": {
+   "exit": 1,
+   "stdout": [
+    "RESULT refused: world_delete: type \"delete creative\" to confirm"
+   ]
+  },
+  "world_switch": {
+   "exit": 0,
+   "stdout": [
+    "countdown: World switch",
+    "running: World switch",
+    "running: starting mc-world.service",
+    "done: STEP 5/5: creative is running",
+    "RESULT ok: STEP 5/5: creative is running"
+   ]
+  },
+  "world_no_agent": {
+   "exit": 1,
+   "stdout": [
+    "RESULT refused: world_create: the world library records its changes through mc-agent (panel.mode: cloudflare): not here"
+   ]
+  },
+  "restart_sigterm": {
+   "exit": 1,
+   "stdout": [
+    "countdown: countdown 10 s, 1 player(s) online",
+    "cancelled: cancelled during the countdown",
+    "RESULT cancelled: cancelled during the countdown"
+   ]
+  }
+ },
+ "exits": [],
+ "worker": {},
+ "websocket": [],
+ "console": [],
+ "github": [],
+ "https": [
+  {
+   "method": "POST",
+   "path": "/maintenance",
+   "content_type": "application/json",
+   "auth": "heartbeat",
+   "body": {
+    "minutes": 15,
+    "reason": "panel restart"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/maintenance",
+   "content_type": "application/json",
+   "auth": "heartbeat",
+   "body": {
+    "minutes": 0,
+    "reason": "panel restart"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/maintenance",
+   "content_type": "application/json",
+   "auth": "heartbeat",
+   "body": {
+    "minutes": 15,
+    "reason": "plugin chunky"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/maintenance",
+   "content_type": "application/json",
+   "auth": "heartbeat",
+   "body": {
+    "minutes": 0,
+    "reason": "plugin chunky"
+   }
+  }
+ ],
+ "rcon": {
+  "stats_connections": 0,
+  "connections": [
+   [
+    "kick Bob spam now"
+   ],
+   [
+    "pardon Griefer"
+   ],
+   [
+    "list"
+   ],
+   [
+    "list"
+   ],
+   [
+    "tellraw @a [\"\", {\"text\": \"[Server] \", \"color\": \"gold\"}, {\"text\": \"Restart in 10 seconds. Find a safe spot!\"}]"
+   ],
+   [
+    "title @a actionbar {\"text\": \"Restart in 10 seconds. Find a safe spot!\", \"color\": \"gold\"}"
+   ],
+   [
+    "tellraw @a [\"\", {\"text\": \"[Server] \", \"color\": \"gold\"}, {\"text\": \"Restart cancelled.\"}]"
+   ],
+   [
+    "title @a actionbar {\"text\": \"Restart cancelled.\", \"color\": \"gold\"}"
+   ]
+  ]
+ },
+ "systemd": {
+  "calls": [
+   [
+    "systemctl",
+    "--no-ask-password",
+    "restart",
+    "minecraft.service"
+   ],
+   [
+    "systemctl",
+    "--no-ask-password",
+    "start",
+    "mc-plugins-apply.service"
+   ],
+   [
+    "systemctl",
+    "--no-ask-password",
+    "restart",
+    "minecraft.service"
+   ],
+   [
+    "systemctl",
+    "--no-ask-password",
+    "start",
+    "mc-world.service"
+   ],
+   [
+    "journalctl",
+    "-u",
+    "mc-world.service",
+    "--since",
+    "<local-time>",
+    "-o",
+    "cat",
+    "--no-pager",
+    "-n",
+    "200"
+   ]
+  ],
+  "probes": []
+ },
+ "audit": [
+  [
+   [
+    "MESSAGE",
+    "mcctl action=moderate ok=True login=mcctl:alex"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "moderate"
+   ],
+   [
+    "MC_LOGIN",
+    "mcctl:alex"
+   ],
+   [
+    "MC_ARGS",
+    "{\"reason\": \"spam\\nnow\", \"target\": \"Bob\", \"verb\": \"kick\"}"
+   ],
+   [
+    "MC_VIA",
+    "mcctl"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "mcctl action=moderate ok=False login=mcctl:alex"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "moderate"
+   ],
+   [
+    "MC_LOGIN",
+    "mcctl:alex"
+   ],
+   [
+    "MC_ARGS",
+    "{\"target\": \"\\u0662.\\u0662.\\u0662.\\u0662\", \"verb\": \"ban-ip\"}"
+   ],
+   [
+    "MC_VIA",
+    "mcctl"
+   ],
+   [
+    "MC_RESULT",
+    "console: these `ban-ip` arguments are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "mcctl action=moderate ok=True login=mcctl:alex"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "moderate"
+   ],
+   [
+    "MC_LOGIN",
+    "mcctl:alex"
+   ],
+   [
+    "MC_ARGS",
+    "{\"target\": \"Griefer\", \"verb\": \"pardon\"}"
+   ],
+   [
+    "MC_VIA",
+    "mcctl"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "mcctl action=restart ok=True login=mcctl:alex"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "restart"
+   ],
+   [
+    "MC_LOGIN",
+    "mcctl:alex"
+   ],
+   [
+    "MC_ARGS",
+    "{}"
+   ],
+   [
+    "MC_VIA",
+    "mcctl"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "mcctl action=plugin ok=False login=mcctl:alex"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "plugin"
+   ],
+   [
+    "MC_LOGIN",
+    "mcctl:alex"
+   ],
+   [
+    "MC_ARGS",
+    "{\"enabled\": false, \"name\": \"chunky\"}"
+   ],
+   [
+    "MC_VIA",
+    "mcctl"
+   ],
+   [
+    "MC_RESULT",
+    "plugin: type \"disable chunky\" to confirm"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "mcctl action=plugin ok=True login=mcctl:alex"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "plugin"
+   ],
+   [
+    "MC_LOGIN",
+    "mcctl:alex"
+   ],
+   [
+    "MC_ARGS",
+    "{\"enabled\": false, \"name\": \"chunky\"}"
+   ],
+   [
+    "MC_VIA",
+    "mcctl"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "mcctl action=world_delete ok=False login=mcctl:alex"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "world_delete"
+   ],
+   [
+    "MC_LOGIN",
+    "mcctl:alex"
+   ],
+   [
+    "MC_ARGS",
+    "{\"name\": \"creative\"}"
+   ],
+   [
+    "MC_VIA",
+    "mcctl"
+   ],
+   [
+    "MC_RESULT",
+    "world_delete: type \"delete creative\" to confirm"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "mcctl action=world_switch ok=True login=mcctl:alex"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "world_switch"
+   ],
+   [
+    "MC_LOGIN",
+    "mcctl:alex"
+   ],
+   [
+    "MC_ARGS",
+    "{\"name\": \"creative\"}"
+   ],
+   [
+    "MC_VIA",
+    "mcctl"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "mcctl action=world_create ok=False login=mcctl:alex"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "world_create"
+   ],
+   [
+    "MC_LOGIN",
+    "mcctl:alex"
+   ],
+   [
+    "MC_ARGS",
+    "{\"name\": \"x1\"}"
+   ],
+   [
+    "MC_VIA",
+    "mcctl"
+   ],
+   [
+    "MC_RESULT",
+    "world_create: the world library records its changes through mc-agent (panel.mode: cloudflare): not here"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "mcctl action=restart ok=False login=mcctl:alex"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "restart"
+   ],
+   [
+    "MC_LOGIN",
+    "mcctl:alex"
+   ],
+   [
+    "MC_ARGS",
+    "{\"countdown\": 10}"
+   ],
+   [
+    "MC_VIA",
+    "mcctl"
+   ],
+   [
+    "MC_RESULT",
+    "cancelled during the countdown"
+   ]
+  ]
+ ],
+ "files": {
+  "/var/lib/mc-agent/pending.json": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "changed": "<time>",
+    "entries": [],
+    "error": "",
+    "expired": [],
+    "pr": null,
+    "world": {
+     "active": "creative",
+     "error": "",
+     "library": [
+      {
+       "border_radius": null,
+       "name": "creative",
+       "pregen": null,
+       "preset": null,
+       "seed": "",
+       "type": "flat_classic"
+      },
+      {
+       "border_radius": null,
+       "name": "main",
+       "pregen": null,
+       "preset": "survival_smp",
+       "seed": "42",
+       "type": "default"
+      }
+     ],
+     "login": "mcctl:alex",
+     "open_pr": null,
+     "pr": null,
+     "ts": "<time>",
+     "what": "switch to creative"
+    }
+   }
+  },
+  "/var/lib/mc-agent/pending.json.lock": {
+   "type": "file",
+   "mode": "0o600",
+   "content": "<0 bytes>"
+  },
+  "/var/lib/mc-snapshots/worlds.json": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "active": "creative",
+    "archives": [
+     {
+      "data_version": 4671,
+      "id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "name": "main",
+      "short_id": "dddddddd",
+      "size": 1000,
+      "snapshots": [
+       "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      ],
+      "time": "<iso>",
+      "times": [
+       "<iso>"
+      ]
+     },
+     {
+      "data_version": 9999,
+      "id": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "name": "future",
+      "short_id": "ffffffff",
+      "size": 1000,
+      "snapshots": [
+       "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      ],
+      "time": "<iso>",
+      "times": [
+       "<iso>"
+      ]
+     }
+    ],
+    "data_version": 4671,
+    "deleted": [
+     {
+      "at": "<time>",
+      "name": "gone"
+     }
+    ],
+    "since": "<time>",
+    "updated": "<time>"
+   }
+  },
+  "/var/lib/minecraft/job.lock": {
+   "type": "file",
+   "mode": "0o600",
+   "content": "<0 bytes>"
+  },
+  "/var/lib/minecraft/plugins-disabled.json": {
+   "type": "file",
+   "mode": "0o644",
+   "content": {
+    "at": "<time>",
+    "by": "mcctl:alex",
+    "disabled": [
+     "chunky"
+    ]
+   }
+  },
+  "/var/lib/minecraft/world-request.json": {
+   "type": "file",
+   "mode": "0o640",
+   "content": {
+    "entry": {
+     "border_radius": null,
+     "name": "creative",
+     "pregen": null,
+     "preset": null,
+     "seed": "",
+     "type": "flat_classic"
+    },
+    "id": "mcctl-<epoch>",
+    "login": "mcctl:alex",
+    "name": "creative",
+    "op": "switch",
+    "ts": "<time>"
+   }
+  }
+ }
+}

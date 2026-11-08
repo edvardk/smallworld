@@ -1,0 +1,2920 @@
+{
+ "meta": {
+  "generator": "scripts/parity_vectors.py",
+  "doc": "check_console/normalise_console: the line RCON gets, or the refusal message",
+  "unicode_sensitive": true,
+  "unidata_version": "15.1.0"
+ },
+ "vectors": [
+  {
+   "input": "list",
+   "normalise": {
+    "ok": [
+     "list"
+    ]
+   },
+   "check": {
+    "ok": "list"
+   }
+  },
+  {
+   "input": "/list uuids",
+   "normalise": {
+    "ok": [
+     "list",
+     "uuids"
+    ]
+   },
+   "check": {
+    "ok": "list uuids"
+   }
+  },
+  {
+   "input": "LIST",
+   "normalise": {
+    "ok": [
+     "list"
+    ]
+   },
+   "check": {
+    "ok": "list"
+   }
+  },
+  {
+   "input": "  list  ",
+   "normalise": {
+    "ok": [
+     "list"
+    ]
+   },
+   "check": {
+    "ok": "list"
+   }
+  },
+  {
+   "input": "list extra",
+   "normalise": {
+    "ok": [
+     "list",
+     "extra"
+    ]
+   },
+   "check": {
+    "error": "console: these `list` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say Hello World",
+   "normalise": {
+    "ok": [
+     "say",
+     "Hello",
+     "World"
+    ]
+   },
+   "check": {
+    "ok": "say Hello World"
+   }
+  },
+  {
+   "input": "say hi @e",
+   "normalise": {
+    "ok": [
+     "say",
+     "hi",
+     "@e"
+    ]
+   },
+   "check": {
+    "error": "console: selectors (@a, @e, ...) inside a `say` message are not allowed here",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say hi @a[distance=..5]",
+   "normalise": {
+    "ok": [
+     "say",
+     "hi",
+     "@a[distance=..5]"
+    ]
+   },
+   "check": {
+    "error": "console: selectors (@a, @e, ...) inside a `say` message are not allowed here",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "me waves",
+   "normalise": {
+    "ok": [
+     "me",
+     "waves"
+    ]
+   },
+   "check": {
+    "ok": "me waves"
+   }
+  },
+  {
+   "input": "tell Bob hi there",
+   "normalise": {
+    "ok": [
+     "tell",
+     "Bob",
+     "hi",
+     "there"
+    ]
+   },
+   "check": {
+    "ok": "tell Bob hi there"
+   }
+  },
+  {
+   "input": "tell @a hi",
+   "normalise": {
+    "ok": [
+     "tell",
+     "@a",
+     "hi"
+    ]
+   },
+   "check": {
+    "ok": "tell @a hi"
+   }
+  },
+  {
+   "input": "msg Bob look @p",
+   "normalise": {
+    "ok": [
+     "msg",
+     "Bob",
+     "look",
+     "@p"
+    ]
+   },
+   "check": {
+    "error": "console: selectors (@a, @e, ...) inside a `msg` message are not allowed here",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "w Bob x",
+   "normalise": {
+    "ok": [
+     "w",
+     "Bob",
+     "x"
+    ]
+   },
+   "check": {
+    "ok": "w Bob x"
+   }
+  },
+  {
+   "input": "tell @e hi",
+   "normalise": {
+    "ok": [
+     "tell",
+     "@e",
+     "hi"
+    ]
+   },
+   "check": {
+    "error": "console: these `tell` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "kick Bob being rude",
+   "normalise": {
+    "ok": [
+     "kick",
+     "Bob",
+     "being",
+     "rude"
+    ]
+   },
+   "check": {
+    "ok": "kick Bob being rude"
+   }
+  },
+  {
+   "input": "kick @a",
+   "normalise": {
+    "ok": [
+     "kick",
+     "@a"
+    ]
+   },
+   "check": {
+    "error": "console: these `kick` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "ban Griefer2 x",
+   "normalise": {
+    "ok": [
+     "ban",
+     "Griefer2",
+     "x"
+    ]
+   },
+   "check": {
+    "ok": "ban Griefer2 x"
+   }
+  },
+  {
+   "input": "ban-ip 203.0.113.7 spam",
+   "normalise": {
+    "ok": [
+     "ban-ip",
+     "203.0.113.7",
+     "spam"
+    ]
+   },
+   "check": {
+    "ok": "ban-ip 203.0.113.7 spam"
+   }
+  },
+  {
+   "input": "ban-ip 2001:db8::1",
+   "normalise": {
+    "ok": [
+     "ban-ip",
+     "2001:db8::1"
+    ]
+   },
+   "check": {
+    "ok": "ban-ip 2001:db8::1"
+   }
+  },
+  {
+   "input": "pardon Bob",
+   "normalise": {
+    "ok": [
+     "pardon",
+     "Bob"
+    ]
+   },
+   "check": {
+    "ok": "pardon Bob"
+   }
+  },
+  {
+   "input": "pardon-ip 203.0.113.7",
+   "normalise": {
+    "ok": [
+     "pardon-ip",
+     "203.0.113.7"
+    ]
+   },
+   "check": {
+    "ok": "pardon-ip 203.0.113.7"
+   }
+  },
+  {
+   "input": "pardon-ip \u0662\u0660\u0663.0.113.7",
+   "normalise": {
+    "ok": [
+     "pardon-ip",
+     "\u0662\u0660\u0663.0.113.7"
+    ]
+   },
+   "check": {
+    "error": "console: these `pardon-ip` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "time add 100",
+   "normalise": {
+    "ok": [
+     "time",
+     "add",
+     "100"
+    ]
+   },
+   "check": {
+    "ok": "time add 100"
+   }
+  },
+  {
+   "input": "time add \u0663",
+   "normalise": {
+    "ok": [
+     "time",
+     "add",
+     "\u0663"
+    ]
+   },
+   "check": {
+    "error": "console: these `time` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "time set \u0661\u0660\u0660",
+   "normalise": {
+    "ok": [
+     "time",
+     "set",
+     "\u0661\u0660\u0660"
+    ]
+   },
+   "check": {
+    "error": "console: these `time` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "time add \u0967",
+   "normalise": {
+    "ok": [
+     "time",
+     "add",
+     "\u0967"
+    ]
+   },
+   "check": {
+    "error": "console: these `time` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "weather clear \u06f5",
+   "normalise": {
+    "ok": [
+     "weather",
+     "clear",
+     "\u06f5"
+    ]
+   },
+   "check": {
+    "error": "console: these `weather` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "time add \uff13",
+   "normalise": {
+    "ok": [
+     "time",
+     "add",
+     "3"
+    ]
+   },
+   "check": {
+    "ok": "time add 3"
+   }
+  },
+  {
+   "input": "time set day",
+   "normalise": {
+    "ok": [
+     "time",
+     "set",
+     "day"
+    ]
+   },
+   "check": {
+    "ok": "time set day"
+   }
+  },
+  {
+   "input": "time query daytime",
+   "normalise": {
+    "ok": [
+     "time",
+     "query",
+     "daytime"
+    ]
+   },
+   "check": {
+    "ok": "time query daytime"
+   }
+  },
+  {
+   "input": "weather rain 600",
+   "normalise": {
+    "ok": [
+     "weather",
+     "rain",
+     "600"
+    ]
+   },
+   "check": {
+    "ok": "weather rain 600"
+   }
+  },
+  {
+   "input": "weather rain 600x",
+   "normalise": {
+    "ok": [
+     "weather",
+     "rain",
+     "600x"
+    ]
+   },
+   "check": {
+    "error": "console: these `weather` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "\uff54\uff49\uff4d\uff45\u3000\uff51\uff55\uff45\uff52\uff59\u3000\uff44\uff41\uff59",
+   "normalise": {
+    "ok": [
+     "time",
+     "query",
+     "day"
+    ]
+   },
+   "check": {
+    "ok": "time query day"
+   }
+  },
+  {
+   "input": "op Bob",
+   "normalise": {
+    "ok": [
+     "op",
+     "Bob"
+    ]
+   },
+   "check": {
+    "error": "console: `op` is not allowed from the panel (operators are managed in Git (players.yml))",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "deop Bob",
+   "normalise": {
+    "ok": [
+     "deop",
+     "Bob"
+    ]
+   },
+   "check": {
+    "error": "console: `deop` is not allowed from the panel (operators are managed in Git (players.yml))",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "stop",
+   "normalise": {
+    "ok": [
+     "stop"
+    ]
+   },
+   "check": {
+    "error": "console: `stop` is not allowed from the panel (use the panel's Stop (countdown, admin-stopped marker))",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "restart",
+   "normalise": {
+    "ok": [
+     "restart"
+    ]
+   },
+   "check": {
+    "error": "console: `restart` is not allowed from the panel (use the panel's Restart)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "execute run op Bob",
+   "normalise": {
+    "ok": [
+     "execute",
+     "run",
+     "op",
+     "Bob"
+    ]
+   },
+   "check": {
+    "error": "console: `execute` is not allowed from the panel (`execute` runs other commands)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "minecraft:op Bob",
+   "normalise": {
+    "ok": [
+     "minecraft:op",
+     "Bob"
+    ]
+   },
+   "check": {
+    "error": "console: namespaced commands (`minecraft:op`) are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "bukkit:reload",
+   "normalise": {
+    "ok": [
+     "bukkit:reload"
+    ]
+   },
+   "check": {
+    "error": "console: namespaced commands (`bukkit:reload`) are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "reload",
+   "normalise": {
+    "ok": [
+     "reload"
+    ]
+   },
+   "check": {
+    "error": "console: `reload` is not allowed from the panel (/reload breaks plugins; restart instead)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "rl",
+   "normalise": {
+    "ok": [
+     "rl"
+    ]
+   },
+   "check": {
+    "error": "console: `rl` is not allowed from the panel (/reload breaks plugins; restart instead)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "save-off",
+   "normalise": {
+    "ok": [
+     "save-off"
+    ]
+   },
+   "check": {
+    "error": "console: `save-off` is not allowed from the panel (turning saving off would break backups)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "function x:y",
+   "normalise": {
+    "ok": [
+     "function",
+     "x:y"
+    ]
+   },
+   "check": {
+    "error": "console: `function` is not allowed from the panel (functions run other commands)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "return 1",
+   "normalise": {
+    "ok": [
+     "return",
+     "1"
+    ]
+   },
+   "check": {
+    "error": "console: `return` is not allowed from the panel (`return` runs other commands)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "whitelist add Bob",
+   "normalise": {
+    "ok": [
+     "whitelist",
+     "add",
+     "Bob"
+    ]
+   },
+   "check": {
+    "error": "console: use the panel's whitelist flow (it keeps players.yml in Git)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "WHITELIST Remove Bob",
+   "normalise": {
+    "ok": [
+     "whitelist",
+     "Remove",
+     "Bob"
+    ]
+   },
+   "check": {
+    "error": "console: use the panel's whitelist flow (it keeps players.yml in Git)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "whitelist list",
+   "normalise": {
+    "ok": [
+     "whitelist",
+     "list"
+    ]
+   },
+   "check": {
+    "ok": "whitelist list"
+   }
+  },
+  {
+   "input": "whitelist off",
+   "normalise": {
+    "ok": [
+     "whitelist",
+     "off"
+    ]
+   },
+   "check": {
+    "error": "console: these `whitelist` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say a\u001cb",
+   "normalise": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say a\u001fb",
+   "normalise": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say a\u2028b",
+   "normalise": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say a\u00a0b",
+   "normalise": {
+    "ok": [
+     "say",
+     "a",
+     "b"
+    ]
+   },
+   "check": {
+    "ok": "say a b"
+   }
+  },
+  {
+   "input": "say a\u200bb",
+   "normalise": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say a\tb",
+   "normalise": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say a\u3000b",
+   "normalise": {
+    "ok": [
+     "say",
+     "a",
+     "b"
+    ]
+   },
+   "check": {
+    "ok": "say a b"
+   }
+  },
+  {
+   "input": "say \ud835\udc07\ud835\udc22",
+   "normalise": {
+    "ok": [
+     "say",
+     "Hi"
+    ]
+   },
+   "check": {
+    "ok": "say Hi"
+   }
+  },
+  {
+   "input": "say \ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa",
+   "normalise": {
+    "error": "console: one line of at most 256 characters (after normalisation)",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of at most 256 characters (after normalisation)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "normalise": {
+    "ok": [
+     "say",
+     "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ]
+   },
+   "check": {
+    "ok": "say xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   }
+  },
+  {
+   "input": "say xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "normalise": {
+    "error": "console: one line of at most 256 characters",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of at most 256 characters",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "",
+   "normalise": {
+    "error": "console: empty command",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: empty command",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "   ",
+   "normalise": {
+    "error": "console: empty command",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: empty command",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "/",
+   "normalise": {
+    "error": "console: empty command",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: empty command",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "gamerule keepInventory",
+   "normalise": {
+    "ok": [
+     "gamerule",
+     "keepInventory"
+    ]
+   },
+   "check": {
+    "ok": "gamerule keepInventory"
+   }
+  },
+  {
+   "input": "gamerule keepInventory true",
+   "normalise": {
+    "ok": [
+     "gamerule",
+     "keepInventory",
+     "true"
+    ]
+   },
+   "check": {
+    "error": "console: these `gamerule` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "difficulty hard",
+   "normalise": {
+    "ok": [
+     "difficulty",
+     "hard"
+    ]
+   },
+   "check": {
+    "ok": "difficulty hard"
+   }
+  },
+  {
+   "input": "difficulty",
+   "normalise": {
+    "ok": [
+     "difficulty"
+    ]
+   },
+   "check": {
+    "ok": "difficulty"
+   }
+  },
+  {
+   "input": "spark health --memory",
+   "normalise": {
+    "ok": [
+     "spark",
+     "health",
+     "--memory"
+    ]
+   },
+   "check": {
+    "ok": "spark health --memory"
+   }
+  },
+  {
+   "input": "spark profiler",
+   "normalise": {
+    "ok": [
+     "spark",
+     "profiler"
+    ]
+   },
+   "check": {
+    "error": "console: these `spark` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "chunky progress",
+   "normalise": {
+    "ok": [
+     "chunky",
+     "progress"
+    ]
+   },
+   "check": {
+    "ok": "chunky progress"
+   }
+  },
+  {
+   "input": "chunky start",
+   "normalise": {
+    "ok": [
+     "chunky",
+     "start"
+    ]
+   },
+   "check": {
+    "error": "console: these `chunky` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "version Paper",
+   "normalise": {
+    "ok": [
+     "version",
+     "Paper"
+    ]
+   },
+   "check": {
+    "ok": "version Paper"
+   }
+  },
+  {
+   "input": "help me",
+   "normalise": {
+    "ok": [
+     "help",
+     "me"
+    ]
+   },
+   "check": {
+    "ok": "help me"
+   }
+  },
+  {
+   "input": "seed",
+   "normalise": {
+    "ok": [
+     "seed"
+    ]
+   },
+   "check": {
+    "ok": "seed"
+   }
+  },
+  {
+   "input": "tps",
+   "normalise": {
+    "ok": [
+     "tps"
+    ]
+   },
+   "check": {
+    "ok": "tps"
+   }
+  },
+  {
+   "input": "mspt",
+   "normalise": {
+    "ok": [
+     "mspt"
+    ]
+   },
+   "check": {
+    "ok": "mspt"
+   }
+  },
+  {
+   "input": "worldborder get",
+   "normalise": {
+    "ok": [
+     "worldborder",
+     "get"
+    ]
+   },
+   "check": {
+    "ok": "worldborder get"
+   }
+  },
+  {
+   "input": "worldborder set 10",
+   "normalise": {
+    "ok": [
+     "worldborder",
+     "set",
+     "10"
+    ]
+   },
+   "check": {
+    "error": "console: these `worldborder` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "plugins extra",
+   "normalise": {
+    "ok": [
+     "plugins",
+     "extra"
+    ]
+   },
+   "check": {
+    "error": "console: these `plugins` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "save-all flush",
+   "normalise": {
+    "ok": [
+     "save-all",
+     "flush"
+    ]
+   },
+   "check": {
+    "ok": "save-all flush"
+   }
+  },
+  {
+   "input": "banlist ips",
+   "normalise": {
+    "ok": [
+     "banlist",
+     "ips"
+    ]
+   },
+   "check": {
+    "ok": "banlist ips"
+   }
+  },
+  {
+   "input": "ban Bo",
+   "normalise": {
+    "ok": [
+     "ban",
+     "Bo"
+    ]
+   },
+   "check": {
+    "error": "console: these `ban` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "kick Bob \u00e9t\u00e9",
+   "normalise": {
+    "ok": [
+     "kick",
+     "Bob",
+     "\u00e9t\u00e9"
+    ]
+   },
+   "check": {
+    "ok": "kick Bob \u00e9t\u00e9"
+   }
+  },
+  {
+   "input": "say \ud7ff",
+   "normalise": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say \ue000",
+   "normalise": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "time add 1\u0301",
+   "normalise": {
+    "ok": [
+     "time",
+     "add",
+     "1\u0301"
+    ]
+   },
+   "check": {
+    "error": "console: these `time` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "ban",
+   "normalise": {
+    "ok": [
+     "ban"
+    ]
+   },
+   "check": {
+    "error": "console: these `ban` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "ban-ip",
+   "normalise": {
+    "ok": [
+     "ban-ip"
+    ]
+   },
+   "check": {
+    "error": "console: these `ban-ip` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "banlist",
+   "normalise": {
+    "ok": [
+     "banlist"
+    ]
+   },
+   "check": {
+    "ok": "banlist"
+   }
+  },
+  {
+   "input": "chunky",
+   "normalise": {
+    "ok": [
+     "chunky"
+    ]
+   },
+   "check": {
+    "error": "console: these `chunky` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "difficulty",
+   "normalise": {
+    "ok": [
+     "difficulty"
+    ]
+   },
+   "check": {
+    "ok": "difficulty"
+   }
+  },
+  {
+   "input": "gamerule",
+   "normalise": {
+    "ok": [
+     "gamerule"
+    ]
+   },
+   "check": {
+    "error": "console: these `gamerule` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "help",
+   "normalise": {
+    "ok": [
+     "help"
+    ]
+   },
+   "check": {
+    "ok": "help"
+   }
+  },
+  {
+   "input": "kick",
+   "normalise": {
+    "ok": [
+     "kick"
+    ]
+   },
+   "check": {
+    "error": "console: these `kick` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "list",
+   "normalise": {
+    "ok": [
+     "list"
+    ]
+   },
+   "check": {
+    "ok": "list"
+   }
+  },
+  {
+   "input": "me",
+   "normalise": {
+    "ok": [
+     "me"
+    ]
+   },
+   "check": {
+    "error": "console: these `me` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "msg",
+   "normalise": {
+    "ok": [
+     "msg"
+    ]
+   },
+   "check": {
+    "error": "console: these `msg` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "mspt",
+   "normalise": {
+    "ok": [
+     "mspt"
+    ]
+   },
+   "check": {
+    "ok": "mspt"
+   }
+  },
+  {
+   "input": "pardon",
+   "normalise": {
+    "ok": [
+     "pardon"
+    ]
+   },
+   "check": {
+    "error": "console: these `pardon` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "pardon-ip",
+   "normalise": {
+    "ok": [
+     "pardon-ip"
+    ]
+   },
+   "check": {
+    "error": "console: these `pardon-ip` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "pl",
+   "normalise": {
+    "ok": [
+     "pl"
+    ]
+   },
+   "check": {
+    "ok": "pl"
+   }
+  },
+  {
+   "input": "plugins",
+   "normalise": {
+    "ok": [
+     "plugins"
+    ]
+   },
+   "check": {
+    "ok": "plugins"
+   }
+  },
+  {
+   "input": "save-all",
+   "normalise": {
+    "ok": [
+     "save-all"
+    ]
+   },
+   "check": {
+    "ok": "save-all"
+   }
+  },
+  {
+   "input": "save-on",
+   "normalise": {
+    "ok": [
+     "save-on"
+    ]
+   },
+   "check": {
+    "ok": "save-on"
+   }
+  },
+  {
+   "input": "say",
+   "normalise": {
+    "ok": [
+     "say"
+    ]
+   },
+   "check": {
+    "error": "console: these `say` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "seed",
+   "normalise": {
+    "ok": [
+     "seed"
+    ]
+   },
+   "check": {
+    "ok": "seed"
+   }
+  },
+  {
+   "input": "spark",
+   "normalise": {
+    "ok": [
+     "spark"
+    ]
+   },
+   "check": {
+    "error": "console: these `spark` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "tell",
+   "normalise": {
+    "ok": [
+     "tell"
+    ]
+   },
+   "check": {
+    "error": "console: these `tell` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "time",
+   "normalise": {
+    "ok": [
+     "time"
+    ]
+   },
+   "check": {
+    "error": "console: these `time` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "tps",
+   "normalise": {
+    "ok": [
+     "tps"
+    ]
+   },
+   "check": {
+    "ok": "tps"
+   }
+  },
+  {
+   "input": "ver",
+   "normalise": {
+    "ok": [
+     "ver"
+    ]
+   },
+   "check": {
+    "ok": "ver"
+   }
+  },
+  {
+   "input": "version",
+   "normalise": {
+    "ok": [
+     "version"
+    ]
+   },
+   "check": {
+    "ok": "version"
+   }
+  },
+  {
+   "input": "w",
+   "normalise": {
+    "ok": [
+     "w"
+    ]
+   },
+   "check": {
+    "error": "console: these `w` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "weather",
+   "normalise": {
+    "ok": [
+     "weather"
+    ]
+   },
+   "check": {
+    "error": "console: these `weather` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "whitelist",
+   "normalise": {
+    "ok": [
+     "whitelist"
+    ]
+   },
+   "check": {
+    "error": "console: these `whitelist` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "worldborder",
+   "normalise": {
+    "ok": [
+     "worldborder"
+    ]
+   },
+   "check": {
+    "error": "console: these `worldborder` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "ban x",
+   "normalise": {
+    "ok": [
+     "ban",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `ban` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "ban-ip x",
+   "normalise": {
+    "ok": [
+     "ban-ip",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `ban-ip` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "banlist x",
+   "normalise": {
+    "ok": [
+     "banlist",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `banlist` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "chunky x",
+   "normalise": {
+    "ok": [
+     "chunky",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `chunky` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "difficulty x",
+   "normalise": {
+    "ok": [
+     "difficulty",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `difficulty` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "gamerule x",
+   "normalise": {
+    "ok": [
+     "gamerule",
+     "x"
+    ]
+   },
+   "check": {
+    "ok": "gamerule x"
+   }
+  },
+  {
+   "input": "help x",
+   "normalise": {
+    "ok": [
+     "help",
+     "x"
+    ]
+   },
+   "check": {
+    "ok": "help x"
+   }
+  },
+  {
+   "input": "kick x",
+   "normalise": {
+    "ok": [
+     "kick",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `kick` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "list x",
+   "normalise": {
+    "ok": [
+     "list",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `list` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "me x",
+   "normalise": {
+    "ok": [
+     "me",
+     "x"
+    ]
+   },
+   "check": {
+    "ok": "me x"
+   }
+  },
+  {
+   "input": "msg x",
+   "normalise": {
+    "ok": [
+     "msg",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `msg` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "mspt x",
+   "normalise": {
+    "ok": [
+     "mspt",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `mspt` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "pardon x",
+   "normalise": {
+    "ok": [
+     "pardon",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `pardon` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "pardon-ip x",
+   "normalise": {
+    "ok": [
+     "pardon-ip",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `pardon-ip` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "pl x",
+   "normalise": {
+    "ok": [
+     "pl",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `pl` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "plugins x",
+   "normalise": {
+    "ok": [
+     "plugins",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `plugins` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "save-all x",
+   "normalise": {
+    "ok": [
+     "save-all",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `save-all` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "save-on x",
+   "normalise": {
+    "ok": [
+     "save-on",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `save-on` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say x",
+   "normalise": {
+    "ok": [
+     "say",
+     "x"
+    ]
+   },
+   "check": {
+    "ok": "say x"
+   }
+  },
+  {
+   "input": "seed x",
+   "normalise": {
+    "ok": [
+     "seed",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `seed` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "spark x",
+   "normalise": {
+    "ok": [
+     "spark",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `spark` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "tell x",
+   "normalise": {
+    "ok": [
+     "tell",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `tell` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "time x",
+   "normalise": {
+    "ok": [
+     "time",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `time` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "tps x",
+   "normalise": {
+    "ok": [
+     "tps",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `tps` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "ver x",
+   "normalise": {
+    "ok": [
+     "ver",
+     "x"
+    ]
+   },
+   "check": {
+    "ok": "ver x"
+   }
+  },
+  {
+   "input": "version x",
+   "normalise": {
+    "ok": [
+     "version",
+     "x"
+    ]
+   },
+   "check": {
+    "ok": "version x"
+   }
+  },
+  {
+   "input": "w x",
+   "normalise": {
+    "ok": [
+     "w",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `w` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "weather x",
+   "normalise": {
+    "ok": [
+     "weather",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `weather` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "whitelist x",
+   "normalise": {
+    "ok": [
+     "whitelist",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `whitelist` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "worldborder x",
+   "normalise": {
+    "ok": [
+     "worldborder",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `worldborder` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "deop",
+   "normalise": {
+    "ok": [
+     "deop"
+    ]
+   },
+   "check": {
+    "error": "console: `deop` is not allowed from the panel (operators are managed in Git (players.yml))",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "execute",
+   "normalise": {
+    "ok": [
+     "execute"
+    ]
+   },
+   "check": {
+    "error": "console: `execute` is not allowed from the panel (`execute` runs other commands)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "function",
+   "normalise": {
+    "ok": [
+     "function"
+    ]
+   },
+   "check": {
+    "error": "console: `function` is not allowed from the panel (functions run other commands)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "op",
+   "normalise": {
+    "ok": [
+     "op"
+    ]
+   },
+   "check": {
+    "error": "console: `op` is not allowed from the panel (operators are managed in Git (players.yml))",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "reload",
+   "normalise": {
+    "ok": [
+     "reload"
+    ]
+   },
+   "check": {
+    "error": "console: `reload` is not allowed from the panel (/reload breaks plugins; restart instead)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "restart",
+   "normalise": {
+    "ok": [
+     "restart"
+    ]
+   },
+   "check": {
+    "error": "console: `restart` is not allowed from the panel (use the panel's Restart)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "return",
+   "normalise": {
+    "ok": [
+     "return"
+    ]
+   },
+   "check": {
+    "error": "console: `return` is not allowed from the panel (`return` runs other commands)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "rl",
+   "normalise": {
+    "ok": [
+     "rl"
+    ]
+   },
+   "check": {
+    "error": "console: `rl` is not allowed from the panel (/reload breaks plugins; restart instead)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "save-off",
+   "normalise": {
+    "ok": [
+     "save-off"
+    ]
+   },
+   "check": {
+    "error": "console: `save-off` is not allowed from the panel (turning saving off would break backups)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "stop",
+   "normalise": {
+    "ok": [
+     "stop"
+    ]
+   },
+   "check": {
+    "error": "console: `stop` is not allowed from the panel (use the panel's Stop (countdown, admin-stopped marker))",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "time add 1d",
+   "normalise": {
+    "ok": [
+     "time",
+     "add",
+     "1d"
+    ]
+   },
+   "check": {
+    "ok": "time add 1d"
+   }
+  },
+  {
+   "input": "time add 12s",
+   "normalise": {
+    "ok": [
+     "time",
+     "add",
+     "12s"
+    ]
+   },
+   "check": {
+    "ok": "time add 12s"
+   }
+  },
+  {
+   "input": "time add 1t",
+   "normalise": {
+    "ok": [
+     "time",
+     "add",
+     "1t"
+    ]
+   },
+   "check": {
+    "ok": "time add 1t"
+   }
+  },
+  {
+   "input": "time add 1234567890",
+   "normalise": {
+    "ok": [
+     "time",
+     "add",
+     "1234567890"
+    ]
+   },
+   "check": {
+    "error": "console: these `time` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "time add 123456789",
+   "normalise": {
+    "ok": [
+     "time",
+     "add",
+     "123456789"
+    ]
+   },
+   "check": {
+    "ok": "time add 123456789"
+   }
+  },
+  {
+   "input": "time set midnight",
+   "normalise": {
+    "ok": [
+     "time",
+     "set",
+     "midnight"
+    ]
+   },
+   "check": {
+    "ok": "time set midnight"
+   }
+  },
+  {
+   "input": "weather thunder 5d",
+   "normalise": {
+    "ok": [
+     "weather",
+     "thunder",
+     "5d"
+    ]
+   },
+   "check": {
+    "ok": "weather thunder 5d"
+   }
+  },
+  {
+   "input": "weather snow",
+   "normalise": {
+    "ok": [
+     "weather",
+     "snow"
+    ]
+   },
+   "check": {
+    "error": "console: these `weather` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "difficulty PEACEFUL",
+   "normalise": {
+    "ok": [
+     "difficulty",
+     "PEACEFUL"
+    ]
+   },
+   "check": {
+    "ok": "difficulty PEACEFUL"
+   }
+  },
+  {
+   "input": "version a.b-c_d",
+   "normalise": {
+    "ok": [
+     "version",
+     "a.b-c_d"
+    ]
+   },
+   "check": {
+    "ok": "version a.b-c_d"
+   }
+  },
+  {
+   "input": "version a/b",
+   "normalise": {
+    "ok": [
+     "version",
+     "a/b"
+    ]
+   },
+   "check": {
+    "error": "console: these `version` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "help xhelp xhelp xhelp xhelp xhelp x",
+   "normalise": {
+    "ok": [
+     "help",
+     "xhelp",
+     "xhelp",
+     "xhelp",
+     "xhelp",
+     "xhelp",
+     "x"
+    ]
+   },
+   "check": {
+    "error": "console: these `help` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "ban-ip 1.2.3",
+   "normalise": {
+    "ok": [
+     "ban-ip",
+     "1.2.3"
+    ]
+   },
+   "check": {
+    "error": "console: these `ban-ip` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "ban-ip ::",
+   "normalise": {
+    "ok": [
+     "ban-ip",
+     "::"
+    ]
+   },
+   "check": {
+    "ok": "ban-ip ::"
+   }
+  },
+  {
+   "input": "ban-ip fe80::1%eth0",
+   "normalise": {
+    "ok": [
+     "ban-ip",
+     "fe80::1%eth0"
+    ]
+   },
+   "check": {
+    "error": "console: these `ban-ip` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "pardon-ip 192.0.2.4 extra",
+   "normalise": {
+    "ok": [
+     "pardon-ip",
+     "192.0.2.4",
+     "extra"
+    ]
+   },
+   "check": {
+    "error": "console: these `pardon-ip` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "pardon-ip Bob",
+   "normalise": {
+    "ok": [
+     "pardon-ip",
+     "Bob"
+    ]
+   },
+   "check": {
+    "error": "console: these `pardon-ip` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "ban-ip \uff11\uff19\uff12.\uff10.\uff12.\uff14",
+   "normalise": {
+    "ok": [
+     "ban-ip",
+     "192.0.2.4"
+    ]
+   },
+   "check": {
+    "ok": "ban-ip 192.0.2.4"
+   }
+  },
+  {
+   "input": "pardon-ip \u0661.\u0662.\u0663.\u0664",
+   "normalise": {
+    "ok": [
+     "pardon-ip",
+     "\u0661.\u0662.\u0663.\u0664"
+    ]
+   },
+   "check": {
+    "error": "console: these `pardon-ip` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "time add \u0e53",
+   "normalise": {
+    "ok": [
+     "time",
+     "add",
+     "\u0e53"
+    ]
+   },
+   "check": {
+    "error": "console: these `time` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "time add \u1813",
+   "normalise": {
+    "ok": [
+     "time",
+     "add",
+     "\u1813"
+    ]
+   },
+   "check": {
+    "error": "console: these `time` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "time add \ud835\udfd1",
+   "normalise": {
+    "ok": [
+     "time",
+     "add",
+     "3"
+    ]
+   },
+   "check": {
+    "ok": "time add 3"
+   }
+  },
+  {
+   "input": "weather rain \u00b2",
+   "normalise": {
+    "ok": [
+     "weather",
+     "rain",
+     "2"
+    ]
+   },
+   "check": {
+    "ok": "weather rain 2"
+   }
+  },
+  {
+   "input": "time add \u2463",
+   "normalise": {
+    "ok": [
+     "time",
+     "add",
+     "4"
+    ]
+   },
+   "check": {
+    "ok": "time add 4"
+   }
+  },
+  {
+   "input": "say \u00b2",
+   "normalise": {
+    "ok": [
+     "say",
+     "2"
+    ]
+   },
+   "check": {
+    "ok": "say 2"
+   }
+  },
+  {
+   "input": "tell Bob @a",
+   "normalise": {
+    "ok": [
+     "tell",
+     "Bob",
+     "@a"
+    ]
+   },
+   "check": {
+    "error": "console: selectors (@a, @e, ...) inside a `tell` message are not allowed here",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "tell Bob hi @a[x]",
+   "normalise": {
+    "ok": [
+     "tell",
+     "Bob",
+     "hi",
+     "@a[x]"
+    ]
+   },
+   "check": {
+    "error": "console: selectors (@a, @e, ...) inside a `tell` message are not allowed here",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "tell Bob @s",
+   "normalise": {
+    "ok": [
+     "tell",
+     "Bob",
+     "@s"
+    ]
+   },
+   "check": {
+    "error": "console: selectors (@a, @e, ...) inside a `tell` message are not allowed here",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "me @n",
+   "normalise": {
+    "ok": [
+     "me",
+     "@n"
+    ]
+   },
+   "check": {
+    "error": "console: selectors (@a, @e, ...) inside a `me` message are not allowed here",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say @x",
+   "normalise": {
+    "ok": [
+     "say",
+     "@x"
+    ]
+   },
+   "check": {
+    "ok": "say @x"
+   }
+  },
+  {
+   "input": "say @",
+   "normalise": {
+    "ok": [
+     "say",
+     "@"
+    ]
+   },
+   "check": {
+    "ok": "say @"
+   }
+  },
+  {
+   "input": "say a@e",
+   "normalise": {
+    "ok": [
+     "say",
+     "a@e"
+    ]
+   },
+   "check": {
+    "ok": "say a@e"
+   }
+  },
+  {
+   "input": "msg @r @p",
+   "normalise": {
+    "ok": [
+     "msg",
+     "@r",
+     "@p"
+    ]
+   },
+   "check": {
+    "error": "console: selectors (@a, @e, ...) inside a `msg` message are not allowed here",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "kick B\u00f6b",
+   "normalise": {
+    "ok": [
+     "kick",
+     "B\u00f6b"
+    ]
+   },
+   "check": {
+    "error": "console: these `kick` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "kick Bob\u200d",
+   "normalise": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say \u0085x",
+   "normalise": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say x\u000b",
+   "normalise": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say x\f",
+   "normalise": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say \u180e",
+   "normalise": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say \u2060",
+   "normalise": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say \u00ad",
+   "normalise": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say \ufeff",
+   "normalise": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say \udb40\udc01",
+   "normalise": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say \udbff\udffd",
+   "normalise": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say \u0378",
+   "normalise": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say \u1680",
+   "normalise": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of printable text (no control characters)",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say \u202f",
+   "normalise": {
+    "ok": [
+     "say"
+    ]
+   },
+   "check": {
+    "error": "console: these `say` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say \u205f",
+   "normalise": {
+    "ok": [
+     "say"
+    ]
+   },
+   "check": {
+    "error": "console: these `say` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "\u3000list",
+   "normalise": {
+    "ok": [
+     "list"
+    ]
+   },
+   "check": {
+    "ok": "list"
+   }
+  },
+  {
+   "input": "list\u3000",
+   "normalise": {
+    "ok": [
+     "list"
+    ]
+   },
+   "check": {
+    "ok": "list"
+   }
+  },
+  {
+   "input": "\uff0flist",
+   "normalise": {
+    "ok": [
+     "list"
+    ]
+   },
+   "check": {
+    "ok": "list"
+   }
+  },
+  {
+   "input": "LIST UUIDS",
+   "normalise": {
+    "ok": [
+     "list",
+     "UUIDS"
+    ]
+   },
+   "check": {
+    "ok": "list UUIDS"
+   }
+  },
+  {
+   "input": "///list",
+   "normalise": {
+    "ok": [
+     "list"
+    ]
+   },
+   "check": {
+    "ok": "list"
+   }
+  },
+  {
+   "input": "/ list",
+   "normalise": {
+    "ok": [
+     "list"
+    ]
+   },
+   "check": {
+    "ok": "list"
+   }
+  },
+  {
+   "input": "say \u2126",
+   "normalise": {
+    "ok": [
+     "say",
+     "\u03a9"
+    ]
+   },
+   "check": {
+    "ok": "say \u03a9"
+   }
+  },
+  {
+   "input": "say \ufb01",
+   "normalise": {
+    "ok": [
+     "say",
+     "fi"
+    ]
+   },
+   "check": {
+    "ok": "say fi"
+   }
+  },
+  {
+   "input": "say \u2460",
+   "normalise": {
+    "ok": [
+     "say",
+     "1"
+    ]
+   },
+   "check": {
+    "ok": "say 1"
+   }
+  },
+  {
+   "input": "say \u00bd",
+   "normalise": {
+    "ok": [
+     "say",
+     "1\u20442"
+    ]
+   },
+   "check": {
+    "ok": "say 1\u20442"
+   }
+  },
+  {
+   "input": "say \u1e9b\u0323",
+   "normalise": {
+    "ok": [
+     "say",
+     "\u1e69"
+    ]
+   },
+   "check": {
+    "ok": "say \u1e69"
+   }
+  },
+  {
+   "input": "gamerule a:b.c_d",
+   "normalise": {
+    "ok": [
+     "gamerule",
+     "a:b.c_d"
+    ]
+   },
+   "check": {
+    "ok": "gamerule a:b.c_d"
+   }
+  },
+  {
+   "input": "gamerule aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "normalise": {
+    "ok": [
+     "gamerule",
+     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+   },
+   "check": {
+    "error": "console: these `gamerule` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "spark health --memory --network",
+   "normalise": {
+    "ok": [
+     "spark",
+     "health",
+     "--memory",
+     "--network"
+    ]
+   },
+   "check": {
+    "ok": "spark health --memory --network"
+   }
+  },
+  {
+   "input": "spark health --cpu",
+   "normalise": {
+    "ok": [
+     "spark",
+     "health",
+     "--cpu"
+    ]
+   },
+   "check": {
+    "error": "console: these `spark` arguments are not allowed from the panel",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "spark gc",
+   "normalise": {
+    "ok": [
+     "spark",
+     "gc"
+    ]
+   },
+   "check": {
+    "ok": "spark gc"
+   }
+  },
+  {
+   "input": "chunky selection",
+   "normalise": {
+    "ok": [
+     "chunky",
+     "selection"
+    ]
+   },
+   "check": {
+    "ok": "chunky selection"
+   }
+  },
+  {
+   "input": "say \ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfaxxxxxxxxx",
+   "normalise": {
+    "ok": [
+     "say",
+     "\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645xxxxxxxxx"
+    ]
+   },
+   "check": {
+    "ok": "say \u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645xxxxxxxxx"
+   }
+  },
+  {
+   "input": "say \ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa",
+   "normalise": {
+    "ok": [
+     "say",
+     "\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645\u0635\u0644\u0649",
+     "\u0627\u0644\u0644\u0647",
+     "\u0639\u0644\u064a\u0647",
+     "\u0648\u0633\u0644\u0645"
+    ]
+   },
+   "check": {
+    "ok": "say \u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645"
+   }
+  },
+  {
+   "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "normalise": {
+    "error": "console: one line of at most 256 characters",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of at most 256 characters",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": "say \u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9",
+   "normalise": {
+    "ok": [
+     "say",
+     "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"
+    ]
+   },
+   "check": {
+    "ok": "say \u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"
+   }
+  },
+  {
+   "input": "say e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301",
+   "normalise": {
+    "ok": [
+     "say",
+     "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"
+    ]
+   },
+   "check": {
+    "ok": "say \u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"
+   }
+  },
+  {
+   "input": "say e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301",
+   "normalise": {
+    "error": "console: one line of at most 256 characters",
+    "type": "Rejected"
+   },
+   "check": {
+    "error": "console: one line of at most 256 characters",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": null,
+   "check": {
+    "error": "console: empty command",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": 5,
+   "check": {
+    "error": "console: empty command",
+    "type": "Rejected"
+   }
+  },
+  {
+   "input": [
+    "list"
+   ],
+   "check": {
+    "error": "console: empty command",
+    "type": "Rejected"
+   }
+  }
+ ]
+}

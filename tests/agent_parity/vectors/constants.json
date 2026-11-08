@@ -1,0 +1,428 @@
+{
+ "meta": {
+  "generator": "scripts/parity_vectors.py",
+  "doc": "the agent's constants, budget model and Settings clamps"
+ },
+ "vectors": {
+  "ACTIONS": [
+   "status",
+   "console",
+   "start",
+   "stop",
+   "restart",
+   "backup",
+   "tail",
+   "cancel",
+   "whitelist",
+   "rejected_dismiss",
+   "moderate",
+   "plugin",
+   "restore",
+   "player_message",
+   "world_create",
+   "world_switch",
+   "world_delete",
+   "selftest",
+   "lookup"
+  ],
+  "CLI_ACTIONS": [
+   "restart",
+   "plugin",
+   "moderate",
+   "world_create",
+   "world_switch",
+   "world_delete"
+  ],
+  "CLI_LISTS": [
+   "worlds",
+   "plugins"
+  ],
+  "CLI_LOGIN": "mcctl:[A-Za-z0-9._@-]{1,64}",
+  "CLI_USAGE": "usage: mc_agent.py cli mcctl:USER {restart|plugin|moderate|world_create|world_switch|world_delete} [ARGS_JSON] | mc_agent.py cli mcctl:USER {worlds|plugins}",
+  "COUNTDOWNS": [
+   0,
+   10,
+   60,
+   300
+  ],
+  "ANNOUNCE_AT": [
+   300,
+   240,
+   180,
+   120,
+   60,
+   30,
+   10,
+   5,
+   4,
+   3,
+   2,
+   1
+  ],
+  "MAX_AGE_S": 60,
+  "NONCE_TTL_S": 600,
+  "CONSOLE_MAX": 256,
+  "TAIL_MAX_S": 180,
+  "TAIL_BATCH": 50,
+  "INVENTORY_S": 600,
+  "INVENTORY_MIN_GAP_S": 5,
+  "INVENTORY_MAX": 1000,
+  "SPOOL_MAX_AGE_S": 86400,
+  "METRICS_BATCH": 200,
+  "LOG_ROW_MAX_CHARS": 2000,
+  "LOG_BATCH_MAX_ENTRIES": 5000,
+  "LOG_BATCH_MAX_BYTES": 8388608,
+  "LOG_ENTRY_MAX_CHARS": 8000,
+  "LOG_CATCHUP_BATCHES": 20,
+  "JOURNAL_FIELDS": "_SYSTEMD_UNIT,SYSLOG_IDENTIFIER,PRIORITY,MESSAGE,MC_AUDIT,UNIT",
+  "MAX_CORES": 32,
+  "SELFTEST_S": 86400,
+  "SELFTEST_FIRST_S": 300,
+  "SELFTEST_MIN_GAP_S": 60,
+  "SELFTEST_STEPS": [
+   "token",
+   "permissions",
+   "repository",
+   "main",
+   "pulls"
+  ],
+  "SELFTEST_NEEDS": {
+   "contents": "write",
+   "pull_requests": "write"
+  },
+  "SELFTEST_ALERT_AFTER": 2,
+  "MOJANG_LOOKUPS": [
+   "https://api.mojang.com/users/profiles/minecraft/",
+   "https://api.minecraftservices.com/minecraft/profile/lookup/name/"
+  ],
+  "LOOKUP_TIMEOUT_S": 3.0,
+  "LOOKUP_TTL_S": 600,
+  "LOOKUP_PER_MINUTE": 20,
+  "RESTORE_TIMEOUT_S": 7200,
+  "RCON_TIMEOUT_S": 5.0,
+  "RCON_WAIT_S": 300,
+  "PENDING_TTL_S": 86400,
+  "BATCH_S": 60,
+  "PR_CHECK_S": 120,
+  "REJECTED_KEEP": 50,
+  "CLIENT_POLL_S": 1.0,
+  "CLIENT_KEEP_S": 120,
+  "CLIENT_MAX_REQUESTS": 50,
+  "CLIENT_PER_HOUR": 20,
+  "CLIENT_REASONS": {
+   "429": "you asked a few times already, try again in a while",
+   "404": "the client page isn't set up on this server yet"
+  },
+  "CLIENT_FIXES": {
+   "404": "the Worker has no client set up (client.enabled needs `mcctl apply`; `mcctl doctor` checks it)",
+   "401": "the Worker refused the agent token (a deploy gives the server the current one)",
+   "429": "the Worker's rate limit for codes"
+  },
+  "REFUSED_HEADS": {
+   "execute": "`execute` runs other commands",
+   "return": "`return` runs other commands",
+   "function": "functions run other commands",
+   "op": "operators are managed in Git (players.yml)",
+   "deop": "operators are managed in Git (players.yml)",
+   "stop": "use the panel's Stop (countdown, admin-stopped marker)",
+   "restart": "use the panel's Restart",
+   "reload": "/reload breaks plugins; restart instead",
+   "rl": "/reload breaks plugins; restart instead",
+   "save-off": "turning saving off would break backups"
+  },
+  "FREE_TEXT": [
+   "ban",
+   "ban-ip",
+   "kick",
+   "me",
+   "msg",
+   "say",
+   "tell",
+   "w"
+  ],
+  "MESSAGE_FROM": {
+   "say": 1,
+   "me": 1,
+   "tell": 2,
+   "msg": 2,
+   "w": 2
+  },
+  "CONSOLE_ALLOWLIST": {
+   "list": "(?:)|(?:uuids)",
+   "say": "(?:.+)",
+   "me": "(?:.+)",
+   "tell": "(?:(?:[A-Za-z0-9_]{3,16}|@[apr]) .+)",
+   "msg": "(?:(?:[A-Za-z0-9_]{3,16}|@[apr]) .+)",
+   "w": "(?:(?:[A-Za-z0-9_]{3,16}|@[apr]) .+)",
+   "kick": "(?:[A-Za-z0-9_]{3,16}(?: .+)?)",
+   "ban": "(?:[A-Za-z0-9_]{3,16}(?: .+)?)",
+   "ban-ip": "(?:(?:(?:\\d{1,3}(?:\\.\\d{1,3}){3}|[0-9A-Fa-f:]*:[0-9A-Fa-f:.]+)|[A-Za-z0-9_]{3,16})(?: .+)?)",
+   "pardon": "(?:[A-Za-z0-9_]{3,16})",
+   "pardon-ip": "(?:(?:\\d{1,3}(?:\\.\\d{1,3}){3}|[0-9A-Fa-f:]*:[0-9A-Fa-f:.]+))",
+   "banlist": "(?:)|(?:players)|(?:ips)",
+   "whitelist": "(?:list)|(?:on)|(?:reload)",
+   "save-all": "(?:)|(?:flush)",
+   "save-on": "(?:)",
+   "seed": "(?:)",
+   "tps": "(?:)",
+   "mspt": "(?:)",
+   "plugins": "(?:)",
+   "pl": "(?:)",
+   "version": "(?:)|(?:[A-Za-z0-9_.-]{1,64})",
+   "ver": "(?:)|(?:[A-Za-z0-9_.-]{1,64})",
+   "help": "(?:)|(?:[A-Za-z0-9_-]{1,32})",
+   "time": "(?:query (?:daytime|gametime|day))|(?:set (?:day|night|noon|midnight|\\d{1,9}[dst]?))|(?:add \\d{1,9}[dst]?)",
+   "weather": "(?:(?:clear|rain|thunder)(?: \\d{1,9}[dst]?)?)",
+   "difficulty": "(?:)|(?:peaceful|easy|normal|hard)",
+   "gamerule": "(?:[A-Za-z0-9_.:]{1,64})",
+   "worldborder": "(?:get)",
+   "spark": "(?:tps)|(?:gc)|(?:ping)|(?:health(?: --(?:memory|network))*)",
+   "chunky": "(?:progress)|(?:pause)|(?:continue)|(?:selection)|(?:help)"
+  },
+  "SELECTOR_WORD": "@[aeprsn](?:\\[.*)?",
+  "NAME": "[A-Za-z0-9_]{3,16}",
+  "IP": "(?:\\d{1,3}(?:\\.\\d{1,3}){3}|[0-9A-Fa-f:]*:[0-9A-Fa-f:.]+)",
+  "DURATION": "\\d{1,9}[dst]?",
+  "D1_UNITS": "^(minecraft\\.service|mc-[a-z0-9@._-]+\\.service)$",
+  "D1_IDENTIFIERS": "^mc-[a-z0-9-]+$",
+  "FIREWALL_PREFIXES": [
+   "mc-setfull:",
+   "mc-ratelimit:",
+   "mc-connlimit:"
+  ],
+  "SECRET_ENV": [
+   "AGENT_TOKEN",
+   "COMMAND_HMAC_KEY",
+   "HEARTBEAT_TOKEN",
+   "DISCORD_WEBHOOK_URL"
+  ],
+  "SECRET_SUFFIXES": [
+   "_TOKEN",
+   "_KEY",
+   "_SECRET",
+   "_PASSWORD",
+   "_WEBHOOK_URL"
+  ],
+  "USER_AGENT": "smallworld mc-agent",
+  "VERSION": "1",
+  "PANEL_REQUESTS": 400,
+  "PANEL_ROWS": 100,
+  "EXPERIENCE_REQUESTS": 1728,
+  "EXPERIENCE_ROWS": 5480,
+  "CLIENT_REQUESTS": 480,
+  "CLIENT_ROWS": 960,
+  "daily_budget": [
+   {
+    "args": {},
+    "budget": {
+     "requests": 10048,
+     "d1_rows": 38028
+    }
+   },
+   {
+    "args": {
+     "interval_s": 30,
+     "poll_s": 5
+    },
+    "budget": {
+     "requests": 23008,
+     "d1_rows": 39468
+    }
+   },
+   {
+    "args": {
+     "experience": false,
+     "client": true
+    },
+    "budget": {
+     "requests": 8800,
+     "d1_rows": 33508
+    }
+   },
+   {
+    "args": {
+     "interval_s": 300,
+     "max_rows": 0,
+     "log_batch_s": 10,
+     "poll_s": 60
+    },
+    "budget": {
+     "requests": 21280,
+     "d1_rows": 15228
+    }
+   }
+  ],
+  "settings_clamps": [
+   {
+    "env": {
+     "INGEST_URL": "https://hb.example.test/",
+     "AGENT_TOKEN": "tttttttttttttttttttttttttttttttt",
+     "COMMAND_HMAC_KEY": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+    },
+    "ok": {
+     "ingest_url": "https://hb.example.test",
+     "metrics_interval_s": 60,
+     "log_batch_s": 300,
+     "log_max_rows_per_day": 30000,
+     "poll_s": 15,
+     "state_dir": "/var/lib/mc-agent",
+     "panel_sync_s": 30,
+     "panel_batch_s": 60,
+     "panel_pr_check_s": 120,
+     "experience": false,
+     "client": false,
+     "client_request_dir": "/run/mc-telemetry/client",
+     "client_code_file": "/run/mc-verdicts/client-codes.tsv"
+    }
+   },
+   {
+    "env": {
+     "INGEST_URL": "http://127.0.0.1:8787",
+     "AGENT_TOKEN": "tttttttttttttttttttttttttttttttt",
+     "COMMAND_HMAC_KEY": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+     "METRICS_INTERVAL_S": "5",
+     "POLL_S": "1",
+     "LOG_BATCH_S": "1",
+     "LOG_MAX_ROWS_PER_DAY": "-5",
+     "PANEL_SYNC_S": "0",
+     "STATE_DIRECTORY": "/var/lib/mc-agent:/var/lib/mc-telemetry",
+     "EXPERIENCE": "1",
+     "CLIENT": "true"
+    },
+    "ok": {
+     "ingest_url": "http://127.0.0.1:8787",
+     "metrics_interval_s": 30,
+     "log_batch_s": 10,
+     "log_max_rows_per_day": 0,
+     "poll_s": 5,
+     "state_dir": "/var/lib/mc-agent",
+     "panel_sync_s": 1,
+     "panel_batch_s": 60,
+     "panel_pr_check_s": 120,
+     "experience": true,
+     "client": false,
+     "client_request_dir": "/run/mc-telemetry/client",
+     "client_code_file": "/run/mc-verdicts/client-codes.tsv"
+    }
+   },
+   {
+    "env": {
+     "INGEST_URL": "http://[::1]:1",
+     "AGENT_TOKEN": "tttttttttttttttttttttttttttttttt",
+     "COMMAND_HMAC_KEY": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+     "METRICS_INTERVAL_S": "9999"
+    },
+    "ok": {
+     "ingest_url": "http://[::1]:1",
+     "metrics_interval_s": 300,
+     "log_batch_s": 300,
+     "log_max_rows_per_day": 30000,
+     "poll_s": 15,
+     "state_dir": "/var/lib/mc-agent",
+     "panel_sync_s": 30,
+     "panel_batch_s": 60,
+     "panel_pr_check_s": 120,
+     "experience": false,
+     "client": false,
+     "client_request_dir": "/run/mc-telemetry/client",
+     "client_code_file": "/run/mc-verdicts/client-codes.tsv"
+    }
+   },
+   {
+    "env": {
+     "INGEST_URL": "http://localhost",
+     "AGENT_TOKEN": "tttttttttttttttttttttttttttttttt",
+     "COMMAND_HMAC_KEY": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+    },
+    "ok": {
+     "ingest_url": "http://localhost",
+     "metrics_interval_s": 60,
+     "log_batch_s": 300,
+     "log_max_rows_per_day": 30000,
+     "poll_s": 15,
+     "state_dir": "/var/lib/mc-agent",
+     "panel_sync_s": 30,
+     "panel_batch_s": 60,
+     "panel_pr_check_s": 120,
+     "experience": false,
+     "client": false,
+     "client_request_dir": "/run/mc-telemetry/client",
+     "client_code_file": "/run/mc-verdicts/client-codes.tsv"
+    }
+   },
+   {
+    "env": {
+     "INGEST_URL": "http://10.0.0.1",
+     "AGENT_TOKEN": "tttttttttttttttttttttttttttttttt",
+     "COMMAND_HMAC_KEY": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+    },
+    "error": "INGEST_URL must be https:// (http:// only for a loopback address)",
+    "type": "ValueError"
+   },
+   {
+    "env": {
+     "INGEST_URL": "https://",
+     "AGENT_TOKEN": "tttttttttttttttttttttttttttttttt",
+     "COMMAND_HMAC_KEY": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+    },
+    "error": "INGEST_URL must be https:// (http:// only for a loopback address)",
+    "type": "ValueError"
+   },
+   {
+    "env": {
+     "INGEST_URL": "https://x",
+     "AGENT_TOKEN": "ttttttttttttttttttttttttttttttt",
+     "COMMAND_HMAC_KEY": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+    },
+    "error": "AGENT_TOKEN and COMMAND_HMAC_KEY must be set (>= 32 characters)",
+    "type": "ValueError"
+   },
+   {
+    "env": {
+     "INGEST_URL": "https://x",
+     "AGENT_TOKEN": "tttttttttttttttttttttttttttttttt",
+     "COMMAND_HMAC_KEY": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+     "POLL_S": " 7 "
+    },
+    "ok": {
+     "ingest_url": "https://x",
+     "metrics_interval_s": 60,
+     "log_batch_s": 300,
+     "log_max_rows_per_day": 30000,
+     "poll_s": 7,
+     "state_dir": "/var/lib/mc-agent",
+     "panel_sync_s": 30,
+     "panel_batch_s": 60,
+     "panel_pr_check_s": 120,
+     "experience": false,
+     "client": false,
+     "client_request_dir": "/run/mc-telemetry/client",
+     "client_code_file": "/run/mc-verdicts/client-codes.tsv"
+    }
+   },
+   {
+    "env": {
+     "INGEST_URL": "https://x",
+     "AGENT_TOKEN": "tttttttttttttttttttttttttttttttt",
+     "COMMAND_HMAC_KEY": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+     "POLL_S": "\u0667"
+    },
+    "ok": {
+     "ingest_url": "https://x",
+     "metrics_interval_s": 60,
+     "log_batch_s": 300,
+     "log_max_rows_per_day": 30000,
+     "poll_s": 7,
+     "state_dir": "/var/lib/mc-agent",
+     "panel_sync_s": 30,
+     "panel_batch_s": 60,
+     "panel_pr_check_s": 120,
+     "experience": false,
+     "client": false,
+     "client_request_dir": "/run/mc-telemetry/client",
+     "client_code_file": "/run/mc-verdicts/client-codes.tsv"
+    }
+   }
+  ]
+ }
+}

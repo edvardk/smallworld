@@ -1,0 +1,592 @@
+{
+ "meta": {
+  "generator": "scripts/parity_vectors.py",
+  "doc": "mc_panel.merge_sync(current, snap, done)"
+ },
+ "vectors": [
+  {
+   "case": "nothing_meanwhile",
+   "current": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": null,
+    "entries": [
+     {
+      "uuid": "aaaaaaaa-0000-4000-8000-000000000000",
+      "name": "aaaa",
+      "op": "add",
+      "ts": 1,
+      "login": "l",
+      "pr": null
+     }
+    ]
+   },
+   "snap": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": null,
+    "entries": [
+     {
+      "uuid": "aaaaaaaa-0000-4000-8000-000000000000",
+      "name": "aaaa",
+      "op": "add",
+      "ts": 1,
+      "login": "l",
+      "pr": null
+     }
+    ]
+   },
+   "done": {
+    "pr": {
+     "number": 7
+    },
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": null,
+    "entries": [
+     {
+      "uuid": "aaaaaaaa-0000-4000-8000-000000000000",
+      "name": "aaaa",
+      "op": "add",
+      "ts": 1,
+      "login": "l",
+      "pr": 7
+     }
+    ]
+   },
+   "result": {
+    "pr": {
+     "number": 7
+    },
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": null,
+    "entries": [
+     {
+      "uuid": "aaaaaaaa-0000-4000-8000-000000000000",
+      "name": "aaaa",
+      "op": "add",
+      "ts": 1,
+      "login": "l",
+      "pr": 7
+     }
+    ]
+   }
+  },
+  {
+   "case": "recorded_again",
+   "current": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": null,
+    "entries": [
+     {
+      "uuid": "aaaaaaaa-0000-4000-8000-000000000000",
+      "name": "aaaa",
+      "op": "add",
+      "ts": 2,
+      "login": "l",
+      "pr": null
+     }
+    ]
+   },
+   "snap": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": null,
+    "entries": [
+     {
+      "uuid": "aaaaaaaa-0000-4000-8000-000000000000",
+      "name": "aaaa",
+      "op": "add",
+      "ts": 1,
+      "login": "l",
+      "pr": null
+     }
+    ]
+   },
+   "done": {
+    "pr": {
+     "number": 7
+    },
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": null,
+    "entries": [
+     {
+      "uuid": "aaaaaaaa-0000-4000-8000-000000000000",
+      "name": "aaaa",
+      "op": "add",
+      "ts": 1,
+      "login": "l",
+      "pr": 7
+     }
+    ]
+   },
+   "result": {
+    "pr": {
+     "number": 7
+    },
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": null,
+    "entries": [
+     {
+      "uuid": "aaaaaaaa-0000-4000-8000-000000000000",
+      "name": "aaaa",
+      "op": "add",
+      "ts": 2,
+      "login": "l",
+      "pr": null
+     }
+    ]
+   }
+  },
+  {
+   "case": "new_entry",
+   "current": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": null,
+    "entries": [
+     {
+      "uuid": "aaaaaaaa-0000-4000-8000-000000000000",
+      "name": "aaaa",
+      "op": "add",
+      "ts": 1,
+      "login": "l",
+      "pr": null
+     },
+     {
+      "uuid": "bbbbbbbb-0000-4000-8000-000000000000",
+      "name": "bbbb",
+      "op": "add",
+      "ts": 3,
+      "login": "l",
+      "pr": null
+     }
+    ]
+   },
+   "snap": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": null,
+    "entries": [
+     {
+      "uuid": "aaaaaaaa-0000-4000-8000-000000000000",
+      "name": "aaaa",
+      "op": "add",
+      "ts": 1,
+      "login": "l",
+      "pr": null
+     }
+    ]
+   },
+   "done": {
+    "pr": null,
+    "error": "merged",
+    "changed": 1.0,
+    "expired": [],
+    "world": null,
+    "entries": []
+   },
+   "result": {
+    "pr": null,
+    "error": "merged",
+    "changed": 1.0,
+    "expired": [],
+    "world": null,
+    "entries": [
+     {
+      "uuid": "bbbbbbbb-0000-4000-8000-000000000000",
+      "name": "bbbb",
+      "op": "add",
+      "ts": 3,
+      "login": "l",
+      "pr": null
+     }
+    ]
+   }
+  },
+  {
+   "case": "dropped_by_round",
+   "current": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": null,
+    "entries": [
+     {
+      "uuid": "aaaaaaaa-0000-4000-8000-000000000000",
+      "name": "aaaa",
+      "op": "add",
+      "ts": 1,
+      "login": "l",
+      "pr": null
+     },
+     {
+      "uuid": "cccccccc-0000-4000-8000-000000000000",
+      "name": "cccc",
+      "op": "add",
+      "ts": 1,
+      "login": "l",
+      "pr": null
+     }
+    ]
+   },
+   "snap": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": null,
+    "entries": [
+     {
+      "uuid": "aaaaaaaa-0000-4000-8000-000000000000",
+      "name": "aaaa",
+      "op": "add",
+      "ts": 1,
+      "login": "l",
+      "pr": null
+     },
+     {
+      "uuid": "cccccccc-0000-4000-8000-000000000000",
+      "name": "cccc",
+      "op": "add",
+      "ts": 1,
+      "login": "l",
+      "pr": null
+     }
+    ]
+   },
+   "done": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [
+     {
+      "name": "aaaa",
+      "op": "add",
+      "ts": 9
+     }
+    ],
+    "world": null,
+    "entries": [
+     {
+      "uuid": "cccccccc-0000-4000-8000-000000000000",
+      "name": "cccc",
+      "op": "add",
+      "ts": 1,
+      "login": "l",
+      "pr": null
+     }
+    ]
+   },
+   "result": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [
+     {
+      "name": "aaaa",
+      "op": "add",
+      "ts": 9
+     }
+    ],
+    "world": null,
+    "entries": [
+     {
+      "uuid": "cccccccc-0000-4000-8000-000000000000",
+      "name": "cccc",
+      "op": "add",
+      "ts": 1,
+      "login": "l",
+      "pr": null
+     }
+    ]
+   }
+  },
+  {
+   "case": "world_same",
+   "current": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": {
+     "active": "a",
+     "library": [],
+     "what": "x",
+     "ts": 1,
+     "login": "l",
+     "pr": null,
+     "open_pr": null,
+     "error": ""
+    },
+    "entries": []
+   },
+   "snap": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": {
+     "active": "a",
+     "library": [],
+     "what": "x",
+     "ts": 1,
+     "login": "l",
+     "pr": null,
+     "open_pr": null,
+     "error": ""
+    },
+    "entries": []
+   },
+   "done": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": {
+     "active": "a",
+     "library": [],
+     "what": "x",
+     "ts": 1,
+     "login": "l",
+     "pr": 3,
+     "open_pr": {
+      "number": 3
+     },
+     "error": ""
+    },
+    "entries": []
+   },
+   "result": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": {
+     "active": "a",
+     "library": [],
+     "what": "x",
+     "ts": 1,
+     "login": "l",
+     "pr": 3,
+     "open_pr": {
+      "number": 3
+     },
+     "error": ""
+    },
+    "entries": []
+   }
+  },
+  {
+   "case": "world_newer",
+   "current": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": {
+     "active": "b",
+     "library": [],
+     "what": "x",
+     "ts": 2,
+     "login": "l",
+     "pr": null,
+     "open_pr": null,
+     "error": ""
+    },
+    "entries": []
+   },
+   "snap": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": {
+     "active": "a",
+     "library": [],
+     "what": "x",
+     "ts": 1,
+     "login": "l",
+     "pr": null,
+     "open_pr": null,
+     "error": ""
+    },
+    "entries": []
+   },
+   "done": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": {
+     "active": "a",
+     "library": [],
+     "what": "x",
+     "ts": 1,
+     "login": "l",
+     "pr": 3,
+     "open_pr": {
+      "number": 3
+     },
+     "error": ""
+    },
+    "entries": []
+   },
+   "result": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": {
+     "active": "b",
+     "library": [],
+     "what": "x",
+     "ts": 2,
+     "login": "l",
+     "pr": null,
+     "open_pr": {
+      "number": 3
+     },
+     "error": ""
+    },
+    "entries": []
+   }
+  },
+  {
+   "case": "world_newer_round_dropped",
+   "current": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": {
+     "active": "b",
+     "library": [],
+     "what": "x",
+     "ts": 2,
+     "login": "l",
+     "pr": null,
+     "open_pr": null,
+     "error": ""
+    },
+    "entries": []
+   },
+   "snap": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": {
+     "active": "a",
+     "library": [],
+     "what": "x",
+     "ts": 1,
+     "login": "l",
+     "pr": null,
+     "open_pr": null,
+     "error": ""
+    },
+    "entries": []
+   },
+   "done": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": null,
+    "entries": []
+   },
+   "result": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": {
+     "active": "b",
+     "library": [],
+     "what": "x",
+     "ts": 2,
+     "login": "l",
+     "pr": null,
+     "open_pr": null,
+     "error": ""
+    },
+    "entries": []
+   }
+  },
+  {
+   "case": "world_removed_meanwhile",
+   "current": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": null,
+    "entries": []
+   },
+   "snap": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": {
+     "active": "a",
+     "library": [],
+     "what": "x",
+     "ts": 1,
+     "login": "l",
+     "pr": null,
+     "open_pr": null,
+     "error": ""
+    },
+    "entries": []
+   },
+   "done": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": {
+     "active": "a",
+     "library": [],
+     "what": "x",
+     "ts": 1,
+     "login": "l",
+     "pr": 3,
+     "open_pr": null,
+     "error": ""
+    },
+    "entries": []
+   },
+   "result": {
+    "pr": null,
+    "error": "",
+    "changed": 1.0,
+    "expired": [],
+    "world": null,
+    "entries": []
+   }
+  }
+ ]
+}

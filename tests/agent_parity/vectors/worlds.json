@@ -1,0 +1,373 @@
+{
+ "meta": {
+  "generator": "scripts/parity_vectors.py",
+  "doc": "worlds.check_entry / version_check / library_line / set_world_section"
+ },
+ "vectors": {
+  "world_name_re": "[a-z0-9][a-z0-9_-]{0,31}",
+  "check_entry": [
+   {
+    "input": {
+     "name": "w"
+    },
+    "ok": {
+     "name": "w",
+     "seed": "",
+     "type": "default",
+     "preset": null,
+     "border_radius": null,
+     "pregen": null
+    }
+   },
+   {
+    "input": {
+     "name": "new1",
+     "seed": "-123",
+     "type": "amplified",
+     "preset": "survival_smp",
+     "border_radius": {
+      "minecraft:overworld": 3000
+     },
+     "pregen": true
+    },
+    "ok": {
+     "name": "new1",
+     "seed": "-123",
+     "type": "amplified",
+     "preset": "survival_smp",
+     "border_radius": {
+      "minecraft:overworld": 3000,
+      "minecraft:the_nether": null,
+      "minecraft:the_end": null
+     },
+     "pregen": true
+    }
+   },
+   {
+    "input": {
+     "name": "Bad"
+    },
+    "error": "a world name is 1-32 lowercase letters, digits, _ or - (starting with a letter or digit)",
+    "type": "WorldError"
+   },
+   {
+    "input": {
+     "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "error": "a world name is 1-32 lowercase letters, digits, _ or - (starting with a letter or digit)",
+    "type": "WorldError"
+   },
+   {
+    "input": {
+     "name": "-x"
+    },
+    "error": "a world name is 1-32 lowercase letters, digits, _ or - (starting with a letter or digit)",
+    "type": "WorldError"
+   },
+   {
+    "input": {
+     "name": "w",
+     "seed": "11111111111111111111"
+    },
+    "error": "the seed must be a whole number (or empty for a random one)",
+    "type": "WorldError"
+   },
+   {
+    "input": {
+     "name": "w",
+     "seed": 5
+    },
+    "error": "the seed must be a whole number (or empty for a random one)",
+    "type": "WorldError"
+   },
+   {
+    "input": {
+     "name": "w",
+     "type": "nope"
+    },
+    "error": "type must be one of default, large_biomes, amplified, single_biome, flat_classic, flat_void, flat_redstone",
+    "type": "WorldError"
+   },
+   {
+    "input": {
+     "name": "w",
+     "preset": "nope"
+    },
+    "error": "preset must be one of survival_smp, creative_build, hardcore, farm_test, peaceful",
+    "type": "WorldError"
+   },
+   {
+    "input": {
+     "name": "w",
+     "border_radius": {
+      "x": 1
+     }
+    },
+    "error": "border_radius maps minecraft:overworld/the_nether/the_end to a radius",
+    "type": "WorldError"
+   },
+   {
+    "input": {
+     "name": "w",
+     "border_radius": {
+      "minecraft:the_end": true
+     }
+    },
+    "error": "a border radius is a whole number of blocks (0-29999984) or null",
+    "type": "WorldError"
+   },
+   {
+    "input": {
+     "name": "w",
+     "border_radius": {
+      "minecraft:the_end": 29999985
+     }
+    },
+    "error": "a border radius is a whole number of blocks (0-29999984) or null",
+    "type": "WorldError"
+   },
+   {
+    "input": {
+     "name": "w",
+     "pregen": "yes"
+    },
+    "error": "pregen must be true, false or null",
+    "type": "WorldError"
+   },
+   {
+    "input": "string",
+    "error": "a world entry must be an object",
+    "type": "WorldError"
+   },
+   {
+    "input": {
+     "name": "w\u0661"
+    },
+    "error": "a world name is 1-32 lowercase letters, digits, _ or - (starting with a letter or digit)",
+    "type": "WorldError"
+   }
+  ],
+  "version_check": [
+   {
+    "target": 1,
+    "current": 2,
+    "why": ""
+   },
+   {
+    "target": 2,
+    "current": 1,
+    "why": "the archive was saved by a newer Minecraft (DataVersion 2) than this server runs (1); a server never loads a newer world"
+   },
+   {
+    "target": null,
+    "current": 1,
+    "why": ""
+   },
+   {
+    "target": 1,
+    "current": null,
+    "why": ""
+   },
+   {
+    "target": 5,
+    "current": 5,
+    "why": ""
+   }
+  ],
+  "library_line": [
+   "    - {name: \"zeta\", seed: \"\", type: \"default\", preset: null, border_radius: {overworld: 1, nether: null, end: null}, pregen: false}",
+   "    - {name: \"alpha\", seed: \"7\", type: \"flat_void\", preset: \"survival_smp\"}"
+  ],
+  "set_world_section": [
+   {
+    "text": "# c\nname: x\nworld:\n  # kept\n  active: \"main\"\n  library:\n    - {name: \"main\"}\n  border_radius: 5\nafter: 1\n",
+    "active": "alpha",
+    "library": [
+     {
+      "name": "zeta",
+      "seed": "",
+      "type": "default",
+      "preset": null,
+      "border_radius": {
+       "minecraft:overworld": 1,
+       "minecraft:the_nether": null,
+       "minecraft:the_end": null
+      },
+      "pregen": false
+     },
+     {
+      "name": "alpha",
+      "seed": "7",
+      "type": "flat_void",
+      "preset": "survival_smp",
+      "border_radius": null,
+      "pregen": null
+     }
+    ],
+    "ok": "# c\nname: x\nworld:\n  # kept\n  border_radius: 5\n  active: \"alpha\"\n  library:\n    - {name: \"alpha\", seed: \"7\", type: \"flat_void\", preset: \"survival_smp\"}\n    - {name: \"zeta\", seed: \"\", type: \"default\", preset: null, border_radius: {overworld: 1, nether: null, end: null}, pregen: false}\nafter: 1\n"
+   },
+   {
+    "text": "name: x\n\n\n",
+    "active": "alpha",
+    "library": [
+     {
+      "name": "zeta",
+      "seed": "",
+      "type": "default",
+      "preset": null,
+      "border_radius": {
+       "minecraft:overworld": 1,
+       "minecraft:the_nether": null,
+       "minecraft:the_end": null
+      },
+      "pregen": false
+     },
+     {
+      "name": "alpha",
+      "seed": "7",
+      "type": "flat_void",
+      "preset": "survival_smp",
+      "border_radius": null,
+      "pregen": null
+     }
+    ],
+    "ok": "name: x\n\nworld:\n  active: \"alpha\"\n  library:\n    - {name: \"alpha\", seed: \"7\", type: \"flat_void\", preset: \"survival_smp\"}\n    - {name: \"zeta\", seed: \"\", type: \"default\", preset: null, border_radius: {overworld: 1, nether: null, end: null}, pregen: false}\n"
+   },
+   {
+    "text": "world: {active: x}\n",
+    "active": "alpha",
+    "library": [
+     {
+      "name": "zeta",
+      "seed": "",
+      "type": "default",
+      "preset": null,
+      "border_radius": {
+       "minecraft:overworld": 1,
+       "minecraft:the_nether": null,
+       "minecraft:the_end": null
+      },
+      "pregen": false
+     },
+     {
+      "name": "alpha",
+      "seed": "7",
+      "type": "flat_void",
+      "preset": "survival_smp",
+      "border_radius": null,
+      "pregen": null
+     }
+    ],
+    "error": "server.yml: world: must be a block mapping (one key per line) for the panel to edit it",
+    "type": "ValueError"
+   },
+   {
+    "text": "world:\n    active: x\n",
+    "active": "alpha",
+    "library": [
+     {
+      "name": "zeta",
+      "seed": "",
+      "type": "default",
+      "preset": null,
+      "border_radius": {
+       "minecraft:overworld": 1,
+       "minecraft:the_nether": null,
+       "minecraft:the_end": null
+      },
+      "pregen": false
+     },
+     {
+      "name": "alpha",
+      "seed": "7",
+      "type": "flat_void",
+      "preset": "survival_smp",
+      "border_radius": null,
+      "pregen": null
+     }
+    ],
+    "error": "server.yml: the world: section must be indented by two spaces for the panel to edit it",
+    "type": "ValueError"
+   },
+   {
+    "text": "world:\n  active:\n    - x\n",
+    "active": "alpha",
+    "library": [
+     {
+      "name": "zeta",
+      "seed": "",
+      "type": "default",
+      "preset": null,
+      "border_radius": {
+       "minecraft:overworld": 1,
+       "minecraft:the_nether": null,
+       "minecraft:the_end": null
+      },
+      "pregen": false
+     },
+     {
+      "name": "alpha",
+      "seed": "7",
+      "type": "flat_void",
+      "preset": "survival_smp",
+      "border_radius": null,
+      "pregen": null
+     }
+    ],
+    "error": "server.yml: world.active must be one line",
+    "type": "ValueError"
+   },
+   {
+    "text": "",
+    "active": "alpha",
+    "library": [
+     {
+      "name": "zeta",
+      "seed": "",
+      "type": "default",
+      "preset": null,
+      "border_radius": {
+       "minecraft:overworld": 1,
+       "minecraft:the_nether": null,
+       "minecraft:the_end": null
+      },
+      "pregen": false
+     },
+     {
+      "name": "alpha",
+      "seed": "7",
+      "type": "flat_void",
+      "preset": "survival_smp",
+      "border_radius": null,
+      "pregen": null
+     }
+    ],
+    "ok": "\nworld:\n  active: \"alpha\"\n  library:\n    - {name: \"alpha\", seed: \"7\", type: \"flat_void\", preset: \"survival_smp\"}\n    - {name: \"zeta\", seed: \"\", type: \"default\", preset: null, border_radius: {overworld: 1, nether: null, end: null}, pregen: false}\n"
+   },
+   {
+    "text": "# c\nname: x\nworld:\n  # kept\n  active: \"main\"\n  library:\n    - {name: \"main\"}\n  border_radius: 5\nafter: 1\n",
+    "active": "x",
+    "library": [],
+    "ok": "# c\nname: x\nworld:\n  # kept\n  border_radius: 5\n  active: \"x\"\n  library: []\nafter: 1\n"
+   }
+  ],
+  "tag_value": [
+   {
+    "tags": [
+     "a",
+     "world:x",
+     "world:y"
+    ],
+    "prefix": "world:",
+    "value": "x"
+   },
+   {
+    "tags": [
+     "dv:1"
+    ],
+    "prefix": "world:",
+    "value": null
+   }
+  ]
+ }
+}
