@@ -75,9 +75,12 @@ def package_version(root: Path = ROOT) -> str:
 
 
 def notes(version: str, changelog: str) -> str | None:
-    """Body of the `## [version] - YYYY-MM-DD` section, or None if there is none."""
+    """Body of the `## [version] - YYYY-MM-DD` section, or None if there is none. CRLF line endings (a
+    Windows checkout, read untranslated by `_read`) count as newlines."""
     m = re.search(
-        rf"^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}\n(.*?)(?=^## |\Z)", changelog, re.M | re.S
+        rf"^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}\n(.*?)(?=^## |\Z)",
+        changelog.replace("\r\n", "\n"),
+        re.M | re.S,
     )
     return m.group(1).strip() if m else None
 

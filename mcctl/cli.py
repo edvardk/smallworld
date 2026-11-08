@@ -238,14 +238,16 @@ def cmd_product_update(args: argparse.Namespace) -> int:
                     "only the workflow and server.yml can go in the pin pull request (use `mcctl upgrade`)"
                 )
             worker = pu.worker_diff(args.old_product, args.new_product)
+
+            def b64(name: str) -> str:
+                # the text with \n line endings (what the contents API commits), whatever the checkout has
+                text = (args.config_dir / name).read_text(encoding="utf-8")
+                return base64.b64encode(text.encode()).decode()
+
             out = {
                 "changed": ",".join(changed),
-                "workflow": base64.b64encode((args.config_dir / configrepo.WORKFLOW).read_bytes()).decode(),
-                "server_yml": base64.b64encode(
-                    (args.config_dir / configrepo.SERVER_YML).read_bytes()
-                ).decode()
-                if configrepo.SERVER_YML in changed
-                else "",
+                "workflow": b64(configrepo.WORKFLOW),
+                "server_yml": b64(configrepo.SERVER_YML) if configrepo.SERVER_YML in changed else "",
                 "worker": pu.worker_state(worker),
                 "worker_paths": ",".join(worker or []),
             }

@@ -340,6 +340,13 @@ def test_cli_resolve_prepared_and_previous_pin(cfg: Path, tmp_path: Path, monkey
     assert got["changed"] == configrepo.WORKFLOW and got["server_yml"] == ""
     assert got["worker"] == "true" and got["worker_paths"] == "watchdog/worker.js"
     assert base64.b64decode(got["workflow"]).decode() == (cfg / configrepo.WORKFLOW).read_text()
+    wf = cfg / configrepo.WORKFLOW  # a CRLF checkout (Windows) still prepares the text with \n endings
+    wf.write_bytes(wf.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
+    assert cli.main(["product-update", "prepared", "-C", str(cfg), "--old-product", str(old),
+                     "--new-product", str(new), "--github-output", str(prep)]) == 0  # fmt: skip
+    got = dict(line.split("=", 1) for line in prep.read_text().splitlines()[-5:])
+    assert b"\r" not in base64.b64decode(got["workflow"])
+    assert base64.b64decode(got["workflow"]).decode() == wf.read_text()
     (cfg / "players.yml").write_text("# changed\n")  # only the workflow and server.yml may change
     assert cli.main(["product-update", "prepared", "-C", str(cfg), "--old-product", str(old),
                      "--new-product", str(new)]) == 1  # fmt: skip

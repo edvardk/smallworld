@@ -50,6 +50,7 @@ def test_check(tmp_path) -> None:
     root = fake_root(tmp_path, "1.2.3", log)
     assert release.check("v1.2.3", root) == []
     assert release.notes("1.2.3", log) == "- Fixed a thing."
+    assert release.notes("1.2.3", log.replace("\n", "\r\n")) == "- Fixed a thing."  # a Windows checkout
     assert release.check("1.2.3", root) == ["tag '1.2.3' isn't vX.Y.Z"]
     errors = release.check("v1.2.4", root)
     assert len(errors) == 3  # pyproject, __version__, changelog

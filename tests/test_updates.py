@@ -39,7 +39,7 @@ class FakeGitHub:
     @staticmethod
     def _files(root: Path) -> dict[str, str]:
         return {
-            str(p.relative_to(root)): p.read_text()
+            p.relative_to(root).as_posix(): p.read_text()
             for p in root.rglob("*")
             if p.is_file() and ".git" not in p.parts
         }
