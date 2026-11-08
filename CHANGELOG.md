@@ -13,6 +13,14 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   selects views and loaders from Maps and builds the view element without interpolating the tab id, on top of
   the `TABS` check.
 
+### Fixed
+
+- The Panel -> Git self-test no longer fails at "repository" with `the token can't push (permissions.push is
+  false)` when the Worker reported the token's granted permissions: `GET /repos` `permissions.push` describes a
+  user's role and is false for a GitHub App installation token, whose push comes from its contents:write grant
+  (checked by the "permissions" step). It still decides with an older Worker that reports no permissions. The
+  test stays read-only (mc_panel.py and the Rust agent alike).
+
 ## [1.4.0] - 2026-11-08
 
 ### Added

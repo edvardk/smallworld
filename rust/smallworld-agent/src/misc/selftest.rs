@@ -354,6 +354,8 @@ pub fn selftest(
         t,
     );
     let reply = reply.lock().unwrap_or_else(PoisonError::into_inner).clone();
+    // the Worker reported GitHub's grant (checked below): permissions.push from GET /repos no longer decides
+    let granted = matches!(reply.get("permissions"), Some(Value::Object(_)));
     if let Some(Value::Object(perms)) = reply.get("permissions") {
         let missing: Vec<String> = SELFTEST_NEEDS
             .iter()
@@ -396,7 +398,19 @@ pub fn selftest(
                 }
                 _ => None,
             };
-            if push == Some(Value::Bool(false)) {
+            // v1.4.1: permissions.push describes a user's role, and is false for an App installation token even
+            // with contents:write; it decides only when the Worker reported no grant (an older Worker)
+            if push == Some(Value::Bool(false)) && granted {
+                run.step(
+                    "repository",
+                    true,
+                    &format!(
+                        "{repo} readable; push comes from the token's contents:write grant \
+                         (permissions.push describes a user role)"
+                    ),
+                    t,
+                );
+            } else if push == Some(Value::Bool(false)) {
                 run.step(
                     "repository",
                     false,
@@ -404,13 +418,14 @@ pub fn selftest(
                     t,
                 );
                 return Ok(run.finish(false));
-            }
-            let allowed = if push.as_ref().is_some_and(truthy) {
-                ", push allowed"
             } else {
-                ""
-            };
-            run.step("repository", true, &format!("{repo} readable{allowed}"), t);
+                let allowed = if push.as_ref().is_some_and(truthy) {
+                    ", push allowed"
+                } else {
+                    ""
+                };
+                run.step("repository", true, &format!("{repo} readable{allowed}"), t);
+            }
         }
         Err(StepError::Other(e)) => return Err(e),
         Err(e) => {
@@ -919,12 +934,40 @@ mod tests {
         )
         .unwrap();
         assert_eq!(r["ts"], json!(1500));
+        // v1.4.1, the live case: the Worker reported contents + pull_requests write, GET /repos says
+        // permissions.push false (a user's role, false for an App installation token): the grant decides
+        assert_eq!(
+            steps(&r)[..3],
+            [
+                "token=true: the Worker minted a token (40 characters), TokenCache accepted it",
+                "permissions=true: contents + pull_requests write",
+                "repository=true: o/c readable; push comes from the token's contents:write grant \
+                 (permissions.push describes a user role)",
+            ]
+        );
+        assert!(!r["error"].as_str().unwrap().starts_with("repository"));
+
+        // an older Worker reports no grant: permissions.push false still fails the step
+        let mut t = good_token();
+        t.as_object_mut().unwrap().remove("permissions");
+        let fetch: FetchFn = Arc::new(move || Ok(t.clone()));
+        let gh = Arc::new(Gh {
+            routes: routes(json!(false)),
+        });
+        let r = selftest(
+            Some(&fetch),
+            Some(&repo()),
+            1.5,
+            Arc::new(|| 0.0),
+            &http(gh, seen.clone()),
+        )
+        .unwrap();
         assert_eq!(r["ok"], json!(false));
         assert_eq!(
             steps(&r),
             [
                 "token=true: the Worker minted a token (40 characters), TokenCache accepted it",
-                "permissions=true: contents + pull_requests write",
+                "permissions=true: not reported by this Worker (checked through the repository below)",
                 "repository=false: o/c: the token can't push (permissions.push is false)",
             ]
         );

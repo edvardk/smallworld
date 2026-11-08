@@ -1312,10 +1312,28 @@ def test_selftest_names_the_failing_step_and_never_the_token(github, reply: Any,
     assert not github.calls, "nothing reaches GitHub before the token and its permissions pass"
 
 
+def test_selftest_push_false_with_a_granted_token_passes(github) -> None:
+    """v1.4.1, the live v1.4.0 false failure: the Worker reported contents + pull_requests write (GitHub refuses
+    to mint more than the installation has), and GET /repos says permissions.push false, which describes a
+    user's role, not what an App installation token can do. The grant decides; still read-only."""
+    fetch = selftest_fetch({"token": TOKEN, "expires_at": "2099-01-01T00:00:00Z",
+                            "permissions": {"contents": "write", "pull_requests": "write"}})  # fmt: skip
+    github.push = False
+    r = mc_panel.selftest(fetch, gh_for(github), 1000.0)
+    assert r["ok"] is True and r["error"] == ""
+    assert r["steps"][2] == {
+        "step": "repository", "ok": True,
+        "detail": "octocat/mc-config readable; push comes from the token's contents:write grant "
+        "(permissions.push describes a user role)",
+    }  # fmt: skip
+    assert len(r["steps"][2]["detail"]) < 200
+    assert {m for m, _, _ in github.calls} == {"GET"} and not github.prs
+
+
 def test_selftest_github_side_failures(github) -> None:
     gh = gh_for(github)
     fetch = selftest_fetch({"token": TOKEN, "expires_at": "2099-01-01T00:00:00Z"})
-    github.push = False
+    github.push = False  # no grant reported (an older Worker): permissions.push false still fails
     r = mc_panel.selftest(fetch, gh, 1000.0)
     assert r["error"] == "repository: octocat/mc-config: the token can't push (permissions.push is false)"
     assert r["steps"][1] == {"step": "permissions", "ok": True,

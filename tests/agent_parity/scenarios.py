@@ -221,7 +221,8 @@ def selftest_failures(s: Scenario) -> None:
         ("long_token", [(200, dict(good, token="ghs_" + "L" * 386))], True, None),
         ("missing_perms", [(200, dict(good, permissions={"contents": "read"}))], True, None),
         ("no_perms_key", [(200, {k: v for k, v in good.items() if k != "permissions"})], True, None),
-        ("push_false", [(200, good)], False, None),
+        ("push_false", [(200, good)], False, None),  # v1.4.1: the granted permissions decide, not push
+        ("push_false_old_worker", [(200, {k: v for k, v in good.items() if k != "permissions"})], False, None),
         ("push_unknown", [(200, good)], None, None),
         ("alert", [(502, {"error": "down"})], True,
          {"last": {"ok": False, "trigger": "daily", "ts": 1}, "failures": 1, "alerted": False}),

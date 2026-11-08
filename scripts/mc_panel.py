@@ -552,7 +552,8 @@ def selftest(
         return out
     step("token", True, f"the Worker minted a token ({len(token)} characters), TokenCache accepted it")
     perms = reply.get("permissions") if isinstance(reply, dict) else None
-    if isinstance(perms, dict):
+    granted = isinstance(perms, dict)  # the Worker reported GitHub's grant, and the step below checks it
+    if granted:
         missing = [f"{k}: {v}" for k, v in SELFTEST_NEEDS.items() if perms.get(k) != v]
         why = f"the token lacks {', '.join(missing)}" if missing else "contents + pull_requests write"
         if not step("permissions", not missing, why):
@@ -563,10 +564,16 @@ def selftest(
     try:
         repo = probe.call("GET", f"/repos/{gh.repo}")
         push = (repo.get("permissions") or {}).get("push") if isinstance(repo, dict) else None
-        if push is False:
+        # v1.4.1: permissions.push describes a user's role, and is false for an App installation token even
+        # with contents:write; it decides only when the Worker reported no grant (an older Worker)
+        if push is False and not granted:
             step("repository", False, f"{gh.repo}: the token can't push (permissions.push is false)")
             return out
-        step("repository", True, f"{gh.repo} readable" + (", push allowed" if push else ""))
+        if push is False:
+            step("repository", True, f"{gh.repo} readable; push comes from the token's contents:write grant "
+                 "(permissions.push describes a user role)")  # fmt: skip
+        else:
+            step("repository", True, f"{gh.repo} readable" + (", push allowed" if push else ""))
     except (GitHubError, KeyError, TypeError, ValueError) as e:
         step("repository", False, str(e) or type(e).__name__)
         return out
