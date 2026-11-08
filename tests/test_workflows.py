@@ -182,10 +182,35 @@ def test_autotag_tags_a_merged_version_bump_and_calls_release() -> None:
     assert rel["if"] == "needs.tag.outputs.release == 'true'"
     assert rel["with"] == {"tag": "${{ needs.tag.outputs.tag }}"}
     release = load(REPO / ".github/workflows/release.yml")
-    assert rel["permissions"] == release["jobs"]["ci"]["permissions"]  # the ceiling release.yml needs
+    # the ceiling release.yml needs: what its `ci` job grants ci.yml, plus actions read for `reuse`
+    assert rel["permissions"] == {**release["jobs"]["ci"]["permissions"], "actions": "read"}
+    for name, job in release["jobs"].items():
+        for scope, level in job.get("permissions", {}).items():
+            allowed = {"read": ("read", "write"), "write": ("write",)}[level]
+            assert rel["permissions"].get(scope) in allowed, (name, scope)
     assert set(release["on"]) == {"push", "workflow_call"} and release["on"]["push"] == {"tags": ["v*.*.*"]}
     assert release["on"]["workflow_call"]["inputs"]["tag"]["required"] is True
     assert release["jobs"]["ci"]["with"] == {"full": True}
+    # v1.5 housekeeping: autotag's call reuses the merged PR's passed full CI run (release.py ci-reuse, read-only),
+    # a pushed tag never does; any doubt (no reuse=true, a failed `reuse` job) runs CI.
+    reuse = release["jobs"]["reuse"]
+    assert reuse["if"] == "${{ inputs.tag != '' && github.ref_type != 'tag' }}"
+    assert reuse["permissions"] == {"contents": "read", "pull-requests": "read", "actions": "read"}
+    assert reuse["steps"][0]["with"] == {"ref": "${{ inputs.tag }}", "persist-credentials": False}
+    decide = reuse["steps"][1]
+    assert decide["run"] == 'python3 scripts/release.py ci-reuse --repo "$REPO" --sha "$(git rev-parse HEAD)"'
+    assert decide["env"]["GH_TOKEN"] == "${{ github.token }}"
+    ci = release["jobs"]["ci"]
+    assert ci["needs"] == "reuse"
+    assert (
+        ci["if"] == "${{ !cancelled() && (github.ref_type == 'tag' || needs.reuse.outputs.reuse != 'true') }}"
+    )
+    gate = " ".join(release["jobs"]["release"]["if"].split())
+    assert release["jobs"]["release"]["needs"] == ["reuse", "ci"]
+    assert gate == (
+        "${{ !cancelled() && (needs.ci.result == 'success' || (needs.ci.result == 'skipped' && "
+        "needs.reuse.outputs.reuse == 'true' && github.ref_type != 'tag')) }}"
+    )
     job = release["jobs"]["release"]
     assert job["steps"][0]["with"]["ref"] == "${{ inputs.tag || github.ref }}"
     for step in job["steps"][1:]:

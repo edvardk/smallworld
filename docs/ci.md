@@ -16,7 +16,7 @@ reusable workflow it runs is built to keep those near zero: see
 | Nightly, 22:07 / 22:37 UTC on `main` | everything | the whole `e2e` |
 | Monthly, the 1st, 23:43 UTC | | the four benches, if the month's commits touched what they measure |
 | Pull request, a version bump alone (v1.5: version lines of `pyproject.toml` / `mcctl/__init__.py`, plus docs) | `lint` (ruff, yamllint, the docs tests, `release.py check`), `gitleaks`, `publication`, `config-repo / validate` | `e2e` skipped (reports success) |
-| `release.yml` (called by `autotag.yml` after a merged version bump, or a tag push) | everything, including `controller` (`full`) | |
+| `release.yml` (called by `autotag.yml` after a merged version bump, or a tag push) | everything, including `controller` (`full`); from `autotag.yml`, nothing when the merged pull request already passed a full run ([Releases](#releases-no-repeat-ci-run)) | |
 | `workflow_dispatch` | everything, including `controller` | `scope`: `full` (default) / `essential` / `none`; `bench: true` adds the benches |
 | Push to `main` | nothing (the pull request already tested the merge commit; the nightly run catches two PRs that break only together); `autotag.yml` tags and releases a merged version bump | nothing |
 
@@ -63,6 +63,33 @@ answer is "everything changed".
 - Dependabot opens at most one grouped PR per ecosystem and month (minor and patch updates; a major update gets its
   own PR and waits for a human). The auto-merge job only enables `--auto`, so the merge waits for every required
   check.
+
+## Releases: no repeat CI run
+
+`autotag.yml` calls `release.yml` for a merged version bump, and `release.yml` runs `ci.yml` with `full: true`.
+When the pull request's own CI already ran everything on exactly what was merged, that run is reused instead:
+`release.yml`'s `reuse` job runs `python3 scripts/release.py ci-reuse --repo <repo> --sha <tagged commit>`
+(`gh api` with the job's `GITHUB_TOKEN`: `contents`, `pull-requests` and `actions` read, GET requests only) and
+CI is skipped only when every one of these holds:
+
+1. the tagged commit is the merge commit of exactly one merged pull request into `main` from this repository
+   (not a fork);
+2. it is a true merge whose second parent is the pull request's head and whose first parent (main before the
+   merge) the head already contains: a clean merge, so the merge commit's tree is the head's (checked too);
+3. the head's latest `ci.yml` run has finished and passed, and it was a **full** run: every job a full run has
+   (`changes`, `lint`, `controller` on every matrix entry, `gitleaks`, `publication`, `plugin`, `rust`, `seeds`,
+   `actionlint`, `config-repo / validate`; `CI_FULL_JOBS`, kept equal to `ci.yml` by `tests/test_release.py`)
+   ran and succeeded in its latest attempt.
+
+Anything else runs CI as before: a squash or rebase merge, main moving on after the head, a run still going or
+not green, a scoped pull request run (a job skipped because the diff didn't touch it, a bump-only run), more
+than one page of jobs, any API error or unexpected answer, and a failure of the `reuse` job itself (its output
+is then empty). A tag a person pushes (`release.py tag --push`) never asks: it always runs the full CI. The
+decision and its reason are in the `reuse` job's log.
+
+A pull request's CI is scoped to its diff, so most release PRs don't have a full run by themselves. To give one
+(before merging, once the head is final), run everything on its branch: `gh workflow run ci.yml --ref <branch>`
+(`workflow_dispatch` runs every job); the release then reuses that run if it is the head's latest.
 
 ## Required checks
 

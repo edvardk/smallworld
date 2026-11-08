@@ -912,7 +912,10 @@ v1.5: **merging a version bump to main releases it.** One command on the branch,
    deleting one stays the admin's (`mcctl product-setup`).
 
 `release.yml` (from autotag, or from a tag push): CI with everything (`full`), `scripts/release.py check`, and
-the GitHub release with the changelog section and the source archive's SHA-256.
+the GitHub release with the changelog section and the source archive's SHA-256. From autotag, CI isn't repeated
+when the tagged commit is a clean merge of a pull request whose head already passed a full CI run
+(`release.py ci-reuse`; any doubt runs it: [ci: Releases](ci.md#releases-no-repeat-ci-run)); a pushed tag always
+runs it.
 
 `bump X.Y.Z [--date YYYY-MM-DD]` alone sets `version` in `pyproject.toml`, `__version__` in
 `mcctl/__init__.py` and README's `Version **X.Y.Z**` line, turns `## [Unreleased]` in

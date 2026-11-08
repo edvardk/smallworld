@@ -26,6 +26,12 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   the gate's auto-merge), watch the deploy, pull, then the new pin's `render`, `plan` and `apply` (its own typed
   confirmation). For minor/major releases and Worker changes; patch releases still roll out by themselves. In
   the dashboard's command palette as "Updates: rollout preview" and "Terminal: roll out the latest release".
+- No repeat CI run on release: when `autotag.yml` calls `release.yml` for a clean merge (the pull request's head
+  already contained main, so the merge commit's tree is the head's) whose head's latest `ci.yml` run passed with
+  every job a full run has, `release.yml` reuses that run instead of running the full CI again
+  (`scripts/release.py ci-reuse`, read-only API calls with `GITHUB_TOKEN`; [ci: Releases](docs/ci.md#releases-no-repeat-ci-run)).
+  Any doubt, an API error included, runs CI as before; a tag pushed by a person always runs it.
+  `gh workflow run ci.yml --ref <branch>` gives a release PR the full run it needs.
 
 - Which parts of the HUD players see: `name`, `players` (or `online`), `health`, `tps`, `mspt`, `ping`, `fps`
   (top bar and sidebar alike; the sidebar's title stays, and a top bar with every part hidden shows just the
