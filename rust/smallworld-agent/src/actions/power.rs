@@ -1,13 +1,16 @@
-//! stop, start, restart, backup (mc_agent.py 1454-1541). restart is ported (the cli runs it); stop, start and
-//! backup are stubs for the actions owner (`_stop_now` and `do_start` need `fsx::replace_write` with 0644 and
-//! `notify::fenced`; `do_backup` a thread that waits for the oneshot, then `panel.changed()`).
+//! stop, start, restart, backup (mc_agent.py 1454-1541). Polkit pairs used: start/stop/restart
+//! minecraft.service, start mc-backup.service (50-mc-ops.rules.j2).
 
-use super::{Executor, countdown, flag};
+use super::{Executor, countdown, flag, one_line};
 use crate::jobs::{Job, rcon_command, wait_for_rcon};
 use crate::notify;
 use crate::systemd::systemctl;
-use crate::types::{AResult, AgentError, Obj, RCON_WAIT_S};
-use smallworld_core::paths::units;
+use crate::types::{AResult, AgentError, Obj, RCON_WAIT_S, Value, get, truthy};
+use serde_json::json;
+use smallworld_core::fsx;
+use smallworld_core::paths::{self, units};
+use smallworld_core::pyjson::dumps_sorted;
+use std::path::Path;
 use std::sync::Arc;
 
 /// `_backup_first(job)`: a backup before the work; a failed backup doesn't stop it.
@@ -84,18 +87,108 @@ impl Executor {
         ))
     }
 
-    /// `do_stop(args)`: not ported yet (actions).
-    pub(crate) fn do_stop(&mut self, _args: &Obj) -> AResult<String> {
-        Err(AgentError::NotPorted("actions::power::do_stop"))
+    /// `_stop_now(reason)`: the admin-stopped marker first (0644, so self-heal won't undo the stop), then
+    /// `systemctl stop minecraft`.
+    ///
+    /// # Errors
+    /// The marker's `OSError`, systemctl's error.
+    pub(crate) fn stop_now(login: &str, reason: &str) -> AResult<String> {
+        let mut record = Obj::new();
+        record.insert(
+            "since".into(),
+            json!(crate::sys::utc_iso(crate::sys::now())),
+        );
+        record.insert("reason".into(), json!(reason));
+        record.insert(
+            "by".into(),
+            json!(if login.is_empty() {
+                "panel".to_string()
+            } else {
+                format!("panel ({login})")
+            }),
+        );
+        let text = dumps_sorted(&Value::Object(record)) + "\n";
+        fsx::replace_write(
+            Path::new(paths::ADMIN_STOPPED_FILE),
+            text.as_bytes(),
+            Some(0o644),
+        )?;
+        systemctl(&["stop", units::MINECRAFT], 300.0)?;
+        Ok("stopped (admin-stopped until start)".into())
     }
 
-    /// `do_start(args)`: not ported yet (actions).
+    /// `do_stop(args)`: now, or as a job (countdown, optional backup first).
+    pub(crate) fn do_stop(&mut self, args: &Obj) -> AResult<String> {
+        let default = json!("stopped from the panel");
+        let raw = get(args, "reason");
+        let reason = one_line(if truthy(raw) { raw } else { &default }, 200);
+        let (countdown, backup) = (countdown(args)?, flag(args, "backup", false)?);
+        let Some(panel) = self.panel.clone().filter(|_| countdown != 0 || backup) else {
+            return Self::stop_now(&self.login, &reason);
+        };
+        let skip = flag(args, "skip_if_empty", true)?;
+        let login = self.login.clone();
+        let work = Box::new(move |job: &Arc<Job>| {
+            if backup {
+                backup_first(job);
+            }
+            job.set_step("stopping");
+            Self::stop_now(&login, &reason)
+        });
+        let job = panel.jobs.start(
+            &self.cmd_id,
+            "stop",
+            "Server stopping",
+            &self.login,
+            countdown,
+            work,
+            skip,
+        )?;
+        Ok(format!(
+            "stop scheduled (countdown {countdown} s, job {})",
+            job.id
+        ))
+    }
+
+    /// `do_start(args)`: refused while a job runs or the box is fenced; removes the marker, then starts.
     pub(crate) fn do_start(&mut self, _args: &Obj) -> AResult<String> {
-        Err(AgentError::NotPorted("actions::power::do_start"))
+        if self.panel.as_ref().is_some_and(|p| p.jobs.busy().is_some()) {
+            return Err(AgentError::Rejected(
+                "start: another action is running".into(),
+            ));
+        }
+        if notify::fenced() {
+            return Err(AgentError::Rejected(
+                "start: this box is fenced (mcctl migrate moved the world to another box)".into(),
+            ));
+        }
+        fsx::unlink_missing_ok(Path::new(paths::ADMIN_STOPPED_FILE))?;
+        systemctl(&["start", units::MINECRAFT], 300.0)?;
+        Ok("started".into())
     }
 
-    /// `do_backup(args)`: not ported yet (actions).
+    /// `do_backup(args)`: `systemctl start --no-block mc-backup`; with a panel, a thread waits for the oneshot
+    /// (a blocking `start` on a running oneshot returns when it ends), then pushes the inventory.
     pub(crate) fn do_backup(&mut self, _args: &Obj) -> AResult<String> {
-        Err(AgentError::NotPorted("actions::power::do_backup"))
+        systemctl(&["start", "--no-block", units::BACKUP], 300.0)?;
+        if let Some(panel) = self.panel.clone() {
+            let spawned = std::thread::Builder::new()
+                .name("backup-wait".into())
+                .spawn(move || {
+                    match systemctl(&["start", units::BACKUP], 3600.0) {
+                        Ok(()) | Err(AgentError::Os(_)) => {}
+                        Err(e) => {
+                            // Python: anything but OSError/SubprocessError kills the thread before changed().
+                            eprintln!("Exception in thread backup-wait: {e}");
+                            return;
+                        }
+                    }
+                    (panel.changed)();
+                });
+            if let Err(e) = spawned {
+                return Err(e.into());
+            }
+        }
+        Ok("backup started".into())
     }
 }

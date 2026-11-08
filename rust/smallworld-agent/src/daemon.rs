@@ -12,7 +12,7 @@ pub struct Daemon {
 }
 
 /// Modules still stubs (each owner removes its name when ported; `main` refuses to start while any remain).
-pub const NOT_PORTED: [&str; 6] = ["link", "ship", "data", "actions", "sync", "misc"];
+pub const NOT_PORTED: [&str; 5] = ["link", "ship", "data", "sync", "misc"];
 
 /// `main()`: settings from the environment (exit 2 on a bad one), then the loops.
 pub fn main() -> u8 {

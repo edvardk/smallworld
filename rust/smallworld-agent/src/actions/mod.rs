@@ -5,12 +5,13 @@
 //!
 //! | File | Actions | Status |
 //! |---|---|---|
-//! | power.rs | restart (+ `_restart_now`, `_backup_first`); stop, start, backup | restart ported (cli); stop/start/backup stubs |
-//! | plugin.rs | plugin | ported (cli) |
-//! | moderate.rs | moderate; whitelist, rejected_dismiss | moderate ported (cli); the others stubs |
-//! | world.rs | world_create, world_switch, world_delete, `worlds_inventory` | ported (cli) |
-//! | restore.rs | restore | stub |
-//! | info.rs | status, selftest, lookup, console, tail, cancel, player_message | stubs |
+//! | power.rs | restart (+ `_restart_now`, `_backup_first`), stop (+ `_stop_now`), start, backup | ported |
+//! | plugin.rs | plugin | ported |
+//! | moderate.rs | moderate, whitelist, rejected_dismiss | ported |
+//! | world.rs | world_create, world_switch, world_delete, `worlds_inventory` | ported |
+//! | restore.rs | restore | ported |
+//! | info.rs | status, selftest, lookup, console, tail, cancel, player_message | ported |
+//! | telemetry.rs | the `Telemetry` trait over the sidecar's online.json + telemetry.py `Messages` | ported |
 
 pub mod console;
 pub mod info;
@@ -18,6 +19,7 @@ pub mod moderate;
 pub mod plugin;
 pub mod power;
 pub mod restore;
+pub mod telemetry;
 pub mod world;
 
 use crate::jobs::{ClockFn, Jobs};
@@ -247,6 +249,23 @@ mod tests {
 
     fn obj(v: Value) -> Obj {
         v.as_object().unwrap().clone()
+    }
+
+    /// `_one_line` on the harness's vectors (None, numbers, bools, lists, every whitespace and bad category).
+    #[test]
+    fn one_line_vectors() {
+        let data: Value = serde_json::from_str(include_str!(
+            "../../../../tests/agent_parity/vectors/one_line.json"
+        ))
+        .unwrap();
+        for v in data["vectors"].as_array().unwrap() {
+            let limit = usize::try_from(v["limit"].as_u64().unwrap()).unwrap();
+            assert_eq!(
+                one_line(&v["input"], limit),
+                v["output"].as_str().unwrap(),
+                "{v}"
+            );
+        }
     }
 
     #[test]

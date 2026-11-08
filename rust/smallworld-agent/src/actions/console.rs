@@ -196,10 +196,81 @@ pub fn check_console(command: &Value) -> AResult<String> {
     Ok(words.join(" "))
 }
 
+/// The outcome of one call as the harness's vectors write it: `{"ok": result}` or `{"error": message, "type":
+/// class}` (scripts/parity_vectors.py `outcome`).
+fn outcome<T: Into<Value>>(r: AResult<T>) -> Value {
+    match r {
+        Ok(v) => serde_json::json!({"ok": v.into()}),
+        Err(e) => serde_json::json!({"error": e.to_string(), "type": e.class_name()}),
+    }
+}
+
+/// `smallworld-agent selftest-console` (hidden, test-only): reads a JSON array of console inputs on stdin and
+/// prints, for each, `{"normalise": outcome, "check": outcome}`, the shape of the harness's console vectors.
+/// Pure: it runs `normalise_console` and `check_console` and nothing else (no RCON, no file, no audit), so
+/// tests/test_rust_agent_console.py can compare the allowlist with Python's on generated input (Hypothesis).
+/// Exit 0, or 2 (with a message on stderr) when stdin isn't a JSON array.
+pub fn selftest_main(input: &str, out: &mut dyn std::io::Write) -> u8 {
+    let Some(Value::Array(items)) = smallworld_core::pyjson::loads(input) else {
+        eprintln!("selftest-console: stdin must be a JSON array of console inputs");
+        return 2;
+    };
+    let results: Vec<Value> = items
+        .iter()
+        .map(|item| {
+            serde_json::json!({
+                "normalise": outcome(normalise_console(item)),
+                "check": outcome(check_console(item)),
+            })
+        })
+        .collect();
+    let text = smallworld_core::pyjson::dumps_compact(&Value::Array(results));
+    if writeln!(out, "{text}").is_err() {
+        return 1;
+    }
+    0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    const VECTORS: &str = include_str!("../../../../tests/agent_parity/vectors/console.json");
+
+    /// Every console vector (the harness corpus: digits of every script, fullwidth, U+001C..U+001F,
+    /// selectors, namespaced heads, the length limits) gives Python's line or refusal, byte for byte.
+    #[test]
+    fn console_vectors() {
+        let data: Value = serde_json::from_str(VECTORS).unwrap();
+        let vectors = data["vectors"].as_array().unwrap();
+        assert!(vectors.len() > 200);
+        for v in vectors {
+            let input = &v["input"];
+            assert_eq!(outcome(check_console(input)), v["check"], "check {input}");
+            if let Some(want) = v.get("normalise") {
+                assert_eq!(
+                    outcome(normalise_console(input)),
+                    *want,
+                    "normalise {input}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn selftest_reads_an_array_and_runs_nothing_else() {
+        let mut out = Vec::new();
+        assert_eq!(selftest_main(r#"["list", "op x", 5]"#, &mut out), 0);
+        let got: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(got[0]["check"], json!({"ok": "list"}));
+        assert_eq!(got[0]["normalise"], json!({"ok": ["list"]}));
+        assert_eq!(got[1]["check"]["type"], json!("Rejected"));
+        assert_eq!(got[2]["check"]["error"], json!("console: empty command"));
+        let mut out = Vec::new();
+        assert_eq!(selftest_main("{}", &mut out), 2);
+        assert!(out.is_empty());
+    }
 
     fn ok(s: &str) -> String {
         check_console(&json!(s)).unwrap()

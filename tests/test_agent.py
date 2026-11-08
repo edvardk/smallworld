@@ -1106,6 +1106,23 @@ def test_agent_is_wired_into_ansible_and_e2e() -> None:
     assert set(re.findall(r'"([a-z_]+)"', block)) == set(mc_agent.ACTIONS)  # the Worker signs only these
 
 
+def test_rust_agent_actions_match_python() -> None:
+    """The Rust port (rust/smallworld-agent): the same ACTIONS in the same order, a dispatch arm and a `do_<action>`
+    for each, and none of them left a stub."""
+    repo = Path(__file__).resolve().parent.parent
+    src = repo / "rust/smallworld-agent/src"
+    block = (src / "types.rs").read_text().split("pub const ACTIONS", 1)[1].split("];", 1)[0]
+    assert re.findall(r'"([a-z_]+)"', block) == list(mc_agent.ACTIONS)
+    dispatch = (src / "actions/mod.rs").read_text().split("let r = match action {", 1)[1].split("};", 1)[0]
+    assert dict(re.findall(r'"([a-z_]+)" => self\.do_([a-z_]+)\(args\)', dispatch)) == {
+        a: a for a in mc_agent.ACTIONS
+    }
+    code = "".join(p.read_text() for p in sorted((src / "actions").glob("*.rs")))
+    defined = set(re.findall(r"fn do_([a-z_]+)\(", code))
+    assert defined == {n[3:] for n in dir(mc_agent.Executor) if n.startswith("do_")} == set(mc_agent.ACTIONS)
+    assert "NotPorted(\"actions::" not in code
+
+
 # --- P9: richer samples, inventory, live console ---------------------------------------------------------------
 
 
