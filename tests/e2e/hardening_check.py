@@ -20,7 +20,12 @@ Checks the hardening site.yml applied, on the live systemd, against the product'
 - self-heal under the sandbox: the JVM is frozen (SIGSTOP), two health runs (the e2e start-up grace is short)
   dump threads and restart it through systemd/polkit, and the server answers again.
 
-    /opt/ansible/bin/python tests/e2e/hardening_check.py /src/product
+    /opt/ansible/bin/python tests/e2e/hardening_check.py /src/product          # everything (core shard)
+    /opt/ansible/bin/python tests/e2e/hardening_check.py /src/product --agent  # v1.4: the agent's units only
+
+v1.4 `--agent` (the e2e's rust shards): mc-agent and, when installed, the telemetry sidecar: the exposure gate,
+running as mcops with the journal group, environment unreadable from minecraft, and the live process under its
+seccomp filter with no_new_privs and MemoryDenyWriteExecute (the Rust binary in that sandbox, design §5).
 """
 
 from __future__ import annotations
@@ -55,6 +60,11 @@ THRESHOLDS = {
     "mc-map.service": 2.5,  # v1.4: the world map pre-render (map_check.py runs it)
     "minecraft.service": 4.5,
 }
+# v1.4: units only some deployments install, scored where they are
+OPTIONAL_THRESHOLDS = {
+    "mc-telemetry.service": 2.5,  # the telemetry sidecar (agent.implementation rust with experience on)
+}
+AGENT_UNITS = ("mc-agent.service", "mc-telemetry.service")
 SECRET_FILES = (
     "/etc/minecraft/restic.env",
     "/etc/minecraft/health.env",
@@ -130,10 +140,51 @@ def main_pid(unit: str) -> int:
     return int(show(unit, "MainPID")["MainPID"])
 
 
-def main(product: Path) -> int:
+def installed(unit: str) -> bool:
+    return show(unit, "LoadState").get("LoadState") == "loaded"
+
+
+def gate(unit: str, limit: float) -> None:
+    level = exposure(unit)
+    expect(level <= limit, f"{unit}: systemd-analyze exposure {level} <= {limit}")
+    proc = run("systemd-analyze", "security", f"--threshold={int(limit * 10)}", unit, check=False)
+    expect(proc.returncode == 0, f"{unit}: systemd-analyze --threshold={int(limit * 10)} passes")
+
+
+def agent_checks() -> None:
+    """v1.4: the agent's units as they run (either implementation; the sidecar where installed)."""
+    for unit in AGENT_UNITS:
+        if not installed(unit):
+            print(f"(skipped: {unit} is not installed)")
+            continue
+        gate(unit, {**THRESHOLDS, **OPTIONAL_THRESHOLDS}[unit])
+        props = show(unit, "ActiveState", "User", "SupplementaryGroups", "MemoryDenyWriteExecute", "MainPID")
+        expect(
+            props.get("ActiveState") == "active" and props.get("User") == "mcops",
+            f"{unit} runs as mcops ({props})",
+        )
+        expect(props.get("SupplementaryGroups", "").split() == ["minecraft", "systemd-journal"],
+               f"{unit}: groups minecraft + systemd-journal ({props.get('SupplementaryGroups')})")  # fmt: skip
+        expect(props.get("MemoryDenyWriteExecute") == "yes", f"{unit}: MemoryDenyWriteExecute")
+        pid = int(props.get("MainPID", "0"))
+        status = Path(f"/proc/{pid}/status").read_text() if pid else ""
+        expect("NoNewPrivs:\t1" in status and "Seccomp:\t2" in status,
+               f"{unit}: the live process has no_new_privs and its seccomp filter")  # fmt: skip
+        expect(
+            as_user("minecraft", read(f"/proc/{pid}/environ")) == 13,
+            f"minecraft can't read {unit}'s environment",
+        )
+        exe = os.readlink(f"/proc/{pid}/exe") if pid else ""
+        print(f"     {unit}: {exe}")
+
+
+def main(product: Path, agent_only: bool = False) -> int:
     with timers_paused() as timers:
         print(f"(timers paused for the checks: {', '.join(timers) or 'none'})")
-        checks(product)
+        if agent_only:
+            agent_checks()
+        else:
+            checks(product)
     print(f"{len(failures)} failure(s)")
     return 1 if failures else 0
 
@@ -141,10 +192,11 @@ def main(product: Path) -> int:
 def checks(product: Path) -> None:
     # --- systemd sandbox ----------------------------------------------------------------------------
     for unit, limit in THRESHOLDS.items():
-        level = exposure(unit)
-        expect(level <= limit, f"{unit}: systemd-analyze exposure {level} <= {limit}")
-        gate = run("systemd-analyze", "security", f"--threshold={int(limit * 10)}", unit, check=False)
-        expect(gate.returncode == 0, f"{unit}: systemd-analyze --threshold={int(limit * 10)} passes")
+        gate(unit, limit)
+    for unit, limit in OPTIONAL_THRESHOLDS.items():
+        if installed(unit):
+            gate(unit, limit)
+    agent_checks()
     pid = show("minecraft.service", "MainPID")["MainPID"]
     status = Path(f"/proc/{pid}/status").read_text()
     expect("NoNewPrivs:\t1" in status, "the running JVM has no_new_privs")
@@ -398,4 +450,4 @@ def self_heal_after_sigstop() -> None:
 
 
 if __name__ == "__main__":
-    sys.exit(main(Path(sys.argv[1])))
+    sys.exit(main(Path(sys.argv[1]), agent_only=sys.argv[2:3] == ["--agent"]))

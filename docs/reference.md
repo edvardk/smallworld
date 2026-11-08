@@ -41,7 +41,7 @@ product/config-repo split, GitHub settings and releasing. New here? Start with t
 | `examples/config-repo/` | The template materialized with fake example.com values: CI fixture only (`scripts/sync_example.py`) |
 | `examples/full/server.yml` | A deployment with every feature on: the tests' reference `server.yml` |
 | `scripts/` | Python. On the server (stdlib only): `mc_rcon`, `backup`, `restore`, `health` (+ self-heal), `notify` (watchdog heartbeats, maintenance windows, Discord), `admin`, `mc_agent` (metrics, logs and signed commands to the Worker). Controller: lock/key tooling, smoke test |
-| `rust/` | Rust (v1.4). `smallworld-rcon`: the drop-in for `mc_rcon.py`'s command line, called by `ExecStop`, the deploy's countdown, world borders and game rules, and `mc`. Pinned toolchain, std only, static musl binaries for x86_64/aarch64 committed in `rust/dist/` (rebuilt byte for byte by `scripts/build_rust.py check`); walkthrough: [rust/smallworld-rcon.md](rust/smallworld-rcon.md) |
+| `rust/` | Rust (v1.4). `smallworld-rcon`: the drop-in for `mc_rcon.py`'s command line, called by `ExecStop`, the deploy's countdown, world borders and game rules, and `mc`. Pinned toolchain, std only, static musl binaries for x86_64/aarch64 committed in `rust/dist/` (rebuilt byte for byte by `scripts/build_rust.py check`); walkthrough: [rust/smallworld-rcon.md](rust/smallworld-rcon.md). `smallworld-agent`: the port of mc-agent, behind `agent.implementation` (below; [rust/smallworld-agent.md](rust/smallworld-agent.md)) |
 | `mcctl/`, `schema/` | Product v1 CLI (P1–P6 so far): `server.yml` schema + validation, config-repo loading, `render`, `deploy`, `doctor` (token validators, `expiry.yml`), `status`, `plan`/`apply`, `bootstrap`, tailnet wrappers, state file, pinned-product cache; generated JSON Schema |
 | `.github/workflows/` | `server` (**reusable**: what every config repo runs: validate + gitleaks, deploy, backup-check), `ci` (lint, tests, gitleaks over the history, actionlint, the example config repo through `server`), `e2e-mock` (`mcctl init --mock` → validate → `terraform validate` → site.yml in a systemd Debian 13 container with the real Purpur, idempotent second run, then the P7 hardening checked live: `systemd-analyze security` gate, sysctls, sshd masked, admin-stopped, the firewall ruleset's limits in a network namespace), `release` (tags + source archive and `SHA256SUMS`), `update-lock` (manual, reference locks). `dependabot.yml`: weekly Actions + pip bumps |
 
@@ -55,6 +55,20 @@ product/config-repo split, GitHub settings and releasing. New here? Start with t
   when nobody is online), Discord notice, then `ExecStop` does `save-all flush` + `stop` over RCON. v1.4: these run
   `smallworld-rcon` (Rust, `rust/`), identical to `mc_rcon.py`'s command line; `ExecStop` falls back to
   `mc_rcon.py stop` only if the binary gives no answer at all ([the stop path](rust/smallworld-rcon.md#the-stop-path)).
+- **Two agent implementations (v1.4).** `server.yml` `agent.implementation` picks what runs as mc-agent:
+  `python` (default; `scripts/mc_agent.py`, the experience telemetry in the same process) or `rust`
+  (`smallworld-agent`, the complete port, proved against the Python agent by the parity harness; the default
+  flips in a later release, after a soak). Every box gets the pinned binary (`/opt/minecraft/bin/smallworld-agent`,
+  root 0755) and `/opt/minecraft/bin/mc-agent`, a symlink to the chosen implementation that mcctl's actions run
+  (`mc-agent cli`; `mc_agent.py cli` on a box older than v1.4). `mc-agent.service` runs the chosen one directly,
+  in the same sandbox, as the same user. In rust mode with experience on, the telemetry (`scripts/telemetry.py`,
+  not ported) runs beside it as **`mc-telemetry.service`** (`mc_agent.py telemetry`, as `mcops`, same sandbox):
+  the same snapshots in, minute rows, segments and verdicts out, plus `/var/lib/mc-telemetry/online.json`
+  (`{uuid: {u, n, tips, join}}`, rewritten after every poll; older than 30 s = nobody online) that the Rust agent
+  reads for in-game messages, and its own reader of systemd's resource lines for the overhead card. Both
+  implementations share every state file, so a switch either way is a deploy; a new binary, a switch or a new
+  product version restarts the agent (and the sidecar). `product-version.json` records
+  `agent: {implementation, sha256}`. Operations: [operations.md](operations.md#switching-the-agents-implementation-v14).
 - **Verified keys.** `scripts/config_keys.py` rebuilds the pinned Purpur jar from the vanilla jar and Purpur's
   patch (hash-checked), then lists every config key via `javap`. No server code is run. `pytest` fails if an
   overlay uses a key that doesn't exist in the pinned version. spark is bundled with Paper, so it isn't a plugin.
@@ -499,8 +513,9 @@ commits.
 
 `restart`, `worlds`, `plugins` and `players kick|ban|pardon` run the panel's own actions on the server
 (`mcctl/actions.py`): over Tailscale SSH as the deploy user, `sudo mc-run -/etc/minecraft/notify.env
-/opt/minecraft/bin/mc_agent.py cli mcctl:<local user> ACTION ARGS_JSON` runs mc-agent's Executor once, as the ops
-user in mc-run's sandbox, so every systemd action is one of the fixed units `50-mc-ops.rules` allows (never a
+/opt/minecraft/bin/mc-agent cli mcctl:<local user> ACTION ARGS_JSON` (v1.4: the symlink to the implementation
+`agent.implementation` chose; `mc_agent.py cli` on a box deployed before v1.4, which mcctl detects with
+`sudo test -x`) runs mc-agent's Executor once, as the ops user in mc-run's sandbox, so every systemd action is one of the fixed units `50-mc-ops.rules` allows (never a
 generic `systemctl` as root). The checks are the agent's (a known archived world, the DataVersion, a plugin in the
 deployed lock, the console shapes for moderation), the long ones run as `mc_panel.Jobs` in the foreground (the
 in-game countdown at 5/4/3/2/1 min, 30, 10, 5..1 s, skipped when nobody is online unless `--wait`; progress lines

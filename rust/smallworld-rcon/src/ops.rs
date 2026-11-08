@@ -2,17 +2,13 @@
 //! `worldborder` and `gamerule`, in the same order of steps, with the same messages.
 
 use crate::error::PyError;
-use crate::properties;
-use crate::pystr::{IntError, PyInt, PyStr};
+use crate::pystr::{PyInt, PyStr};
 use crate::rcon::Rcon;
+use smallworld_core::mcrcon::{connect, env, int_error};
 use std::io::Write;
-use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::process::Command as Process;
 use std::time::{Duration, Instant};
-
-/// `connect()`'s default timeout, and the socket timeout of every command that doesn't set its own.
-const TIMEOUT: Duration = Duration::from_secs(10);
 
 /// stop(): the whole stop (flush, stop, wait) stays within this, below the unit's `TimeoutStopSec=120`.
 const STOP_BUDGET: f64 = 110.0;
@@ -20,99 +16,6 @@ const STOP_BUDGET: f64 = 110.0;
 /// Prints a line to stdout, like Python's `print()`. (A closed stdout is ignored rather than crashing.)
 pub fn say(line: &str) {
     let _ = writeln!(std::io::stdout(), "{line}");
-}
-
-/// An environment variable as Python's `os.environ.get` sees it.
-pub fn env(name: &str) -> Option<PyStr> {
-    std::env::var_os(name).map(|v| PyStr::from_os_bytes(v.as_bytes()))
-}
-
-/// `Path(text) / name` as text: pathlib drops empty and `.` parts and trailing slashes, and keeps exactly two
-/// leading slashes (POSIX lets them mean something) but folds three or more into one.
-fn path_join(dir: &PyStr, name: &str) -> PyStr {
-    let slash = u32::from('/');
-    let cps = dir.code_points();
-    let root = if cps.starts_with(&[slash, slash]) && cps.get(2) != Some(&slash) {
-        "//"
-    } else if cps.first() == Some(&slash) {
-        "/"
-    } else {
-        ""
-    };
-    let mut out = PyStr::from(root);
-    for part in cps.split(|&c| c == slash) {
-        if part.is_empty() || part == [u32::from('.')] {
-            continue;
-        }
-        out.push_py(&PyStr::from_code_points(part));
-        out.push(slash);
-    }
-    out.push_str(name);
-    out
-}
-
-/// `SERVER_DIR / "server.properties"`, `SERVER_DIR` coming from `$MC_SERVER_DIR` (default /opt/minecraft/server).
-fn properties_path() -> PyStr {
-    let dir = env("MC_SERVER_DIR").unwrap_or_else(|| PyStr::from("/opt/minecraft/server"));
-    path_join(&dir, "server.properties")
-}
-
-/// `int(text)`'s `ValueError`, worded as Python words it.
-fn int_error(text: &PyStr, e: &IntError) -> PyError {
-    match e {
-        IntError::Invalid => PyError::Value(format!(
-            "invalid literal for int() with base 10: {}",
-            text.repr()
-        )),
-        IntError::TooManyDigits(n) => PyError::Value(format!(
-            "Exceeds the limit (4300 digits) for integer string conversion: value has {n} digits; use \
-             sys.set_int_max_str_digits() to increase the limit"
-        )),
-    }
-}
-
-/// The port the system call gets for `rcon.port`, the way Python and glibc's `getaddrinfo` treat it: taken
-/// modulo 65536, refused (`gaierror -8`) when negative or too big.
-fn socket_port(port: &PyInt) -> Result<u16, PyError> {
-    let refused = || PyError::Gai {
-        code: -8,
-        message: "Servname not supported for ai_socktype".into(),
-    };
-    match port.to_i128() {
-        Some(p) if (0..i128::from(i64::MAX)).contains(&p) => {
-            Ok(u16::try_from(p % 65536).unwrap_or(0))
-        }
-        _ => Err(refused()),
-    }
-}
-
-/// `connect()`: read server.properties, then connect and log in.
-pub fn connect() -> Result<Rcon, PyError> {
-    let props = properties::read_properties(&properties_path())?;
-    let get = |key: &str| props.get(&PyStr::from(key));
-    if !get("enable-rcon").is_some_and(|v| v.eq_str("true")) {
-        return Err(PyError::Rcon(
-            "RCON is disabled in server.properties".into(),
-        ));
-    }
-    // `props.get("rcon.ip") or "127.0.0.1"`: missing or empty means localhost.
-    let host = match get("rcon.ip") {
-        Some(ip) if !ip.is_empty() => ip.clone(),
-        _ => PyStr::from("127.0.0.1"),
-    };
-    let port_text = get("rcon.port")
-        .cloned()
-        .unwrap_or_else(|| PyStr::from("25575"));
-    let port = PyInt::parse(&port_text).map_err(|e| int_error(&port_text, &e))?;
-    let password =
-        get("rcon.password").ok_or_else(|| PyError::Key(PyStr::from("rcon.password")))?;
-    let host = host.to_string_checked().ok_or_else(|| {
-        PyError::UnicodeEncode(format!(
-            "encoding with 'idna' codec failed (UnicodeEncodeError: 'idna' codec can't encode {})",
-            host.repr()
-        ))
-    })?;
-    Rcon::connect(&host, socket_port(&port)?, password, TIMEOUT)
 }
 
 /// `online_players(rcon)`: `re.search(r"There are (\d+)", reply)`, or 0.
@@ -526,30 +429,6 @@ pub fn main_pid() -> Result<Option<PyInt>, PyError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn paths_like_pathlib() {
-        let j = |d: &str| path_join(&PyStr::from(d), "server.properties").display();
-        assert_eq!(
-            j("/opt/minecraft/server"),
-            "/opt/minecraft/server/server.properties"
-        );
-        assert_eq!(j(""), "server.properties");
-        assert_eq!(j("//tmp/x/"), "//tmp/x/server.properties");
-        assert_eq!(j("///tmp/./x//"), "/tmp/x/server.properties");
-        assert_eq!(j("a/../b"), "a/../b/server.properties");
-    }
-
-    #[test]
-    fn ports_like_getaddrinfo() {
-        let p = |n: i128| socket_port(&PyInt::from_i128(n)).map_err(|e| e.to_string());
-        assert_eq!(p(25575), Ok(25575));
-        assert_eq!(p(65536 + 80), Ok(80));
-        assert_eq!(
-            p(-1),
-            Err("[Errno -8] Servname not supported for ai_socktype".into())
-        );
-    }
 
     #[test]
     fn border_parsing_and_rounding() {

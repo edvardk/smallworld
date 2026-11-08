@@ -1,13 +1,45 @@
-# The product's Rust workspace (v1.4). One crate so far: smallworld-rcon, the drop-in for scripts/mc_rcon.py's
-# command line. Rules (CLAUDE.md "Rust workspace"): the toolchain is pinned in rust-toolchain.toml, there are no
-# crates.io dependencies (std only; tests/test_rust_rcon.py checks Cargo.toml and Cargo.lock), and the binaries in
-# dist/ are rebuilt byte for byte by `python scripts/build_rust.py check`.
+# The product's Rust workspace (v1.4): smallworld-rcon (the drop-in for scripts/mc_rcon.py's command line),
+# smallworld-core (what the Rust programs share: RCON, server.properties, Python-compatible text and JSON, state
+# files, flock locks, the journald audit), smallworld-map (the world map pre-renderer; docs/rust/smallworld-map.md)
+# and smallworld-agent (the port of scripts/mc_agent.py and the agent half of scripts/mc_panel.py;
+# rust/smallworld-agent/PORTING.md). Rules (CLAUDE.md "Rust workspace"):
+# - the toolchain is pinned in rust-toolchain.toml; the binaries in dist/ are rebuilt byte for byte by
+#   `python scripts/build_rust.py check`;
+# - every crates.io dependency is declared here once ([workspace.dependencies], exact versions), listed in
+#   allowed-crates.txt (tests/test_consistency.py compares it with Cargo.lock) and checked by `cargo deny`
+#   (deny.toml: licences, advisories, bans, crates.io only);
+# - smallworld-rcon stays dependency-free: it uses smallworld-core without features (std only;
+#   tests/test_rust_rcon.py checks the resolved graph); smallworld-map has no dependencies at all (std only).
 [workspace]
-members = ["smallworld-rcon", "smallworld-map"]
+members = ["smallworld-core", "smallworld-rcon", "smallworld-map", "smallworld-agent"]
 resolver = "2"
 
-# What scripts/build_rust.py builds: small, static, reproducible. No unwinding (a panic aborts: the binary has no
-# state to clean up), one codegen unit and fat LTO (deterministic and smallest), symbols stripped.
+[workspace.package]
+edition = "2024"
+rust-version = "1.97"
+license = "MIT"
+publish = false
+
+# Exact pins (`=`), each at least two weeks old when it was chosen. Cargo.lock (committed) pins the rest of the
+# tree with checksums. Never enable rustls' default features: they select aws-lc-rs (a large C/cmake build).
+[workspace.dependencies]
+smallworld-core = { path = "smallworld-core", default-features = false }
+ureq = { version = "=3.5.0", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pki-types = { version = "=1.15.1", features = ["std"] }
+serde_json = { version = "=1.0.154", default-features = false, features = ["std"] }
+hmac = "=0.12.1"
+sha2 = { version = "=0.10.9", default-features = false }
+sha1 = { version = "=0.10.7", default-features = false }
+flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
+base64 = { version = "=0.23.1", default-features = false, features = ["std"] }
+regex = { version = "=1.13.1", default-features = false, features = ["std", "perf", "unicode-perl", "unicode-case"] }
+unicode-normalization = { version = "=0.1.26", default-features = false, features = ["std"] }
+unicode-general-category = "=1.1.0"
+libc = { version = "=0.2.191", default-features = false }
+
+# What scripts/build_rust.py builds: small, static, reproducible. One codegen unit and fat LTO (deterministic and
+# smallest), symbols stripped. smallworld-rcon: no unwinding (a panic aborts: the binary has no state to clean up).
 [profile.release]
 opt-level = "s"
 codegen-units = 1
@@ -16,3 +48,10 @@ panic = "abort"
 strip = "symbols"
 debug = false
 incremental = false
+
+# smallworld-agent's profile: the release profile with unwinding. The daemon wraps each loop round in
+# catch_unwind (a bug in one round must not kill the agent and its jobs, as in Python, where the loop outlives an
+# exception); the cli gets the same binary.
+[profile.release-agent]
+inherits = "release"
+panic = "unwind"

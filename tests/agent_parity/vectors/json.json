@@ -1,0 +1,193 @@
+{
+ "meta": {
+  "generator": "scripts/parity_vectors.py",
+  "doc": "json.dumps byte-exactness: MC_ARGS (sort_keys), the cli lists, pending.json (indent=1)"
+ },
+ "vectors": [
+  {
+   "value": {
+    "b": 1,
+    "a": [
+     1,
+     2
+    ],
+    "c": {
+     "z": null,
+     "y": true
+    }
+   },
+   "sort_keys": "{\"a\": [1, 2], \"b\": 1, \"c\": {\"y\": true, \"z\": null}}",
+   "default": "{\"b\": 1, \"a\": [1, 2], \"c\": {\"z\": null, \"y\": true}}",
+   "compact": "{\"b\":1,\"a\":[1,2],\"c\":{\"z\":null,\"y\":true}}",
+   "pending_style": "{\n \"a\": [\n  1,\n  2\n ],\n \"b\": 1,\n \"c\": {\n  \"y\": true,\n  \"z\": null\n }\n}"
+  },
+  {
+   "value": "caf\u00e9",
+   "sort_keys": "\"caf\\u00e9\"",
+   "default": "\"caf\\u00e9\"",
+   "compact": "\"caf\\u00e9\"",
+   "pending_style": "\"caf\\u00e9\""
+  },
+  {
+   "value": "\u2603",
+   "sort_keys": "\"\\u2603\"",
+   "default": "\"\\u2603\"",
+   "compact": "\"\\u2603\"",
+   "pending_style": "\"\\u2603\""
+  },
+  {
+   "value": "\ud83d\ude00",
+   "sort_keys": "\"\\ud83d\\ude00\"",
+   "default": "\"\\ud83d\\ude00\"",
+   "compact": "\"\\ud83d\\ude00\"",
+   "pending_style": "\"\\ud83d\\ude00\""
+  },
+  {
+   "value": "\u0000\u001f\u007f",
+   "sort_keys": "\"\\u0000\\u001f\\u007f\"",
+   "default": "\"\\u0000\\u001f\\u007f\"",
+   "compact": "\"\\u0000\\u001f\\u007f\"",
+   "pending_style": "\"\\u0000\\u001f\\u007f\""
+  },
+  {
+   "value": "\u2028\u2029",
+   "sort_keys": "\"\\u2028\\u2029\"",
+   "default": "\"\\u2028\\u2029\"",
+   "compact": "\"\\u2028\\u2029\"",
+   "pending_style": "\"\\u2028\\u2029\""
+  },
+  {
+   "value": "a/b",
+   "sort_keys": "\"a/b\"",
+   "default": "\"a/b\"",
+   "compact": "\"a/b\"",
+   "pending_style": "\"a/b\""
+  },
+  {
+   "value": "q\"\\",
+   "sort_keys": "\"q\\\"\\\\\"",
+   "default": "\"q\\\"\\\\\"",
+   "compact": "\"q\\\"\\\\\"",
+   "pending_style": "\"q\\\"\\\\\""
+  },
+  {
+   "value": "\ufeff",
+   "sort_keys": "\"\\ufeff\"",
+   "default": "\"\\ufeff\"",
+   "compact": "\"\\ufeff\"",
+   "pending_style": "\"\\ufeff\""
+  },
+  {
+   "value": 1.0,
+   "sort_keys": "1.0",
+   "default": "1.0",
+   "compact": "1.0",
+   "pending_style": "1.0"
+  },
+  {
+   "value": 0.1,
+   "sort_keys": "0.1",
+   "default": "0.1",
+   "compact": "0.1",
+   "pending_style": "0.1"
+  },
+  {
+   "value": 1e+16,
+   "sort_keys": "1e+16",
+   "default": "1e+16",
+   "compact": "1e+16",
+   "pending_style": "1e+16"
+  },
+  {
+   "value": 1e-07,
+   "sort_keys": "1e-07",
+   "default": "1e-07",
+   "compact": "1e-07",
+   "pending_style": "1e-07"
+  },
+  {
+   "value": 123456789012345678901234567890,
+   "sort_keys": "123456789012345678901234567890",
+   "default": "123456789012345678901234567890",
+   "compact": "123456789012345678901234567890",
+   "pending_style": "123456789012345678901234567890"
+  },
+  {
+   "value": -0.0,
+   "sort_keys": "-0.0",
+   "default": "-0.0",
+   "compact": "-0.0",
+   "pending_style": "-0.0"
+  },
+  {
+   "value": 2.5,
+   "sort_keys": "2.5",
+   "default": "2.5",
+   "compact": "2.5",
+   "pending_style": "2.5"
+  },
+  {
+   "value": [],
+   "sort_keys": "[]",
+   "default": "[]",
+   "compact": "[]",
+   "pending_style": "[]"
+  },
+  {
+   "value": {},
+   "sort_keys": "{}",
+   "default": "{}",
+   "compact": "{}",
+   "pending_style": "{}"
+  },
+  {
+   "value": {
+    "": ""
+   },
+   "sort_keys": "{\"\": \"\"}",
+   "default": "{\"\": \"\"}",
+   "compact": "{\"\":\"\"}",
+   "pending_style": "{\n \"\": \"\"\n}"
+  },
+  {
+   "value": {
+    "\u00e9": 1,
+    "e": 2,
+    "E": 3,
+    "\ud83d\ude00": 4
+   },
+   "sort_keys": "{\"E\": 3, \"e\": 2, \"\\u00e9\": 1, \"\\ud83d\\ude00\": 4}",
+   "default": "{\"\\u00e9\": 1, \"e\": 2, \"E\": 3, \"\\ud83d\\ude00\": 4}",
+   "compact": "{\"\\u00e9\":1,\"e\":2,\"E\":3,\"\\ud83d\\ude00\":4}",
+   "pending_style": "{\n \"E\": 3,\n \"e\": 2,\n \"\\u00e9\": 1,\n \"\\ud83d\\ude00\": 4\n}"
+  },
+  {
+   "value": 1e+308,
+   "sort_keys": "1e+308",
+   "default": "1e+308",
+   "compact": "1e+308",
+   "pending_style": "1e+308"
+  },
+  {
+   "value": 3e-05,
+   "sort_keys": "3e-05",
+   "default": "3e-05",
+   "compact": "3e-05",
+   "pending_style": "3e-05"
+  },
+  {
+   "value": 100.0,
+   "sort_keys": "100.0",
+   "default": "100.0",
+   "compact": "100.0",
+   "pending_style": "100.0"
+  },
+  {
+   "value": 1e+22,
+   "sort_keys": "1e+22",
+   "default": "1e+22",
+   "compact": "1e+22",
+   "pending_style": "1e+22"
+  }
+ ]
+}

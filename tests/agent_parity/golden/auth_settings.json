@@ -1,0 +1,60 @@
+{
+ "notes": {
+  "routes": [
+   "GET /agent/commands",
+   "POST /ingest/inventory",
+   "POST /ingest/metrics"
+  ],
+  "ws": [
+   "ws-refused"
+  ],
+  "requests_after_bad_settings": 0
+ },
+ "exits": [
+  {
+   "wrong_token": 0
+  },
+  {
+   "short_token": 2
+  },
+  {
+   "short_key": 2
+  },
+  {
+   "plain_http": 2
+  },
+  {
+   "no_url": 2
+  },
+  {
+   "ftp": 2
+  },
+  {
+   "bad_int": 2
+  }
+ ],
+ "worker": {},
+ "websocket": [],
+ "console": [],
+ "github": [],
+ "https": [],
+ "rcon": {
+  "stats_connections": 1,
+  "connections": []
+ },
+ "systemd": {
+  "calls": [],
+  "probes": [
+   "show -p ActiveState -p ActiveEnterTimestampMonotonic minecraft.service",
+   "show -p MemoryCurrent --value minecraft.service"
+  ]
+ },
+ "audit": [],
+ "files": {
+  "/var/lib/mc-agent/spool.jsonl": {
+   "type": "file",
+   "mode": "0o600",
+   "content": "<1 spooled samples>"
+  }
+ }
+}

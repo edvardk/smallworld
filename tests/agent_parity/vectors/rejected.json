@@ -1,0 +1,141 @@
+{
+ "meta": {
+  "generator": "scripts/parity_vectors.py",
+  "doc": "mask_address and RejectedLogins.feed"
+ },
+ "vectors": {
+  "mask_address": [
+   {
+    "input": "/203.0.113.7:51234",
+    "output": "203.0.113.x"
+   },
+   {
+    "input": "203.0.113.7",
+    "output": "203.0.113.x"
+   },
+   {
+    "input": "/[2001:db8:1:2::5]:4444",
+    "output": "2001:db8:1::/48"
+   },
+   {
+    "input": "2001:db8::1",
+    "output": "2001:db8::/48"
+   },
+   {
+    "input": "[::1]",
+    "output": "::/48"
+   },
+   {
+    "input": "/fe80::1%eth0",
+    "output": "fe80::/48"
+   },
+   {
+    "input": "local",
+    "output": ""
+   },
+   {
+    "input": "",
+    "output": ""
+   },
+   {
+    "input": "/192.0.2.4:5:6",
+    "output": ""
+   },
+   {
+    "input": "/256.1.1.1:1",
+    "output": ""
+   },
+   {
+    "input": "/::ffff:192.0.2.4",
+    "output": "::/48"
+   },
+   {
+    "input": "/\u066192.0.2.4:5",
+    "output": ""
+   }
+  ],
+  "feed": {
+   "lines": [
+    [
+     1000,
+     "[23:58:01 INFO]: UUID of player Mallory is 66666666-6666-4666-8666-666666666666"
+    ],
+    [
+     2000,
+     "[23:58:01 INFO]: Disconnecting Mallory (/203.0.113.7:51234): You are not whitelisted on this server!"
+    ],
+    [
+     3000,
+     "[23:58:02 INFO]: Mallory (/203.0.113.7:51234) lost connection: You are not whitelisted on this server!"
+    ],
+    [
+     13000,
+     "[23:58:12 INFO]: Mallory (/203.0.113.7:51234) lost connection: You are not white-listed on this server!"
+    ],
+    [
+     14000,
+     "[23:58:03 INFO]: <Eve> [23:58:03 INFO]: Disconnecting Bob (/192.0.2.4:5): not whitelisted"
+    ],
+    [
+     15000,
+     "\u001b[0m[23:58:04 INFO]: Disconnecting Trudy (/[2001:db8::5]:4444): You are not white-listed!\r\n"
+    ],
+    [
+     16000,
+     "[23:58:05 WARN]: Disconnecting Zed (/192.0.2.4:5): not whitelisted"
+    ],
+    [
+     17000,
+     "[23:58:06 INFO]: Disconnecting Zed (/192.0.2.4:5): NOT   WHITELISTED"
+    ],
+    [
+     18000,
+     "[23:58:07 INFO]: Disconnecting Zed2 (/192.0.2.4:5): You are banned"
+    ],
+    [
+     19000,
+     "[23:58:08 INFO]: Disconnecting ThisNameIsWayTooLong (/192.0.2.4:5): not whitelisted"
+    ],
+    [
+     20000,
+     "[\u0662\u0663:58:09 INFO]: Disconnecting Arab (/192.0.2.4:5): not whitelisted"
+    ]
+   ],
+   "changed": true,
+   "entries": [
+    {
+     "name": "Arab",
+     "uuid": null,
+     "count": 1,
+     "first": 20000,
+     "last": 20000,
+     "ip": "192.0.2.x"
+    },
+    {
+     "name": "Zed",
+     "uuid": null,
+     "count": 1,
+     "first": 17000,
+     "last": 17000,
+     "ip": "192.0.2.x"
+    },
+    {
+     "name": "Trudy",
+     "uuid": null,
+     "count": 1,
+     "first": 15000,
+     "last": 15000,
+     "ip": "2001:db8::/48"
+    },
+    {
+     "name": "Mallory",
+     "uuid": "66666666-6666-4666-8666-666666666666",
+     "count": 2,
+     "first": 2000,
+     "last": 13000,
+     "ip": "203.0.113.x"
+    }
+   ]
+  }
+ }
+}

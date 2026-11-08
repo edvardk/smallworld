@@ -39,6 +39,13 @@ mc_smallworld_rcon_sha256:
 mc_smallworld_map_sha256:
   amd64: 0dc5733ddacbdafaeac4a1ecb2e5763250b1ea5582c4707efcfcc39a774d2fa1
   arm64: 43d7a47e5900b2d55df7e01d7ee88911be2b342b9ab70639ea480200b2828789
+# v1.4: smallworld-agent (rust/smallworld-agent, PORTING.md), the Rust port of mc_agent.py: committed as
+# rust/dist/smallworld-agent-<target> and rebuilt byte for byte by scripts/build_rust.py check, like smallworld-rcon.
+# Installed on every box by the base role (checked against this pin first); runs as mc-agent with
+# server.yml agent.implementation: rust.
+mc_smallworld_agent_sha256:
+  amd64: fafbdcc6438b0ae12ead0dd3c1ee0bbe4b5b46587db40dd7518e39528cba9d13
+  arm64: b67645a9b7f9c7e1960b8aa9d3427e0d1ade93b5c743112065da035ad8b7070f
 
 # --- OS tuning -----------------------------------------------------------------------------------
 base_zram_enabled: true

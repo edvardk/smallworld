@@ -1,0 +1,818 @@
+{
+ "notes": {
+  "unknown": {
+   "id": "cmd001",
+   "ok": false,
+   "error": "plugin: not a plugin in plugins.lock.yml"
+  },
+  "not_bool": {
+   "id": "cmd002",
+   "ok": false,
+   "error": "plugin: enabled must be true or false"
+  },
+  "already": {
+   "id": "cmd003",
+   "ok": false,
+   "error": "plugin: chunky is already enabled"
+  },
+  "bad_countdown": {
+   "id": "cmd004",
+   "ok": false,
+   "error": "countdown must be one of 0, 10, 60, 300 seconds"
+  },
+  "disable": {
+   "id": "cmd005",
+   "ok": true,
+   "output": "plugin chunky disable scheduled (countdown 0 s, job cmd005)"
+  },
+  "disable_end": {
+   "id": "cmd005",
+   "action": "plugin",
+   "label": "Restart",
+   "login": "admin@parity.test",
+   "state": "done",
+   "step": "chunky disabled; the server restarted",
+   "countdown": 0,
+   "deadline": "<time>",
+   "started": "<time>",
+   "finished": "<time>",
+   "players": 0
+  },
+  "inventory_after_disable": {
+   "plugins_disabled": [
+    "chunky"
+   ],
+   "job": {
+    "id": "cmd005",
+    "action": "plugin",
+    "label": "Restart",
+    "login": "admin@parity.test",
+    "state": "done",
+    "step": "chunky disabled; the server restarted",
+    "countdown": 0,
+    "deadline": "<time>",
+    "started": "<time>",
+    "finished": "<time>",
+    "players": 0
+   }
+  },
+  "enable_stopped": {
+   "id": "cmd006",
+   "ok": true,
+   "output": "plugin chunky enable scheduled (countdown 0 s, job cmd006)"
+  },
+  "enable_stopped_end": {
+   "id": "cmd006",
+   "action": "plugin",
+   "label": "Restart",
+   "login": "admin@parity.test",
+   "state": "done",
+   "step": "chunky enabled; the server is stopped (applies at start)",
+   "countdown": 0,
+   "deadline": "<time>",
+   "started": "<time>",
+   "finished": "<time>",
+   "players": 0
+  }
+ },
+ "exits": [
+  {
+   "daemon": 0
+  }
+ ],
+ "worker": {
+  "POST /ingest/inventory": [
+   {
+    "auth": true,
+    "user_agent": "smallworld mc-agent",
+    "content_type": "application/json",
+    "body": {
+     "agent": "1",
+     "inventory": {
+      "ts": "<time>",
+      "whitelist": [
+       {
+        "name": "Alice_Op",
+        "uuid": "11111111-1111-4111-8111-111111111111"
+       },
+       {
+        "name": "Bob",
+        "uuid": "22222222-2222-4222-8222-222222222222"
+       }
+      ],
+      "ops": [
+       {
+        "name": "Alice_Op",
+        "uuid": "11111111-1111-4111-8111-111111111111",
+        "level": 4
+       }
+      ],
+      "bans": [
+       {
+        "name": "Griefer",
+        "uuid": "55555555-5555-4555-8555-555555555555",
+        "created": "<time>",
+        "source": "Server",
+        "expires": "forever",
+        "reason": "griefing"
+       }
+      ],
+      "ip_bans": [],
+      "plugins": [
+       {
+        "file": "Chunky-1.4.40.jar",
+        "name": "Chunky-1.4.40",
+        "enabled": true
+       },
+       {
+        "file": "spark-1.10.jar",
+        "name": "spark-1.10",
+        "enabled": true
+       }
+      ],
+      "pending": [],
+      "whitelist_sync": {
+       "configured": true,
+       "pr": null,
+       "error": "",
+       "expired": []
+      },
+      "rejected": [],
+      "plugins_lock": [
+       {
+        "name": "chunky",
+        "filename": "Chunky-1.4.40.jar",
+        "version": "1.4.40"
+       },
+       {
+        "name": "spark",
+        "filename": "spark-1.10.jar",
+        "version": "1.10"
+       }
+      ],
+      "plugins_disabled": [],
+      "snapshots": [
+       {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "short_id": "aaaaaaaa",
+        "time": "<iso>",
+        "tags": "daily",
+        "host": "mc",
+        "size": 1234
+       },
+       {
+        "id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "short_id": "cccccccc",
+        "time": "<iso>",
+        "tags": "world-archive,world:creative,dv:4671",
+        "host": "mc",
+        "size": 1234
+       }
+      ],
+      "job": null,
+      "worlds": {
+       "active": "main",
+       "since": "<time>",
+       "data_version": 4671,
+       "archives": [
+        {
+         "name": "creative",
+         "short_id": "cccccccc",
+         "time": "<iso>",
+         "size": 1000,
+         "data_version": 4671,
+         "count": 1
+        },
+        {
+         "name": "future",
+         "short_id": "ffffffff",
+         "time": "<iso>",
+         "size": 1000,
+         "data_version": 9999,
+         "count": 1
+        }
+       ],
+       "library": [
+        {
+         "name": "main",
+         "seed": "42",
+         "type": "default",
+         "preset": "survival_smp",
+         "border_radius": null,
+         "pregen": null
+        },
+        {
+         "name": "creative",
+         "seed": "",
+         "type": "flat_classic",
+         "preset": null,
+         "border_radius": null,
+         "pregen": null
+        }
+       ],
+       "deleted": [
+        "gone"
+       ],
+       "archive_bytes": 2000,
+       "storage_note": false,
+       "pending": null
+      },
+      "product": {
+       "version": "1.3.1",
+       "commit": "e786b14000000000000000000000000000000000",
+       "running": "1.3.1",
+       "running_commit": "e786b14000000000000000000000000000000000"
+      },
+      "selftest": null
+     }
+    }
+   }
+  ],
+  "POST /ingest/metrics": [
+   {
+    "auth": true,
+    "user_agent": "smallworld mc-agent",
+    "content_type": "application/json",
+    "body": {
+     "agent": "1",
+     "samples": [
+      {
+       "admin_stopped": false,
+       "cpuN_pct": "number|null",
+       "cpu_cores": "number",
+       "cpu_pct": "null",
+       "disk_pct": "number",
+       "disk_total_gb": "number",
+       "disk_used_gb": "number",
+       "gc_max_pause_ms": 12.3,
+       "heap_max_mb": 6656,
+       "heap_used_mb": 1200,
+       "jvm_mem_mb": 3072,
+       "load1": "number",
+       "load15": "number",
+       "load5": "number",
+       "max_players": 20,
+       "mem_pct": "number",
+       "mem_total_mb": "number",
+       "mem_used_mb": "number",
+       "mspt": 11.9,
+       "net_rx_bps": "null",
+       "net_tx_bps": "null",
+       "players": 0,
+       "players_online": [],
+       "steal_pct": "null",
+       "tps": 19.98,
+       "tps15": 20.0,
+       "tps5": 20.0,
+       "ts": "number",
+       "up": true,
+       "uptime_s": "number",
+       "ws": "bool"
+      }
+     ]
+    }
+   }
+  ],
+  "POST /ingest/job": [
+   {
+    "auth": true,
+    "user_agent": "smallworld mc-agent",
+    "content_type": "application/json",
+    "body": {
+     "agent": "1",
+     "job": {
+      "id": "cmd005",
+      "action": "plugin",
+      "label": "Restart",
+      "login": "admin@parity.test",
+      "state": "countdown",
+      "step": "",
+      "countdown": 0,
+      "deadline": "<time>",
+      "started": "<time>",
+      "finished": null,
+      "players": 0
+     }
+    }
+   },
+   {
+    "auth": true,
+    "user_agent": "smallworld mc-agent",
+    "content_type": "application/json",
+    "body": {
+     "agent": "1",
+     "job": {
+      "id": "cmd005",
+      "action": "plugin",
+      "label": "Restart",
+      "login": "admin@parity.test",
+      "state": "running",
+      "step": "",
+      "countdown": 0,
+      "deadline": "<time>",
+      "started": "<time>",
+      "finished": null,
+      "players": 0
+     }
+    }
+   },
+   {
+    "auth": true,
+    "user_agent": "smallworld mc-agent",
+    "content_type": "application/json",
+    "body": {
+     "agent": "1",
+     "job": {
+      "id": "cmd005",
+      "action": "plugin",
+      "label": "Restart",
+      "login": "admin@parity.test",
+      "state": "running",
+      "step": "moving the chunky jar (mc-plugins-apply.service)",
+      "countdown": 0,
+      "deadline": "<time>",
+      "started": "<time>",
+      "finished": null,
+      "players": 0
+     }
+    }
+   },
+   {
+    "auth": true,
+    "user_agent": "smallworld mc-agent",
+    "content_type": "application/json",
+    "body": {
+     "agent": "1",
+     "job": {
+      "id": "cmd005",
+      "action": "plugin",
+      "label": "Restart",
+      "login": "admin@parity.test",
+      "state": "running",
+      "step": "restarting minecraft.service",
+      "countdown": 0,
+      "deadline": "<time>",
+      "started": "<time>",
+      "finished": null,
+      "players": 0
+     }
+    }
+   },
+   {
+    "auth": true,
+    "user_agent": "smallworld mc-agent",
+    "content_type": "application/json",
+    "body": {
+     "agent": "1",
+     "job": {
+      "id": "cmd005",
+      "action": "plugin",
+      "label": "Restart",
+      "login": "admin@parity.test",
+      "state": "running",
+      "step": "waiting for the server to answer RCON",
+      "countdown": 0,
+      "deadline": "<time>",
+      "started": "<time>",
+      "finished": null,
+      "players": 0
+     }
+    }
+   },
+   {
+    "auth": true,
+    "user_agent": "smallworld mc-agent",
+    "content_type": "application/json",
+    "body": {
+     "agent": "1",
+     "job": {
+      "id": "cmd005",
+      "action": "plugin",
+      "label": "Restart",
+      "login": "admin@parity.test",
+      "state": "done",
+      "step": "chunky disabled; the server restarted",
+      "countdown": 0,
+      "deadline": "<time>",
+      "started": "<time>",
+      "finished": "<time>",
+      "players": 0
+     }
+    }
+   },
+   {
+    "auth": true,
+    "user_agent": "smallworld mc-agent",
+    "content_type": "application/json",
+    "body": {
+     "agent": "1",
+     "job": {
+      "id": "cmd006",
+      "action": "plugin",
+      "label": "Restart",
+      "login": "admin@parity.test",
+      "state": "countdown",
+      "step": "",
+      "countdown": 0,
+      "deadline": "<time>",
+      "started": "<time>",
+      "finished": null,
+      "players": 0
+     }
+    }
+   },
+   {
+    "auth": true,
+    "user_agent": "smallworld mc-agent",
+    "content_type": "application/json",
+    "body": {
+     "agent": "1",
+     "job": {
+      "id": "cmd006",
+      "action": "plugin",
+      "label": "Restart",
+      "login": "admin@parity.test",
+      "state": "running",
+      "step": "",
+      "countdown": 0,
+      "deadline": "<time>",
+      "started": "<time>",
+      "finished": null,
+      "players": 0
+     }
+    }
+   },
+   {
+    "auth": true,
+    "user_agent": "smallworld mc-agent",
+    "content_type": "application/json",
+    "body": {
+     "agent": "1",
+     "job": {
+      "id": "cmd006",
+      "action": "plugin",
+      "label": "Restart",
+      "login": "admin@parity.test",
+      "state": "running",
+      "step": "moving the chunky jar (mc-plugins-apply.service)",
+      "countdown": 0,
+      "deadline": "<time>",
+      "started": "<time>",
+      "finished": null,
+      "players": 0
+     }
+    }
+   },
+   {
+    "auth": true,
+    "user_agent": "smallworld mc-agent",
+    "content_type": "application/json",
+    "body": {
+     "agent": "1",
+     "job": {
+      "id": "cmd006",
+      "action": "plugin",
+      "label": "Restart",
+      "login": "admin@parity.test",
+      "state": "done",
+      "step": "chunky enabled; the server is stopped (applies at start)",
+      "countdown": 0,
+      "deadline": "<time>",
+      "started": "<time>",
+      "finished": "<time>",
+      "players": 0
+     }
+    }
+   }
+  ]
+ },
+ "websocket": [
+  {
+   "event": "ws-open",
+   "session": 0,
+   "auth": true,
+   "user_agent": "smallworld mc-agent",
+   "version": "13",
+   "connection_upgrade": true
+  },
+  {
+   "event": "ws-hello",
+   "session": 0,
+   "message": {
+    "type": "hello",
+    "agent": "1"
+   }
+  },
+  {
+   "event": "ws-ended",
+   "session": 0,
+   "unmasked": 0
+  }
+ ],
+ "console": [],
+ "github": [],
+ "https": [
+  {
+   "method": "POST",
+   "path": "/maintenance",
+   "content_type": "application/json",
+   "auth": "heartbeat",
+   "body": {
+    "minutes": 15,
+    "reason": "plugin chunky"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/maintenance",
+   "content_type": "application/json",
+   "auth": "heartbeat",
+   "body": {
+    "minutes": 0,
+    "reason": "plugin chunky"
+   }
+  }
+ ],
+ "rcon": {
+  "stats_connections": 1,
+  "connections": [
+   [
+    "list"
+   ]
+  ]
+ },
+ "systemd": {
+  "calls": [
+   [
+    "systemctl",
+    "--no-ask-password",
+    "start",
+    "mc-plugins-apply.service"
+   ],
+   [
+    "systemctl",
+    "--no-ask-password",
+    "restart",
+    "minecraft.service"
+   ],
+   [
+    "systemctl",
+    "--no-ask-password",
+    "start",
+    "mc-plugins-apply.service"
+   ]
+  ],
+  "probes": [
+   "show -p ActiveState -p ActiveEnterTimestampMonotonic minecraft.service",
+   "show -p MemoryCurrent --value minecraft.service"
+  ]
+ },
+ "audit": [
+  [
+   [
+    "MESSAGE",
+    "agent action=plugin ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "plugin"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"enabled\": false, \"name\": \"nope\"}"
+   ],
+   [
+    "MC_RESULT",
+    "plugin: not a plugin in plugins.lock.yml"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=plugin ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "plugin"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"enabled\": \"no\", \"name\": \"chunky\"}"
+   ],
+   [
+    "MC_RESULT",
+    "plugin: enabled must be true or false"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=plugin ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "plugin"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"enabled\": true, \"name\": \"chunky\"}"
+   ],
+   [
+    "MC_RESULT",
+    "plugin: chunky is already enabled"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=plugin ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "plugin"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"countdown\": 7, \"enabled\": false, \"name\": \"chunky\"}"
+   ],
+   [
+    "MC_RESULT",
+    "countdown must be one of 0, 10, 60, 300 seconds"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=plugin ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "plugin"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"enabled\": false, \"name\": \"chunky\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=plugin ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "plugin"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"enabled\": true, \"name\": \"chunky\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ]
+ ],
+ "files": {
+  "/var/lib/mc-agent/nonces.json": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "nonce-plugin-0001": "<time>",
+    "nonce-plugin-0002": "<time>",
+    "nonce-plugin-0003": "<time>",
+    "nonce-plugin-0004": "<time>",
+    "nonce-plugin-0005": "<time>",
+    "nonce-plugin-0006": "<time>"
+   }
+  },
+  "/var/lib/mc-agent/spool.jsonl": {
+   "type": "file",
+   "mode": "0o600",
+   "content": "<0 bytes>"
+  },
+  "/var/lib/minecraft/admin-stopped": {
+   "type": "file",
+   "mode": "0o644",
+   "content": {
+    "since": "<time>",
+    "reason": "test",
+    "by": "test"
+   }
+  },
+  "/var/lib/minecraft/job.lock": {
+   "type": "file",
+   "mode": "0o600",
+   "content": "<0 bytes>"
+  },
+  "/var/lib/minecraft/plugins-disabled.json": {
+   "type": "file",
+   "mode": "0o644",
+   "content": {
+    "at": "<time>",
+    "by": "admin@parity.test",
+    "disabled": []
+   }
+  }
+ }
+}

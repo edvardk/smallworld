@@ -646,3 +646,112 @@ def test_busiest_chunks_parsed_and_merged_per_minute() -> None:
     ]
     b = telemetry.parse_snapshot(json.dumps(snap(3, T0, hot=many)).encode())
     assert b is not None and len(telemetry.summarize_server([b])["hot"]) == telemetry.MAX_HOT
+
+
+# --- v1.4: the telemetry sidecar (agent.implementation rust: mc_agent.py telemetry) ---------------------------
+
+
+def agent_settings(tmp_path: Path) -> mc_agent.Settings:
+    return mc_agent.Settings(ingest_url="https://w.example", token="t" * 32, hmac_key=b"k" * 32,
+                             state_dir=tmp_path / "state", experience=True)  # fmt: skip
+
+
+def test_the_python_agent_runs_telemetry_in_process_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """python mode: the agent's own Telemetry is the plain class, measuring the same units as before (no
+    mc-telemetry.service row on a box that has no sidecar), with the state dir it always had."""
+    monkeypatch.setenv("TELEMETRY_DIR", str(tmp_path / "snap"))
+    t = mc_agent.make_telemetry(agent_settings(tmp_path))
+    assert type(t) is telemetry.Telemetry and t.stats is telemetry.unit_stats
+    assert telemetry.OVERHEAD_UNITS == ("minecraft.service", "mc-agent.service")
+    assert t.id_file == tmp_path / "state" / "telemetry-id.json"
+    assert mc_agent.SIDECAR_UNITS == (*telemetry.OVERHEAD_UNITS, "mc-telemetry.service")
+
+
+def test_the_sidecar_publishes_who_is_online_for_the_rust_agent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """online.json = {uuid: {u, n, tips, join}} (what rust actions/telemetry.rs reads), rewritten after every
+    poll, atomically and 0640, and narrowed: no position, world or client details leave the telemetry."""
+    snaps = tmp_path / "snap"
+    snaps.mkdir()
+    monkeypatch.setenv("TELEMETRY_DIR", str(snaps))
+    monkeypatch.setenv("VERDICT_DIR", str(tmp_path))
+    monkeypatch.setenv("SEGMENT_DIR", str(tmp_path / "seg"))
+    t = mc_agent.make_telemetry(agent_settings(tmp_path), cls=mc_agent.SidecarTelemetry)
+    t.post = t.put = lambda *_: pytest.fail("no request in this test")  # type: ignore[method-assign]
+    assert isinstance(t, mc_agent.SidecarTelemetry)
+    t.online_file = tmp_path / "online.json"
+    (tmp_path / "state").mkdir()
+    now = (
+        int(time.time() * 1000) // 60000 * 60000
+    )  # both snapshots in this minute: no row closes, nothing is sent
+    write_snap(snaps, snap(1, now, [pl(), pl(MIA, "Mia", tips=False)]))
+    t.poll()
+    data = json.loads(t.online_file.read_text())
+    assert data == {ED: {"u": ED, "n": "Em_K", "tips": True, "join": T0 - 600000},
+                    MIA: {"u": MIA, "n": "Mia", "tips": False, "join": T0 - 600000}}  # fmt: skip
+    assert t.online_file.stat().st_mode & 0o777 == 0o640
+    assert not list(tmp_path.glob(".online.json.tmp"))
+    # nobody online: an empty object, still rewritten (a fresh mtime = a live sidecar)
+    write_snap(snaps, snap(2, now + 10000, []))
+    os.utime(t.online_file, (0, 0))
+    t.poll()
+    assert json.loads(t.online_file.read_text()) == {} and t.online_file.stat().st_mtime > 0
+    # a failed poll still refreshes the file with the last known map
+    t.reader.read = lambda: (_ for _ in ()).throw(OSError("boom"))  # type: ignore[method-assign]
+    os.utime(t.online_file, (0, 0))
+    with pytest.raises(OSError):
+        t.poll()
+    assert t.online_file.stat().st_mtime > 0
+
+
+def test_the_sidecar_reads_systemds_resource_lines_itself(tmp_path: Path) -> None:
+    """In-process, the agent's logs loop fed Overhead.observe_journal; the sidecar reads systemd's own lines with
+    a cursor of its own, saved after each batch."""
+    state = tmp_path / "journal.json"
+    calls: list[tuple[str | None, list[str]]] = []
+    seen: list[list[dict[str, Any]]] = []
+    lines = [{"ts": 1, "unit": "init.scope", "ident": "systemd", "prio": 6, "audit": 0,
+              "msg": "mc-backup.service: Consumed 2.500s CPU time, 40.0M memory peak.",
+              "sd_unit": "mc-backup.service"}]  # fmt: skip
+
+    def read(cursor: str | None, argv: list[str]) -> tuple[list[dict[str, Any]], str, bool]:
+        calls.append((cursor, argv))
+        return lines, "c9", False
+
+    assert mc_agent.overhead_round(state, seen.append, read) is False
+    assert (
+        calls[0][0] is None
+        and calls[0][1][-1] == "SYSLOG_IDENTIFIER=systemd"
+        and "--since=-5min" in calls[0][1]
+    )
+    assert seen == [lines] and json.loads(state.read_text())["cursor"] == "c9"
+    mc_agent.overhead_round(state, seen.append, read)
+    assert calls[1][0] == "c9" and "--after-cursor=c9" in calls[1][1]
+    o = telemetry.Overhead()
+    o.observe_journal(lines)
+    assert o.sample({}, 1.0)["mc-backup.service"] == {"cpu_ms": 2500.0, "runs": 1, "mem_peak_mb": 40.0}
+
+
+def test_the_sidecar_refuses_without_experience(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("INGEST_URL", "https://w.example")
+    monkeypatch.setenv("AGENT_TOKEN", "t" * 32)
+    monkeypatch.setenv("COMMAND_HMAC_KEY", "k" * 32)
+    monkeypatch.setenv("EXPERIENCE", "0")
+    assert mc_agent.telemetry_main() == 2
+    assert "EXPERIENCE is off" in capsys.readouterr().err
+    monkeypatch.setenv("AGENT_TOKEN", "short")
+    assert mc_agent.telemetry_main() == 2
+
+
+def test_the_sidecar_unit_runs_the_sidecar() -> None:
+    """mc-telemetry.service runs `mc_agent.py telemetry`, and the script dispatches that argument to it."""
+    repo = Path(__file__).parent.parent
+    unit = (repo / "ansible/roles/agent/templates/mc-telemetry.service.j2").read_text()
+    assert "ExecStart={{ mc_bin_dir }}/mc_agent.py telemetry" in unit
+    src = (repo / "scripts/mc_agent.py").read_text()
+    assert 'telemetry_main() if sys.argv[1:2] == ["telemetry"] else main()' in src

@@ -472,6 +472,8 @@ def group_vars(cfg: ServerConfig) -> dict[str, Any]:
         "mc_watchdog_url": watchdog_url(cfg),
         "firewall_mc_max_concurrent": cfg.firewall.max_connections_per_source,
         "mc_panel_mode": cfg.panel.mode,
+        # v1.4: mc-agent as scripts/mc_agent.py or the Rust port (+ the mc-telemetry sidecar)
+        "mc_agent_implementation": cfg.agent.implementation,
         "mc_config_repo": f"{cfg.github.owner}/{cfg.github.config_repo}",
         "mc_metrics_interval_s": cfg.monitoring.metrics_interval_s,
         "mc_logs_max_rows_per_day": cfg.monitoring.logs.max_rows_per_day,

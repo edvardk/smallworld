@@ -360,23 +360,41 @@ def reply(text: str) -> Callable[[], Callable[[str], Reply]]:
 # --- the workspace rules ---------------------------------------------------------------------------------------
 
 
-def test_workspace_has_no_dependencies() -> None:
-    """std only: no [dependencies] entries, and Cargo.lock lists nothing but the workspace's own crates."""
-    members = tomllib.loads((RUST / "Cargo.toml").read_text())["workspace"]["members"]
-    for member in members:
-        manifest = tomllib.loads((RUST / member / "Cargo.toml").read_text())
-        for table in ("dependencies", "dev-dependencies", "build-dependencies", "target"):
-            assert not manifest.get(table), (
-                f"{member}: [{table}] must stay empty (CLAUDE.md: no crates.io deps)"
-            )
-        assert manifest["lints"]["rust"]["unsafe_code"] == "forbid"
-    lock = tomllib.loads((RUST / "Cargo.lock").read_text())
-    packages = lock["package"]
-    assert {p["name"] for p in packages} == {Path(m).name for m in members}
-    assert all("source" not in p and not p.get("dependencies") for p in packages), packages
-    main = (RUST / "smallworld-rcon/src/main.rs").read_text()
-    assert "#![forbid(unsafe_code)]" in main
-    assert not list(RUST.rglob("build.rs")), "no build scripts"
+def test_smallworld_rcon_stays_dependency_free() -> None:
+    """smallworld-rcon is std only: its one dependency is smallworld-core without features (whose only
+    crates.io dependency, serde_json, is optional behind `json`), so the resolved graph of the binary holds no
+    crates.io crate. The agent's dependencies are the workspace's (rust/allowed-crates.txt, deny.toml)."""
+    ws = tomllib.loads((RUST / "Cargo.toml").read_text())
+    assert ws["workspace"]["dependencies"]["smallworld-core"] == {
+        "path": "smallworld-core",
+        "default-features": False,
+    }
+    rcon = tomllib.loads((RUST / "smallworld-rcon/Cargo.toml").read_text())
+    assert rcon["dependencies"] == {"smallworld-core": {"workspace": True}}
+    for table in ("dev-dependencies", "build-dependencies", "target", "features"):
+        assert not rcon.get(table), f"smallworld-rcon: [{table}] must stay empty"
+    core = tomllib.loads((RUST / "smallworld-core/Cargo.toml").read_text())
+    assert core["features"]["default"] == []
+    assert all(d.get("optional") for d in core["dependencies"].values()), core["dependencies"]
+    for member in ("smallworld-rcon", "smallworld-core"):
+        assert (
+            tomllib.loads((RUST / member / "Cargo.toml").read_text())["lints"]["rust"]["unsafe_code"]
+            == "forbid"
+        )
+    assert "#![forbid(unsafe_code)]" in (RUST / "smallworld-rcon/src/main.rs").read_text()
+    assert "#![forbid(unsafe_code)]" in (RUST / "smallworld-core/src/lib.rs").read_text()
+    assert not list(RUST.rglob("build.rs")), "no build scripts of our own"
+    if shutil.which("cargo") is None:
+        return
+    tree = subprocess.run(
+        ["cargo", "tree", "--locked", "--offline", "-p", "smallworld-rcon", "-e", "normal,build",
+         "--target", "all", "--prefix", "none", "--format", "{p}"],
+        cwd=RUST, capture_output=True, text=True, check=False,
+    )  # fmt: skip
+    if tree.returncode != 0:  # the crates aren't fetched here (lint's pytest); the CI rust job fetches them
+        return
+    crates = {line.split()[0] for line in tree.stdout.splitlines() if line.strip()}
+    assert crates == {"smallworld-rcon", "smallworld-core"}, crates
 
 
 def test_toolchain_and_release_profile() -> None:
@@ -484,7 +502,7 @@ def test_build_script_scrubs_the_environment_and_checks_the_toolchain(tmp_path: 
 @pytest.mark.skipif(sys.platform != "linux", reason="glibc's strerror texts")
 def test_embedded_errno_texts_are_glibcs() -> None:
     """The binary prints Python's `[Errno N] text` with glibc's texts (it links musl, whose texts differ)."""
-    src = (RUST / "smallworld-rcon/src/errno.rs").read_text()
+    src = (RUST / "smallworld-core/src/errno.rs").read_text()
     table = src.split("const GLIBC_STRERROR: [&str; 133] = [")[1].split("];")[0]
     texts = re.findall(r'"([^"]*)"', table)
     assert len(texts) == 133

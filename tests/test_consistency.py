@@ -593,21 +593,31 @@ def test_p13_plugin_collection_survives_a_throwing_getter() -> None:
     assert "writer.free.offer(s);" in _java_method(src, "private void abandon(Snapshot s)")
 
 
-def test_smallworld_rcon_pins_match_the_committed_binaries() -> None:
-    """v1.4: group_vars mc_smallworld_rcon_sha256 (what the base role checks before installing) is the sha256 of
-    each rust/dist/ binary (which scripts/build_rust.py check rebuilds byte for byte), for every target it builds."""
+def test_rust_pins_match_the_committed_binaries() -> None:
+    """v1.4: group_vars mc_smallworld_rcon_sha256 / mc_smallworld_map_sha256 / mc_smallworld_agent_sha256 (what the
+    base and map roles check before installing) are the sha256 of each rust/dist/ binary (which scripts/build_rust.py check rebuilds byte for
+    byte), for every binary and target it builds; rust/dist/ holds nothing else."""
     import hashlib
 
     sys.path.insert(0, str(REPO / "scripts"))
     import build_rust
 
-    pins = GROUP_VARS["mc_smallworld_rcon_sha256"]
-    assert set(pins) == set(build_rust.TARGETS)
-    for arch, target in build_rust.TARGETS.items():
-        data = (REPO / "rust/dist" / f"smallworld-rcon-{target}").read_bytes()
-        assert hashlib.sha256(data).hexdigest() == pins[arch], (
-            f"{target}: run python scripts/build_rust.py build"
-        )
+    assert build_rust.BINARIES == {
+        "smallworld-rcon": ("mc_smallworld_rcon_sha256", "release"),
+        "smallworld-map": ("mc_smallworld_map_sha256", "release"),
+        "smallworld-agent": ("mc_smallworld_agent_sha256", "release-agent"),
+    }
+    expected = set()
+    for binary, (pin, _) in build_rust.BINARIES.items():
+        pins = GROUP_VARS[pin]
+        assert set(pins) == set(build_rust.TARGETS)
+        for arch, target in build_rust.TARGETS.items():
+            expected.add(f"{binary}-{target}")
+            data = (REPO / "rust/dist" / f"{binary}-{target}").read_bytes()
+            assert hashlib.sha256(data).hexdigest() == pins[arch], (
+                f"{binary} {target}: run python scripts/build_rust.py build"
+            )
+    assert {p.name for p in (REPO / "rust/dist").iterdir()} == expected
     defaults = yaml.safe_load((REPO / "ansible/roles/base/defaults/main.yml").read_text())
     for arch, target in build_rust.TARGETS.items():
         assert f"'{arch}': '{target}'" in defaults["base_rcon_target"]
@@ -621,7 +631,7 @@ def test_smallworld_map_pins_match_the_committed_binaries() -> None:
     sys.path.insert(0, str(REPO / "scripts"))
     import build_rust
 
-    assert build_rust.BINARIES["smallworld-map"] == "mc_smallworld_map_sha256"
+    assert build_rust.BINARIES["smallworld-map"] == ("mc_smallworld_map_sha256", "release")
     pins = GROUP_VARS["mc_smallworld_map_sha256"]
     assert set(pins) == set(build_rust.TARGETS)
     for arch, target in build_rust.TARGETS.items():
@@ -629,3 +639,39 @@ def test_smallworld_map_pins_match_the_committed_binaries() -> None:
         assert hashlib.sha256(data).hexdigest() == pins[arch], (
             f"{target}: run python scripts/build_rust.py build"
         )
+
+
+def test_rust_crates_are_the_allowed_ones() -> None:
+    """v1.4: rust/allowed-crates.txt is exactly the crates.io set of rust/Cargo.lock (name, version), so adding or
+    bumping a crate is a reviewed change there; each line says whether the musl binaries build it and why it is
+    there. Every crate comes from crates.io with a checksum (cargo deny's sources check covers the rest)."""
+    import tomllib
+
+    lock = tomllib.loads((REPO / "rust/Cargo.lock").read_text())
+    third_party = [p for p in lock["package"] if "source" in p]
+    assert all(p["source"] == "registry+https://github.com/rust-lang/crates.io-index" for p in third_party)
+    assert all(re.fullmatch(r"[0-9a-f]{64}", p.get("checksum", "")) for p in third_party)
+    allowed = {}
+    for line in (REPO / "rust/allowed-crates.txt").read_text().splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        m = re.fullmatch(r"(\S+) (\S+) (built|lock-only)  # \S.*", line)
+        assert m, f"rust/allowed-crates.txt: {line!r} (name version built|lock-only  # why)"
+        allowed[(m[1], m[2])] = m[3]
+    assert set(allowed) == {(p["name"], p["version"]) for p in third_party}, (
+        "rust/Cargo.lock and rust/allowed-crates.txt differ: review the change and update the list"
+    )
+    ws = tomllib.loads((REPO / "rust/Cargo.toml").read_text())["workspace"]["dependencies"]
+    for name, spec in ws.items():
+        if "path" in spec:
+            continue
+        version = spec if isinstance(spec, str) else spec["version"]
+        assert version.startswith("="), f"rust/Cargo.toml: {name} must be pinned exactly (=x.y.z)"
+        assert allowed.get((name, version[1:])) == "built", (
+            f"{name} {version[1:]} isn't an allowed, built crate"
+        )
+    deny = tomllib.loads((REPO / "rust/deny.toml").read_text())
+    assert deny["graph"]["targets"] == ["x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl"]
+    assert deny["sources"]["unknown-registry"] == deny["sources"]["unknown-git"] == "deny"
+    assert not deny["sources"]["allow-git"]
+    assert deny["bans"]["multiple-versions"] == "deny"

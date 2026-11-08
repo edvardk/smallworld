@@ -1,0 +1,297 @@
+{
+ "meta": {
+  "generator": "scripts/parity_vectors.py",
+  "doc": "Scrubber(known)(text): known values (>= 8 chars, longest first) then SECRET_PATTERNS in order",
+  "unicode_sensitive": true,
+  "unidata_version": "15.1.0"
+ },
+ "vectors": {
+  "known": [
+   "AgentTokenParity-0123456789abcdefABCDEF",
+   "CommandKeyParity-0123456789abcdefABCDEF",
+   "rconPassParity42",
+   "short",
+   "https://127.0.0.1:1/api/webhooks/123/parity-webhook-secret",
+   "rconPass"
+  ],
+  "known_used": [
+   "https://127.0.0.1:1/api/webhooks/123/parity-webhook-secret",
+   "AgentTokenParity-0123456789abcdefABCDEF",
+   "CommandKeyParity-0123456789abcdefABCDEF",
+   "rconPassParity42",
+   "rconPass"
+  ],
+  "patterns": [
+   "tskey-[A-Za-z0-9_-]+",
+   "(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})",
+   "(?i)((?<![A-Za-z0-9])bearer\\s+)[^\\s\\\"',;]+",
+   "(?i)((?<![A-Za-z0-9])basic\\s+)[A-Za-z0-9+/=._-]{6,}",
+   "(?i)((?<![A-Za-z0-9])(?:(?:[A-Za-z0-9]+[_.-])*(?:password|passwd|pass|pwd|token|secret|api[_-]?key)|(?:[A-Za-z0-9]+[_.-])+key)[\"']?\\s*[=:]\\s*)(\"[^\"]*\"|'[^']*'|[^\\s\"',;&}\\]]+)",
+   "(?<![A-Z0-9])(?:AKIA|ASIA)[0-9A-Z]{16}(?![A-Z0-9])",
+   "(?i)https://(?:[a-z0-9-]+\\.)?discord(?:app)?\\.com/api/webhooks/\\S+",
+   "(?i)((?<![a-z0-9+.-])[a-z][a-z0-9+.-]*://)[^\\s/@:]+:[^\\s/@]+(?=@)"
+  ],
+  "cases": [
+   {
+    "input": "nothing secret here",
+    "output": "nothing secret here"
+   },
+   {
+    "input": "agent token AgentTokenParity-0123456789abcdefABCDEF in a line",
+    "output": "agent token <redacted> in a line"
+   },
+   {
+    "input": "rcon.password=rconPassParity42",
+    "output": "rcon.password=<redacted>"
+   },
+   {
+    "input": "rconPassParity42rconPass",
+    "output": "<redacted><redacted>"
+   },
+   {
+    "input": "short is short",
+    "output": "short is short"
+   },
+   {
+    "input": "Authorization: Bearer abc.def-ghi",
+    "output": "Authorization: Bearer <redacted>"
+   },
+   {
+    "input": "BEARER token",
+    "output": "BEARER <redacted>"
+   },
+   {
+    "input": "xbearer abc",
+    "output": "xbearer abc"
+   },
+   {
+    "input": "_bearer abc",
+    "output": "_bearer <redacted>"
+   },
+   {
+    "input": "auth basic dXNlcjpwYXNz",
+    "output": "auth basic <redacted>"
+   },
+   {
+    "input": "basic short",
+    "output": "basic short"
+   },
+   {
+    "input": "Basic abc",
+    "output": "Basic abc"
+   },
+   {
+    "input": "RESTIC_PASSWORD=hunter2hunter2",
+    "output": "RESTIC_PASSWORD=<redacted>"
+   },
+   {
+    "input": "HEARTBEAT_TOKEN='quoted value' ok",
+    "output": "HEARTBEAT_TOKEN=<redacted> ok"
+   },
+   {
+    "input": "json {\"api_key\": \"s3cr3t-value\", \"x_secret\":\"v2\"} end",
+    "output": "json {\"api_key\": <redacted>, \"x_secret\":<redacted>} end"
+   },
+   {
+    "input": "my.db.pass: plain",
+    "output": "my.db.pass: <redacted>"
+   },
+   {
+    "input": "PASS=x",
+    "output": "PASS=<redacted>"
+   },
+   {
+    "input": "passwd = 'a b'",
+    "output": "passwd = <redacted>"
+   },
+   {
+    "input": "pwd:\tv",
+    "output": "pwd:\t<redacted>"
+   },
+   {
+    "input": "api-key=1",
+    "output": "api-key=<redacted>"
+   },
+   {
+    "input": "apikey:2",
+    "output": "apikey:<redacted>"
+   },
+   {
+    "input": "API_KEY=3",
+    "output": "API_KEY=<redacted>"
+   },
+   {
+    "input": "aws_access_key_id=AKIA",
+    "output": "aws_access_key_id=AKIA"
+   },
+   {
+    "input": "foo_key=bar",
+    "output": "foo_key=<redacted>"
+   },
+   {
+    "input": "key=bar",
+    "output": "key=bar"
+   },
+   {
+    "input": "monkey=bar",
+    "output": "monkey=bar"
+   },
+   {
+    "input": "x_key= spaced",
+    "output": "x_key= <redacted>"
+   },
+   {
+    "input": "x_key=",
+    "output": "x_key="
+   },
+   {
+    "input": "token_bucket=5 tokenizer=no",
+    "output": "token_bucket=5 tokenizer=no"
+   },
+   {
+    "input": "tokens=5",
+    "output": "tokens=5"
+   },
+   {
+    "input": "secret=a&b=c",
+    "output": "secret=<redacted>&b=c"
+   },
+   {
+    "input": "secret=a}b",
+    "output": "secret=<redacted>}b"
+   },
+   {
+    "input": "secret=a]b",
+    "output": "secret=<redacted>]b"
+   },
+   {
+    "input": "secret=a;b",
+    "output": "secret=<redacted>;b"
+   },
+   {
+    "input": "secret=a,b",
+    "output": "secret=<redacted>,b"
+   },
+   {
+    "input": "AKIA0189ABCD0189EFGH",
+    "output": "<redacted>"
+   },
+   {
+    "input": "xAKIA0189ABCD0189EFGH",
+    "output": "x<redacted>"
+   },
+   {
+    "input": "AKIA0189ABCD0189EFGHQ",
+    "output": "AKIA0189ABCD0189EFGHQ"
+   },
+   {
+    "input": "ASIA0189QRST0189UVWX",
+    "output": "<redacted>"
+   },
+   {
+    "input": "gh ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "output": "gh <redacted>"
+   },
+   {
+    "input": "ghs_bbbbbbbbbbbbbbbbbbb",
+    "output": "ghs_bbbbbbbbbbbbbbbbbbb"
+   },
+   {
+    "input": "ghs_bbbbbbbbbbbbbbbbbbbb",
+    "output": "<redacted>"
+   },
+   {
+    "input": "github_pat_cccccccccccccccccccccccccccccc",
+    "output": "<redacted>"
+   },
+   {
+    "input": "tskey-auth-kAbC123-xyz",
+    "output": "<redacted>"
+   },
+   {
+    "input": "tskey-",
+    "output": "tskey-"
+   },
+   {
+    "input": "hook https://discord.com/api/webhooks/1/abc x",
+    "output": "hook <redacted> x"
+   },
+   {
+    "input": "https://ptb.discordapp.com/api/webhooks/9/z",
+    "output": "<redacted>"
+   },
+   {
+    "input": "HTTPS://DISCORD.COM/API/WEBHOOKS/1/A",
+    "output": "<redacted>"
+   },
+   {
+    "input": "url https://user:pw@example.com/x",
+    "output": "url https://<redacted>@example.com/x"
+   },
+   {
+    "input": "ftp://u:p@h/",
+    "output": "ftp://<redacted>@h/"
+   },
+   {
+    "input": "redis://:pw@h",
+    "output": "redis://:pw@h"
+   },
+   {
+    "input": "x+y://a:b@c",
+    "output": "x+y://<redacted>@c"
+   },
+   {
+    "input": "1ab://a:b@c",
+    "output": "1ab://a:b@c"
+   },
+   {
+    "input": "mailto:a@b",
+    "output": "mailto:a@b"
+   },
+   {
+    "input": "user:pw@host",
+    "output": "user:pw@host"
+   },
+   {
+    "input": "\u00e9t\u00e9 Bearer \u00e9\u00e9\u00e9 ok",
+    "output": "\u00e9t\u00e9 Bearer <redacted> ok"
+   },
+   {
+    "input": "Bearer\u00a0xyz",
+    "output": "Bearer\u00a0<redacted>"
+   },
+   {
+    "input": "Bearer\u3000xyz",
+    "output": "Bearer\u3000<redacted>"
+   },
+   {
+    "input": "token\u2028= a",
+    "output": "token\u2028= <redacted>"
+   },
+   {
+    "input": "TOKEN=\u00e9\u00e9",
+    "output": "TOKEN=<redacted>"
+   },
+   {
+    "input": "\u0130_token=x",
+    "output": "\u0130_token=<redacted>"
+   },
+   {
+    "input": "\u212a_KEY=x",
+    "output": "\u212a_KEY=<redacted>"
+   },
+   {
+    "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_password=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "output": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_password=<redacted>"
+   },
+   {
+    "input": "multi\nline token=a\nsecret=b",
+    "output": "multi\nline token=<redacted>\nsecret=<redacted>"
+   },
+   {
+    "input": "known twice AgentTokenParity-0123456789abcdefABCDEF AgentTokenParity-0123456789abcdefABCDEF",
+    "output": "known twice <redacted> <redacted>"
+   }
+  ]
+ }
+}

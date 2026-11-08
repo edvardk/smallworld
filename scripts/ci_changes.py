@@ -54,19 +54,24 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "docs/images/brand-*",
         "requirements/validate.txt",
     ),
-    # v1.4 ci.yml job rust: rustfmt, clippy, cargo test, build_rust.py check (the committed binaries and their
-    # pins), the differential tests against mc_rcon.py, smallworld-map against the reference renderer
+    # v1.4 ci.yml job rust: rustfmt, clippy, cargo test, cargo deny, build_rust.py check (the committed
+    # binaries and their pins), the differential tests against mc_rcon.py and mc_agent.py, smallworld-map
+    # against the reference renderer
     "rust": (
         "rust/*",
         "scripts/build_rust.py",
         "scripts/mc_rcon.py",
         "scripts/notify.py",
         "scripts/alerts.py",
+        "scripts/mc_agent.py",
+        "scripts/mc_panel.py",
+        "scripts/worlds.py",
         "tests/test_rust_rcon.py",
         "tests/test_rust_map.py",  # v1.4: smallworld-map vs tests/map_reference.py on the fixture
         "tests/map_reference.py",
         "tests/fixtures/world-26.3/*",
         "server-config/keys/*/map-palette.tsv",
+        "tests/test_rust_agent_cli.py",
         "ansible/group_vars/all/main.yml",
         "requirements/dev.txt",
     ),
@@ -124,6 +129,9 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "scripts/restore.py",
         "scripts/telemetry.py",
         "scripts/mc_agent.py",
+        # v1.4: the Rust agent and the agent role (the telemetry sidecar runs in the heavy telemetry shard)
+        "rust/dist/*",
+        "ansible/roles/agent/*",
     ),
 }
 

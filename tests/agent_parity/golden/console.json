@@ -1,0 +1,4223 @@
+{
+ "notes": {
+  "results": [
+   [
+    "list",
+    "There are 0 of a max of 20 players online: "
+   ],
+   [
+    "/list uuids",
+    "ran: list uuids"
+   ],
+   [
+    "LIST",
+    "There are 0 of a max of 20 players online: "
+   ],
+   [
+    "  list  ",
+    "There are 0 of a max of 20 players online: "
+   ],
+   [
+    "list extra",
+    "REFUSED console: these `list` arguments are not allowed from the panel"
+   ],
+   [
+    "say Hello World",
+    "ran: say Hello World"
+   ],
+   [
+    "say hi @e",
+    "REFUSED console: selectors (@a, @e, ...) inside a `say` message are not allowed here"
+   ],
+   [
+    "say hi @a[distance=..5]",
+    "REFUSED console: selectors (@a, @e, ...) inside a `say` message are not allowed here"
+   ],
+   [
+    "me waves",
+    "ran: me waves"
+   ],
+   [
+    "tell Bob hi there",
+    "ran: tell Bob hi there"
+   ],
+   [
+    "tell @a hi",
+    "ran: tell @a hi"
+   ],
+   [
+    "msg Bob look @p",
+    "REFUSED console: selectors (@a, @e, ...) inside a `msg` message are not allowed here"
+   ],
+   [
+    "w Bob x",
+    "ran: w Bob x"
+   ],
+   [
+    "tell @e hi",
+    "REFUSED console: these `tell` arguments are not allowed from the panel"
+   ],
+   [
+    "kick Bob being rude",
+    "ran: kick Bob being rude"
+   ],
+   [
+    "kick @a",
+    "REFUSED console: these `kick` arguments are not allowed from the panel"
+   ],
+   [
+    "ban Griefer2 x",
+    "ran: ban Griefer2 x"
+   ],
+   [
+    "ban-ip 203.0.113.7 spam",
+    "ran: ban-ip 203.0.113.7 spam"
+   ],
+   [
+    "ban-ip 2001:db8::1",
+    "ran: ban-ip 2001:db8::1"
+   ],
+   [
+    "pardon Bob",
+    "ran: pardon Bob"
+   ],
+   [
+    "pardon-ip 203.0.113.7",
+    "ran: pardon-ip 203.0.113.7"
+   ],
+   [
+    "pardon-ip ٢٠٣.0.113.7",
+    "REFUSED console: these `pardon-ip` arguments are not allowed from the panel"
+   ],
+   [
+    "time add 100",
+    "ran: time add 100"
+   ],
+   [
+    "time add ٣",
+    "REFUSED console: these `time` arguments are not allowed from the panel"
+   ],
+   [
+    "time set ١٠٠",
+    "REFUSED console: these `time` arguments are not allowed from the panel"
+   ],
+   [
+    "time add १",
+    "REFUSED console: these `time` arguments are not allowed from the panel"
+   ],
+   [
+    "weather clear ۵",
+    "REFUSED console: these `weather` arguments are not allowed from the panel"
+   ],
+   [
+    "time add ３",
+    "ran: time add 3"
+   ],
+   [
+    "time set day",
+    "ran: time set day"
+   ],
+   [
+    "time query daytime",
+    "ran: time query daytime"
+   ],
+   [
+    "weather rain 600",
+    "ran: weather rain 600"
+   ],
+   [
+    "weather rain 600x",
+    "REFUSED console: these `weather` arguments are not allowed from the panel"
+   ],
+   [
+    "ｔｉｍｅ　ｑｕｅｒｙ　ｄａｙ",
+    "ran: time query day"
+   ],
+   [
+    "op Bob",
+    "REFUSED console: `op` is not allowed from the panel (operators are managed in Git (players.yml))"
+   ],
+   [
+    "deop Bob",
+    "REFUSED console: `deop` is not allowed from the panel (operators are managed in Git (players.yml))"
+   ],
+   [
+    "stop",
+    "REFUSED console: `stop` is not allowed from the panel (use the panel's Stop (countdown, admin-stopped marker))"
+   ],
+   [
+    "restart",
+    "REFUSED console: `restart` is not allowed from the panel (use the panel's Restart)"
+   ],
+   [
+    "execute run op Bob",
+    "REFUSED console: `execute` is not allowed from the panel (`execute` runs other commands)"
+   ],
+   [
+    "minecraft:op Bob",
+    "REFUSED console: namespaced commands (`minecraft:op`) are not allowed from the panel"
+   ],
+   [
+    "bukkit:reload",
+    "REFUSED console: namespaced commands (`bukkit:reload`) are not allowed from the panel"
+   ],
+   [
+    "reload",
+    "REFUSED console: `reload` is not allowed from the panel (/reload breaks plugins; restart instead)"
+   ],
+   [
+    "rl",
+    "REFUSED console: `rl` is not allowed from the panel (/reload breaks plugins; restart instead)"
+   ],
+   [
+    "save-off",
+    "REFUSED console: `save-off` is not allowed from the panel (turning saving off would break backups)"
+   ],
+   [
+    "function x:y",
+    "REFUSED console: `function` is not allowed from the panel (functions run other commands)"
+   ],
+   [
+    "return 1",
+    "REFUSED console: `return` is not allowed from the panel (`return` runs other commands)"
+   ],
+   [
+    "whitelist add Bob",
+    "REFUSED console: use the panel's whitelist flow (it keeps players.yml in Git)"
+   ],
+   [
+    "WHITELIST Remove Bob",
+    "REFUSED console: use the panel's whitelist flow (it keeps players.yml in Git)"
+   ],
+   [
+    "whitelist list",
+    "ran: whitelist list"
+   ],
+   [
+    "whitelist off",
+    "REFUSED console: these `whitelist` arguments are not allowed from the panel"
+   ],
+   [
+    "say a\u001cb",
+    "REFUSED console: one line of printable text (no control characters)"
+   ],
+   [
+    "say a\u001fb",
+    "REFUSED console: one line of printable text (no control characters)"
+   ],
+   [
+    "say a b",
+    "REFUSED console: one line of printable text (no control characters)"
+   ],
+   [
+    "say a b",
+    "ran: say a b"
+   ],
+   [
+    "say a​b",
+    "REFUSED console: one line of printable text (no control characters)"
+   ],
+   [
+    "say a\tb",
+    "REFUSED console: one line of printable text (no control characters)"
+   ],
+   [
+    "say a　b",
+    "ran: say a b"
+   ],
+   [
+    "say 𝐇𝐢",
+    "ran: say Hi"
+   ],
+   [
+    "say ﷺﷺﷺﷺﷺﷺﷺﷺﷺﷺﷺﷺﷺﷺﷺ",
+    "REFUSED console: one line of at most 256 characters (after normalisation)"
+   ],
+   [
+    "say xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "ran: say xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   ],
+   [
+    "say xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "REFUSED console: one line of at most 256 characters"
+   ],
+   [
+    "",
+    "REFUSED console: empty command"
+   ],
+   [
+    "   ",
+    "REFUSED console: empty command"
+   ],
+   [
+    "/",
+    "REFUSED console: empty command"
+   ],
+   [
+    "gamerule keepInventory",
+    "ran: gamerule keepInventory"
+   ],
+   [
+    "gamerule keepInventory true",
+    "REFUSED console: these `gamerule` arguments are not allowed from the panel"
+   ],
+   [
+    "difficulty hard",
+    "ran: difficulty hard"
+   ],
+   [
+    "difficulty",
+    "ran: difficulty"
+   ],
+   [
+    "spark health --memory",
+    "ran: spark health --memory"
+   ],
+   [
+    "spark profiler",
+    "REFUSED console: these `spark` arguments are not allowed from the panel"
+   ],
+   [
+    "chunky progress",
+    "ran: chunky progress"
+   ],
+   [
+    "chunky start",
+    "REFUSED console: these `chunky` arguments are not allowed from the panel"
+   ],
+   [
+    "version Paper",
+    "ran: version Paper"
+   ],
+   [
+    "help me",
+    "ran: help me"
+   ],
+   [
+    "seed",
+    "ran: seed"
+   ],
+   [
+    "tps",
+    "TPS from last 1m, 5m, 15m: 19.98, 20.0, *20.0"
+   ],
+   [
+    "mspt",
+    "Server tick times (avg/min/max) from last 5s, 10s, 1m:\n◴ 12.1/9.8/20.3, 12.4/9.1/25.0, 11.9/8.0/31.2"
+   ],
+   [
+    "worldborder get",
+    "ran: worldborder get"
+   ],
+   [
+    "worldborder set 10",
+    "REFUSED console: these `worldborder` arguments are not allowed from the panel"
+   ],
+   [
+    "plugins extra",
+    "REFUSED console: these `plugins` arguments are not allowed from the panel"
+   ],
+   [
+    "save-all flush",
+    "ran: save-all flush"
+   ],
+   [
+    "banlist ips",
+    "ran: banlist ips"
+   ],
+   [
+    "ban Bo",
+    "REFUSED console: these `ban` arguments are not allowed from the panel"
+   ],
+   [
+    "kick Bob été",
+    "ran: kick Bob été"
+   ],
+   [
+    "say ퟿",
+    "REFUSED console: one line of printable text (no control characters)"
+   ],
+   [
+    "say ",
+    "REFUSED console: one line of printable text (no control characters)"
+   ],
+   [
+    "time add 1́",
+    "REFUSED console: these `time` arguments are not allowed from the panel"
+   ],
+   [
+    "{'command': 5}",
+    "console: empty command"
+   ],
+   [
+    "{}",
+    "console: empty command"
+   ],
+   [
+    "{'command': None}",
+    "console: empty command"
+   ]
+  ],
+  "moderate": [
+   {
+    "id": "cmd090",
+    "ok": true,
+    "output": "ran: kick Bob spam and more"
+   },
+   {
+    "id": "cmd091",
+    "ok": true,
+    "output": "ran: ban Griefer2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "id": "cmd092",
+    "ok": true,
+    "output": "ran: ban-ip 203.0.113.9"
+   },
+   {
+    "id": "cmd093",
+    "ok": true,
+    "output": "ran: pardon Griefer"
+   },
+   {
+    "id": "cmd094",
+    "ok": true,
+    "output": "ran: pardon-ip 203.0.113.9"
+   },
+   {
+    "id": "cmd095",
+    "ok": false,
+    "error": "console: these `kick` arguments are not allowed from the panel"
+   },
+   {
+    "id": "cmd096",
+    "ok": false,
+    "error": "console: these `ban-ip` arguments are not allowed from the panel"
+   },
+   {
+    "id": "cmd097",
+    "ok": false,
+    "error": "moderate: verb kick|ban|pardon|ban-ip|pardon-ip and a target"
+   },
+   {
+    "id": "cmd098",
+    "ok": false,
+    "error": "moderate: verb kick|ban|pardon|ban-ip|pardon-ip and a target"
+   }
+  ]
+ },
+ "exits": [
+  {
+   "daemon": 0
+  }
+ ],
+ "worker": {
+  "POST /ingest/inventory": [
+   {
+    "auth": true,
+    "user_agent": "smallworld mc-agent",
+    "content_type": "application/json",
+    "body": {
+     "agent": "1",
+     "inventory": {
+      "ts": "<time>",
+      "whitelist": [
+       {
+        "name": "Alice_Op",
+        "uuid": "11111111-1111-4111-8111-111111111111"
+       },
+       {
+        "name": "Bob",
+        "uuid": "22222222-2222-4222-8222-222222222222"
+       }
+      ],
+      "ops": [
+       {
+        "name": "Alice_Op",
+        "uuid": "11111111-1111-4111-8111-111111111111",
+        "level": 4
+       }
+      ],
+      "bans": [
+       {
+        "name": "Griefer",
+        "uuid": "55555555-5555-4555-8555-555555555555",
+        "created": "<time>",
+        "source": "Server",
+        "expires": "forever",
+        "reason": "griefing"
+       }
+      ],
+      "ip_bans": [],
+      "plugins": [
+       {
+        "file": "Chunky-1.4.40.jar",
+        "name": "Chunky-1.4.40",
+        "enabled": true
+       },
+       {
+        "file": "spark-1.10.jar",
+        "name": "spark-1.10",
+        "enabled": true
+       }
+      ],
+      "pending": [],
+      "whitelist_sync": {
+       "configured": true,
+       "pr": null,
+       "error": "",
+       "expired": []
+      },
+      "rejected": [],
+      "plugins_lock": [
+       {
+        "name": "chunky",
+        "filename": "Chunky-1.4.40.jar",
+        "version": "1.4.40"
+       },
+       {
+        "name": "spark",
+        "filename": "spark-1.10.jar",
+        "version": "1.10"
+       }
+      ],
+      "plugins_disabled": [],
+      "snapshots": [
+       {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "short_id": "aaaaaaaa",
+        "time": "<iso>",
+        "tags": "daily",
+        "host": "mc",
+        "size": 1234
+       },
+       {
+        "id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "short_id": "cccccccc",
+        "time": "<iso>",
+        "tags": "world-archive,world:creative,dv:4671",
+        "host": "mc",
+        "size": 1234
+       }
+      ],
+      "job": null,
+      "worlds": {
+       "active": "main",
+       "since": "<time>",
+       "data_version": 4671,
+       "archives": [
+        {
+         "name": "creative",
+         "short_id": "cccccccc",
+         "time": "<iso>",
+         "size": 1000,
+         "data_version": 4671,
+         "count": 1
+        },
+        {
+         "name": "future",
+         "short_id": "ffffffff",
+         "time": "<iso>",
+         "size": 1000,
+         "data_version": 9999,
+         "count": 1
+        }
+       ],
+       "library": [
+        {
+         "name": "main",
+         "seed": "42",
+         "type": "default",
+         "preset": "survival_smp",
+         "border_radius": null,
+         "pregen": null
+        },
+        {
+         "name": "creative",
+         "seed": "",
+         "type": "flat_classic",
+         "preset": null,
+         "border_radius": null,
+         "pregen": null
+        }
+       ],
+       "deleted": [
+        "gone"
+       ],
+       "archive_bytes": 2000,
+       "storage_note": false,
+       "pending": null
+      },
+      "product": {
+       "version": "1.3.1",
+       "commit": "e786b14000000000000000000000000000000000",
+       "running": "1.3.1",
+       "running_commit": "e786b14000000000000000000000000000000000"
+      },
+      "selftest": null
+     }
+    }
+   }
+  ],
+  "POST /ingest/metrics": [
+   {
+    "auth": true,
+    "user_agent": "smallworld mc-agent",
+    "content_type": "application/json",
+    "body": {
+     "agent": "1",
+     "samples": [
+      {
+       "admin_stopped": false,
+       "cpuN_pct": "number|null",
+       "cpu_cores": "number",
+       "cpu_pct": "null",
+       "disk_pct": "number",
+       "disk_total_gb": "number",
+       "disk_used_gb": "number",
+       "gc_max_pause_ms": 12.3,
+       "heap_max_mb": 6656,
+       "heap_used_mb": 1200,
+       "jvm_mem_mb": 3072,
+       "load1": "number",
+       "load15": "number",
+       "load5": "number",
+       "max_players": 20,
+       "mem_pct": "number",
+       "mem_total_mb": "number",
+       "mem_used_mb": "number",
+       "mspt": 11.9,
+       "net_rx_bps": "null",
+       "net_tx_bps": "null",
+       "players": 0,
+       "players_online": [],
+       "steal_pct": "null",
+       "tps": 19.98,
+       "tps15": 20.0,
+       "tps5": 20.0,
+       "ts": "number",
+       "up": true,
+       "uptime_s": "number",
+       "ws": "bool"
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "websocket": [
+  {
+   "event": "ws-open",
+   "session": 0,
+   "auth": true,
+   "user_agent": "smallworld mc-agent",
+   "version": "13",
+   "connection_upgrade": true
+  },
+  {
+   "event": "ws-hello",
+   "session": 0,
+   "message": {
+    "type": "hello",
+    "agent": "1"
+   }
+  },
+  {
+   "event": "ws-ended",
+   "session": 0,
+   "unmasked": 0
+  }
+ ],
+ "console": [],
+ "github": [],
+ "https": [],
+ "rcon": {
+  "stats_connections": 2,
+  "connections": [
+   [
+    "list"
+   ],
+   [
+    "list uuids"
+   ],
+   [
+    "list"
+   ],
+   [
+    "list"
+   ],
+   [
+    "say Hello World"
+   ],
+   [
+    "me waves"
+   ],
+   [
+    "tell Bob hi there"
+   ],
+   [
+    "tell @a hi"
+   ],
+   [
+    "w Bob x"
+   ],
+   [
+    "kick Bob being rude"
+   ],
+   [
+    "ban Griefer2 x"
+   ],
+   [
+    "ban-ip 203.0.113.7 spam"
+   ],
+   [
+    "ban-ip 2001:db8::1"
+   ],
+   [
+    "pardon Bob"
+   ],
+   [
+    "pardon-ip 203.0.113.7"
+   ],
+   [
+    "time add 100"
+   ],
+   [
+    "time add 3"
+   ],
+   [
+    "time set day"
+   ],
+   [
+    "time query daytime"
+   ],
+   [
+    "weather rain 600"
+   ],
+   [
+    "time query day"
+   ],
+   [
+    "whitelist list"
+   ],
+   [
+    "say a b"
+   ],
+   [
+    "say a b"
+   ],
+   [
+    "say Hi"
+   ],
+   [
+    "say xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   ],
+   [
+    "gamerule keepInventory"
+   ],
+   [
+    "difficulty hard"
+   ],
+   [
+    "difficulty"
+   ],
+   [
+    "spark health --memory"
+   ],
+   [
+    "chunky progress"
+   ],
+   [
+    "version Paper"
+   ],
+   [
+    "help me"
+   ],
+   [
+    "seed"
+   ],
+   [
+    "tps"
+   ],
+   [
+    "worldborder get"
+   ],
+   [
+    "save-all flush"
+   ],
+   [
+    "banlist ips"
+   ],
+   [
+    "kick Bob été"
+   ],
+   [
+    "kick Bob spam and more"
+   ],
+   [
+    "ban Griefer2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   ],
+   [
+    "ban-ip 203.0.113.9"
+   ],
+   [
+    "pardon Griefer"
+   ],
+   [
+    "pardon-ip 203.0.113.9"
+   ]
+  ]
+ },
+ "systemd": {
+  "calls": [],
+  "probes": [
+   "show -p ActiveState -p ActiveEnterTimestampMonotonic minecraft.service",
+   "show -p MemoryCurrent --value minecraft.service"
+  ]
+ },
+ "audit": [
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"list\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"/list uuids\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"LIST\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"  list  \"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"list extra\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: these `list` arguments are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"say Hello World\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"say hi @e\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: selectors (@a, @e, ...) inside a `say` message are not allowed here"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"say hi @a[distance=..5]\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: selectors (@a, @e, ...) inside a `say` message are not allowed here"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"me waves\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"tell Bob hi there\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"tell @a hi\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"msg Bob look @p\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: selectors (@a, @e, ...) inside a `msg` message are not allowed here"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"w Bob x\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"tell @e hi\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: these `tell` arguments are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"kick Bob being rude\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"kick @a\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: these `kick` arguments are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"ban Griefer2 x\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"ban-ip 203.0.113.7 spam\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"ban-ip 2001:db8::1\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"pardon Bob\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"pardon-ip 203.0.113.7\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"pardon-ip \\u0662\\u0660\\u0663.0.113.7\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: these `pardon-ip` arguments are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"time add 100\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"time add \\u0663\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: these `time` arguments are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"time set \\u0661\\u0660\\u0660\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: these `time` arguments are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"time add \\u0967\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: these `time` arguments are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"weather clear \\u06f5\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: these `weather` arguments are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"time add \\uff13\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"time set day\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"time query daytime\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"weather rain 600\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"weather rain 600x\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: these `weather` arguments are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"\\uff54\\uff49\\uff4d\\uff45\\u3000\\uff51\\uff55\\uff45\\uff52\\uff59\\u3000\\uff44\\uff41\\uff59\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"op Bob\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: `op` is not allowed from the panel (operators are managed in Git (players.yml))"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"deop Bob\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: `deop` is not allowed from the panel (operators are managed in Git (players.yml))"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"stop\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: `stop` is not allowed from the panel (use the panel's Stop (countdown, admin-stopped marker))"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"restart\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: `restart` is not allowed from the panel (use the panel's Restart)"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"execute run op Bob\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: `execute` is not allowed from the panel (`execute` runs other commands)"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"minecraft:op Bob\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: namespaced commands (`minecraft:op`) are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"bukkit:reload\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: namespaced commands (`bukkit:reload`) are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"reload\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: `reload` is not allowed from the panel (/reload breaks plugins; restart instead)"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"rl\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: `rl` is not allowed from the panel (/reload breaks plugins; restart instead)"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"save-off\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: `save-off` is not allowed from the panel (turning saving off would break backups)"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"function x:y\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: `function` is not allowed from the panel (functions run other commands)"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"return 1\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: `return` is not allowed from the panel (`return` runs other commands)"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"whitelist add Bob\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: use the panel's whitelist flow (it keeps players.yml in Git)"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"WHITELIST Remove Bob\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: use the panel's whitelist flow (it keeps players.yml in Git)"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"whitelist list\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"whitelist off\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: these `whitelist` arguments are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"say a\\u001cb\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: one line of printable text (no control characters)"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"say a\\u001fb\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: one line of printable text (no control characters)"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"say a\\u2028b\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: one line of printable text (no control characters)"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"say a\\u00a0b\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"say a\\u200bb\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: one line of printable text (no control characters)"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"say a\\tb\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: one line of printable text (no control characters)"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"say a\\u3000b\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"say \\ud835\\udc07\\ud835\\udc22\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"say \\ufdfa\\ufdfa\\ufdfa\\ufdfa\\ufdfa\\ufdfa\\ufdfa\\ufdfa\\ufdfa\\ufdfa\\ufdfa\\ufdfa\\ufdfa\\ufdfa\\ufdfa\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: one line of at most 256 characters (after normalisation)"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"say xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"say xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: one line of at most 256 characters"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: empty command"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"   \"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: empty command"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"/\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: empty command"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"gamerule keepInventory\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"gamerule keepInventory true\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: these `gamerule` arguments are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"difficulty hard\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"difficulty\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"spark health --memory\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"spark profiler\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: these `spark` arguments are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"chunky progress\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"chunky start\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: these `chunky` arguments are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"version Paper\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"help me\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"seed\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"tps\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"mspt\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"worldborder get\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"worldborder set 10\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: these `worldborder` arguments are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"plugins extra\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: these `plugins` arguments are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"save-all flush\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"banlist ips\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"ban Bo\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: these `ban` arguments are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"kick Bob \\u00e9t\\u00e9\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"say \\ud7ff\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: one line of printable text (no control characters)"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"say \\ue000\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: one line of printable text (no control characters)"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": \"time add 1\\u0301\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: these `time` arguments are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": 5}"
+   ],
+   [
+    "MC_RESULT",
+    "console: empty command"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{}"
+   ],
+   [
+    "MC_RESULT",
+    "console: empty command"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=console ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "console"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"command\": null}"
+   ],
+   [
+    "MC_RESULT",
+    "console: empty command"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=moderate ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "moderate"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"reason\": \"spam\\nand \\u0007more\", \"target\": \"Bob\", \"verb\": \"kick\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=moderate ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "moderate"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"reason\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"target\": \"Griefer2\", \"verb\": \"ban\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=moderate ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "moderate"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"reason\": \"\", \"target\": \"203.0.113.9\", \"verb\": \"ban-ip\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=moderate ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "moderate"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"reason\": \"ignored for pardon\", \"target\": \"Griefer\", \"verb\": \"pardon\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=moderate ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "moderate"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"target\": \"203.0.113.9\", \"verb\": \"pardon-ip\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=moderate ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "moderate"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"target\": \"@a\", \"verb\": \"kick\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: these `kick` arguments are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=moderate ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "moderate"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"target\": \"\\u0662.\\u0662.\\u0662.\\u0662\", \"verb\": \"ban-ip\"}"
+   ],
+   [
+    "MC_RESULT",
+    "console: these `ban-ip` arguments are not allowed from the panel"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=moderate ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "moderate"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"target\": \"Bob\", \"verb\": \"op\"}"
+   ],
+   [
+    "MC_RESULT",
+    "moderate: verb kick|ban|pardon|ban-ip|pardon-ip and a target"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=moderate ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "moderate"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"target\": 5, \"verb\": \"kick\"}"
+   ],
+   [
+    "MC_RESULT",
+    "moderate: verb kick|ban|pardon|ban-ip|pardon-ip and a target"
+   ]
+  ]
+ ],
+ "files": {
+  "/var/lib/mc-agent/nonces.json": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "nonce-console-0001": "<time>",
+    "nonce-console-0002": "<time>",
+    "nonce-console-0003": "<time>",
+    "nonce-console-0004": "<time>",
+    "nonce-console-0005": "<time>",
+    "nonce-console-0006": "<time>",
+    "nonce-console-0007": "<time>",
+    "nonce-console-0008": "<time>",
+    "nonce-console-0009": "<time>",
+    "nonce-console-0010": "<time>",
+    "nonce-console-0011": "<time>",
+    "nonce-console-0012": "<time>",
+    "nonce-console-0013": "<time>",
+    "nonce-console-0014": "<time>",
+    "nonce-console-0015": "<time>",
+    "nonce-console-0016": "<time>",
+    "nonce-console-0017": "<time>",
+    "nonce-console-0018": "<time>",
+    "nonce-console-0019": "<time>",
+    "nonce-console-0020": "<time>",
+    "nonce-console-0021": "<time>",
+    "nonce-console-0022": "<time>",
+    "nonce-console-0023": "<time>",
+    "nonce-console-0024": "<time>",
+    "nonce-console-0025": "<time>",
+    "nonce-console-0026": "<time>",
+    "nonce-console-0027": "<time>",
+    "nonce-console-0028": "<time>",
+    "nonce-console-0029": "<time>",
+    "nonce-console-0030": "<time>",
+    "nonce-console-0031": "<time>",
+    "nonce-console-0032": "<time>",
+    "nonce-console-0033": "<time>",
+    "nonce-console-0034": "<time>",
+    "nonce-console-0035": "<time>",
+    "nonce-console-0036": "<time>",
+    "nonce-console-0037": "<time>",
+    "nonce-console-0038": "<time>",
+    "nonce-console-0039": "<time>",
+    "nonce-console-0040": "<time>",
+    "nonce-console-0041": "<time>",
+    "nonce-console-0042": "<time>",
+    "nonce-console-0043": "<time>",
+    "nonce-console-0044": "<time>",
+    "nonce-console-0045": "<time>",
+    "nonce-console-0046": "<time>",
+    "nonce-console-0047": "<time>",
+    "nonce-console-0048": "<time>",
+    "nonce-console-0049": "<time>",
+    "nonce-console-0050": "<time>",
+    "nonce-console-0051": "<time>",
+    "nonce-console-0052": "<time>",
+    "nonce-console-0053": "<time>",
+    "nonce-console-0054": "<time>",
+    "nonce-console-0055": "<time>",
+    "nonce-console-0056": "<time>",
+    "nonce-console-0057": "<time>",
+    "nonce-console-0058": "<time>",
+    "nonce-console-0059": "<time>",
+    "nonce-console-0060": "<time>",
+    "nonce-console-0061": "<time>",
+    "nonce-console-0062": "<time>",
+    "nonce-console-0063": "<time>",
+    "nonce-console-0064": "<time>",
+    "nonce-console-0065": "<time>",
+    "nonce-console-0066": "<time>",
+    "nonce-console-0067": "<time>",
+    "nonce-console-0068": "<time>",
+    "nonce-console-0069": "<time>",
+    "nonce-console-0070": "<time>",
+    "nonce-console-0071": "<time>",
+    "nonce-console-0072": "<time>",
+    "nonce-console-0073": "<time>",
+    "nonce-console-0074": "<time>",
+    "nonce-console-0075": "<time>",
+    "nonce-console-0076": "<time>",
+    "nonce-console-0077": "<time>",
+    "nonce-console-0078": "<time>",
+    "nonce-console-0079": "<time>",
+    "nonce-console-0080": "<time>",
+    "nonce-console-0081": "<time>",
+    "nonce-console-0082": "<time>",
+    "nonce-console-0083": "<time>",
+    "nonce-console-0084": "<time>",
+    "nonce-console-0085": "<time>",
+    "nonce-console-0086": "<time>",
+    "nonce-console-0087": "<time>",
+    "nonce-console-0088": "<time>",
+    "nonce-console-0089": "<time>",
+    "nonce-console-0090": "<time>",
+    "nonce-console-0091": "<time>",
+    "nonce-console-0092": "<time>",
+    "nonce-console-0093": "<time>",
+    "nonce-console-0094": "<time>",
+    "nonce-console-0095": "<time>",
+    "nonce-console-0096": "<time>",
+    "nonce-console-0097": "<time>",
+    "nonce-console-0098": "<time>"
+   }
+  },
+  "/var/lib/mc-agent/spool.jsonl": {
+   "type": "file",
+   "mode": "0o600",
+   "content": "<0 bytes>"
+  }
+ }
+}

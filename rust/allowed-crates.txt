@@ -1,0 +1,73 @@
+# The exact crates.io crates rust/Cargo.lock may hold: name, version, then whether the Linux musl binaries
+# compile it ('built') or the lock only lists it for another platform or a cfg that is never on ('lock-only'), and
+# why it is there. tests/test_consistency.py compares this list with Cargo.lock, so adding or bumping a crate is
+# a reviewed change here (and a maintainer decision: CLAUDE.md "Rust workspace"). Versions were at least two
+# weeks old when chosen. cargo deny (deny.toml) checks licences, advisories, bans and sources.
+
+adler2 2.0.1 built  # miniz_oxide
+aho-corasick 1.1.5 built  # regex literal search
+base64 0.23.1 built  # WebSocket key, GitHub contents
+block-buffer 0.10.4 built  # RustCrypto
+bytes 1.12.1 built  # http
+cc 1.10.0 built  # build: ring's C code
+cfg-if 1.0.5 built  # platform cfgs
+cpufeatures 0.2.17 built  # sha1/sha2 CPU detection
+crc32fast 1.5.3 built  # gzip CRC
+crypto-common 0.1.7 built  # RustCrypto
+digest 0.10.7 built  # RustCrypto traits
+find-msvc-tools 0.1.15 built  # build: cc (unused on Linux)
+flate2 1.1.10 built  # gzip archive (rust backend)
+generic-array 0.14.7 built  # RustCrypto
+getrandom 0.2.17 built  # ring randomness
+hmac 0.12.1 built  # command signatures (HMAC-SHA256)
+http 1.5.0 built  # ureq's request types
+httparse 1.10.1 built  # HTTP parser
+itoa 1.0.18 built  # serde_json/http
+libc 0.2.191 built  # umask, localtime_r, sigwait
+log 0.4.34 built  # ureq/rustls logging facade (no logger installed)
+memchr 2.8.3 built  # regex/byte search
+miniz_oxide 0.9.1 built  # flate2's backend
+once_cell 1.21.4 built  # rustls
+percent-encoding 2.3.2 built  # ureq URLs
+proc-macro2 1.0.107 lock-only  # serde_core's never-true cfg (version pin)
+quote 1.0.47 lock-only  # serde_core's never-true cfg (version pin)
+regex 1.13.1 built  # console allowlist, scrubber
+regex-automata 0.4.18 built  # regex engine
+regex-syntax 0.8.11 built  # regex parser
+ring 0.17.14 built  # crypto provider for rustls (C/asm, built with the pinned clang)
+rustls 0.23.46 built  # TLS (ring provider)
+rustls-pki-types 1.15.1 built  # PEM parsing of the system CA bundle
+rustls-webpki 0.103.16 built  # certificate verification
+serde 1.0.229 lock-only  # serde_core's never-true cfg (version pin)
+serde_core 1.0.229 built  # serde_json's core
+serde_derive 1.0.229 lock-only  # serde_core's never-true cfg (version pin)
+serde_json 1.0.154 built  # JSON (Value only, no derive)
+sha1 0.10.7 built  # WebSocket accept key (RFC 6455)
+sha2 0.10.9 built  # SHA-256
+shlex 2.0.1 built  # build: cc
+simd-adler32 0.3.10 built  # miniz_oxide
+subtle 2.6.1 built  # constant-time compare
+syn 3.0.9 lock-only  # serde_core's never-true cfg (version pin)
+tinyvec 1.13.3 built  # unicode-normalization
+typenum 1.20.1 built  # RustCrypto
+unicode-general-category 1.1.0 built  # Unicode categories
+unicode-ident 1.0.27 lock-only  # serde_core's never-true cfg (version pin)
+unicode-normalization 0.1.26 built  # NFKC (console allowlist)
+untrusted 0.9.0 built  # ring/webpki parsing
+ureq 3.5.0 built  # HTTP/1.1 client (blocking, no async runtime)
+ureq-proto 0.6.5 built  # ureq's protocol core
+utf8-zero 0.8.1 built  # ureq
+version_check 0.9.5 built  # build: generic-array
+wasi 0.11.1+wasi-snapshot-preview1 lock-only  # windows targets (ureq/getrandom platform code)
+windows-sys 0.52.0 lock-only  # windows targets (ureq/getrandom platform code)
+windows-targets 0.52.6 lock-only  # windows targets (ureq/getrandom platform code)
+windows_aarch64_gnullvm 0.52.6 lock-only  # windows targets (ureq/getrandom platform code)
+windows_aarch64_msvc 0.52.6 lock-only  # windows targets (ureq/getrandom platform code)
+windows_i686_gnu 0.52.6 lock-only  # windows targets (ureq/getrandom platform code)
+windows_i686_gnullvm 0.52.6 lock-only  # windows targets (ureq/getrandom platform code)
+windows_i686_msvc 0.52.6 lock-only  # windows targets (ureq/getrandom platform code)
+windows_x86_64_gnu 0.52.6 lock-only  # windows targets (ureq/getrandom platform code)
+windows_x86_64_gnullvm 0.52.6 lock-only  # windows targets (ureq/getrandom platform code)
+windows_x86_64_msvc 0.52.6 lock-only  # windows targets (ureq/getrandom platform code)
+zeroize 1.9.1 built  # rustls secrets
+zmij 1.0.23 built  # serde_json float formatting

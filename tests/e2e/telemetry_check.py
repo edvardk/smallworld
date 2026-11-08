@@ -8,7 +8,9 @@ Runs on the runner (needs node >= 22.13), drives the container with `docker exec
   - mc-agent ships minute rows (live) and segments (R2 under telemetry/), the Worker returns verdicts, the agent
     writes them to verdicts.tsv, and `/lag` (alias /whylag) over RCON shows the Worker's verdict;
   - a signed player_message (a broadcast) reaches messages.tsv; one with a bad shape is refused by the agent;
-  - product overhead (cgroup accounting) is in the rows: minecraft.service and mc-agent.service;
+  - product overhead (cgroup accounting) is in the rows: minecraft.service and mc-agent.service (v1.4, rust
+    mode: and mc-telemetry.service, the sidecar that runs the telemetry beside the Rust agent; it publishes
+    /var/lib/mc-telemetry/online.json for the agent's player_message: fresh, the ops user's, 0640);
   - contention (P13 review M1): a CPU hog with the JVM's weights saturates every core (Chunky pre-generation on a
     first deploy); a backup still finishes within CONTENTION_BACKUP_MAX_S (its save-off window too) and the
     agent's metrics (the Worker's "host alive" signal) never go stale;
@@ -90,6 +92,11 @@ def wait(what: str, cond: Any, timeout: float, step: float = 5.0) -> Any:
     return None
 
 
+def sidecar(box: str) -> bool:
+    """v1.4: agent.implementation rust runs the telemetry in mc-telemetry.service (the e2e's rust shard)."""
+    return sh(box, "systemctl show -P LoadState mc-telemetry.service").stdout.strip() == "loaded"
+
+
 def rcon(box: str, command: str) -> str:
     return sh(box, f"/opt/minecraft/bin/mc_rcon.py cmd {command}", user="minecraft").stdout
 
@@ -103,7 +110,10 @@ def main() -> int:
     try:
         wait("the e2e worker", lambda: get("/__e2e/state"), 30, 1)
         # the agent may have backed off its WebSocket for 5 minutes after the earlier mock; restart it so it polls now
+        # (v1.4 rust mode: the telemetry sidecar too, so its first rows reach this worker without a backoff)
         sh(box, "systemctl restart mc-agent.service")
+        if sidecar(box):
+            sh(box, "systemctl restart mc-telemetry.service")
         run(box)
     finally:
         node.terminate()
@@ -170,6 +180,19 @@ def run(box: str) -> None:
             "minecraft.service" in r["ovh"] and "mc-agent.service" in r["ovh"],
             f"overhead per unit is in the row ({sorted(r['ovh'])})",
         )
+        if sidecar(box):
+            expect(
+                "mc-telemetry.service" in r["ovh"], f"... and the telemetry sidecar's ({sorted(r['ovh'])})"
+            )
+    if sidecar(box):
+        st = sh(box, "stat -c '%U %a %Y' /var/lib/mc-telemetry/online.json; date +%s; "
+                     "cat /var/lib/mc-telemetry/online.json").stdout.split("\n")  # fmt: skip
+        st += ["", "", ""]
+        fields = st[0].split()
+        fresh = len(fields) == 3 and st[1].isdigit() and int(st[1]) - int(fields[2]) <= 30
+        expect(fields[:2] == ["mcops", "640"] and fresh,
+               f"the sidecar keeps online.json fresh for the Rust agent ({st[:2]})")  # fmt: skip
+        expect(st[2].strip() == "{}", f"... and nobody is online in the container ({st[2][:80]})")
         expect(r["verdict"] in ("good", "fair", "poor"), f"the Worker judged the minute ({r['verdict']})")
     tsv = wait("verdicts.tsv", lambda: sh(box, "cat /run/mc-verdicts/verdicts.tsv").stdout, 120)
     expect(

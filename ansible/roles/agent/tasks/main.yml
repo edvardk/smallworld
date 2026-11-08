@@ -1,4 +1,7 @@
 # mc-agent runs only in cloudflare mode (server.yml panel.mode); in any other mode it is removed.
+# v1.4: server.yml agent.implementation picks scripts/mc_agent.py or smallworld-agent (the base role installs both
+# and points {{ mc_bin_dir }}/mc-agent at the chosen one). In rust mode with experience on, the telemetry runs
+# beside it as mc-telemetry.service (telemetry.py, the same code the Python agent runs in-process).
 - name: Install and run mc-agent
   when: mc_panel_mode == 'cloudflare'
   block:
@@ -10,7 +13,7 @@
         group: root
         mode: "0600"
       no_log: true
-      notify: Restart mc-agent
+      notify: [Restart mc-agent, mc-telemetry changed]
 
     - name: Install the mc-agent unit
       ansible.builtin.template:
@@ -19,7 +22,18 @@
         owner: root
         group: root
         mode: "0644"
+      register: agent_unit_file
       notify: Restart mc-agent
+
+    # A switch to rust: the Python agent (and its in-process telemetry) must be gone before the sidecar starts, or
+    # two telemetry writers would share telemetry-id.json and the segments for the rest of the play. Restarted
+    # here, not only by the handler at the end (which restarts it once more: harmless).
+    - name: Restart mc-agent now when its unit changed in rust mode (the sidecar starts next)
+      ansible.builtin.systemd_service:
+        name: mc-agent.service
+        state: restarted
+        daemon_reload: true
+      when: agent_unit_file.changed and mc_agent_implementation == 'rust'  # noqa: no-handler
 
     - name: Enable and start mc-agent
       ansible.builtin.systemd_service:
@@ -27,6 +41,47 @@
         enabled: true
         state: started
         daemon_reload: true
+
+    - name: Install the telemetry sidecar unit (rust mode, experience on)
+      ansible.builtin.template:
+        src: mc-telemetry.service.j2
+        dest: /etc/systemd/system/mc-telemetry.service
+        owner: root
+        group: root
+        mode: "0644"
+      when: agent_sidecar
+      notify: mc-telemetry changed
+
+    - name: Enable and start the telemetry sidecar
+      ansible.builtin.systemd_service:
+        name: mc-telemetry.service
+        enabled: true
+        state: started
+        daemon_reload: true
+      when: agent_sidecar
+
+# Python mode, experience off, or no panel: no sidecar (a switch back to python stops it before the handler restarts
+# the Python agent with its in-process telemetry).
+- name: Remove the telemetry sidecar where it doesn't belong
+  when: not agent_sidecar
+  block:
+    - name: Is the telemetry sidecar installed?
+      ansible.builtin.stat:
+        path: /etc/systemd/system/mc-telemetry.service
+      register: agent_sidecar_unit
+
+    - name: Stop and disable the telemetry sidecar
+      ansible.builtin.systemd_service:
+        name: mc-telemetry.service
+        state: stopped
+        enabled: false
+      when: agent_sidecar_unit.stat.exists
+
+    - name: Remove the telemetry sidecar unit
+      ansible.builtin.file:
+        path: /etc/systemd/system/mc-telemetry.service
+        state: absent
+      notify: Reload systemd
 
 - name: Remove mc-agent outside cloudflare mode
   when: mc_panel_mode != 'cloudflare'

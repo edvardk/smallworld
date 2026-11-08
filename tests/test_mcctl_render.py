@@ -123,6 +123,7 @@ P6_GROUP_VARS = {
     "mc_watchdog_url",
     "firewall_mc_max_concurrent",
     "mc_panel_mode",
+    "mc_agent_implementation",  # v1.4: python or rust
     "mc_config_repo",  # P10 (the agent's whitelist pull requests)
     "mc_metrics_interval_s",
     "mc_logs_max_rows_per_day",
@@ -196,6 +197,7 @@ EXPECTED_GROUP_VARS = {
     "mc_watchdog_url",
     "firewall_mc_max_concurrent",
     "mc_panel_mode",
+    "mc_agent_implementation",  # v1.4
     "mc_config_repo",
     "mc_metrics_interval_s",
     "mc_logs_max_rows_per_day",
@@ -259,6 +261,7 @@ GROUP_VARS_CONSTANTS = {
     "mc_map_dir",
     "mc_map_palette",
     "mc_map_colors",
+    "mc_smallworld_agent_sha256",  # v1.4: the agent port (installed by the integration step)
     "mc_brand_icon_sha256",
     "mc_helper_priority",
     "mc_timely_priority",  # P13 review M1

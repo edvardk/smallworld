@@ -20,6 +20,7 @@
    "villagers": 0,
    "water": 0
   },
+  "mc_agent_implementation": "rust",
   "mc_alt_item_despawn_ticks": {},
   "mc_backup_keep_within_days": 8,
   "mc_backup_schedule": "hourly",

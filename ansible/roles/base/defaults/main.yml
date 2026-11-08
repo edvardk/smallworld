@@ -4,3 +4,10 @@
 base_rcon_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts['architecture']] }}"
 base_rcon_target: "{{ {'amd64': 'x86_64-unknown-linux-musl', 'arm64': 'aarch64-unknown-linux-musl'}[base_rcon_arch] }}"
 base_rcon_src: "{{ playbook_dir }}/../rust/dist/smallworld-rcon-{{ base_rcon_target }}"
+# v1.4: smallworld-agent (rust/smallworld-agent, PORTING.md), the Rust port of mc_agent.py, for the same architecture
+# and target (pinned by mc_smallworld_agent_sha256). Installed on every box, whichever agent.implementation runs:
+# mcctl's actions (`mc-agent cli`) run even where mc-agent.service isn't installed.
+base_agent_src: "{{ playbook_dir }}/../rust/dist/smallworld-agent-{{ base_rcon_target }}"
+# v1.4: what {{ mc_bin_dir }}/mc-agent (mcctl's entry point, mc-run's named units) points at (server.yml
+# agent.implementation), relative to the directory.
+base_agent_entry: "{{ 'smallworld-agent' if mc_agent_implementation == 'rust' else 'mc_agent.py' }}"

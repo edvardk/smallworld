@@ -37,10 +37,11 @@ answer is "everything changed".
   | Shard | Checks (after its own boot + first `site.yml`, ~3.5 min) | Runs | Wall time |
   |---|---|---|---|
   | `core` | `mcctl init` re-run and stale pin, the client switch, `terraform validate`, the second `site.yml` (`changed=0`), hardening, reboot gate, deploy checks, firewall, P12 dry runs | always | ~10 min |
-  | `agent-a` | `agent_check.py --rounds a`: mc-agent's pushes and first commands, then the rounds rcon, client code, stop/start, whitelist, restart, plugin, restore guard, versions (v1.3: version file, Panel → Git self-test, Mojang lookup, ~20 s), cli (v1.3: mcctl's actions through `mc_agent.py cli`, pending.json shared with mc-agent, ~40 s) | always | ~10-11 min |
+  | `agent-a` | `agent_check.py --rounds a`: mc-agent's pushes and first commands, then the rounds rcon, client code, stop/start, whitelist, restart, plugin, restore guard, versions (v1.3: version file, Panel → Git self-test, Mojang lookup, ~20 s), cli (v1.3: mcctl's actions through `mc-agent cli`, pending.json shared with mc-agent, ~40 s) | always | ~10-11 min |
   | `agent-b` | `agent_check.py --rounds b`: mc-agent's pushes and first commands, then the rounds backup/restore, world library | always | ~10 min |
   | `telemetry-brand` | experience telemetry, then branding | heavy half | ~11 min |
   | `migrate-p16` | migrate container -> container, then the P16 knobs on the migrated box | heavy half | ~10 min |
+  | `agent-a, rust`, `agent-b, rust`, `telemetry-brand, rust` | v1.4: the same shards with `agent.implementation: rust` (`mcctl config set` before the render): the Rust mc-agent, `mc-agent cli` and the `mc-telemetry` sidecar through the same black-box rounds; `agent-a, rust` also scores the agent's units live (`hardening_check.py --agent`); `telemetry-brand, rust` runs the telemetry half only | like their Python shard | in parallel: no extra wall time |
 
   The times are a measured full run (v1.2.2: core 10, the one `agent` shard 16, telemetry-brand 11, migrate-p16
   9.5); v1.3 cut `agent` in two by its rounds. Each agent shard repeats the shared part (the agent's sandbox, the
@@ -98,6 +99,38 @@ required check would wait forever. Neither workflow therefore has a path filter:
   there. `PYTHONUTF8=1`: Windows' Python reads text as cp1252 otherwise.
 
 Not a required check.
+
+## The agent parity harness
+
+`tests/agent_parity/` is the black-box bar for a second mc-agent implementation (the Rust port planned for
+v1.4.0): it runs an implementation as a process and compares what it does with golden traces from the Python
+agent. Part of the normal `pytest -q` on Linux (lint and the Linux `controller` cells), about 20 s: the scenarios
+run in parallel threads.
+
+- **Isolation without test hooks.** Each run is `unshare -rm` (user + mount namespace) through
+  `tests/agent_parity/nsinit.py`: tmpfs over `/opt`, `/var/lib` and `/run` (their entries bound back), then the
+  scenario's directories at `/opt/minecraft`, `/var/lib/{minecraft,mc-agent,mc-snapshots}`,
+  `/run/{mc-verdicts,mc-telemetry}` and a harness socket at `/run/systemd/journal/socket` (the audit entries).
+  No production code changed for it. Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor, so
+  ci.yml lifts that (`sysctl kernel.apparmor_restrict_unprivileged_userns=0`) and sets `AGENT_PARITY_REQUIRE=1`,
+  which turns "namespaces unavailable" from a skip into a failure.
+- **Fakes** (`fakes.py`, `fake_systemd.py`): the Worker's agent routes and its WebSocket (watchdog/worker.js's
+  protocol), GitHub's contents/refs/pulls endpoints and the two Mojang lookups, Discord and the watchdog's
+  `/maintenance` over TLS (a throw-away certificate via `SSL_CERT_FILE`), RCON, and `systemctl`/`journalctl`
+  first on `PATH`, recording their argv.
+- **Traces**: requests per fake, audit datagrams (byte-exact fields), RCON commands per connection, systemctl
+  and journalctl calls, the files a run changed (content, mode), cli output and exit codes. Times, nonces and
+  host metrics are normalised (`harness.norm`, `norm_sample`); a scenario marks a section it can't make
+  deterministic as not compared (`s.skip`, e.g. which pull request an interleaved write lands in).
+- **Running it**: `pytest tests/agent_parity` (= `--impl=python`); `--impl=rust --agent-bin=PATH` runs the same
+  scenarios against a binary invoked as `BIN run` and `BIN cli LOGIN ACTION [ARGS_JSON]` (skipped without one);
+  `--update-golden` rewrites `golden/` from the Python agent after an intended behaviour change. The
+  `state_roundtrip` scenario always runs Python before and after the implementation under test.
+- **Test vectors** for the pure functions (console allowlist, `_one_line`, the scrubber, `verify`,
+  players.yml, `merge_sync`, tokens, alert texts, parsers, WebSocket framing, `json.dumps`, `round`, Unicode
+  properties, constants): `python scripts/parity_vectors.py` writes `tests/agent_parity/vectors/*.json` for
+  `cargo test`; `tests/agent_parity/test_vectors.py` fails when they are stale. Files marked
+  `unicode_sensitive` are only compared on a Python with the Unicode version they were generated with.
 
 ## Guards against wasted minutes
 
