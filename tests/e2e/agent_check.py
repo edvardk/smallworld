@@ -413,7 +413,8 @@ class GitHubMock(http.server.BaseHTTPRequestHandler):
             return self.reply(404, {})
         GitHubMock.tokens.add(self.headers.get("Authorization", ""))
         if m == "GET" and path == f"/repos/{CONFIG_REPO}":  # v1.3 self-test: the repository
-            return self.reply(200, {"full_name": CONFIG_REPO, "permissions": {"pull": True, "push": True}})
+            # push: false, as live GitHub answers an App installation token (v1.4.1: the grant decides)
+            return self.reply(200, {"full_name": CONFIG_REPO, "permissions": {"pull": True, "push": False}})
         if not path.startswith(f"/repos/{CONFIG_REPO}/"):
             return self.reply(404, {"message": "Not Found"})
         rest = path[len(f"/repos/{CONFIG_REPO}/") :]
