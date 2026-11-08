@@ -5,6 +5,7 @@ the output and the exit codes. Keep them deterministic: write the next input onl
 
 from __future__ import annotations
 
+import gzip
 import json
 import os
 import time
@@ -53,7 +54,7 @@ VERDICTS = {
         "verdict": "fine-and-more",  # cut to 8 characters
         "headline": "Server\tsmooth\nall minute",
         "reasons": ["tick time fine", "", "a\x1fb", "  spaced   out  ", "r5", "r6", "r7", "r8", "r9 (dropped)"],
-        "tips": ["café ✓ ünïcødé", "line\u2028sep\u0007bell", 42],
+        "tips": ["caf\u00e9 \u2713 \u00fcn\u00efc\u00f8d\u00e9", "line\u2028sep\u0007bell", 42],
     },
     "players": {
         UUIDS["Alice"]: {"verdict": "laggy", "headline": "Your ping is high (" + "x" * 250 + ")",
@@ -199,7 +200,7 @@ def bad_snapshots(s: TelScenario) -> None:
         "not a dict",
     ], tps="20", p50=True, p99=None, heap_used_mb=1e6, ticks=200.7,
         worlds=[{"n": "world", "chunks": "9", "entities": 5.9, "tiles": None, "ticking": 1, "players": 2},
-                {"n": 5}, "x", {"n": "néther\u0007", "chunks": 1}],
+                {"n": 5}, "x", {"n": "n\u00e9ther\u0007", "chunks": 1}],
         hot=[{"w": "world", "cx": 1, "cz": 2, "ent": -5, "tiles": "3", "vil": 2.7, "items": None},
              {"w": "world", "cx": "1", "cz": 2}, {"cx": 1, "cz": 1}, "x"],
         spikes=[[minute(0, 41), 60], [minute(0, 42), True], [minute(0, 43)], [minute(0, 44), 70.5]],
@@ -263,4 +264,247 @@ def startup_errors(s: TelScenario) -> None:
     s.run_to_exit("bad_number", SEGMENT_S="soon")
 
 
-__all__ = ["ONLINE", "SEGMENTS", "first_seq", "is_live", "time"]
+# --- 4: product overhead ------------------------------------------------------------------------------------
+
+
+def journal_entry(i: int, unit: str, msg: str, ident: str = "systemd") -> str:
+    return json.dumps({"__CURSOR": f"s=telparity;i={i:05d}", "__REALTIME_TIMESTAMP": str(1768471200000000 + i),
+                       "SYSLOG_IDENTIFIER": ident, "PRIORITY": "6", "UNIT": unit, "_SYSTEMD_UNIT": "init.scope",
+                       "MESSAGE": msg})  # fmt: skip
+
+
+@scenario
+def overhead(s: TelScenario) -> None:
+    """The overhead card: long-running units from `systemctl show` (memory, peak, CPU and IO deltas between two
+    samples; UINT64_MAX and "[not set]" as systemd prints them), oneshot units from systemd's "Consumed" lines
+    read by the sidecar's own journal loop (LOG_BATCH_S, cursor in journal.json), summed per unit (an instance
+    counts for its template) and reset after each row."""
+    s.identity(SRC, 3)
+    s.systemd["show"]["mc-telemetry.service"] |= {
+        "MemoryPeak": "18446744073709551615",
+        "IOReadBytes": "[not set]",
+    }
+    lines = [
+        journal_entry(1, "mc-backup.service", "mc-backup.service: Consumed 1min 2.500s CPU time, 812.3M memory peak."),
+        journal_entry(2, "mc-health@daily.service", "mc-health@daily.service: Consumed 350ms CPU time."),
+        journal_entry(3, "mc-backup.service", "mc-backup.service: Consumed 2.1s CPU time, 1.5G memory peak, 0B swap."),
+        journal_entry(4, "minecraft.service", "minecraft.service: Consumed 3h 2min CPU time."),
+        journal_entry(5, "mc-prune.service", "mc-prune.service: Consumed 900ms CPU time, 512K memory peak.",
+                      ident="mc-agent"),
+        journal_entry(6, "mc-evil.service; rm", "mc-evil.service: Consumed 1s CPU time."),
+        journal_entry(7, "mc-prune.service", "mc-prune.service: Deactivated successfully."),
+        journal_entry(8, "mc-prune.service", "mc-prune.service: Consumed 12.75ms CPU time, 2.5M memory peak."),
+    ]  # fmt: skip
+    fixture = s.tmp / "journal.jsonl"
+    fixture.write_text("\n".join(lines) + "\n")
+    s.systemd["journal"] = str(fixture)
+    s.save_systemd()
+    s.write_snap(snap(1, minute(0, 5)))
+    s.write_snap(snap(2, minute(1, 5)))
+    s.begin()
+    s.start(LOG_BATCH_S="10")
+    s.wait_requests(1)
+    s.systemd["show"]["minecraft.service"] |= {"CPUUsageNSec": "8000000000", "MemoryCurrent": str(3 << 30 | 1 << 20),
+                                               "IOReadBytes": "3145728", "IOWriteBytes": "2097152"}  # fmt: skip
+    s.systemd["show"]["mc-agent.service"] |= {
+        "CPUUsageNSec": "100000000",
+        "IOWriteBytes": "9216",
+    }  # counter reset
+    s.save_systemd()
+    s.wait_requests(2)
+    s.wait(s.box.host("/var/lib/mc-telemetry/journal.json").exists, 20, "the first overhead journal round")
+    s.write_snap(snap(3, minute(2, 5)))
+    s.wait_requests(3)
+    s.wait(lambda: sum(c["tool"] == "journalctl" for c in s.calls()) >= 2, 20, "the second journal round")
+    s.stop()
+
+
+# --- 5: segments --------------------------------------------------------------------------------------------
+
+
+@scenario
+def segments(s: TelScenario) -> None:
+    """Every SEGMENT_S the buffered rows become one gzip NDJSON segment (todo = the rows the Worker didn't take
+    live), PUT /ingest/segment, then the backlog row backfilled; retention: older than SEGMENT_DAYS, then the
+    oldest over SEGMENT_CAP_MB, dropped; the state of a segment deleted by hand is forgotten (after the backfill
+    gave up on reading it)."""
+    s.identity(SRC, 10)
+    seg = s.box.host(SEGMENTS)
+    seg.mkdir(mode=0o700)
+    old = "20251101T0000-0badc0de-1-2.ndjson.gz"
+    rows = [
+        {"v": 1, "id": f"{SRC}:{i}", "src": SRC, "seq": i, "ts": 1761955200000 + i * 60000} for i in (1, 2)
+    ]
+    (seg / old).write_bytes(gzip.compress("".join(json.dumps(r) + "\n" for r in rows).encode(), mtime=0))
+    forty_days = time.time() - 40 * 86400
+    os.utime(seg / old, (forty_days, forty_days))
+    for name, mib in (("20251201T0000-0badc0de-3-3", 4), ("20251202T0000-0badc0de-4-4", 4),
+                      ("20251203T0000-0badc0de-5-5", 3)):  # fmt: skip
+        with open(seg / f"{name}.ndjson.gz", "wb") as f:
+            f.truncate(mib << 20)  # sparse: what counts is st_size
+    (seg / "notes.ndjson.gz").write_bytes(b"not a segment name")
+    state = {old: {"todo": [], "r2": True, "rows": 2},
+             "20251204T0000-0badc0de-6-6.ndjson.gz": {"todo": [0], "r2": False, "rows": 1},
+             "bogus-name.ndjson.gz": {"todo": [0], "r2": False}}  # fmt: skip
+    (seg / "state.json").write_text(json.dumps(state))
+    for p in seg.iterdir():
+        p.chmod(0o600)
+    s.write_snap(snap(1, minute(0, 5), [player("Alice", minute(0, 0))]))
+    s.write_snap(snap(2, minute(1, 5), [player("Alice", minute(0, 0))]))
+    s.write_snap(snap(3, minute(2, 5), []))
+
+    def reply(rec: dict[str, Any], n: int) -> tuple[int, Any]:
+        if is_live(rec) and first_seq(rec) == 11:
+            return 429, {"error": "slow down"}
+        return 200, ok_reply(rec)
+
+    s.experience = reply
+    s.begin()
+    s.start(SEGMENT_S="30", SEGMENT_CAP_MB="10", SEGMENT_DAYS="30")
+    s.wait_requests(3, live=True)
+    s.wait_requests(1, route="PUT /ingest/segment", timeout=45)
+    s.wait_requests(1, live=False)
+    s.next_poll()
+    s.stop()
+
+
+# --- 6: backfill --------------------------------------------------------------------------------------------
+
+
+@scenario
+def backfill_quiet(s: TelScenario) -> None:
+    """Rows the Worker refused live (5xx) wait in the segment and are backfilled, oldest first, BACKFILL_BATCH
+    rows a request and at most 4 requests a round, only in quiet time: a player online stops it (the next round
+    doesn't run), nobody online resumes it."""
+    s.identity(SRC, 0)
+    for i in range(15):
+        s.write_snap(snap(i + 1, minute(i, 5)))
+
+    def reply(rec: dict[str, Any], n: int) -> tuple[int, Any]:
+        if is_live(rec) and first_seq(rec) < 13:
+            return 503, {"error": "D1 unavailable"}
+        return 200, ok_reply(rec)
+
+    s.experience = reply
+    s.begin()
+    s.start(SEGMENT_S="30")
+    s.wait_requests(15, live=True)
+    s.wait_requests(4, live=False, timeout=45)
+    bob = player("Bob", minute(15, 0))
+    s.write_snap(snap(16, minute(15, 5), [bob]))
+    s.wait(lambda: UUIDS["Bob"] in (s.box.read(ONLINE) or ""), 20, "Bob online")
+    time.sleep(1)  # the round after that read loop (it would run at once) must not start
+    s.note("backfill_while_bob_online", len(s.requests(live=False)))
+    s.write_snap(snap(17, minute(16, 5)))
+    s.wait_requests(5, live=False)
+    s.next_poll()
+    s.stop()
+
+
+@scenario
+def backfill_errors(s: TelScenario) -> None:
+    """A failed segment PUT (429) leaves the backfill waiting for the next live success; a 5xx halves the batch
+    and retries at once, a 5xx for a single row backs off (no request in the next read loops), the segment PUT
+    waits for its rows."""
+    s.identity(SRC, 0)
+    for i in range(5):
+        s.write_snap(snap(i + 1, minute(i, 5)))
+    backfills = iter([(503, {"error": "exceeded CPU"}), (200, None), (502, {"error": "bad gateway"})])
+
+    def reply(rec: dict[str, Any], n: int) -> tuple[int, Any]:
+        if is_live(rec):
+            return (503, {"error": "D1 unavailable"}) if first_seq(rec) < 3 else (200, ok_reply(rec))
+        status, body = next(backfills, (200, None))
+        return status, body if body is not None else ok_reply(rec)
+
+    s.experience = reply
+    s.segment = lambda rec, n: (429, {"error": "slow down"}) if n == 0 else (200, {"ok": True})
+    s.begin()
+    s.start(SEGMENT_S="30")
+    s.wait_requests(5, live=True)
+    s.wait_requests(1, route="PUT /ingest/segment", timeout=45)
+    s.next_poll()
+    s.note("backfill_after_failed_put", len(s.requests(live=False)))
+    s.write_snap(snap(6, minute(5, 5)))
+    s.write_snap(snap(7, minute(6, 5)))
+    s.wait_requests(3, live=False)
+    s.next_poll(2)
+    s.stop()
+
+
+# --- 9: online.json -----------------------------------------------------------------------------------------
+
+
+@scenario
+def online(s: TelScenario) -> None:
+    """online.json for the Rust agent's player_message: {uuid: {join, n, tips, u}} by the latest snapshot,
+    0640, rewritten after every read loop (a fresh file = a live sidecar), kept as it was when the plugin goes
+    quiet."""
+    s.identity(SRC, 0)
+    alice = player("Alice", minute(0, -20), tips=False, ping=33, brand="fabric", w="world_nether", cx=5)
+    bob = player("Bob", minute(0, 1))
+    s.write_snap(snap(1, minute(0, 5), [alice, bob]))
+    s.begin()
+    s.start()
+
+    def observe(label: str) -> None:
+        st = s.box.host(ONLINE).stat()
+        s.note(label, {"text": s.box.read(ONLINE), "mode": oct(st.st_mode & 0o7777)})
+
+    observe("first")
+    stamp = s.online_stamp()
+    s.next_poll()
+    s.note("rewritten_unchanged", s.online_stamp() != stamp)
+    s.write_snap(snap(2, minute(0, 15), [bob]))
+    s.next_poll()
+    observe("alice_left")
+    s.next_poll()
+    observe("plugin_quiet")
+    s.stop()
+
+
+# --- 11: state round trip -----------------------------------------------------------------------------------
+
+
+@scenario
+def state_roundtrip(s: TelScenario) -> None:
+    """One state through Python, the implementation under test and Python again: the identity's sequence, a
+    segment Python wrote (its rows refused live) backfilled by the implementation (which leaves one row behind
+    after a 5xx), then finished, and its PUT done, by Python."""
+    from tel_harness import PYTHON_IMPL
+
+    s.identity(SRC, 100)
+    phase = {"name": "python_1", "backfill": 0}
+
+    def reply(rec: dict[str, Any], n: int) -> tuple[int, Any]:
+        if is_live(rec):
+            return (503, {"error": "down"}) if phase["name"] == "python_1" else (200, ok_reply(rec))
+        phase["backfill"] += 1
+        if phase["name"] == "impl" and phase["backfill"] == 2:
+            return 503, {"error": "exceeded CPU"}
+        return 200, ok_reply(rec)
+
+    s.experience = reply
+    for i in range(4):
+        s.write_snap(snap(i + 1, minute(i, 5)))
+    s.begin()
+
+    def state() -> Any:
+        return {"identity": s.box.json(IDENTITY), "segments": s.box.json(f"{SEGMENTS}/state.json")}
+
+    s.start(PYTHON_IMPL, SEGMENT_S="30")
+    s.wait_requests(4, live=True)
+    s.wait(s.box.host(f"{SEGMENTS}/state.json").exists, 45, "the first segment")
+    s.stop("python_1")
+    s.note("after_python_1", state())
+    for label, impl, minutes in (("impl", s.impl, (10, 11)), ("python_2", PYTHON_IMPL, (20, 21))):
+        phase["name"] = label
+        s.clear_snaps()
+        for k, m in enumerate(minutes):
+            s.write_snap(snap(k, minute(m, 5)))
+        live = len(s.requests(live=True))
+        s.start(impl, SEGMENT_S="3600")
+        s.wait_requests(live + 2, live=True)
+        s.next_poll()
+        s.stop(label)
+        s.note(f"after_{label}", state())

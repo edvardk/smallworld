@@ -132,6 +132,47 @@ run in parallel threads.
   `cargo test`; `tests/agent_parity/test_vectors.py` fails when they are stale. Files marked
   `unicode_sensitive` are only compared on a Python with the Unicode version they were generated with.
 
+## The telemetry parity harness
+
+`tests/telemetry_parity/` is the same bar for the player-experience telemetry (`scripts/telemetry.py`, ported to
+Rust in v1.4.0): it runs an implementation as `<bin> telemetry`, the `mc-telemetry.service` sidecar's entry
+point (Python: `scripts/mc_agent.py telemetry`), and compares what it does with golden traces from the Python
+sidecar. Part of the normal `pytest -q` on Linux, about 55 s (the scenarios run in parallel threads; the
+slowest wait for a 30 s segment flush).
+
+- **Reuses the agent harness** (`tests/agent_parity`): the namespace box (`nsinit.py`; plus
+  `/var/lib/mc-telemetry`), `FakeWorker` (scripted `/ingest/experience` replies with verdicts, 5xx and 429, and
+  `/ingest/segment`), fake `systemctl` (several units: one block each, as `systemctl show` prints them) and
+  `journalctl`, `AgentProc`, the `--impl` / `--agent-bin` / `--update-golden` options (`--update-golden` is
+  refused with `--impl=rust`) and `AGENT_PARITY_REQUIRE=1`. The scenarios write the mc-telemetry plugin's
+  snapshots into the box's `/run/mc-telemetry` (atomically, as `Writer.java` does).
+- **Time control without a test hook.** A minute row closes when a snapshot of a later minute arrives, or at
+  the first read loop after the minute is 75 s old; the snapshots carry fixed timestamps in January 2026, so
+  rows are deterministic and close at the latest one read loop (5 s, `Config.read_s`, not configurable) after
+  their snapshots appear. agent.env's own knobs are set to their minimums: `SEGMENT_S=30`, `LOG_BATCH_S=10`
+  (the overhead journal round), `BACKFILL_PAUSE_S=0`. A scenario waits for an event (a request, a rewritten
+  `online.json`: one per read loop) before its next input. What would take minutes of real time (the
+  back-off ladder, the row give-up after `BACKFILL_ROW_GIVE_UP` server errors) is in the vectors instead: `Pacer`
+  and `Backfill.run_once` decision traces with an injected clock. No production code changed for it.
+- **Scenarios**: `minute_row` (snapshots -> row -> POST -> `verdicts.tsv`), `sessions`, `lag`, `overhead`,
+  `segments` (flush, PUT, retention by `SEGMENT_DAYS` / `SEGMENT_CAP_MB`), `backfill_quiet` (only in quiet
+  time; a player online stops it), `backfill_errors` (failed PUT, batch halving, back-off), `bad_snapshots`
+  (`MAX_SNAPSHOT_BYTES`, the name pattern, an older timestamp, symlink, FIFO, junk fields, a plugin restart),
+  `identity`, `online` (`online.json`), `state_roundtrip` (Python -> implementation -> Python: identity,
+  backlog, segments) and `startup_errors`. `Messages` (player_message's rate limits) isn't reachable from the
+  sidecar (player_message runs in the agent): vectors only.
+- **Traces**: every Worker request (status, auth, user agent, body; a row in full the first time, then
+  `{"ref": id}` when an equal copy is backfilled or archived), the files the runs changed (mode; segments as
+  decompressed NDJSON, JSON parsed and byte-exact), the fake systemctl/journalctl calls, stdout/stderr and exit
+  codes. Normalised: `ovh.*.cpu_pct` (a counter delta over wall-clock time), the backlog's byte counts (gzip
+  sizes aren't part of the contract), the `verdicts.tsv` header's time, a random installation id.
+- **Vectors**: `python scripts/telemetry_vectors.py` writes `tests/telemetry_parity/vectors/*.json` (text,
+  snapshot, minute, overhead, segments, backfill, verdicts, identity) for `cargo test`;
+  `tests/telemetry_parity/test_telemetry_vectors.py` fails when they are stale. `python_raises` entries are
+  inputs on which Python raises (reported, not a contract).
+- **Rust in CI**: ci.yml runs it for Python only for now; the port adds its scenarios to the rust job (a list
+  beside `RUST_PARITY_SCENARIOS`) with `pytest tests/telemetry_parity --impl=rust --agent-bin=PATH`.
+
 ## Guards against wasted minutes
 
 - `concurrency` per workflow and ref: a new push to a pull request cancels the obsolete run. Scheduled and
