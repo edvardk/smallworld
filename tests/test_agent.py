@@ -1120,7 +1120,7 @@ def test_rust_agent_actions_match_python() -> None:
     code = "".join(p.read_text() for p in sorted((src / "actions").glob("*.rs")))
     defined = set(re.findall(r"fn do_([a-z_]+)\(", code))
     assert defined == {n[3:] for n in dir(mc_agent.Executor) if n.startswith("do_")} == set(mc_agent.ACTIONS)
-    assert "NotPorted(\"actions::" not in code
+    assert 'NotPorted("actions::' not in code
 
 
 # --- P9: richer samples, inventory, live console ---------------------------------------------------------------

@@ -19,7 +19,7 @@ divergences are listed under "Divergences"; add one only with a reason and a tes
 | `types.rs`, `sys.rs`, `unicode.rs`, `settings.rs`, `http.rs`, `notify.rs`, `systemd.rs`, `worlds.rs` | phase 1 | done (shared) |
 | `jobs.rs` | jobs | **done**: runner (foreground + background, cancel, announcements); the daemon's reports are link's `daemon::report_job` |
 | `panel/plugins.rs`, `panel/pending.rs` | phase 1 / sync | done (`record`, `record_world`, `update`); `merge_sync` is sync's |
-| `actions/` | actions | **done**: every `do_<action>`, `Telemetry` (sidecar online.json + `Messages`), console vectors + differential fuzzing (`tests/test_rust_agent_console.py`); daemon scenarios wait for link |
+| `actions/` | actions | **done**: every `do_<action>`, `Telemetry` (sidecar online.json + `Messages`), console vectors + differential fuzzing; daemon scenarios match golden in their action sections, full gate waits for data (below) |
 | `link/`, `daemon.rs` | link | **done** (verify/ws vectors; envelope, nonce, WebSocket and poll sections of scenarios 1, 2, 20 match golden with stubs elsewhere); final wiring of selftest/client loops waits for misc/data |
 | `ship/` | ship | stubs |
 | `data/`, `panel/rejected.rs` | data | stubs |
@@ -203,6 +203,16 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
   `{uuid: {"u", "n", "tips", "join"}}` (exactly `Telemetry.online()`), rewritten every poll; readable by mcops.
   Older than 30 s by mtime, missing or not an object = nobody online. `Messages` state (per-player/broadcast
   limits, hourly count) is the agent's, in memory, as in Python.
+- Scenario status (2026-11-08, debug build behind the stub gate, on top of link + sync + misc): with a local,
+  uncommitted harness tweak that skips the startup metrics/inventory pushes (data) and drops the data plane's
+  trace parts (inventory notes and pushes, `rcon.stats_connections`, `systemd.probes`, spool.jsonl), these match
+  golden on `notes`, `exits`, `rcon`, `systemd`, `audit`, `files`, job reports and WebSocket results:
+  `console`, `stop_start`, `countdown_cancel`, `backup`, `plugin`, `restore`, `worlds`, `lookup`, `selftest_ok`,
+  `selftest_failures`, `locks`, `whitelist_pr` (the last one with `RejectedLogins::drop_name` returning
+  `Ok(false)` locally: data's stub refuses it). `cli` passes unmodified. **Not yet in `RUST_PARITY_SCENARIOS`:**
+  the gate runs the release dist binary, which refuses to start while `NOT_PORTED` holds ship and data, and
+  every daemon scenario waits for data's startup pushes; add them with data's merge and the dist rebuild.
+  `status`, `tail`, `logs_rejected` (rejected_dismiss) need data's `collect`, `ConsoleTail`, `RejectedLogins`.
 
 ### jobs (job runner integration)
 
