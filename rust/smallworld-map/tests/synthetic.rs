@@ -195,17 +195,18 @@ fn every_compression_gives_the_same_tiles() {
 fn columns_match_the_walk_for_every_bit_width() {
     let p = palette();
     for distinct in [1usize, 2, 5, 9, 16, 17, 33, 65, 129, 257, 300] {
-        // `distinct` palette entries: stone and sand under made-up property values (ignored: still the default).
+        // `distinct` palette entries: real properties with made-up values (no S line: the block's default state).
         let names = [
-            "minecraft:stone",
-            "minecraft:sand",
-            "minecraft:glass",
-            "minecraft:water",
+            ("minecraft:oak_log", "axis"),
+            ("minecraft:grass_block", "snowy"),
+            ("minecraft:water", "level"),
+            ("minecraft:glass_pane", "waterlogged"),
         ];
         let mut palette_entries = vec![Entry::Id("minecraft:air")];
         for i in 0..distinct {
-            let v: &'static str = Box::leak(i.to_string().into_boxed_str());
-            palette_entries.push(Entry::Props(names[i % names.len()], vec![("bogus", v)]));
+            let v: &'static str = Box::leak(format!("v{i}").into_boxed_str());
+            let (name, key) = names[i % names.len()];
+            palette_entries.push(Entry::Props(name, vec![(key, v)]));
         }
         let mut air = vec![false; palette_entries.len()];
         air[0] = true;

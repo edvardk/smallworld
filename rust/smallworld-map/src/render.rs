@@ -83,7 +83,7 @@ pub struct Summary {
     pub chunks_not_full: u64,
     pub chunks_failed: u64,
     pub chunks_unsupported: u64,
-    pub chunks_newer: u64,
+    pub chunks_other_version: u64,
     pub unknown_states: u64,
     pub tiles_written: u64,
     pub tiles_empty: u64,
@@ -97,7 +97,7 @@ impl Summary {
         format!(
             "{{\"dimension\":\"{}\",\"full_render\":{},\"regions\":{},\"regions_rendered\":{},\"regions_removed\":{},\
              \"chunks\":{},\"chunks_full\":{},\"chunks_not_full\":{},\"chunks_failed\":{},\"chunks_unsupported\":{},\
-             \"chunks_newer\":{},\"unknown_states\":{},\"tiles_written\":{},\"tiles_empty\":{},\"generation\":{},\
+             \"chunks_other_version\":{},\"unknown_states\":{},\"tiles_written\":{},\"tiles_empty\":{},\"generation\":{},\
              \"seconds\":{:.3}}}",
             dim.id(),
             self.full_render,
@@ -109,7 +109,7 @@ impl Summary {
             self.chunks_not_full,
             self.chunks_failed,
             self.chunks_unsupported,
-            self.chunks_newer,
+            self.chunks_other_version,
             self.unknown_states,
             self.tiles_written,
             self.tiles_empty,
@@ -256,7 +256,7 @@ fn read_region(
                         }
                     }
                     Outcome::NotFull { .. } => counts.chunks_not_full += 1,
-                    Outcome::Newer(_) => counts.chunks_newer += 1,
+                    Outcome::OtherVersion(_) => counts.chunks_other_version += 1,
                     Outcome::Invalid(_) => {
                         counts.chunks_failed += 1;
                         keep.push(idx);
@@ -567,7 +567,7 @@ pub fn render_dimension(opts: &Options<'_>, dim: &Dimension) -> io::Result<Summa
             summary.chunks_not_full += c.chunks_not_full;
             summary.chunks_failed += c.chunks_failed;
             summary.chunks_unsupported += c.chunks_unsupported;
-            summary.chunks_newer += c.chunks_newer;
+            summary.chunks_other_version += c.chunks_other_version;
             summary.unknown_states += c.unknown_states;
             for s in 0..SCALES {
                 if let Err(e) = write_block(

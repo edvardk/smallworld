@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! smallworld-map render --world DIR --out DIR [--palette FILE] [--dimensions overworld,end] [--radius N]
-//!                       [--threads N] [--full]
+//!                       [--threads N] [--full] [--rendered-at UNIX_SECONDS]
 //! smallworld-map stats  [--world DIR] [--out DIR] [--dimensions overworld,end]
 //! ```
 //!
@@ -24,7 +24,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 const USAGE: &str = "usage:
   smallworld-map render --world DIR --out DIR [--palette FILE] [--dimensions overworld,end] [--radius N]
-                        [--threads N] [--full]
+                        [--threads N] [--full] [--rendered-at UNIX_SECONDS]
   smallworld-map stats  [--world DIR] [--out DIR] [--dimensions overworld,end]";
 /// Where the deploy installs the palette (ansible role `map`).
 const DEFAULT_PALETTE: &str = "/opt/minecraft/share/map-palette.tsv";
@@ -40,6 +40,8 @@ struct Args {
     radius: Option<i64>,
     threads: usize,
     full: bool,
+    /// The tiles' rendered_at (default: now); fixed values make tiles byte-comparable (tests/test_rust_map.py).
+    rendered_at: Option<i64>,
 }
 
 fn parse_args(argv: &[String]) -> Result<Args, String> {
@@ -79,6 +81,13 @@ fn parse_args(argv: &[String]) -> Result<Args, String> {
                     return Err("--radius must be 1..30000000".into());
                 }
                 a.radius = Some(r);
+            }
+            "--rendered-at" => {
+                a.rendered_at = Some(
+                    value
+                        .parse()
+                        .map_err(|_| format!("--rendered-at: not a number: {value:?}"))?,
+                );
             }
             "--threads" => {
                 a.threads = value
@@ -142,7 +151,7 @@ fn render(a: &Args) -> Result<(), String> {
         radius: a.radius,
         threads: a.threads,
         full: a.full,
-        now: now(),
+        now: a.rendered_at.unwrap_or_else(now),
     };
     for dim in &a.dimensions {
         let start = Instant::now();

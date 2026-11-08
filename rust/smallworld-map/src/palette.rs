@@ -170,12 +170,20 @@ impl Palette {
     }
 
     /// A state given as `{id, properties}`: properties missing from the entry take the default state's value
-    /// (`StateDefinition.appendPropertyCodec`: `fieldOf(name).orElseGet(default)`), unknown ones are ignored.
+    /// (`StateDefinition.appendPropertyCodec`: `fieldOf(name).orElseGet(default)`). A property the block doesn't
+    /// have makes the state unknown (`None`, drawn as air and counted); a value without an S line has the block's
+    /// default values (as tests/map_reference.py's `Palette.lookup`).
     #[must_use]
     pub fn state<'a>(&self, name: &str, props: &[(&'a str, &'a str)]) -> Option<StateInfo> {
         let block = self.blocks.get(name)?;
         if props.is_empty() {
             return Some(block.default);
+        }
+        if props
+            .iter()
+            .any(|(k, _)| !block.default_props.iter().any(|(dk, _)| dk == k))
+        {
+            return None;
         }
         let merged = block.default_props.iter().map(|(k, v)| {
             let given = props
@@ -219,10 +227,12 @@ mod tests {
                 surface: 12
             }
         );
-        let other = p
-            .state("minecraft:oak_slab", &[("type", "top"), ("bogus", "1")])
-            .unwrap();
+        let other = p.state("minecraft:oak_slab", &[("type", "top")]).unwrap();
         assert_eq!(other.surface, 13);
+        assert!(
+            p.state("minecraft:oak_slab", &[("type", "top"), ("bogus", "1")])
+                .is_none()
+        );
         assert_eq!(p.default_state("minecraft:air"), Some(StateInfo::default()));
         assert!(p.state("minecraft:nope", &[]).is_none());
     }

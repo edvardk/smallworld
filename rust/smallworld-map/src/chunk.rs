@@ -37,8 +37,9 @@ pub enum Outcome {
     },
     /// A proto-chunk (any other status): nothing to draw, not an error.
     NotFull { x: i32, z: i32 },
-    /// Written by a newer game than the palette: skipped until the palette is regenerated.
-    Newer(i32),
+    /// Written by another game version than the palette's (an older chunk the server hasn't upgraded yet, or a
+    /// newer game): skipped, as tests/map_reference.py does.
+    OtherVersion(i32),
     /// Missing or malformed fields.
     Invalid(&'static str),
 }
@@ -90,7 +91,7 @@ impl Section<'_> {
     fn at(&self, i: usize) -> StateInfo {
         match &self.data {
             None => self.states[0],
-            Some(b) => self.states.get(b.get(i)).copied().unwrap_or_default(),
+            Some(b) => self.states[b.get(i)],
         }
     }
 }
@@ -100,27 +101,28 @@ fn utf8(s: &[u8]) -> Option<&str> {
 }
 
 /// One palette entry → its state (`None`: unknown to the palette, drawn as air).
-fn entry_state(palette: &Palette, entry: &Value<'_>) -> Option<StateInfo> {
+fn entry_state(palette: &Palette, entry: &Value<'_>) -> Result<Option<StateInfo>, &'static str> {
     match nbt::unwrap_list_element(entry) {
-        Value::String(s) => palette.default_state(utf8(s)?),
+        Value::String(s) => Ok(utf8(s).and_then(|n| palette.default_state(n))),
         Value::Compound(c) => {
-            let name = utf8(c.string("id").or_else(|| c.string("Name"))?)?;
-            let props = c
-                .compound("properties")
-                .or_else(|| c.compound("Properties"));
+            let name = c.string("id").ok_or("palette entry without an id")?;
+            let Some(name) = utf8(name) else {
+                return Ok(None);
+            };
             let mut pairs: Vec<(&str, &str)> = Vec::new();
-            if let Some(p) = props {
+            if let Some(p) = c.compound("properties") {
                 for (k, v) in &p.entries {
-                    if let (Some(k), Value::String(v)) = (utf8(k), v)
-                        && let Some(v) = utf8(v)
-                    {
-                        pairs.push((k, v));
+                    match (utf8(k), v) {
+                        (Some(k), Value::String(v)) => {
+                            pairs.push((k, utf8(v).unwrap_or("\u{fffd}")));
+                        }
+                        _ => return Ok(None),
                     }
                 }
             }
-            palette.state(name, &pairs)
+            Ok(palette.state(name, &pairs))
         }
-        _ => None,
+        _ => Err("unsupported palette entry"),
     }
 }
 
@@ -133,35 +135,39 @@ fn section<'a>(
     if entries.is_empty() {
         return Err("empty block palette");
     }
-    let states: Vec<StateInfo> = entries
-        .iter()
-        .map(|e| {
-            entry_state(palette, e).unwrap_or_else(|| {
-                *unknown += 1;
-                StateInfo::default()
-            })
-        })
-        .collect();
+    let mut states: Vec<StateInfo> = Vec::with_capacity(entries.len());
+    for e in entries {
+        states.push(entry_state(palette, e)?.unwrap_or_else(|| {
+            *unknown += 1;
+            StateInfo::default()
+        }));
+    }
     if states.len() == 1 {
         return Ok(Section { states, data: None });
     }
     let raw = bs.long_array("data").ok_or("block_states without data")?;
     let bits = ceil_log2(states.len()).max(4);
     let data = Bits::new(raw, bits, 4096).ok_or("block_states data length")?;
+    if (0..4096).any(|i| data.get(i) >= states.len()) {
+        return Err("block index outside the palette");
+    }
     Ok(Section {
         states,
         data: Some(data),
     })
 }
 
-/// Heightmap bits from its long count; the counts 52, 64, 86, 128 fit several widths, then the dimension's height
-/// decides (`ceil_log2(height + 1)`).
+/// Heightmap bits from its long count; when the count fits several widths (52 longs: 11 or 12 bits, ...) the
+/// dimension's height decides (`ceil_log2(height + 1)`), and if that isn't one of them the chunk is malformed.
 fn heightmap_bits(longs: usize, height: usize) -> Option<u32> {
-    let from_height = ceil_log2(height + 1);
-    if from_height > 0 && 256usize.div_ceil((64 / from_height) as usize) == longs {
-        return Some(from_height);
+    let fits: Vec<u32> = (1..=32u32)
+        .filter(|&b| 256usize.div_ceil((64 / b) as usize) == longs)
+        .collect();
+    if fits.len() == 1 {
+        return Some(fits[0]);
     }
-    (1..=32u32).find(|&b| 256usize.div_ceil((64 / b) as usize) == longs)
+    let want = ceil_log2(height + 1);
+    fits.contains(&want).then_some(want)
 }
 
 /// Decodes one chunk.
@@ -173,15 +179,14 @@ pub fn decode(palette: &Palette, data: &[u8]) -> Outcome {
     let Some(dv) = root.int("DataVersion") else {
         return Outcome::Invalid("no DataVersion");
     };
-    if dv > palette.data_version {
-        return Outcome::Newer(dv);
-    }
     let (Some(x), Some(z)) = (root.int("xPos"), root.int("zPos")) else {
         return Outcome::Invalid("no xPos/zPos");
     };
-    let status = root.string("Status").unwrap_or_default();
-    if status != b"minecraft:full" && status != b"full" {
+    if root.string("Status") != Some(b"minecraft:full") {
         return Outcome::NotFull { x, z };
+    }
+    if dv != palette.data_version {
+        return Outcome::OtherVersion(dv);
     }
     let Some(y_pos) = root.int("yPos") else {
         return Outcome::Invalid("no yPos");
@@ -198,9 +203,7 @@ pub fn decode(palette: &Palette, data: &[u8]) -> Outcome {
     else {
         return Outcome::Invalid("no WORLD_SURFACE heightmap");
     };
-    let Some(list) = root.list("sections") else {
-        return Outcome::Invalid("no sections");
-    };
+    let list = root.list("sections").unwrap_or_default();
 
     let mut unknown = 0u32;
     let mut sections: Vec<(i32, Section<'_>)> = Vec::new();
@@ -208,12 +211,12 @@ pub fn decode(palette: &Palette, data: &[u8]) -> Outcome {
         let Value::Compound(s) = s else {
             return Outcome::Invalid("section is not a compound");
         };
-        let Some(sy) = s.int("Y") else {
-            return Outcome::Invalid("section without Y");
-        };
         // Light-only sections (above and below the world) have no block_states.
         let Some(bs) = s.compound("block_states") else {
             continue;
+        };
+        let Some(sy) = s.int("Y") else {
+            return Outcome::Invalid("section without Y");
         };
         match section(palette, bs, &mut unknown) {
             Ok(sec) => sections.push((sy, sec)),

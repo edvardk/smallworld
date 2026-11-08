@@ -209,7 +209,7 @@ impl Region {
 }
 
 /// Decompresses a payload by its version byte; bit 0x80 means the stream is in `c.<x>.<z>.mcc` next to the region
-/// (absolute chunk coordinates), written whole by the server (temp file + move).
+/// (absolute chunk coordinates), written whole by the server (temp file + move); the in-region payload is then empty.
 fn decode(
     version: u8,
     data: &[u8],
@@ -220,7 +220,10 @@ fn decode(
 ) -> Result<Vec<u8>, ChunkError> {
     let compression = version & 0x7f;
     if version & 0x80 != 0 {
-        // Vanilla reads the external stream even when an internal one is also present (it only logs it).
+        // The server logs "both internal and external streams" as corruption; skipped, like the reference.
+        if !data.is_empty() {
+            return Err(ChunkError::Corrupt("both internal and external streams"));
+        }
         let cx = rx * 32 + (idx & 31) as i32;
         let cz = rz * 32 + (idx >> 5) as i32;
         let ext = std::fs::read(dir.join(format!("c.{cx}.{cz}.mcc"))).map_err(|e| {
