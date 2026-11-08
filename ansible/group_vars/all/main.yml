@@ -22,7 +22,7 @@ mc_telemetry_jar_sha256: "da8a6cfc8ec299bc158a25f18ee472c5bea4d51025fdeab64bf027
 # (scripts/brand_art.py check). v1.2: the optional resource pack's sha1 (mc_brand_pack_sha1: the Worker's
 # /pack/<sha1>.zip and server.properties resource-pack-sha1) is rendered: mcctl render builds the pack from the
 # config repo's art (mcctl/brandpack.py).
-mc_brand_jar_sha256: "cbe111089b5cb05f6b8341f8b930914ce7bce883c389112ff19c8d0e7457204e"
+mc_brand_jar_sha256: "b9eebf41668d03e4ed8c907d56ae35095e4694ef7864375d84431cc369860162"
 mc_brand_icon_sha256: "939ecfd72097963dd7f221bf7df9972cf6d8f4a58ef9f0cdd7fd546edff52372"
 restic_sha256:
   amd64: f415415624dcc452f2a02b8c33641791a8c6d6d3b65bbb3543fcf9a25151585c

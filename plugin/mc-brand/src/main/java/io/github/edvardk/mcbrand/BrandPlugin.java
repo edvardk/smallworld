@@ -4,9 +4,11 @@ import java.io.File;
 import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import net.kyori.adventure.key.Key;
@@ -539,11 +541,15 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (args.length == 2 && command.getName().equalsIgnoreCase("hud")
+                && (args[0].equalsIgnoreCase("hide") || args[0].equalsIgnoreCase("show"))) {
+            return Hud.Part.words(); // v1.4.1
+        }
         if (args.length != 1) {
             return List.of();
         }
         return switch (command.getName().toLowerCase(Locale.ROOT)) {
-            case "hud" -> List.of("top", "side", "off");
+            case "hud" -> List.of("top", "side", "off", "hide", "show", "parts", "reset");
             case "mcbrand" -> List.of("status", "selftest");
             case "modpack" -> List.of("off", "on");
             case "view" -> List.of("8", "10", "12", "14", "16", "reset");
@@ -627,11 +633,15 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
             p.sendMessage(Component.text("The HUD is off on this server.", s.subtle()));
             return;
         }
+        if (args.length > 0 && hudParts(p, args)) {
+            return;
+        }
         // /hud top|side|off (on = top); /hud alone: off if one is showing, else top
         Hud.Mode m = args.length > 0 ? Hud.Mode.parse(args[0], null)
                 : hud.showing(p) == Hud.Mode.OFF ? Hud.Mode.TOP : Hud.Mode.OFF;
         if (m == null) {
-            p.sendMessage(Component.text("Usage: /hud [top|side|off]", s.subtle()));
+            p.sendMessage(Component.text("Usage: /hud [top|side|off], /hud hide|show <part>, /hud parts, /hud reset",
+                    s.subtle()));
             return;
         }
         hud.set(p, m);
@@ -641,6 +651,53 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
             case SIDE -> "HUD in the sidebar (/hud top for the top of the screen, /hud off to hide it)";
             case OFF -> "HUD off (/hud to show it again)";
         }, s.subtle()));
+    }
+
+    /**
+     * v1.4.1: /hud hide|show &lt;part&gt;, /hud parts, /hud reset (per player, {@link Hud.Part}). Returns false for
+     * anything else (a mode).
+     */
+    private boolean hudParts(Player p, String[] args) {
+        String sub = args[0].toLowerCase(Locale.ROOT);
+        Set<Hud.Part> hidden = EnumSet.noneOf(Hud.Part.class);
+        hidden.addAll(hud.hidden(p));
+        switch (sub) {
+            case "parts" -> {
+                List<String> states = new ArrayList<>();
+                for (Hud.Part part : Hud.Part.values()) {
+                    states.add(part.word() + (hidden.contains(part) ? " off" : " on"));
+                }
+                p.sendMessage(Component.text("HUD parts: " + String.join(", ", states)
+                        + " (/hud hide <part>, /hud show <part>, /hud reset)", s.subtle()));
+            }
+            case "reset" -> {
+                hud.setHidden(p, EnumSet.noneOf(Hud.Part.class));
+                p.sendMessage(Component.text("Every HUD part is shown again.", s.subtle()));
+            }
+            case "hide", "show" -> {
+                Hud.Part part = args.length > 1 ? Hud.Part.parse(args[1]) : null;
+                if (part == null) {
+                    p.sendMessage(Component.text((args.length > 1 ? "There is no HUD part \"" + args[1] + "\". "
+                            : "Which part? ") + "Parts: " + String.join(", ", Hud.Part.words())
+                            + " (/hud parts shows yours).", s.subtle()));
+                    return true;
+                }
+                if (sub.equals("hide")) {
+                    hidden.add(part);
+                } else {
+                    hidden.remove(part);
+                }
+                hud.setHidden(p, hidden);
+                p.sendMessage(Component.text("HUD: " + part.word() + (sub.equals("hide") ? " hidden" : " shown")
+                        + (hidden.size() == Hud.Part.values().length
+                                ? " (every part is hidden: the top bar shows the server name; /hud off hides it)"
+                                : "") + ".", s.subtle()));
+            }
+            default -> {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void admin(CommandSender to, String[] args) {

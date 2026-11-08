@@ -93,6 +93,10 @@ one, it can be drunk forever (a harmless Nausea), and `/drink` replaces a lost o
 it its texture and chat texts an icon. The product's neutral art is below; a config repo brings its own.
 More: [operations: Branding](operations.md#branding).
 
+Players also get an optional **HUD**: a one-line bar at the top of the screen or the sidebar, with the server's
+health, speed, everyone online, their own ping and (with the client pack) their FPS. `/hud top|side|off` chooses
+where, and since v1.4.1 each player can trim it: `/hud hide tps`, `/hud show tps`, `/hud parts`, `/hud reset`.
+
 <img src="images/brand-server-icon.png" alt="The default server-list icon (enlarged)" width="128">
 <img src="images/brand-drink.png" alt="The default drink texture (enlarged)" width="128">
 

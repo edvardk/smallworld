@@ -691,7 +691,8 @@ mechanic touches farms). The defaults are generic; set your own and push (`mcctl
 
 **Commands** (everyone): `/help` (v1.3, alias `/commands`: the list below, built from what's on; vanilla's list is
 `/minecraft:help`), `/rules [page]`, `/discord`, `/hud [top|side|off]` (remembered per player; `/hud` alone
-switches between the top bar and off), `/drink` (and the drink's own `branding.drink.command`), `/compass
+switches between the top bar and off; v1.4.1: `/hud hide <part>`, `/hud show <part>`, `/hud parts`, `/hud reset`,
+below), `/drink` (and the drink's own `branding.drink.command`), `/compass
 [on|off|hide|show|auto]` and `/map [zoom]` (v1.3). A new player command goes into `Help.entries` (the plugin's
 one list; `tests/test_wayfinding.py` fails otherwise). Operators and the console: `/mcbrand status` (the plugin's task
 time, and the technical numbers: TPS, MSPT, p95) and `/mcbrand selftest` (renders every text with a sample player,
@@ -719,6 +720,13 @@ Smallworld mod; `xaerominimap:main` / `xaeroworldmap:main`, or any `xaero*` name
 - **side**: the sidebar (the client always puts it at the right): every player with a coloured dot and their ping
   (green under 80 ms, yellow under 200 ms, red above), then `Server Smooth`, `Speed 20.0/20 TPS`, `Tick time 8.3
   of 50 ms` and `FPS: press F3` (v1.4.1: `Your FPS 144 fps` instead for players with the Smallworld client mod).
+- **parts** (v1.4.1): each player can hide pieces they don't want, remembered per player like the mode:
+  `/hud hide <part>` and `/hud show <part>` (tab-completed), `/hud parts` (each part on or off), `/hud reset`
+  (everything back). Parts: `name` (the server name), `players` (`3 online`; in the sidebar the player list),
+  `health` (the Smooth word), `tps`, `mspt` (tick time), `ping` (in the sidebar the numbers next to the names) and
+  `fps`. The sidebar's title stays; a top bar with every part hidden shows just the server name (`/hud off` hides
+  the bar). The "Settling in…" bar after a join is the same for everyone. There is no server-wide default for the
+  parts: everyone starts with all of them.
 
 **What the words and numbers mean** (the same wording in the HUD, the tab list, `/lag` and the hover texts in chat):
 

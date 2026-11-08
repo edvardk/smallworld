@@ -184,11 +184,12 @@ def test_fps_is_shown_inside_the_hud_not_on_top_of_it() -> None:
     assert "p -> smallworld.fps(p.getUniqueId())" in plugin
     # boss bar: last, only with a report; sidebar: the hint line becomes the viewer's FPS
     assert (
-        "if (fps >= 0) {\n            b.append(sep).append(Component.text(Msg.fps(fps), Msg.fpsColor(fps)));"
-        in hud
+        "if (fps >= 0 && !hidden.contains(Part.FPS)) {\n"
+        "            parts.add(Component.text(Msg.fps(fps), Msg.fpsColor(fps)));" in hud
     )
-    assert "barText(online, speed, health, p.getPing(), fps.applyAsInt(p), glyphs.test(p))" in hud
-    assert "withFps(lines, fps.applyAsInt(p))" in hud
+    assert "barText(online, speed, health, p.getPing(), fps.applyAsInt(p), glyphs.test(p), hidden(p))" in hud
+    assert "forViewer(lines, fps.applyAsInt(p), hidden(p))" in hud
+    assert "List<Line> mine = withFps(lines, fps);" in hud
     assert "new Line(Component.text(Msg.YOUR_FPS, s.subtle())" in hud
     # the colours are the Worker's fair/poor thresholds
     worker = (REPO / "watchdog/worker.js").read_text()

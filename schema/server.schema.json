@@ -1400,7 +1400,7 @@
           "additionalProperties": false,
           "properties": {
             "enabled": {
-              "description": "Players may choose a HUD with /hud top|side|off: a one-line boss bar at the top (server health, speed, tick time, their connection) or the sidebar (players + ping as well).",
+              "description": "Players may choose a HUD with /hud top|side|off: a one-line boss bar at the top (server health, speed, tick time, their connection) or the sidebar (players + ping as well). v1.4.1: each player may hide parts of it (/hud hide|show <part>, /hud parts, /hud reset).",
               "type": "boolean",
               "default": true
             },

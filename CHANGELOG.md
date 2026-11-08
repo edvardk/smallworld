@@ -6,6 +6,13 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Added
+
+- Players choose which parts of the HUD they see: `/hud hide <part>`, `/hud show <part>`, `/hud parts` (what's on)
+  and `/hud reset`, remembered per player. Parts: `name`, `players`, `health`, `tps`, `mspt`, `ping`, `fps`
+  (top bar and sidebar alike; the sidebar's title stays, and a top bar with every part hidden shows just the
+  server name). Everyone starts with every part, as before.
+
 ### Security
 
 - Hardening from a CodeQL review (no vulnerability found): mc-agent's WebSocket and mcctl's HTTPS client set

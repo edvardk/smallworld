@@ -169,6 +169,11 @@ def main() -> int:
             "fps bar true/true, fps line Your FPS 24 fps hint true, fps colours green/yellow/red",
             "v1.4.1: the reported FPS inside the HUD (boss bar line, sidebar line), the Worker's thresholds",
         ),
+        (
+            "hud parts name,players,health,tps,mspt,ping,fps, hidden bar [ · 3 online · Smooth · 144 fps], all hidden"
+            " name only true, sidebar true, stored tps,fps, parse PING/PLAYERS/null",
+            "v1.4.1: /hud hide|show <part> on the boss bar and the sidebar, the stored form, the parser",
+        ),
         ("pack is out of date", "v1.2: the outdated-pack line"),
         (
             "xaero tracked 020a01000172000b000169000000040123456789abcdeffedcba9876543210060001783ff8000000000000"

@@ -3,6 +3,7 @@ package io.github.edvardk.mcbrand;
 import io.papermc.paper.scoreboard.numbers.NumberFormat;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -52,6 +53,11 @@ import org.bukkit.scoreboard.ScoreboardManager;
  *       sidebar in place of the "FPS: press F3" hint. Players without the mod see neither. The mod's own FPS
  *       element is then switched off for them ({@link Smallworld#clientHud}): it was drawn at the boss bar
  *       title's height, right of the 182-px bar, so it sat on this line's text.
+ *   <li>v1.4.1: <b>parts</b>: each player may hide pieces of the line ({@code /hud hide|show <part>}, {@code /hud
+ *       parts}, {@code /hud reset}; kept in their PDC like the mode): {@link Part} name, players, health, tps,
+ *       mspt, ping, fps. In the sidebar, {@code players} is the player list, {@code ping} the numbers next to the
+ *       names, and the title (the server name) stays. A top bar with every part hidden shows the server name alone
+ *       (/hud off hides the bar). The join grace period's "Settling in…" bar and sidebar are unchanged.
  * </ul>
  *
  * <p>The {glyph} icon (resource pack font) is shown only to players whose client loaded the pack ({@code glyphs}).
@@ -62,6 +68,64 @@ final class Hud {
     static final String ENTRY_PREFIX = "mcb."; // never '#': the client hides those
     private static final long LOG_EVERY_NS = 60_000_000_000L; // a failing write is logged at most once a minute
     private static final Component DOT = Component.text("● "); // ● before a player's name, coloured by ping
+
+    /** v1.4.1: the pieces of the HUD a player can hide (/hud hide|show), in the order the top bar shows them. */
+    enum Part {
+        NAME, PLAYERS, HEALTH, TPS, MSPT, PING, FPS;
+
+        String word() {
+            return name().toLowerCase(Locale.ROOT);
+        }
+
+        /** A part's name as players type it (any case; "online" = players), else null. */
+        static Part parse(String s) {
+            if (s == null) {
+                return null;
+            }
+            String v = s.toLowerCase(Locale.ROOT);
+            if (v.equals("online")) {
+                return PLAYERS;
+            }
+            for (Part p : values()) {
+                if (p.word().equals(v)) {
+                    return p;
+                }
+            }
+            return null;
+        }
+
+        static List<String> words() {
+            List<String> out = new ArrayList<>();
+            for (Part p : values()) {
+                out.add(p.word());
+            }
+            return out;
+        }
+    }
+
+    /** v1.4.1: the stored form of a player's hidden parts ("tps,mspt"); unknown names are dropped. */
+    static Set<Part> parseHidden(String stored) {
+        Set<Part> out = EnumSet.noneOf(Part.class);
+        if (stored != null) {
+            for (String w : stored.split(",")) {
+                Part p = Part.parse(w.strip());
+                if (p != null) {
+                    out.add(p);
+                }
+            }
+        }
+        return out;
+    }
+
+    static String formatHidden(Set<Part> hidden) {
+        List<String> out = new ArrayList<>();
+        for (Part p : Part.values()) {
+            if (hidden.contains(p)) {
+                out.add(p.word());
+            }
+        }
+        return String.join(",", out);
+    }
 
     enum Mode {
         TOP, SIDE, OFF;
@@ -91,6 +155,8 @@ final class Hud {
     long writeErrors;
     private final NamespacedKey modeKey;
     private final NamespacedKey legacyKey; // v1.0.0: BYTE 1 = sidebar on, 0 = off
+    private final NamespacedKey partsKey; // v1.4.1: STRING, the hidden parts ("tps,mspt"); absent = all shown
+    private final Map<UUID, Set<Part>> hiddenParts = new HashMap<>(); // cache of the PDC value, online players
     private final Map<UUID, Board> boards = new HashMap<>();
     private final Map<UUID, BossBar> bars = new HashMap<>();
     // v1.1: players in their join grace period: {join time ms, previous ping sample} (Msg.settled)
@@ -102,7 +168,12 @@ final class Hud {
     long maxNs;
     Msg.Speed lastSpeed;
 
-    record Line(Component text, Component number) {}
+    /** One sidebar line; {@code part}: the {@link Part} it belongs to (v1.4.1), null = always shown. */
+    record Line(Component text, Component number, Part part) {
+        Line(Component text, Component number) {
+            this(text, number, null);
+        }
+    }
 
     private static final class Board {
         final Scoreboard sb;
@@ -122,6 +193,7 @@ final class Hud {
         this.fps = fps;
         this.modeKey = new NamespacedKey(plugin, "hud_mode");
         this.legacyKey = new NamespacedKey(plugin, "hud");
+        this.partsKey = new NamespacedKey(plugin, "hud_hidden_parts");
     }
 
     /** The player's mode: their /hud choice, else the server's default (OFF while the HUD is switched off). */
@@ -170,6 +242,24 @@ final class Hud {
         apply(p, m);
     }
 
+    /** v1.4.1: the parts this player hid (/hud hide), read once from their PDC. */
+    Set<Part> hidden(Player p) {
+        return hiddenParts.computeIfAbsent(p.getUniqueId(),
+                id -> parseHidden(p.getPersistentDataContainer().get(partsKey, PersistentDataType.STRING)));
+    }
+
+    /** v1.4.1: /hud hide|show|reset: stored in the PDC (no key = everything shown), the HUD redrawn at once. */
+    void setHidden(Player p, Set<Part> hidden) {
+        Set<Part> v = hidden.isEmpty() ? EnumSet.noneOf(Part.class) : EnumSet.copyOf(hidden);
+        if (v.isEmpty()) {
+            p.getPersistentDataContainer().remove(partsKey);
+        } else {
+            p.getPersistentDataContainer().set(partsKey, PersistentDataType.STRING, formatHidden(v));
+        }
+        hiddenParts.put(p.getUniqueId(), v);
+        refresh(p);
+    }
+
     private void apply(Player p, Mode m) {
         hide(p);
         Msg.Speed speed = Msg.Speed.of(Bukkit.getServer());
@@ -183,8 +273,8 @@ final class Hud {
             Board b = newBoard(glyphs.test(p));
             boards.put(p.getUniqueId(), b);
             p.setScoreboard(b.sb);
-            update(b, withFps(lines(Bukkit.getServer(), speed, smoother.current(), settling.keySet(), unsettled),
-                    fps.applyAsInt(p)));
+            List<Line> all = lines(Bukkit.getServer(), speed, smoother.current(), settling.keySet(), unsettled);
+            update(b, unsettled ? all : forViewer(all, fps.applyAsInt(p), hidden(p)));
         }
     }
 
@@ -227,6 +317,7 @@ final class Hud {
     }
 
     void forget(UUID id) {
+        hiddenParts.remove(id);
         boards.remove(id);
         bars.remove(id);
         settling.remove(id);
@@ -294,7 +385,7 @@ final class Hud {
                     if (mine && settlingLines == null) {
                         settlingLines = lines(server, speed, health, unsettled, true);
                     }
-                    update(b, mine ? settlingLines : withFps(lines, fps.applyAsInt(p)));
+                    update(b, mine ? settlingLines : forViewer(lines, fps.applyAsInt(p), hidden(p)));
                 }
                 BossBar bar = bars.get(id);
                 if (bar != null) {
@@ -396,22 +487,45 @@ final class Hud {
 
     /** v1.4.1: ... · the viewer's ping · the viewer's FPS (the client mod's report; {@code fps < 0}: none). */
     Component barText(int online, Msg.Speed speed, Msg.Health health, int ping, int fps, boolean glyph) {
-        Component sep = Component.text(" · ", s.secondary());
-        TextComponent.Builder b = Component.text()
-                .append(Texts.withGlyph(Texts.bold(s.name(), s.accent()), glyph))
-                .append(sep)
-                .append(Component.text(online + " online", s.text()))
-                .append(sep)
-                .append(Component.text(health.word, health.color))
-                .append(sep)
-                .append(Component.text(Msg.tps(speed.tps(), false), Texts.tpsColor(speed.tps())))
-                .append(sep)
-                .append(Component.text(Msg.tick(speed.mspt(), false), Msg.tickColor(speed.mspt())));
-        if (ping >= 0) {
-            b.append(sep).append(Component.text("you " + ping + " ms", Texts.pingColor(ping)));
+        return barText(online, speed, health, ping, fps, glyph, Set.of());
+    }
+
+    /** v1.4.1: the line without the parts the viewer hid (/hud hide); every part hidden: the server name alone. */
+    Component barText(int online, Msg.Speed speed, Msg.Health health, int ping, int fps, boolean glyph,
+            Set<Part> hidden) {
+        Component name = Texts.withGlyph(Texts.bold(s.name(), s.accent()), glyph);
+        List<Component> parts = new ArrayList<>();
+        if (!hidden.contains(Part.NAME)) {
+            parts.add(name);
         }
-        if (fps >= 0) {
-            b.append(sep).append(Component.text(Msg.fps(fps), Msg.fpsColor(fps)));
+        if (!hidden.contains(Part.PLAYERS)) {
+            parts.add(Component.text(online + " online", s.text()));
+        }
+        if (!hidden.contains(Part.HEALTH)) {
+            parts.add(Component.text(health.word, health.color));
+        }
+        if (!hidden.contains(Part.TPS)) {
+            parts.add(Component.text(Msg.tps(speed.tps(), false), Texts.tpsColor(speed.tps())));
+        }
+        if (!hidden.contains(Part.MSPT)) {
+            parts.add(Component.text(Msg.tick(speed.mspt(), false), Msg.tickColor(speed.mspt())));
+        }
+        if (ping >= 0 && !hidden.contains(Part.PING)) {
+            parts.add(Component.text("you " + ping + " ms", Texts.pingColor(ping)));
+        }
+        if (fps >= 0 && !hidden.contains(Part.FPS)) {
+            parts.add(Component.text(Msg.fps(fps), Msg.fpsColor(fps)));
+        }
+        if (parts.isEmpty()) {
+            parts.add(name);
+        }
+        Component sep = Component.text(" · ", s.secondary());
+        TextComponent.Builder b = Component.text();
+        for (int i = 0; i < parts.size(); i++) {
+            if (i > 0) {
+                b.append(sep);
+            }
+            b.append(parts.get(i));
         }
         return b.build();
     }
@@ -424,7 +538,7 @@ final class Hud {
                 bar.color(BossBar.Color.WHITE);
                 return;
             }
-            bar.name(barText(online, speed, health, p.getPing(), fps.applyAsInt(p), glyphs.test(p)));
+            bar.name(barText(online, speed, health, p.getPing(), fps.applyAsInt(p), glyphs.test(p), hidden(p)));
             bar.progress(speed.load());
             bar.color(health.bar);
         } catch (RuntimeException e) {
@@ -445,34 +559,36 @@ final class Hud {
         List<Line> out = new ArrayList<>();
         List<Player> players = new ArrayList<>(server.getOnlinePlayers());
         players.sort((a, b) -> a.getName().compareToIgnoreCase(b.getName()));
-        out.add(new Line(Component.text("Online " + players.size() + "/" + server.getMaxPlayers(), s.subtle()), null));
+        out.add(new Line(Component.text("Online " + players.size() + "/" + server.getMaxPlayers(), s.subtle()), null,
+                Part.PLAYERS));
         int shown = Math.min(players.size(), s.hudMaxPlayers());
         for (int i = 0; i < shown; i++) {
             Player p = players.get(i);
             if (unsettled.contains(p.getUniqueId())) {
                 out.add(new Line(Component.text().append(DOT.color(s.subtle()))
-                        .append(Component.text(p.getName(), s.text())).build(), Component.text("\u2026", s.subtle())));
+                        .append(Component.text(p.getName(), s.text())).build(), Component.text("\u2026", s.subtle()),
+                        Part.PLAYERS));
                 continue;
             }
             int ping = p.getPing();
             out.add(new Line(Component.text().append(DOT.color(Texts.pingColor(ping)))
                     .append(Component.text(p.getName(), s.text())).build(),
-                    Component.text(ping + " ms", Texts.pingColor(ping))));
+                    Component.text(ping + " ms", Texts.pingColor(ping)), Part.PLAYERS));
         }
         if (players.size() > shown) {
-            out.add(new Line(Component.text(" +" + (players.size() - shown) + " more", s.subtle()), null));
+            out.add(new Line(Component.text(" +" + (players.size() - shown) + " more", s.subtle()), null, Part.PLAYERS));
         }
         out.add(new Line(Component.text(" "), null));
         if (forSettling) {
             out.add(new Line(Component.text(Msg.SERVER, s.subtle()), Component.text(Msg.SETTLING, s.subtle())));
             return out.subList(0, Math.min(out.size(), MAX_LINES));
         }
-        out.add(new Line(Component.text(Msg.SERVER, s.subtle()), Component.text(h.word, h.color)));
+        out.add(new Line(Component.text(Msg.SERVER, s.subtle()), Component.text(h.word, h.color), Part.HEALTH));
         out.add(new Line(Component.text(Msg.SPEED, s.subtle()),
-                Component.text(Msg.tps(speed.tps(), true), Texts.tpsColor(speed.tps()))));
+                Component.text(Msg.tps(speed.tps(), true), Texts.tpsColor(speed.tps())), Part.TPS));
         out.add(new Line(Component.text(Msg.TICK_TIME, s.subtle()),
-                Component.text(Msg.tick(speed.mspt(), true), Msg.tickColor(speed.mspt()))));
-        out.add(new Line(Component.text(Msg.FPS_HINT, s.subtle()), null));
+                Component.text(Msg.tick(speed.mspt(), true), Msg.tickColor(speed.mspt())), Part.MSPT));
+        out.add(new Line(Component.text(Msg.FPS_HINT, s.subtle()), null, Part.FPS));
         return out.subList(0, Math.min(out.size(), MAX_LINES));
     }
 
@@ -489,11 +605,38 @@ final class Hud {
             if (hint.equals(lines.get(i).text())) {
                 List<Line> out = new ArrayList<>(lines);
                 out.set(i, new Line(Component.text(Msg.YOUR_FPS, s.subtle()),
-                        Component.text(Msg.fps(fps), Msg.fpsColor(fps))));
+                        Component.text(Msg.fps(fps), Msg.fpsColor(fps)), Part.FPS));
                 return out;
             }
         }
         return lines;
+    }
+
+    /**
+     * v1.4.1: one viewer's sidebar: {@link #withFps}, then the parts they hid left out ({@code ping}: the numbers
+     * next to the names); blank lines left at the end go too. Nothing hidden and no FPS: the shared list itself.
+     */
+    List<Line> forViewer(List<Line> lines, int fps, Set<Part> hidden) {
+        List<Line> mine = withFps(lines, fps);
+        if (hidden.isEmpty()) {
+            return mine;
+        }
+        List<Line> out = new ArrayList<>();
+        for (Line l : mine) {
+            if (l.part() != null && hidden.contains(l.part())) {
+                continue;
+            }
+            out.add(l.part() == Part.PLAYERS && l.number() != null && hidden.contains(Part.PING)
+                    ? new Line(l.text(), null, l.part()) : l);
+        }
+        while (!out.isEmpty() && out.get(out.size() - 1).part() == null
+                && Texts.flat(out.get(out.size() - 1).text()).isBlank()) {
+            out.remove(out.size() - 1);
+        }
+        while (!out.isEmpty() && out.get(0).part() == null && Texts.flat(out.get(0).text()).isBlank()) {
+            out.remove(0);
+        }
+        return out;
     }
 
     /** Writes the lines that changed. Each line on its own: one that fails is logged (rate-limited) and retried
@@ -555,7 +698,29 @@ final class Hud {
                 + "; boss bar: " + Texts.flat(bar.name()) + " (fill " + String.format(Locale.ROOT, "%.2f", bar.progress())
                 + ", " + bar.color() + "); default mode " + Mode.parse(s.hudDefaultMode(), Mode.TOP).word() + "; "
                 + legacySelftest() + "; " + Msg.selftest() + ", settle " + s.hudSettleSeconds() + " s; settling bar: "
-                + Texts.flat(barTextSettling(1, false)) + "; " + fpsSelftest(server, speed);
+                + Texts.flat(barTextSettling(1, false)) + "; " + fpsSelftest(server, speed) + "; "
+                + partsSelftest(server, speed);
+    }
+
+    /**
+     * v1.4.1, for /mcbrand selftest: hidden parts on the boss bar (fixed inputs), every part hidden (the name
+     * alone), the sidebar without them, the stored form and the parser.
+     */
+    String partsSelftest(Server server, Msg.Speed speed) {
+        Set<Part> some = EnumSet.of(Part.TPS, Part.MSPT, Part.PING);
+        String bar = Texts.flat(barText(3, speed, Msg.Health.SMOOTH, 23, 144, false, some));
+        String all = Texts.flat(barText(3, speed, Msg.Health.SMOOTH, 23, 144, false, EnumSet.allOf(Part.class)));
+        boolean nameOnly = all.equals(Texts.flat(Texts.withGlyph(Texts.bold(s.name(), s.accent()), false)));
+        List<String> side = new ArrayList<>();
+        for (Line l : forViewer(lines(server, speed), 144, EnumSet.of(Part.TPS, Part.MSPT, Part.FPS))) {
+            side.add(Texts.flat(l.text()).strip());
+        }
+        boolean sideOk = side.contains(Msg.SERVER) && !side.contains(Msg.SPEED) && !side.contains(Msg.TICK_TIME)
+                && !side.contains(Msg.YOUR_FPS) && !side.contains(Msg.FPS_HINT);
+        return "hud parts " + String.join(",", Part.words()) + ", hidden bar ["
+                + bar.substring(bar.indexOf(" · ")) + "], all hidden name only " + nameOnly + ", sidebar " + sideOk
+                + ", stored " + formatHidden(parseHidden("fps,TPS, bogus,tps")) + ", parse "
+                + Part.parse("Ping") + "/" + Part.parse("online") + "/" + Part.parse("speed");
     }
 
     /**

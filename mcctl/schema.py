@@ -943,7 +943,8 @@ class BrandingHud:
     enabled: bool = opt(
         True,
         doc="Players may choose a HUD with /hud top|side|off: a one-line boss bar at the top (server "
-        "health, speed, tick time, their connection) or the sidebar (players + ping as well).",
+        "health, speed, tick time, their connection) or the sidebar (players + ping as well). v1.4.1: each "
+        "player may hide parts of it (/hud hide|show <part>, /hud parts, /hud reset).",
     )
     default_mode: Literal["top", "side", "off"] | None = opt(
         doc="v1.0.1: the HUD of players who never used /hud: top (boss bar), side (sidebar) or off.",

@@ -485,7 +485,55 @@ def test_hud_modes_default_top_and_backwards_compatible() -> None:
     assert "legacy hud 1->top/side 0->off" in (REPO / "tests/e2e/brand_check.py").read_text()
     assert "p.showBossBar(bar)" in src and "p.hideBossBar(bar)" in src
     plugin = (JAVA / "BrandPlugin.java").read_text()
-    assert 'case "hud" -> List.of("top", "side", "off")' in plugin
+    assert 'case "hud" -> List.of("top", "side", "off", "hide", "show", "parts", "reset")' in plugin
+
+
+def test_hud_parts_are_per_player_and_filter_both_hud_modes() -> None:
+    """v1.4.1: /hud hide|show <part>, /hud parts, /hud reset; kept in the player's PDC like the mode."""
+    src = (JAVA / "Hud.java").read_text()
+    plugin = (JAVA / "BrandPlugin.java").read_text()
+    enum = src.split("enum Part {", 1)[1].split(";", 1)[0]
+    parts = [p.strip().lower() for p in enum.split(",")]
+    assert parts == ["name", "players", "health", "tps", "mspt", "ping", "fps"]
+    assert 'new NamespacedKey(plugin, "hud_hidden_parts")' in src
+    # stored as a comma list (unknown names dropped); no key at all = everything shown (today's look)
+    assert "p.getPersistentDataContainer().remove(partsKey);" in src
+    assert "parseHidden(p.getPersistentDataContainer().get(partsKey, PersistentDataType.STRING))" in src
+    assert "hiddenParts.remove(id);" in src  # the cache goes with the player
+    # the boss bar: one condition per part, separators only between shown parts, all hidden = the name alone
+    bar = src.split("boolean glyph,\n            Set<Part> hidden) {", 1)[1].split("\n    }\n", 1)[0]
+    for part in ("NAME", "PLAYERS", "HEALTH", "TPS", "MSPT", "PING", "FPS"):
+        assert f"!hidden.contains(Part.{part})" in bar, part
+    assert "if (parts.isEmpty()) {\n            parts.add(name);" in bar
+    assert "if (i > 0) {\n                b.append(sep);" in bar
+    # the sidebar: every line tagged with its part; ping = the numbers next to the names
+    for tag in ("Part.PLAYERS));", "Part.HEALTH));", "Part.TPS));", "Part.MSPT));", "null, Part.FPS));"):
+        assert tag in src, tag
+    viewer = src.split("List<Line> forViewer(", 1)[1].split("\n    }\n", 1)[0]
+    assert "hidden.contains(l.part())" in viewer and "hidden.contains(Part.PING)" in viewer
+    # the join grace period is unchanged: the settling bar and lines are never filtered
+    assert "update(b, mine ? settlingLines : forViewer(" in src
+    assert "update(b, unsettled ? all : forViewer(" in src
+    settling = src.split("Component barTextSettling(", 1)[1].split("\n    }\n", 1)[0]
+    assert "hidden" not in settling
+    # the commands: parts, reset, hide|show <part> with a helpful message for an unknown part; tab completion
+    cmd = plugin.split("private boolean hudParts(Player p, String[] args) {", 1)[1].split("\n    }\n", 1)[0]
+    for case in ('case "parts" ->', 'case "reset" ->', 'case "hide", "show" ->'):
+        assert case in cmd, case
+    assert "There is no HUD part" in cmd and "Hud.Part.words()" in cmd
+    assert "if (args.length > 0 && hudParts(p, args)) {" in plugin
+    assert "return Hud.Part.words(); // v1.4.1" in plugin
+    assert '"[top|side|off|parts]"' in (JAVA / "Help.java").read_text()
+    usage = yaml.safe_load((REPO / "plugin/mc-brand/src/main/resources/plugin.yml").read_text())
+    assert "/hud hide|show <part>" in usage["commands"]["hud"]["usage"]
+    e2e = (REPO / "tests/e2e/brand_check.py").read_text()
+    for needle in (
+        '"hud parts name,players,health,tps,mspt,ping,fps, hidden bar [ · 3 online · Smooth · 144 fps], all hidden"',
+        '" name only true, sidebar true, stored tps,fps, parse PING/PLAYERS/null"',
+    ):
+        assert needle in e2e
+    ops = (REPO / "docs/operations.md").read_text()
+    assert "`/hud hide <part>`" in ops and "`/hud reset`" in ops
 
 
 def java_const(text: str, name: str) -> str:
