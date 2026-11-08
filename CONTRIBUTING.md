@@ -47,5 +47,6 @@ Which of these run depends on the paths a pull request changes, and the benches 
 ## Releasing
 
 See [docs/reference.md](docs/reference.md#releasing): versions in `pyproject.toml`, `mcctl/__init__.py` and
-`CHANGELOG.md` must agree (`scripts/release.py check vX.Y.Z`); the owner bumps them (`release.py bump`) and,
-after the merge, tags main's tip (`release.py tag`) and pushes the tag.
+`CHANGELOG.md` must agree (`scripts/release.py check vX.Y.Z`). The owner bumps them on the last feature branch
+(`release.py ship X.Y.Z`, or `--standalone`); merging the bump to main tags and releases it (`autotag.yml`),
+with `release.py tag` on main's tip as the fallback.

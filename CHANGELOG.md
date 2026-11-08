@@ -26,6 +26,12 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   the gate's auto-merge), watch the deploy, pull, then the new pin's `render`, `plan` and `apply` (its own typed
   confirmation). For minor/major releases and Worker changes; patch releases still roll out by themselves. In
   the dashboard's command palette as "Updates: rollout preview" and "Terminal: roll out the latest release".
+- No repeat CI run on release: when `autotag.yml` calls `release.yml` for a clean merge (the pull request's head
+  already contained main, so the merge commit's tree is the head's) whose head's latest `ci.yml` run passed with
+  every job a full run has, `release.yml` reuses that run instead of running the full CI again
+  (`scripts/release.py ci-reuse`, read-only API calls with `GITHUB_TOKEN`; [ci: Releases](docs/ci.md#releases-no-repeat-ci-run)).
+  Any doubt, an API error included, runs CI as before; a tag pushed by a person always runs it.
+  `gh workflow run ci.yml --ref <branch>` gives a release PR the full run it needs.
 
 - The update button: the config repo's workflow gets task `product-update` and input `product_version`
   (`latest` or `vX.Y.Z`) under Actions > server > Run workflow
@@ -85,6 +91,14 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   instead of every 4 ticks (5 times a second). It still costs nothing while nobody moves, and the boss bar is
   only resent when the line actually changed. The line is drawn by the server, so it trails a turn by the
   player's ping.
+- A live restore of a 26.x world (every dimension under `<level>/dimensions/`) no longer leaves stale pre-26
+  `<level>_nether/` or `<level>_the_end/` folders with region files next to it, which the server would merge
+  into the restored world or refuse to start over ("already exists"): `restore.py` moves them (never deletes
+  them) to `<server dir>/.restore-staging/aside/<UTC time>/`, which backups exclude, and logs the move. Pre-26
+  snapshots and folders without region files are left as before.
+- `cargo test` no longer leaves `sw-rej-*`, `swagent-*` and `swcore-*` folders and lock files in TMPDIR: the
+  agent and core crates' tests use a std-only drop guard (`testutil::TmpDir`, compiled for tests alone, like
+  smallworld-map's), also on a failing test. The binaries in `rust/dist/` are unchanged.
 
 ## [1.4.0] - 2026-11-08
 

@@ -411,3 +411,103 @@ def test_panel_restore_marks_the_server_admin_stopped_while_it_runs(tmp_path, mo
     with pytest.raises(SystemExit):
         restore.restore_panel("aaaaaaaa")
     assert not notify.admin_stopped() and "start minecraft.service" in box2.events
+
+
+# --- stale pre-26 dimension folders next to a restored 26.x world ------------------------------------------
+
+
+def _region(root: Path, rel: str) -> None:
+    (root / rel).mkdir(parents=True, exist_ok=True)
+    (root / rel / "r.0.0.mca").write_bytes(b"\0" * 8)
+
+
+def _live_restore(tmp_path: Path, monkeypatch, snapshot) -> Path:
+    """Run a live restore of the tree `snapshot(target)` builds into tmp_path/server; returns the server dir."""
+    srv = tmp_path / "server"
+
+    def fake_restore_to(snap, target: Path, verify: bool = False) -> Path:
+        target.mkdir(parents=True)
+        (target / "server.properties").write_text("level-name=world\n")
+        snapshot(target)
+        return target
+
+    monkeypatch.setattr(restore, "SERVER_DIR", srv)
+    monkeypatch.setattr(restore, "server_running", lambda: False)
+    monkeypatch.setattr(restore, "restore_to", fake_restore_to)
+    apply_in_process(monkeypatch)
+    restore.restore_live({"id": "x", "time": "2026-10-31T10:00:00Z", "paths": ["/srv"]})
+    return srv
+
+
+def test_live_restore_of_a_26x_world_moves_stale_pre26_folders_aside(tmp_path, monkeypatch, capsys) -> None:
+    srv = tmp_path / "server"
+    _region(srv, "world/region")  # the old pre-26 world: replaced by the snapshot's world/
+    _region(srv, "world_nether/DIM-1/region")
+    _region(srv, "world_the_end/DIM1/region")
+    (srv / "world.aside").mkdir()  # anything else still stays
+
+    def snapshot(target: Path) -> None:
+        for dim in ("overworld", "the_nether", "the_end"):
+            _region(target, f"world/dimensions/minecraft/{dim}/region")
+        (target / "world/level.dat").write_bytes(b"x")
+
+    _live_restore(tmp_path, monkeypatch, snapshot)
+    assert not (srv / "world_nether").exists() and not (srv / "world_the_end").exists()
+    (aside,) = (srv / restore.ASIDE_DIR).iterdir()
+    assert (aside / "world_nether/DIM-1/region/r.0.0.mca").is_file()  # moved, not deleted
+    assert (aside / "world_the_end/DIM1/region/r.0.0.mca").is_file()
+    assert (
+        not (srv / "world/region").exists() and (srv / "world/dimensions/minecraft/the_end/region").is_dir()
+    )
+    assert (srv / "world.aside").is_dir()
+    out = capsys.readouterr().out
+    assert "moved stale pre-26 folder world_nether/" in out and "world_the_end/" in out
+    # the safety area is excluded from backups (no snapshot carries those chunks) and survives later restores
+    assert restore.is_excluded(restore.ASIDE_DIR.split("/")[0])
+    assert any(p.endswith(".restore-staging") for p in backup.EXCLUDES)
+
+
+def test_live_restore_leaves_split_folders_alone_when_they_are_not_stale(tmp_path, monkeypatch) -> None:
+    srv = tmp_path / "server"
+    # without region files: nothing for the server to merge, so nothing is moved
+    (srv / "world_nether/DIM-1").mkdir(parents=True)
+    (srv / "world_nether/DIM-1/data.dat").write_text("x")
+
+    def snapshot_26x(target: Path) -> None:
+        _region(target, "world/dimensions/minecraft/overworld/region")
+
+    _live_restore(tmp_path, monkeypatch, snapshot_26x)
+    assert (srv / "world_nether/DIM-1/data.dat").exists() and not (srv / restore.ASIDE_DIR).exists()
+
+
+def test_live_restore_of_a_pre26_world_keeps_its_split_folders(tmp_path, monkeypatch) -> None:
+    srv = tmp_path / "server"
+    _region(srv, "world_the_end/DIM1/region")  # not in the snapshot; Paper migrates a pre-26 world as a whole
+
+    def snapshot_pre26(target: Path) -> None:
+        _region(target, "world/region")
+        _region(target, "world_nether/DIM-1/region")
+
+    _live_restore(tmp_path, monkeypatch, snapshot_pre26)
+    assert (srv / "world_the_end/DIM1/region/r.0.0.mca").is_file()
+    assert (srv / "world_nether/DIM-1/region/r.0.0.mca").is_file()
+    assert not (srv / restore.ASIDE_DIR).exists()
+
+
+def test_stale_legacy_worlds_decisions(tmp_path) -> None:
+    snap, root = tmp_path / "snap", tmp_path / "root"
+    _region(root, "survival_nether/DIM-1/region")
+    # a snapshot without any region files decides nothing
+    (snap / "survival").mkdir(parents=True)
+    assert restore.stale_legacy_worlds(snap, root, "survival") == []
+    # a snapshot mixing both layouts is restored as it is (worlds.check_layout refuses it; restore doesn't)
+    _region(snap, "survival/dimensions/minecraft/overworld/region")
+    _region(snap, "survival/DIM-1/region")
+    assert restore.stale_legacy_worlds(snap, root, "survival") == []
+    # the level name comes from the caller (server.properties), and a second run picks a fresh folder
+    (snap / "survival/DIM-1/region/r.0.0.mca").unlink()
+    now = datetime(2026, 11, 8, 12, 0, tzinfo=UTC)
+    (root / restore.ASIDE_DIR / "20261108T120000Z").mkdir(parents=True)
+    (moved,) = restore.stale_legacy_worlds(snap, root, "survival", now=now)
+    assert moved == root / restore.ASIDE_DIR / "20261108T120000Z-2" / "survival_nether"
+    assert (moved / "DIM-1/region/r.0.0.mca").is_file() and not (root / "survival_nether").exists()

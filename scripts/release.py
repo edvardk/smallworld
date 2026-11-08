@@ -7,6 +7,7 @@
     release.py bump 1.3.0 [--date YYYY-MM-DD]            # set the version, date the Unreleased section
     release.py autotag [--remote origin]                 # CI (autotag.yml): does main's version need a tag?
     release.py tag [v1.3.0] [--remote origin] [--push]   # fallback: annotated tag on the tip of <remote>/main
+    release.py ci-reuse --repo OWNER/REPO --sha SHA      # CI (release.yml): reuse the PR's full CI run?
 
 To release (docs/reference.md "Releasing"): `ship X.Y.Z` on the last feature branch (it merges a freshly
 fetched `<remote>/main` in if needed, never rebases), or `ship X.Y.Z --standalone` (a `release-X.Y.Z` branch
@@ -19,6 +20,8 @@ annotated tag vX.Y.Z on that commit and calls release.yml (CI, `check`, the GitH
 `tag` is the manual fallback (a tag pushed by a person starts release.yml by itself): it refuses unless HEAD
 is exactly the fetched tip of `<remote>/main`, the tree is clean, `check` passes and the tag is new, creates
 the annotated tag `vX.Y.Z` and prints the push command (`--push` pushes after a typed confirmation).
+`ci-reuse` lets release.yml (called by autotag.yml) skip re-running the full CI on a clean merge whose pull
+request already passed it (docs/ci.md "Releases"); any doubt answers no and CI runs.
 """
 
 from __future__ import annotations
@@ -33,6 +36,7 @@ import sys
 import tomllib
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 TAG = re.compile(r"v(\d+\.\d+\.\d+)")
@@ -464,6 +468,108 @@ def autotag(
     return ("none" if errors else "tag"), name, errors
 
 
+# ci.yml's jobs that a full run (release.yml's `full: true`) always runs. A pull request's run skips the ones
+# gated on `changes` (controller, plugin, rust, seeds, actionlint) when its diff doesn't need them, and lint's
+# code half with controller; a run in which every one of them ran and passed is a full run.
+# tests/test_release.py keeps this equal to ci.yml's jobs. Matrix jobs are "<id> (<values>)".
+CI_FULL_JOBS = (
+    "changes",
+    "lint",
+    "controller",
+    "gitleaks",
+    "publication",
+    "plugin",
+    "rust",
+    "seeds",
+    "actionlint",
+    "config-repo / validate",
+)
+CI_WORKFLOW = ".github/workflows/ci.yml"
+SHA = re.compile(r"[0-9a-f]{40}")
+
+
+def _gh_json(gh: GhRunner, path: str, root: Path) -> Any:  # noqa: ANN401 - GitHub's JSON
+    proc = gh(["api", "-H", "Accept: application/vnd.github+json", path], root)
+    if proc.returncode != 0:
+        raise ValueError(f"gh api {path.split('?')[0]} failed: {proc.stderr.strip()[:200]}")
+    return json.loads(proc.stdout)
+
+
+def ci_full_run(jobs: Sequence[dict[str, Any]]) -> str | None:
+    """None when the jobs of one ci.yml run (latest attempt) are a passed full run, else what is missing."""
+    for want in CI_FULL_JOBS:
+        mine = [j for j in jobs if j.get("name") == want or str(j.get("name", "")).startswith(f"{want} (")]
+        if not mine:
+            return f"job {want} isn't in the run"
+        bad = [j for j in mine if j.get("status") != "completed" or j.get("conclusion") != "success"]
+        if bad:
+            return f"job {bad[0].get('name')} is {bad[0].get('conclusion') or bad[0].get('status')}"
+    return None
+
+
+def ci_reuse(repo: str, sha: str, root: Path = ROOT, gh: GhRunner = run_gh) -> tuple[bool, str]:
+    """May release.yml skip its full CI run for the tagged commit `sha`? (True, why) only when `sha` is the
+    merge commit of a merged pull request into main from this repository, whose second parent is the pull
+    request's head and whose first parent (main before the merge) the head already contains (a clean merge:
+    the merge commit's tree is the head's, checked as well), and whose head's latest ci.yml run passed with
+    every job a full run has (ci_full_run). Anything else, an API error included, is (False, why): run CI."""
+    try:
+        if not re.fullmatch(r"[\w.-]+/[\w.-]+", repo) or not SHA.fullmatch(sha):
+            return False, f"not a repository and commit: {repo!r} {sha!r}"
+        pulls = _gh_json(gh, f"repos/{repo}/commits/{sha}/pulls", root)
+        merged = [
+            pr
+            for pr in pulls
+            if isinstance(pr, dict) and pr.get("merged_at") and pr.get("merge_commit_sha") == sha
+        ]
+        if len(merged) != 1:
+            return False, f"{sha[:12]} is the merge commit of {len(merged)} merged pull requests, not one"
+        pr = merged[0]
+        number, head = pr.get("number"), (pr.get("head") or {}).get("sha", "")
+        if (pr.get("base") or {}).get("ref") != "main":
+            return False, f"pull request #{number} wasn't merged into main"
+        if ((pr.get("head") or {}).get("repo") or {}).get("full_name") != repo:
+            return False, f"pull request #{number} comes from another repository"
+        if not SHA.fullmatch(head):
+            return False, f"pull request #{number} has no head commit"
+        commit = _gh_json(gh, f"repos/{repo}/git/commits/{sha}", root)
+        parents = [p.get("sha") for p in commit.get("parents", [])]
+        if len(parents) != 2 or parents[1] != head:
+            return False, f"{sha[:12]} isn't a merge of pull request #{number}'s head {head[:12]}"
+        compare = _gh_json(gh, f"repos/{repo}/compare/{parents[0]}...{head}", root)
+        if compare.get("behind_by") != 0:
+            return False, f"pull request #{number}'s head didn't contain main ({parents[0][:12]}) when merged"
+        head_commit = _gh_json(gh, f"repos/{repo}/git/commits/{head}", root)
+        tree, head_tree = (commit.get("tree") or {}).get("sha"), (head_commit.get("tree") or {}).get("sha")
+        if not tree or tree != head_tree:
+            return False, f"the merge commit's tree differs from pull request #{number}'s head"
+        runs = _gh_json(gh, f"repos/{repo}/actions/workflows/ci.yml/runs?head_sha={head}&per_page=100", root)
+        mine = [
+            r
+            for r in runs.get("workflow_runs", [])
+            if r.get("head_sha") == head and r.get("path", "").split("@")[0] == CI_WORKFLOW
+        ]
+        if not mine:
+            return False, f"no ci.yml run for pull request #{number}'s head {head[:12]}"
+        if any(r.get("status") != "completed" for r in mine):
+            return False, f"a ci.yml run for {head[:12]} hasn't finished"
+        run = max(mine, key=lambda r: (str(r.get("created_at", "")), int(r.get("id", 0))))
+        if run.get("conclusion") != "success":
+            return (
+                False,
+                f"the latest ci.yml run for {head[:12]} is {run.get('conclusion')}: {run.get('html_url')}",
+            )
+        data = _gh_json(gh, f"repos/{repo}/actions/runs/{run['id']}/jobs?filter=latest&per_page=100", root)
+        jobs = data.get("jobs", [])
+        if data.get("total_count") != len(jobs):
+            return False, f"ci.yml run {run['id']} has more jobs than one page"
+        if (missing := ci_full_run(jobs)) is not None:
+            return False, f"ci.yml run {run.get('html_url')} wasn't a full run: {missing}"
+        return True, f"pull request #{number}'s head passed a full CI run, same tree: {run.get('html_url')}"
+    except (ValueError, TypeError, KeyError, AttributeError) as e:  # JSON errors are ValueErrors
+        return False, f"couldn't decide ({type(e).__name__}: {e})"
+
+
 def _fail(errors: Sequence[str]) -> int:
     for e in errors:
         print(f"release: {e}", file=sys.stderr)
@@ -504,6 +610,9 @@ def main(
         "--remote", default="origin", help="the remote whose main HEAD must equal (default: origin)"
     )
     t.add_argument("--push", action="store_true", help="push the tag after a typed confirmation")
+    r = sub.add_parser("ci-reuse", help="CI (release.yml): reuse=true|false, may the full CI run be skipped?")
+    r.add_argument("--repo", required=True, help="OWNER/REPO (github.repository)")
+    r.add_argument("--sha", required=True, help="the tagged commit")
     args = p.parse_args(argv)
     if args.cmd == "ship":
         errors = ship(
@@ -528,6 +637,14 @@ def main(
             with open(out, "a", encoding="utf-8") as fh:
                 fh.write("\n".join(lines) + "\n")
         return _fail(errors) if errors else 0
+    if args.cmd == "ci-reuse":
+        reuse, why = ci_reuse(args.repo, args.sha, root, gh)
+        lines = [f"reuse={'true' if reuse else 'false'}"]
+        print(f"{lines[0]}: {why}")
+        if out := os.environ.get("GITHUB_OUTPUT"):
+            with open(out, "a", encoding="utf-8") as fh:
+                fh.write("\n".join(lines) + "\n")
+        return 0  # a "no" is an answer, not a failure: release.yml runs CI
     if args.cmd == "bump":
         errors = bump(args.version, root, args.date, git)
         if errors:

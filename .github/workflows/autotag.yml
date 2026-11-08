@@ -78,10 +78,11 @@ jobs:
       tag: ${{ needs.tag.outputs.tag }}
     # The ceiling for release.yml's jobs, as release.yml's own `ci` job grants ci.yml: contents write for the
     # release (and, like pull-requests and id-token, for the reusable server.yml's jobs that never run from the
-    # product's CI).
+    # product's CI); actions read for release.yml's `reuse` job (ci.yml's runs of the merged pull request).
     permissions:
       contents: write
       pull-requests: write
       id-token: write
+      actions: read
     secrets:
       PUBLISH_DENYLIST: ${{ secrets.PUBLISH_DENYLIST }} # ci.yml's publication job (docs/publishing.md)

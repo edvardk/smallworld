@@ -76,8 +76,11 @@ Where things are: `docs/map.md` (feature map + phase glossary).
 - The reusable workflow (`.github/workflows/server.yml`) is the product's public interface: config repos pin it by
   SHA and pass secrets explicitly. Keep its inputs/secrets backwards compatible within a major version.
 - Versioning: semver tags `vX.Y.Z`; `pyproject.toml`, `mcctl/__init__.py` and `CHANGELOG.md` must agree
-  (`scripts/release.py`: `bump X.Y.Z` on a branch, `tag` on the merged `origin/main`). Add user-visible changes
-  to `## [Unreleased]`.
+  (`scripts/release.py`; v1.5 flow in `docs/reference.md` "Releasing"): `release.py ship X.Y.Z` on the last feature
+  branch (or `ship X.Y.Z --standalone` from `origin/main`); merging the bump to main auto-tags it (`autotag.yml`,
+  which calls `release.yml`), with `release.py tag` on the merged `origin/main` as the fallback. Config repos
+  take it with `mcctl rollout` or the manual update workflow (patch releases by themselves). Add user-visible
+  changes to `## [Unreleased]`.
 - Python dependencies: direct pins in `requirements/{validate,deploy,dev}.in`, fully resolved with hashes in
   `requirements/*.txt` (pip-tools `pip-compile --generate-hashes`; command in `requirements/validate.in`), always
   installed with `--require-hashes --no-deps`. Recompile all three after editing a `.in`; `tests/test_consistency.py`

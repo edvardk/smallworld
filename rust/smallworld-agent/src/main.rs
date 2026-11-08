@@ -78,3 +78,6 @@ fn main() -> ExitCode {
     };
     ExitCode::from(code)
 }
+
+#[cfg(test)]
+mod testutil;

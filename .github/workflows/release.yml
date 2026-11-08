@@ -6,6 +6,8 @@ name: release
 #     there with GITHUB_TOKEN, and a tag pushed with GITHUB_TOKEN starts no workflow, so autotag calls this one
 #     with the tag as an input;
 #   - push of a tag vX.Y.Z by a person (the fallback, scripts/release.py tag --push).
+# From autotag, a clean merge of a pull request whose head passed a full CI run reuses it (job `reuse`); a tag
+# push always runs CI.
 # Config repos then pin the tag's commit SHA (their weekly update task opens the PR, P11).
 on:
   push:
@@ -24,7 +26,36 @@ permissions:
   contents: read
 
 jobs:
+  # Called by autotag.yml only: when the tagged commit is the clean merge of a pull request whose head already
+  # passed a full ci.yml run with the same tree, that run is reused instead of repeating it (docs/ci.md
+  # "Releases"; `release.py ci-reuse`, read-only API calls). Any doubt, a failure of this job included, and every
+  # tag a person pushes run CI as before.
+  reuse:
+    if: ${{ inputs.tag != '' && github.ref_type != 'tag' }} # autotag.yml's call, never a pushed tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read # the checkout, the commits and the compare
+      pull-requests: read # the pull request the merge commit belongs to
+      actions: read # ci.yml's runs and their jobs
+    outputs:
+      reuse: ${{ steps.decide.outputs.reuse }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+
+      - name: Did the merged pull request already pass a full CI run?
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: python3 scripts/release.py ci-reuse --repo "$REPO" --sha "$(git rev-parse HEAD)"
+
   ci:
+    needs: reuse
+    if: ${{ !cancelled() && (github.ref_type == 'tag' || needs.reuse.outputs.reuse != 'true') }}
     uses: ./.github/workflows/ci.yml
     with:
       full: true # everything: a release isn't scoped to the last diff
@@ -36,7 +67,11 @@ jobs:
       PUBLISH_DENYLIST: ${{ secrets.PUBLISH_DENYLIST }} # ci.yml's publication job (docs/publishing.md)
 
   release:
-    needs: ci
+    needs: [reuse, ci]
+    # CI passed here, or was skipped because `reuse` found the pull request's passed full run.
+    if: >-
+      ${{ !cancelled() && (needs.ci.result == 'success'
+      || (needs.ci.result == 'skipped' && needs.reuse.outputs.reuse == 'true' && github.ref_type != 'tag')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

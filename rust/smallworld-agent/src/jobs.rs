@@ -735,7 +735,7 @@ mod tests {
 
     #[test]
     fn the_file_lock_is_shared_across_runners() {
-        let path = std::env::temp_dir().join(format!("swagent-joblock-{}", std::process::id()));
+        let path = crate::testutil::TmpDir::new("swagent-joblock").child("job.lock");
         let guard = take_job_lock(&path).unwrap();
         let j = Jobs::new(Arc::new(|_v: &Value| {}), Some(path.clone()), false);
         let e = j

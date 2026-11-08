@@ -1,5 +1,6 @@
 """Release mechanics: tag == pyproject version == mcctl.__version__, CHANGELOG section (scripts/release.py)."""
 
+import json
 import shutil
 import subprocess
 from collections.abc import Sequence
@@ -7,6 +8,7 @@ from pathlib import Path
 
 import pytest
 import release
+import yaml
 from conftest import REPO
 
 import mcctl
@@ -520,3 +522,183 @@ def test_check_defaults_to_the_pyproject_version(tmp_path) -> None:
     work, _ = make_repo(tmp_path)
     release_commit(work)
     assert release.main(["check"], work, git) == 0
+
+
+# --- ci-reuse: release.yml skips the repeat CI run on a clean merge whose PR passed a full run ------------
+
+MERGE, HEAD, MAIN = "a" * 40, "b" * 40, "c" * 40
+RUN_URL = "https://github.com/o/r/actions/runs/7"
+
+
+def full_jobs() -> list[dict]:
+    names = [n for n in release.CI_FULL_JOBS if n != "controller"]
+    names += ["controller (ubuntu-24.04, 3.12)", "controller (macos-15, 3.13)", "config-repo / deploy"]
+    jobs = [{"name": n, "status": "completed", "conclusion": "success"} for n in names]
+    jobs[-1]["conclusion"] = "skipped"  # the reusable server.yml's deploy never runs from the product's CI
+    return jobs
+
+
+class FakeApi:
+    """`gh api <path>` from a dict of path -> JSON (a missing path is an API error); records the paths."""
+
+    def __init__(self, **changes: object) -> None:
+        pr = {
+            "number": 41,
+            "merged_at": "2026-11-08T10:00:00Z",
+            "merge_commit_sha": MERGE,
+            "base": {"ref": "main"},
+            "head": {"sha": HEAD, "repo": {"full_name": "o/r"}},
+        }
+        run = {
+            "id": 7,
+            "head_sha": HEAD,
+            "path": ".github/workflows/ci.yml",
+            "status": "completed",
+            "conclusion": "success",
+            "created_at": "2026-11-08T09:00:00Z",
+            "html_url": RUN_URL,
+        }
+        jobs = full_jobs()
+        self.responses: dict[str, object] = {
+            f"repos/o/r/commits/{MERGE}/pulls": [pr],
+            f"repos/o/r/git/commits/{MERGE}": {
+                "tree": {"sha": "t1"},
+                "parents": [{"sha": MAIN}, {"sha": HEAD}],
+            },
+            f"repos/o/r/compare/{MAIN}...{HEAD}": {"behind_by": 0, "ahead_by": 3},
+            f"repos/o/r/git/commits/{HEAD}": {"tree": {"sha": "t1"}, "parents": [{"sha": MAIN}]},
+            f"repos/o/r/actions/workflows/ci.yml/runs?head_sha={HEAD}&per_page=100": {"workflow_runs": [run]},
+            "repos/o/r/actions/runs/7/jobs?filter=latest&per_page=100": {
+                "total_count": len(jobs),
+                "jobs": jobs,
+            },
+        }
+        self.pr, self.run, self.jobs = pr, run, jobs
+        self.paths: list[str] = []
+
+    def __call__(self, args: Sequence[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        args = list(args)
+        assert args[0] == "api" and "GITHUB_TOKEN" not in " ".join(args)
+        path = args[-1]
+        self.paths.append(path)
+        if path not in self.responses:
+            return subprocess.CompletedProcess(args, 1, "", "HTTP 404: Not Found")
+        body = self.responses[path]
+        return subprocess.CompletedProcess(args, 0, body if isinstance(body, str) else json.dumps(body), "")
+
+
+def test_ci_reuse_a_clean_merge_whose_head_passed_a_full_run(tmp_path, monkeypatch, capsys) -> None:
+    api = FakeApi()
+    reuse, why = release.ci_reuse("o/r", MERGE, gh=api)
+    assert reuse is True and "#41" in why and RUN_URL in why
+    # read-only GETs only (gh api without -X/-f/--input is a GET)
+    assert len(api.paths) == 6
+    # the CLI writes reuse=true to GITHUB_OUTPUT and always exits 0
+    out = tmp_path / "out"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+    assert release.main(["ci-reuse", "--repo", "o/r", "--sha", MERGE], gh=FakeApi()) == 0
+    assert out.read_text() == "reuse=true\n" and capsys.readouterr().out.startswith("reuse=true: ")
+    out.write_text("")
+    assert release.main(["ci-reuse", "--repo", "o/r", "--sha", HEAD], gh=FakeApi()) == 0
+    assert out.read_text() == "reuse=false\n"
+
+
+def _no(api: FakeApi, sha: str = MERGE, repo: str = "o/r") -> str:
+    reuse, why = release.ci_reuse(repo, sha, gh=api)
+    assert reuse is False, why
+    return why
+
+
+def test_ci_reuse_refuses_anything_but_a_clean_merge() -> None:
+    assert "not a repository and commit" in _no(FakeApi(), sha="HEAD")
+    assert "not a repository and commit" in _no(FakeApi(), repo="o/r; rm")
+    api = FakeApi()
+    api.responses[f"repos/o/r/commits/{MERGE}/pulls"] = []  # a direct push to main
+    assert "0 merged pull requests" in _no(api)
+    api = FakeApi()
+    api.pr["merged_at"] = None  # an open PR that merely contains the commit
+    assert "0 merged pull requests" in _no(api)
+    api = FakeApi()
+    api.pr["base"] = {"ref": "v1"}
+    assert "wasn't merged into main" in _no(api)
+    api = FakeApi()
+    api.pr["head"]["repo"] = {"full_name": "fork/r"}  # its CI ran without the repository's secrets
+    assert "another repository" in _no(api)
+    api = FakeApi()  # squash or rebase merge: one parent
+    api.responses[f"repos/o/r/git/commits/{MERGE}"] = {"tree": {"sha": "t1"}, "parents": [{"sha": MAIN}]}
+    assert "isn't a merge" in _no(api)
+    api = FakeApi()  # main moved on after the PR's head: its CI didn't test what was merged
+    api.responses[f"repos/o/r/compare/{MAIN}...{HEAD}"] = {"behind_by": 1, "ahead_by": 3}
+    assert "didn't contain main" in _no(api)
+    api = FakeApi()
+    api.responses[f"repos/o/r/git/commits/{HEAD}"] = {"tree": {"sha": "t2"}}
+    assert "tree differs" in _no(api)
+
+
+def test_ci_reuse_needs_a_finished_passed_full_run_of_the_head() -> None:
+    api = FakeApi()
+    api.responses[f"repos/o/r/actions/workflows/ci.yml/runs?head_sha={HEAD}&per_page=100"] = {
+        "workflow_runs": []
+    }
+    assert "no ci.yml run" in _no(api)
+    api = FakeApi()
+    api.run["head_sha"] = MAIN
+    assert "no ci.yml run" in _no(api)
+    api = FakeApi()
+    api.run["path"] = ".github/workflows/release.yml"
+    assert "no ci.yml run" in _no(api)
+    api = FakeApi()
+    api.run["conclusion"] = "failure"
+    assert "is failure" in _no(api)
+    api = FakeApi()  # a re-run still going
+    api.responses[f"repos/o/r/actions/workflows/ci.yml/runs?head_sha={HEAD}&per_page=100"] = {
+        "workflow_runs": [api.run, {**api.run, "id": 8, "status": "in_progress", "conclusion": None}]
+    }
+    assert "hasn't finished" in _no(api)
+    api = FakeApi()  # the latest run decides: an older green one doesn't outweigh a newer red one
+    newer = {**api.run, "id": 8, "conclusion": "failure", "created_at": "2026-11-08T09:30:00Z"}
+    api.responses[f"repos/o/r/actions/workflows/ci.yml/runs?head_sha={HEAD}&per_page=100"] = {
+        "workflow_runs": [api.run, newer]
+    }
+    assert "is failure" in _no(api)
+    # a scoped pull request run (rust untouched: job skipped) or a bump-only one (no controller) isn't full
+    for name, conclusion in [("rust", "skipped"), ("controller (macos-15, 3.13)", "failure")]:
+        api = FakeApi()
+        next(j for j in api.jobs if j["name"] == name)["conclusion"] = conclusion
+        assert f"job {name} is {conclusion}" in _no(api)
+    api = FakeApi()
+    api.jobs[:] = [j for j in api.jobs if not j["name"].startswith("controller")]
+    api.responses["repos/o/r/actions/runs/7/jobs?filter=latest&per_page=100"] = {
+        "total_count": len(api.jobs),
+        "jobs": api.jobs,
+    }
+    assert "job controller isn't in the run" in _no(api)
+    api = FakeApi()
+    api.responses["repos/o/r/actions/runs/7/jobs?filter=latest&per_page=100"] = {
+        "total_count": 120,
+        "jobs": [],
+    }
+    assert "more jobs than one page" in _no(api)
+
+
+def test_ci_reuse_fails_safe_on_api_trouble() -> None:
+    api = FakeApi()
+    del api.responses[f"repos/o/r/compare/{MAIN}...{HEAD}"]
+    assert "HTTP 404" in _no(api)
+    api = FakeApi()
+    api.responses[f"repos/o/r/commits/{MERGE}/pulls"] = "<html>rate limited</html>"
+    assert "couldn't decide (JSONDecodeError" in _no(api)
+    api = FakeApi()
+    api.responses[f"repos/o/r/git/commits/{MERGE}"] = ["not", "an", "object"]
+    assert "couldn't decide (AttributeError" in _no(api)
+    assert "couldn't decide" in _no(lambda args, cwd: subprocess.CompletedProcess(args, 0, "null", ""))
+
+
+def test_ci_full_jobs_are_cis_jobs() -> None:
+    """CI_FULL_JOBS names every job of ci.yml (job ids, no `name:`), config-repo by its reusable validate job."""
+    ci = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
+    ids = set(ci["jobs"])
+    assert not any("name" in job for job in ci["jobs"].values())
+    server = yaml.safe_load((REPO / ".github/workflows/server.yml").read_text())
+    assert "name" not in server["jobs"]["validate"]
+    assert set(release.CI_FULL_JOBS) == (ids - {"config-repo"}) | {"config-repo / validate"}
