@@ -99,6 +99,38 @@ required check would wait forever. Neither workflow therefore has a path filter:
 
 Not a required check.
 
+## The agent parity harness
+
+`tests/agent_parity/` is the black-box bar for a second mc-agent implementation (the Rust port planned for
+v1.4.0): it runs an implementation as a process and compares what it does with golden traces from the Python
+agent. Part of the normal `pytest -q` on Linux (lint and the Linux `controller` cells), about 20 s: the scenarios
+run in parallel threads.
+
+- **Isolation without test hooks.** Each run is `unshare -rm` (user + mount namespace) through
+  `tests/agent_parity/nsinit.py`: tmpfs over `/opt`, `/var/lib` and `/run` (their entries bound back), then the
+  scenario's directories at `/opt/minecraft`, `/var/lib/{minecraft,mc-agent,mc-snapshots}`,
+  `/run/{mc-verdicts,mc-telemetry}` and a harness socket at `/run/systemd/journal/socket` (the audit entries).
+  No production code changed for it. Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor, so
+  ci.yml lifts that (`sysctl kernel.apparmor_restrict_unprivileged_userns=0`) and sets `AGENT_PARITY_REQUIRE=1`,
+  which turns "namespaces unavailable" from a skip into a failure.
+- **Fakes** (`fakes.py`, `fake_systemd.py`): the Worker's agent routes and its WebSocket (watchdog/worker.js's
+  protocol), GitHub's contents/refs/pulls endpoints and the two Mojang lookups, Discord and the watchdog's
+  `/maintenance` over TLS (a throw-away certificate via `SSL_CERT_FILE`), RCON, and `systemctl`/`journalctl`
+  first on `PATH`, recording their argv.
+- **Traces**: requests per fake, audit datagrams (byte-exact fields), RCON commands per connection, systemctl
+  and journalctl calls, the files a run changed (content, mode), cli output and exit codes. Times, nonces and
+  host metrics are normalised (`harness.norm`, `norm_sample`); a scenario marks a section it can't make
+  deterministic as not compared (`s.skip`, e.g. which pull request an interleaved write lands in).
+- **Running it**: `pytest tests/agent_parity` (= `--impl=python`); `--impl=rust --agent-bin=PATH` runs the same
+  scenarios against a binary invoked as `BIN run` and `BIN cli LOGIN ACTION [ARGS_JSON]` (skipped without one);
+  `--update-golden` rewrites `golden/` from the Python agent after an intended behaviour change. The
+  `state_roundtrip` scenario always runs Python before and after the implementation under test.
+- **Test vectors** for the pure functions (console allowlist, `_one_line`, the scrubber, `verify`,
+  players.yml, `merge_sync`, tokens, alert texts, parsers, WebSocket framing, `json.dumps`, `round`, Unicode
+  properties, constants): `python scripts/parity_vectors.py` writes `tests/agent_parity/vectors/*.json` for
+  `cargo test`; `tests/agent_parity/test_vectors.py` fails when they are stale. Files marked
+  `unicode_sensitive` are only compared on a Python with the Unicode version they were generated with.
+
 ## Guards against wasted minutes
 
 - `concurrency` per workflow and ref: a new push to a pull request cancels the obsolete run. Scheduled and

@@ -44,6 +44,18 @@ CONTROLLER_TESTS = frozenset(
 )
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """tests/agent_parity: which mc-agent implementation the parity scenarios run (docs/ci.md)."""
+    group = parser.getgroup("agent parity (tests/agent_parity)")
+    group.addoption("--impl", choices=("python", "rust"), default="python",
+                    help="the mc-agent implementation the parity scenarios run (default: python)")  # fmt: skip
+    group.addoption(
+        "--agent-bin", default="", help="--impl=rust: the agent binary (`BIN run`, `BIN cli ...`)"
+    )
+    group.addoption("--update-golden", action="store_true",
+                    help="--impl=python: rewrite tests/agent_parity/golden/ from this run")  # fmt: skip
+
+
 def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool | None:
     """On Windows only the controller's test files are collected (the others import the box's POSIX-only
     scripts, and a collection error would stop the run)."""

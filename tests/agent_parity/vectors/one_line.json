@@ -1,0 +1,832 @@
+{
+ "meta": {
+  "generator": "scripts/parity_vectors.py",
+  "doc": "_one_line(text, limit): NFKC, every isspace() char -> ' ' (U+001C-U+001F too), bad categories dropped, collapsed, first `limit` code points",
+  "unicode_sensitive": true,
+  "unidata_version": "15.1.0"
+ },
+ "vectors": [
+  {
+   "input": null,
+   "limit": 100,
+   "output": ""
+  },
+  {
+   "input": "",
+   "limit": 100,
+   "output": ""
+  },
+  {
+   "input": "",
+   "limit": 200,
+   "output": ""
+  },
+  {
+   "input": "",
+   "limit": 256,
+   "output": ""
+  },
+  {
+   "input": "",
+   "limit": 5,
+   "output": ""
+  },
+  {
+   "input": "plain",
+   "limit": 100,
+   "output": "plain"
+  },
+  {
+   "input": "plain",
+   "limit": 200,
+   "output": "plain"
+  },
+  {
+   "input": "plain",
+   "limit": 256,
+   "output": "plain"
+  },
+  {
+   "input": "plain",
+   "limit": 5,
+   "output": "plain"
+  },
+  {
+   "input": "  padded  ",
+   "limit": 100,
+   "output": "padded"
+  },
+  {
+   "input": "  padded  ",
+   "limit": 200,
+   "output": "padded"
+  },
+  {
+   "input": "  padded  ",
+   "limit": 256,
+   "output": "padded"
+  },
+  {
+   "input": "  padded  ",
+   "limit": 5,
+   "output": "padde"
+  },
+  {
+   "input": "a\nb",
+   "limit": 100,
+   "output": "a b"
+  },
+  {
+   "input": "a\nb",
+   "limit": 200,
+   "output": "a b"
+  },
+  {
+   "input": "a\nb",
+   "limit": 256,
+   "output": "a b"
+  },
+  {
+   "input": "a\nb",
+   "limit": 5,
+   "output": "a b"
+  },
+  {
+   "input": "a\r\nb",
+   "limit": 100,
+   "output": "a b"
+  },
+  {
+   "input": "a\r\nb",
+   "limit": 200,
+   "output": "a b"
+  },
+  {
+   "input": "a\r\nb",
+   "limit": 256,
+   "output": "a b"
+  },
+  {
+   "input": "a\r\nb",
+   "limit": 5,
+   "output": "a b"
+  },
+  {
+   "input": "a\tb",
+   "limit": 100,
+   "output": "a b"
+  },
+  {
+   "input": "a\tb",
+   "limit": 200,
+   "output": "a b"
+  },
+  {
+   "input": "a\tb",
+   "limit": 256,
+   "output": "a b"
+  },
+  {
+   "input": "a\tb",
+   "limit": 5,
+   "output": "a b"
+  },
+  {
+   "input": "a\u000bb",
+   "limit": 100,
+   "output": "a b"
+  },
+  {
+   "input": "a\u000bb",
+   "limit": 200,
+   "output": "a b"
+  },
+  {
+   "input": "a\u000bb",
+   "limit": 256,
+   "output": "a b"
+  },
+  {
+   "input": "a\u000bb",
+   "limit": 5,
+   "output": "a b"
+  },
+  {
+   "input": "a\fb",
+   "limit": 100,
+   "output": "a b"
+  },
+  {
+   "input": "a\fb",
+   "limit": 200,
+   "output": "a b"
+  },
+  {
+   "input": "a\fb",
+   "limit": 256,
+   "output": "a b"
+  },
+  {
+   "input": "a\fb",
+   "limit": 5,
+   "output": "a b"
+  },
+  {
+   "input": "a\u001cb",
+   "limit": 100,
+   "output": "a b"
+  },
+  {
+   "input": "a\u001cb",
+   "limit": 200,
+   "output": "a b"
+  },
+  {
+   "input": "a\u001cb",
+   "limit": 256,
+   "output": "a b"
+  },
+  {
+   "input": "a\u001cb",
+   "limit": 5,
+   "output": "a b"
+  },
+  {
+   "input": "a\u001db",
+   "limit": 100,
+   "output": "a b"
+  },
+  {
+   "input": "a\u001db",
+   "limit": 200,
+   "output": "a b"
+  },
+  {
+   "input": "a\u001db",
+   "limit": 256,
+   "output": "a b"
+  },
+  {
+   "input": "a\u001db",
+   "limit": 5,
+   "output": "a b"
+  },
+  {
+   "input": "a\u001eb",
+   "limit": 100,
+   "output": "a b"
+  },
+  {
+   "input": "a\u001eb",
+   "limit": 200,
+   "output": "a b"
+  },
+  {
+   "input": "a\u001eb",
+   "limit": 256,
+   "output": "a b"
+  },
+  {
+   "input": "a\u001eb",
+   "limit": 5,
+   "output": "a b"
+  },
+  {
+   "input": "a\u001fb",
+   "limit": 100,
+   "output": "a b"
+  },
+  {
+   "input": "a\u001fb",
+   "limit": 200,
+   "output": "a b"
+  },
+  {
+   "input": "a\u001fb",
+   "limit": 256,
+   "output": "a b"
+  },
+  {
+   "input": "a\u001fb",
+   "limit": 5,
+   "output": "a b"
+  },
+  {
+   "input": "a\u0085b",
+   "limit": 100,
+   "output": "a b"
+  },
+  {
+   "input": "a\u0085b",
+   "limit": 200,
+   "output": "a b"
+  },
+  {
+   "input": "a\u0085b",
+   "limit": 256,
+   "output": "a b"
+  },
+  {
+   "input": "a\u0085b",
+   "limit": 5,
+   "output": "a b"
+  },
+  {
+   "input": "a\u00a0b",
+   "limit": 100,
+   "output": "a b"
+  },
+  {
+   "input": "a\u00a0b",
+   "limit": 200,
+   "output": "a b"
+  },
+  {
+   "input": "a\u00a0b",
+   "limit": 256,
+   "output": "a b"
+  },
+  {
+   "input": "a\u00a0b",
+   "limit": 5,
+   "output": "a b"
+  },
+  {
+   "input": "a\u1680b",
+   "limit": 100,
+   "output": "a b"
+  },
+  {
+   "input": "a\u1680b",
+   "limit": 200,
+   "output": "a b"
+  },
+  {
+   "input": "a\u1680b",
+   "limit": 256,
+   "output": "a b"
+  },
+  {
+   "input": "a\u1680b",
+   "limit": 5,
+   "output": "a b"
+  },
+  {
+   "input": "a\u2000b",
+   "limit": 100,
+   "output": "a b"
+  },
+  {
+   "input": "a\u2000b",
+   "limit": 200,
+   "output": "a b"
+  },
+  {
+   "input": "a\u2000b",
+   "limit": 256,
+   "output": "a b"
+  },
+  {
+   "input": "a\u2000b",
+   "limit": 5,
+   "output": "a b"
+  },
+  {
+   "input": "a\u2028b",
+   "limit": 100,
+   "output": "a b"
+  },
+  {
+   "input": "a\u2028b",
+   "limit": 200,
+   "output": "a b"
+  },
+  {
+   "input": "a\u2028b",
+   "limit": 256,
+   "output": "a b"
+  },
+  {
+   "input": "a\u2028b",
+   "limit": 5,
+   "output": "a b"
+  },
+  {
+   "input": "a\u2029b",
+   "limit": 100,
+   "output": "a b"
+  },
+  {
+   "input": "a\u2029b",
+   "limit": 200,
+   "output": "a b"
+  },
+  {
+   "input": "a\u2029b",
+   "limit": 256,
+   "output": "a b"
+  },
+  {
+   "input": "a\u2029b",
+   "limit": 5,
+   "output": "a b"
+  },
+  {
+   "input": "a\u202fb",
+   "limit": 100,
+   "output": "a b"
+  },
+  {
+   "input": "a\u202fb",
+   "limit": 200,
+   "output": "a b"
+  },
+  {
+   "input": "a\u202fb",
+   "limit": 256,
+   "output": "a b"
+  },
+  {
+   "input": "a\u202fb",
+   "limit": 5,
+   "output": "a b"
+  },
+  {
+   "input": "a\u205fb",
+   "limit": 100,
+   "output": "a b"
+  },
+  {
+   "input": "a\u205fb",
+   "limit": 200,
+   "output": "a b"
+  },
+  {
+   "input": "a\u205fb",
+   "limit": 256,
+   "output": "a b"
+  },
+  {
+   "input": "a\u205fb",
+   "limit": 5,
+   "output": "a b"
+  },
+  {
+   "input": "a\u3000b",
+   "limit": 100,
+   "output": "a b"
+  },
+  {
+   "input": "a\u3000b",
+   "limit": 200,
+   "output": "a b"
+  },
+  {
+   "input": "a\u3000b",
+   "limit": 256,
+   "output": "a b"
+  },
+  {
+   "input": "a\u3000b",
+   "limit": 5,
+   "output": "a b"
+  },
+  {
+   "input": "a\u0000b",
+   "limit": 100,
+   "output": "ab"
+  },
+  {
+   "input": "a\u0000b",
+   "limit": 200,
+   "output": "ab"
+  },
+  {
+   "input": "a\u0000b",
+   "limit": 256,
+   "output": "ab"
+  },
+  {
+   "input": "a\u0000b",
+   "limit": 5,
+   "output": "ab"
+  },
+  {
+   "input": "a\u0007b",
+   "limit": 100,
+   "output": "ab"
+  },
+  {
+   "input": "a\u0007b",
+   "limit": 200,
+   "output": "ab"
+  },
+  {
+   "input": "a\u0007b",
+   "limit": 256,
+   "output": "ab"
+  },
+  {
+   "input": "a\u0007b",
+   "limit": 5,
+   "output": "ab"
+  },
+  {
+   "input": "a\u007fb",
+   "limit": 100,
+   "output": "ab"
+  },
+  {
+   "input": "a\u007fb",
+   "limit": 200,
+   "output": "ab"
+  },
+  {
+   "input": "a\u007fb",
+   "limit": 256,
+   "output": "ab"
+  },
+  {
+   "input": "a\u007fb",
+   "limit": 5,
+   "output": "ab"
+  },
+  {
+   "input": "a\u200bb",
+   "limit": 100,
+   "output": "ab"
+  },
+  {
+   "input": "a\u200bb",
+   "limit": 200,
+   "output": "ab"
+  },
+  {
+   "input": "a\u200bb",
+   "limit": 256,
+   "output": "ab"
+  },
+  {
+   "input": "a\u200bb",
+   "limit": 5,
+   "output": "ab"
+  },
+  {
+   "input": "a\u200db",
+   "limit": 100,
+   "output": "ab"
+  },
+  {
+   "input": "a\u200db",
+   "limit": 200,
+   "output": "ab"
+  },
+  {
+   "input": "a\u200db",
+   "limit": 256,
+   "output": "ab"
+  },
+  {
+   "input": "a\u200db",
+   "limit": 5,
+   "output": "ab"
+  },
+  {
+   "input": "a\ufeffb",
+   "limit": 100,
+   "output": "ab"
+  },
+  {
+   "input": "a\ufeffb",
+   "limit": 200,
+   "output": "ab"
+  },
+  {
+   "input": "a\ufeffb",
+   "limit": 256,
+   "output": "ab"
+  },
+  {
+   "input": "a\ufeffb",
+   "limit": 5,
+   "output": "ab"
+  },
+  {
+   "input": "a\ud7ffb",
+   "limit": 100,
+   "output": "ab"
+  },
+  {
+   "input": "a\ud7ffb",
+   "limit": 200,
+   "output": "ab"
+  },
+  {
+   "input": "a\ud7ffb",
+   "limit": 256,
+   "output": "ab"
+  },
+  {
+   "input": "a\ud7ffb",
+   "limit": 5,
+   "output": "ab"
+  },
+  {
+   "input": "a\ue000b",
+   "limit": 100,
+   "output": "ab"
+  },
+  {
+   "input": "a\ue000b",
+   "limit": 200,
+   "output": "ab"
+  },
+  {
+   "input": "a\ue000b",
+   "limit": 256,
+   "output": "ab"
+  },
+  {
+   "input": "a\ue000b",
+   "limit": 5,
+   "output": "ab"
+  },
+  {
+   "input": "a\udb80\udc00b",
+   "limit": 100,
+   "output": "ab"
+  },
+  {
+   "input": "a\udb80\udc00b",
+   "limit": 200,
+   "output": "ab"
+  },
+  {
+   "input": "a\udb80\udc00b",
+   "limit": 256,
+   "output": "ab"
+  },
+  {
+   "input": "a\udb80\udc00b",
+   "limit": 5,
+   "output": "ab"
+  },
+  {
+   "input": "a\u0378b",
+   "limit": 100,
+   "output": "ab"
+  },
+  {
+   "input": "a\u0378b",
+   "limit": 200,
+   "output": "ab"
+  },
+  {
+   "input": "a\u0378b",
+   "limit": 256,
+   "output": "ab"
+  },
+  {
+   "input": "a\u0378b",
+   "limit": 5,
+   "output": "ab"
+  },
+  {
+   "input": "\ufdfa",
+   "limit": 100,
+   "output": "\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645"
+  },
+  {
+   "input": "\ufdfa",
+   "limit": 200,
+   "output": "\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645"
+  },
+  {
+   "input": "\ufdfa",
+   "limit": 256,
+   "output": "\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645"
+  },
+  {
+   "input": "\ufdfa",
+   "limit": 5,
+   "output": "\u0635\u0644\u0649 \u0627"
+  },
+  {
+   "input": "\uff21\uff22",
+   "limit": 100,
+   "output": "AB"
+  },
+  {
+   "input": "\uff21\uff22",
+   "limit": 200,
+   "output": "AB"
+  },
+  {
+   "input": "\uff21\uff22",
+   "limit": 256,
+   "output": "AB"
+  },
+  {
+   "input": "\uff21\uff22",
+   "limit": 5,
+   "output": "AB"
+  },
+  {
+   "input": "\u2126",
+   "limit": 100,
+   "output": "\u03a9"
+  },
+  {
+   "input": "\u2126",
+   "limit": 200,
+   "output": "\u03a9"
+  },
+  {
+   "input": "\u2126",
+   "limit": 256,
+   "output": "\u03a9"
+  },
+  {
+   "input": "\u2126",
+   "limit": 5,
+   "output": "\u03a9"
+  },
+  {
+   "input": "e\u0301",
+   "limit": 100,
+   "output": "\u00e9"
+  },
+  {
+   "input": "e\u0301",
+   "limit": 200,
+   "output": "\u00e9"
+  },
+  {
+   "input": "e\u0301",
+   "limit": 256,
+   "output": "\u00e9"
+  },
+  {
+   "input": "e\u0301",
+   "limit": 5,
+   "output": "\u00e9"
+  },
+  {
+   "input": "\u1e9b\u0323",
+   "limit": 100,
+   "output": "\u1e69"
+  },
+  {
+   "input": "\u1e9b\u0323",
+   "limit": 200,
+   "output": "\u1e69"
+  },
+  {
+   "input": "\u1e9b\u0323",
+   "limit": 256,
+   "output": "\u1e69"
+  },
+  {
+   "input": "\u1e9b\u0323",
+   "limit": 5,
+   "output": "\u1e69"
+  },
+  {
+   "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "limit": 100,
+   "output": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "limit": 200,
+   "output": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "limit": 256,
+   "output": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "limit": 5,
+   "output": "xxxxx"
+  },
+  {
+   "input": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00",
+   "limit": 100,
+   "output": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00"
+  },
+  {
+   "input": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00",
+   "limit": 200,
+   "output": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00"
+  },
+  {
+   "input": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00",
+   "limit": 256,
+   "output": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00"
+  },
+  {
+   "input": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00",
+   "limit": 5,
+   "output": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00"
+  },
+  {
+   "input": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9",
+   "limit": 100,
+   "output": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"
+  },
+  {
+   "input": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9",
+   "limit": 200,
+   "output": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"
+  },
+  {
+   "input": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9",
+   "limit": 256,
+   "output": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"
+  },
+  {
+   "input": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9",
+   "limit": 5,
+   "output": "\u00e9\u00e9\u00e9\u00e9\u00e9"
+  },
+  {
+   "input": "multiple   spaces\n\n\nand lines",
+   "limit": 100,
+   "output": "multiple spaces and lines"
+  },
+  {
+   "input": "multiple   spaces\n\n\nand lines",
+   "limit": 200,
+   "output": "multiple spaces and lines"
+  },
+  {
+   "input": "multiple   spaces\n\n\nand lines",
+   "limit": 256,
+   "output": "multiple spaces and lines"
+  },
+  {
+   "input": "multiple   spaces\n\n\nand lines",
+   "limit": 5,
+   "output": "multi"
+  },
+  {
+   "input": 42,
+   "limit": 100,
+   "output": "42"
+  },
+  {
+   "input": true,
+   "limit": 100,
+   "output": "True"
+  },
+  {
+   "input": [
+    "list"
+   ],
+   "limit": 100,
+   "output": "['list']"
+  }
+ ]
+}
