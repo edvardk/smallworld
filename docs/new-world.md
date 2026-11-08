@@ -22,17 +22,16 @@ a box with no world fails if it finds no snapshot, instead of silently generatin
 
 Nothing to type. With Chunky locked, `mc-health` (every 5 minutes) pre-generates each dimension that has a border,
 one at a time: `world`, then `world_nether`, then `world_the_end` (Bukkit names from `level-name`), each up to
-its world border (`chunky world W`, `chunky worldborder`, `chunky start`). It runs only while nobody is online:
-when a player joins the next check pauses it (`chunky pause`), when the server is empty again it continues.
-Chunky's `continue-on-restart: true` resumes a task after a restart. Watch it:
+its world border (`chunky world W`, `chunky worldborder`, `chunky start`), then keeps a margin ahead of where
+players have been (the frontier). It runs only while nobody is online and pauses around backups. Watch it:
 
 ```bash
+mcctl status -C $C                      # pregen: world 63% · world_nether queued · world_the_end queued
 journalctl -u mc-health | grep pregen   # started / running / paused / continued / done, per world
-mc chunky progress
 ```
 
-Progress is in `/var/lib/mc-health/state.json` (`pregen_done`, `pregen_current`). To redo a world, remove it
-from `pregen_done` there. Note the result in your config repo's README.
+Discord says when the bordered passes are done. Disk use, backups, the frontier and how to turn it off:
+[operations: Pre-generation](operations.md#pre-generation). Note the result in your config repo's README.
 
 ## 3. Whitelist players
 

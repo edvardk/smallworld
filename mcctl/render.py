@@ -426,6 +426,18 @@ def world_library(cfg: ServerConfig) -> dict[str, Any]:
     return {"mc_world_active": cfg.world.active, "mc_world_library": lib}
 
 
+def pregenerate(cfg: ServerConfig) -> dict[str, Any]:
+    """v1.4: server.yml world.pregenerate for the monitoring role (health.env's PREGEN_*; the role's defaults
+    are the schema's). A library world's pregen: false still turns it off for that world (minecraft role)."""
+    pre = cfg.world.pregenerate
+    return {
+        "monitoring_pregen_enabled": pre.enabled,
+        "monitoring_pregen_frontier": pre.frontier,
+        "monitoring_pregen_margin": pre.margin,
+        "monitoring_pregen_max_radius": pre.max_radius,
+    }
+
+
 def _helper_cpus(cfg: ServerConfig) -> str:
     """systemd AllowedCPUs of the product's helpers: CPU 0 with cpu_affinity split (the JVM gets 1..n-1, from
     the host's CPU count at deploy: the minecraft role), else performance.helper_cpus ("" = all)."""
@@ -452,6 +464,7 @@ def group_vars(cfg: ServerConfig) -> dict[str, Any]:
         "mc_strict_whitelist": mc.strict_whitelist,  # v1.3: the players role's whitelist guard
         "mc_world_border_radius": {DIMENSIONS[d]: r for d, r in border.items() if r is not None},
         **world_library(cfg),
+        **pregenerate(cfg),
         "mc_nerf_spawner_mobs": cfg.gameplay.nerf_spawner_mobs,
         "mc_redstone_implementation": cfg.gameplay.redstone,
         "mc_gamerules": gamerules(cfg),  # v1.2: set over RCON in every dimension (minecraft role)

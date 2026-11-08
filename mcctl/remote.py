@@ -135,6 +135,7 @@ def backup_list_command(latest: int) -> str:
 # --- status -------------------------------------------------------------------------------------------
 
 PRODUCT_VERSION_FILE = "/opt/minecraft/product-version.json"  # = ansible mc_product_version_file (v1.3)
+PREGEN_FILE = "/var/lib/mc-health/pregen.json"  # v1.4: health.py's pre-generation line (its StateDirectory)
 
 STATUS_SCRIPT = "\n".join(
     [
@@ -147,6 +148,7 @@ STATUS_SCRIPT = "\n".join(
         f"echo '{SECTION}stopped'; test -e /var/lib/minecraft/admin-stopped && echo yes",
         f"echo '{SECTION}reboot'; test -e /var/run/reboot-required && echo yes",
         f"echo '{SECTION}product'; cat {PRODUCT_VERSION_FILE} 2>/dev/null",
+        f"echo '{SECTION}pregen'; cat {PREGEN_FILE} 2>/dev/null",
         "true",
     ]
 )
@@ -204,6 +206,7 @@ class Status:
     pending_panel_prs: list[dict[str, Any]] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     product: dict[str, str] | None = None  # v1.3: {version, commit} the last deploy installed
+    pregen: str | None = None  # v1.4: health.py's pre-generation line ("world 63% · ...", "done", "off")
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -230,7 +233,22 @@ def parse_status(text: str) -> Status:
     elif isinstance(disabled, dict):
         st.disabled_plugins = sorted(str(k) for k in disabled)
     st.product = parse_product(s.get("product", ""))
+    st.pregen = parse_pregen(s.get("pregen", ""))
     return st
+
+
+_UNPRINTABLE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def parse_pregen(text: str) -> str | None:
+    """v1.4: the line health.py wrote to pregen.json, or None (no file yet, or a box before v1.4)."""
+    try:
+        data = json.loads(text or "null")
+    except ValueError:
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("line"), str) or not data["line"].strip():
+        return None
+    return _UNPRINTABLE.sub("", data["line"])[:200]
 
 
 def parse_product(text: str) -> dict[str, str] | None:
@@ -322,6 +340,8 @@ def status_rows(st: Status) -> list[tuple[str, str]]:
             rows.append(("reboot", "warn: required (/var/run/reboot-required)"))
         if st.product:
             rows.append(("product", product_text(st.product)))
+        if st.pregen:
+            rows.append(("pregen", st.pregen))
     if st.last_main_run:
         r = st.last_main_run
         result = r.get("conclusion") or r.get("status")
@@ -358,6 +378,8 @@ def format_status(st: Status, name: str) -> str:
         lines.append(f"  last backup   {st.last_backup or 'never'} ({st.last_backup_result or 'n/a'})")
         if st.reboot_required:
             lines.append("  reboot        required (/var/run/reboot-required)")
+        if st.pregen:
+            lines.append(f"  pregen        {st.pregen}")
     if st.last_main_run:
         r = st.last_main_run
         result = r.get("conclusion") or r.get("status")

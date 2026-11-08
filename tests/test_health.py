@@ -625,6 +625,347 @@ def test_pregen_worlds_env(monkeypatch) -> None:
     assert health.pregen_worlds() == []
 
 
+# --- v1.4: progress, the done notice, the backup hold, frontier expansion -------------------------------------
+
+# `chunky progress` with two running tasks, as Chunky 1.5.3 sends it over RCON (prefix, one message per task,
+# GenerationTask$Progress.sendUpdate's task_update; the percentage is String.format("%.2f") in the JVM's locale).
+PROGRESS_TWO = (
+    "§b[Chunky]§r Task running for world. Processed: 123456 chunks (63.27%), ETA: 1:02:03, Rate: 85.2 cps, "
+    "Current: 12, -40\n"
+    "§b[Chunky]§r Task running for world_the_end. Processed: 99 chunks (0,50%), ETA: 0:10:00, Rate: 10.0 cps, "
+    "Current: 1, 2"
+)
+
+
+def test_parse_chunky_progress_reads_every_running_task() -> None:
+    assert health.parse_chunky_progress(PROGRESS_TWO) == {
+        "world": (63.27, 123456), "world_the_end": (0.5, 99)
+    }  # fmt: skip
+    assert health.parse_chunky_progress("[Chunky] No tasks running.") == {}
+    # the task_done line (a task finishing as it is asked) is not a running task
+    done = "[Chunky] Task finished for world. Processed: 10 chunks (100.00%), Total time: 0:01:02"
+    assert health.parse_chunky_progress(done) == {}
+
+
+def test_pregen_records_progress_and_summarises_it() -> None:
+    worlds = ["world", "world_nether", "world_the_end"]
+    c, st = FakeChunky(), State()
+    st, _ = health.pregen_step(st, worlds, c)  # started (world)
+    st, what = health.pregen_step(st, worlds, c)
+    assert what == "running (world)" and st.pregen_progress == {"world": {"pct": 1.0, "chunks": 10}}
+    assert health.pregen_summary(st, worlds, None) == "world 1% · world_nether queued · world_the_end queued"
+    c.players = 1
+    st, _ = health.pregen_step(st, worlds, c)
+    assert health.pregen_summary(st, worlds, None).startswith("world 1% (paused) · ")
+    assert health.pregen_summary(st, worlds, None, "backup").endswith("(held: backup)")
+    c.players, c.running = 0, None
+    c.saved = None  # finished while paused
+    st, _ = health.pregen_step(st, worlds, c)
+    assert st.pregen_done == ["world"] and st.pregen_progress["world"]["pct"] == 100.0
+    want = "world done · world_nether started · world_the_end queued"  # no percentage seen yet
+    assert health.pregen_summary(st, worlds, None) == want
+    st.pregen_done = list(worlds)
+    assert health.pregen_summary(st, worlds, None) == "done"
+    assert health.pregen_summary(State(), [], None) == "off"
+
+
+def test_pregen_paused_flag_clears_when_chunky_resumed_by_itself() -> None:
+    """A restart (continue-on-restart) resumes a task paused for players: the state follows what runs."""
+    c = FakeChunky()
+    st = State(pregen_current="world", pregen_paused=True)
+    c.running = "world"
+    st, what = health.pregen_step(st, ["world"], c)
+    assert what == "running (world)" and not st.pregen_paused and health.pregen_task(st) == "world"
+
+
+def test_pregen_done_notice_is_sent_once() -> None:
+    worlds = ["world", "world_nether"]
+    before = State(pregen_done=["world"], pregen_current="world_nether",
+                   pregen_progress={"world": {"pct": 100.0, "chunks": 4000}})  # fmt: skip
+    after = State(**asdict(before))
+    after.pregen_done, after.pregen_current = ["world", "world_nether"], None
+    note = health.pregen_notice(before, after, worlds, frontier=True)
+    assert note and note.startswith("\u2139\ufe0f **Chunk pre-generation is finished**")
+    assert "chunks processed at the last look: world 4000" in note and "frontier expansion" in note
+    assert health.pregen_notice(after, after, worlds, frontier=True) is None  # already done: never again
+    assert health.pregen_notice(before, before, worlds, frontier=False) is None
+    assert health.pregen_notice(State(), State(), [], frontier=True) is None  # nothing bordered: no note
+
+
+def test_run_pregen_sends_the_notice_once_and_honours_the_backup_hold(monkeypatch) -> None:
+    monkeypatch.setenv("PREGEN_WORLDS", "world")
+    monkeypatch.delenv("PREGEN_FRONTIER", raising=False)
+    monkeypatch.setattr(health, "admin_stopped", lambda path=None: False)
+    monkeypatch.setattr(health, "maintenance_active", lambda now=None: None)
+    monkeypatch.setattr(health, "active_world_id", lambda: None)
+    posted: list[str] = []
+    monkeypatch.setattr(health, "discord", posted.append)
+    c = FakeChunky()
+
+    class Conn:
+        def __enter__(self):
+            return type("R", (), {"command": staticmethod(c)})()
+
+        def __exit__(self, *a):
+            return None
+
+    monkeypatch.setattr(health.mc_rcon, "connect", lambda *a, **k: Conn())
+    held: list[str | None] = ["backup"]
+    monkeypatch.setattr(health, "pregen_held", lambda now=None: held[0])
+    st = State(pregen_current="world")
+    assert health.run_pregen(st, True) is st and c.log == []  # held: Chunky isn't even asked
+    held[0] = None
+    st = health.run_pregen(st, True)  # nothing to continue: world done -> the note
+    assert st.pregen_done == ["world"] and len(posted) == 1 and "pre-generation is finished" in posted[0]
+    st = health.run_pregen(st, True)
+    assert len(posted) == 1  # once
+
+
+class FrontierChunky(FakeChunky):
+    """FakeChunky plus `chunky start W square X Z R` and `chunky confirm` (format_start_confirm)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.stale: str | None = None  # a saved, unfinished task: `chunky start` asks for a confirmation
+        self.starts: list[tuple[str, int]] = []
+        self.pending: tuple[str, int] | None = None
+
+    def __call__(self, cmd: str) -> str:
+        parts = cmd.split()
+        if parts[:2] == ["chunky", "start"] and len(parts) == 7:
+            world, shape, x, z, radius = parts[2:]
+            assert (shape, x, z) == ("square", "0", "0")
+            self.log.append(cmd)
+            if self.stale == world:
+                self.pending = (world, int(radius))
+                return ("[Chunky] A task was already started for this world. To continue running it, type "
+                        "'/chunky continue'. To start a new task, type '/chunky confirm'.")  # fmt: skip
+            return self._start(world, int(radius))
+        if cmd == "chunky cancel":  # format_cancel_confirm: always asks first
+            self.log.append(cmd)
+            self.pending = ("cancel", 0)
+            return ("[Chunky] Cancelled tasks cannot be continued. If you are sure you want to cancel, type "
+                    "'/chunky confirm'.")  # fmt: skip
+        if cmd == "chunky confirm":
+            self.log.append(cmd)
+            assert self.pending
+            pending, self.pending = self.pending, None
+            if pending[0] == "cancel":
+                self.running = self.saved = self.stale = None
+                return "[Chunky] Cancelling all tasks."
+            self.stale = None
+            return self._start(*pending)
+        return super().__call__(cmd)
+
+    def _start(self, world: str, radius: int) -> str:
+        self.running = world
+        self.starts.append((world, radius))
+        return (
+            f"[Chunky] Task started in {world} for the square region centered at 0, 0 with radius {radius}."
+        )
+
+
+END = health.FrontierDim("world_the_end", "the_end", None)
+OVER = health.FrontierDim("world", "overworld", 5000)
+
+
+def frontier(reach: dict[str, int | None], **kw) -> health.Frontier:
+    return health.Frontier([OVER, END], explored=lambda d: reach.get(d.world), **kw)
+
+
+def test_frontier_plan_step_threshold_and_caps() -> None:
+    worlds = ["world"]
+    done = State(pregen_done=["world"])
+    # the end has no border: farthest chunk 1000 + margin 1024 -> 2032 (whole chunks), from nothing
+    assert health.frontier_plan(done, worlds, frontier({"world_the_end": 1000})) == (END, 2032)
+    # less than a step beyond what was generated: nothing (no new task every 5 minutes)
+    st = State(pregen_done=["world"], pregen_frontier={"world_the_end": 2032})
+    assert health.frontier_plan(st, worlds, frontier({"world_the_end": 1200})) is None
+    assert health.frontier_plan(st, worlds, frontier({"world_the_end": 1264})) == (END, 2288)  # +256
+    # max_radius caps an unbordered dimension (and a capped target is worth finishing, step or not)
+    st = State(pregen_done=["world"], pregen_frontier={"world_the_end": 9900})
+    assert health.frontier_plan(st, worlds, frontier({"world_the_end": 9500})) == (END, 10000)
+    st.pregen_frontier["world_the_end"] = 10000
+    assert health.frontier_plan(st, worlds, frontier({"world_the_end": 20000})) is None
+    assert health.frontier_plan(done, worlds, frontier({"world_the_end": 9000}, max_radius=4000)) == (
+        END,
+        4000,
+    )
+    # a bordered dimension whose pass is done is generated up to its border: never past it
+    assert health.frontier_plan(done, worlds, frontier({"world": 4990})) is None
+    # ... and waits for its bordered pass
+    assert health.frontier_plan(State(), worlds, frontier({"world": 100})) is None
+    # a border enlarged after the pass: the new ring is grown around players, capped at the new border
+    big = health.Frontier([health.FrontierDim("world", "overworld", 8000)], explored=lambda d: 5000)
+    st = State(pregen_done=["world"], pregen_frontier={"world": 5000})
+    assert health.frontier_plan(st, worlds, big) == (big.dims[0], 6032)
+    # unknown reach (no region folder): skipped; the biggest gap wins
+    assert health.frontier_plan(done, worlds, frontier({})) is None
+    two = health.Frontier([health.FrontierDim("world_nether", "the_nether", None), END],
+                          explored=lambda d: {"world_nether": 100, "world_the_end": 3000}[d.world])  # fmt: skip
+    assert health.frontier_plan(State(), [], two) == (END, 4032)
+
+
+def test_frontier_grows_only_while_idle_after_the_bordered_pass() -> None:
+    worlds = ["world"]
+    reach = {"world_the_end": 1000}
+    f = frontier(reach)
+    c, st = FrontierChunky(), State()
+    st, what = health.pregen_step(st, worlds, c, frontier=f)
+    assert what == "started (world)" and c.starts == []  # the bordered pass first
+    c.running = None
+    st, what = health.pregen_step(st, worlds, c, frontier=f)  # world done -> the end's frontier
+    assert what == "frontier started (world_the_end to radius 2032)" and c.starts == [("world_the_end", 2032)]
+    assert st.pregen_done == ["world"] and st.pregen_frontier_current == "world_the_end"
+    st, what = health.pregen_step(st, worlds, c, frontier=f)
+    assert what == "running (frontier world_the_end)" and st.pregen_frontier_pct == 1.0
+    assert health.pregen_summary(st, worlds, f) == "done · frontier world_the_end to 2032 1%"
+    c.players = 1  # a player joins: paused, and nothing new starts while anyone is online
+    st, what = health.pregen_step(st, worlds, c, frontier=f)
+    assert what == "paused (frontier world_the_end: players online)" and c.running is None
+    c.saved = None  # (the ring finished as it was paused)
+    reach["world_the_end"] = 5000
+    st, what = health.pregen_step(st, worlds, c, frontier=f)
+    assert what == "waiting for an empty server" and len(c.starts) == 1
+    c.players = 0
+    st, what = health.pregen_step(st, worlds, c, frontier=f)  # ring done, players went further: the next
+    assert (
+        st.pregen_frontier == {"world_the_end": 2032}
+        and what == "frontier started (world_the_end to radius 6032)"
+    )
+    c.running = None
+    reach["world_the_end"] = 5100  # less than a step: rest
+    st, what = health.pregen_step(st, worlds, c, frontier=f)
+    assert what == "done (frontier: nothing to grow)" and st.pregen_frontier == {"world_the_end": 6032}
+    assert health.pregen_summary(st, worlds, f) == "done · frontier world_the_end 6032"
+    # a full disk holds new rings
+    reach["world_the_end"] = 9000
+    held = frontier(reach, allowed=False)
+    st, what = health.pregen_step(st, worlds, c, frontier=held)
+    assert "frontier held" in what and len(c.starts) == 3 - 1
+
+
+def test_frontier_replaces_a_stale_saved_task_with_confirm() -> None:
+    c, st = FrontierChunky(), State()
+    c.stale = "world_the_end"
+    st, what = health.pregen_step(st, [], c, frontier=frontier({"world_the_end": 0}))
+    assert what == "frontier started (world_the_end to radius 1024)" and c.log[-1] == "chunky confirm"
+
+
+def test_world_switch_resets_the_frontier() -> None:
+    c = FrontierChunky()
+    st = State(pregen_for="a@1", pregen_done=["world"], pregen_frontier={"world_the_end": 4000},
+               pregen_frontier_current="world_the_end", pregen_progress={"world": {"pct": 100.0}})  # fmt: skip
+    st, _ = health.pregen_step(st, ["world"], c, world_id="b@2", frontier=frontier({}))
+    assert c.log[:2] == ["chunky cancel", "chunky confirm"]  # Chunky asks before it cancels anything
+    assert st.pregen_frontier == {} and st.pregen_progress == {}
+    assert st.pregen_current == "world" and st.pregen_frontier_current is None
+
+
+def _region(path: Path, chunks: list[tuple[int, int]]) -> None:
+    header = bytearray(health.REGION_HEADER)
+    for lx, lz in chunks:
+        i = 4 * (lx + 32 * lz)
+        header[i : i + 4] = b"\x00\x00\x02\x01"
+    path.write_bytes(bytes(header) + b"\x00" * 4096)
+
+
+def test_explored_radius_from_region_names_and_headers(tmp_path) -> None:
+    d = tmp_path / "region"
+    d.mkdir()
+    _region(d / "r.0.0.mca", [(0, 0), (5, 3)])  # chunk 5,3: edge at 96 blocks
+    _region(d / "r.-2.0.mca", [(31, 0), (31, 2)])  # chunk -33,0: edge at 528 blocks
+    _region(d / "r.3.0.mca", [])  # the outermost file has no chunk in it (e.g. emptied): ignored
+    (d / "r.9.9.mca.tmp").write_bytes(b"x")  # not a region file
+    reads: list[str] = []
+
+    def read(p: Path) -> bytes:
+        reads.append(p.name)
+        return health.read_region_header(p)
+
+    assert health.explored_radius(d, read) == 528
+    # outermost first, and r.0.0 (no chunk of it can reach past 512 blocks) is never opened
+    assert reads == ["r.3.0.mca", "r.-2.0.mca"]
+    assert health.explored_radius(tmp_path / "missing") is None
+    assert health.explored_radius(None) is None
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert health.explored_radius(empty) == 0
+    assert (
+        health.chunk_reach(0, 0) == 16
+        and health.chunk_reach(-1, 0) == 16
+        and health.chunk_reach(-30, 7) == 480
+    )
+
+
+def test_frontier_env(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv(
+        "PREGEN_FRONTIER", "world:overworld:5000,world_the_end:the_end:,bad:x:1,w;rm:overworld:"
+    )
+    monkeypatch.setenv("PREGEN_MARGIN", "512")
+    monkeypatch.setenv("PREGEN_MAX_RADIUS", "3000")
+    f = health.frontier_env(server_dir=tmp_path)
+    assert f is not None and f.dims == [OVER, END] and (f.margin, f.max_radius) == (512, 3000)
+    assert f.explored(END) is None and f.explored(OVER) is None  # no world yet
+    monkeypatch.setenv("PREGEN_FRONTIER", "")
+    assert health.frontier_env() is None
+
+
+def test_region_dirs_26x_layout_under_one_world_folder(monkeypatch, tmp_path) -> None:
+    """26.x (the pinned Purpur 26.3, seen in a real world): every dimension under <level-name>/dimensions/minecraft/,
+    the overworld included, while Chunky's Bukkit names stay world / world_nether / world_the_end."""
+    (tmp_path / "server.properties").write_text("level-name=survival\n")
+    root = tmp_path / "survival" / "dimensions" / "minecraft"
+    for dim in ("overworld", "the_nether", "the_end"):
+        (root / dim / "region").mkdir(parents=True)
+    (tmp_path / "survival" / "level.dat").write_bytes(b"")
+    _region(root / "the_end" / "region" / "r.1.0.mca", [(0, 0)])
+    _region(root / "overworld" / "region" / "r.-1.0.mca", [(0, 0)])
+    monkeypatch.setenv("PREGEN_FRONTIER", "survival:overworld:5000,survival_nether:the_nether:1250,"
+                       "survival_the_end:the_end:")  # fmt: skip
+    f = health.frontier_env(server_dir=tmp_path)
+    assert f is not None
+    over, nether, end = f.dims
+    assert health.region_dir(tmp_path, over, "survival") == root / "overworld" / "region"
+    assert health.region_dir(tmp_path, nether, "survival") == root / "the_nether" / "region"
+    assert health.region_dir(tmp_path, end) == root / "the_end" / "region"  # level derived from the name
+    assert f.explored(end) == 32 * 16 + 16 and f.explored(over) == 32 * 16 and f.explored(nether) == 0
+    # the 26.x folder wins over a stale pre-26 one left next to it
+    (tmp_path / "survival_the_end" / "DIM1" / "region").mkdir(parents=True)
+    assert health.region_dir(tmp_path, end, "survival") == root / "the_end" / "region"
+
+
+def test_region_dirs_pre26_fallback_and_symlinks(tmp_path) -> None:
+    (tmp_path / "world" / "region").mkdir(parents=True)
+    (tmp_path / "world_the_end" / "DIM1" / "region").mkdir(parents=True)
+    _region(tmp_path / "world_the_end" / "DIM1" / "region" / "r.1.0.mca", [(0, 0)])
+    assert health.region_dir(tmp_path, OVER, "world") == tmp_path / "world" / "region"
+    assert health.region_dir(tmp_path, END, "world") == tmp_path / "world_the_end" / "DIM1" / "region"
+    assert health.explored_radius(health.region_dir(tmp_path, END, "world")) == 32 * 16 + 16
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "region").mkdir(parents=True)
+    (tmp_path / "world_nether").mkdir()
+    (tmp_path / "world_nether" / "DIM-1").symlink_to(elsewhere, target_is_directory=True)
+    nether = health.FrontierDim("world_nether", "the_nether")
+    assert health.region_dir(tmp_path, nether, "world") is None  # a planted symlink: never listed
+    (tmp_path / "world" / "dimensions").symlink_to(elsewhere, target_is_directory=True)
+    (elsewhere / "minecraft" / "the_nether" / "region").mkdir(parents=True)
+    assert health.region_dir(tmp_path, nether, "world") is None
+
+
+def test_main_writes_the_status_line(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("PREGEN_WORLDS", "world,world_nether")
+    monkeypatch.delenv("PREGEN_FRONTIER", raising=False)
+    monkeypatch.setattr(health, "pregen_held", lambda now=None: None)
+    st = State(pregen_done=["world"], pregen_current="world_nether",
+               pregen_progress={"world_nether": {"pct": 42.4, "chunks": 1}})  # fmt: skip
+    health.write_pregen_status(tmp_path / "pregen.json", st, 5.0)
+    assert json.loads((tmp_path / "pregen.json").read_text()) == {
+        "line": "world done · world_nether 42%",
+        "at": 5,
+    }
+
+
 # --- alerts: one template, one message per episode, reminders, recovery (fake clock) ---------------------------
 
 G1_PAUSE = "[2026-11-02T18:00:00.000+0000][{u}s][info][gc] GC(9) Pause Young (Normal) (G1 Evacuation Pause) 3000M->1200M(6656M) {ms}ms\n"
@@ -699,3 +1040,60 @@ def test_alert_template_limits_and_scrubbing() -> None:
     assert alerts.render(alerts.Alert("info", "Hi")).endswith(
         "**What to do:** No action needed - informational."
     )
+
+
+def test_backup_hold_stops_frontier_expansion_too(monkeypatch, tmp_path) -> None:
+    """While backup.py holds pre-generation nothing starts, the frontier included; afterwards it grows."""
+    import notify
+
+    monkeypatch.setenv("PREGEN_WORLDS", "")
+    monkeypatch.setenv("PREGEN_FRONTIER", "world_the_end:the_end:")
+    monkeypatch.setattr(health.mc_rcon, "SERVER_DIR", tmp_path)
+    (tmp_path / "server.properties").write_text("level-name=world\n")
+    end = tmp_path / "world" / "dimensions" / "minecraft" / "the_end" / "region"  # the 26.x layout
+    end.mkdir(parents=True)
+    _region(end / "r.0.0.mca", [(3, 0)])
+    hold = tmp_path / "pregen-hold.json"
+    monkeypatch.setattr(notify, "PREGEN_HOLD_FILE", hold)
+    monkeypatch.setattr(health, "admin_stopped", lambda path=None: False)
+    monkeypatch.setattr(health, "maintenance_active", lambda now=None: None)
+    monkeypatch.setattr(health, "active_world_id", lambda: None)
+    c = FrontierChunky()
+
+    class Conn:
+        def __enter__(self):
+            return type("R", (), {"command": staticmethod(c)})()
+
+        def __exit__(self, *a):
+            return None
+
+    monkeypatch.setattr(health.mc_rcon, "connect", lambda *a, **k: Conn())
+    notify.pregen_hold("backup", path=hold)
+    st = health.run_pregen(State(), True)
+    assert c.log == [] and st == State()
+    notify.pregen_release(hold)
+    st = health.run_pregen(st, True)
+    assert c.starts == [("world_the_end", 64 + 1024)] and st.pregen_frontier_current == "world_the_end"
+    assert health.run_pregen(st, True, disk_ok=False).pregen_frontier_current == "world_the_end"  # running
+
+
+def test_turning_pregen_off_cancels_the_task_it_started(monkeypatch) -> None:
+    monkeypatch.setenv("PREGEN_WORLDS", "")
+    monkeypatch.setenv("PREGEN_FRONTIER", "")
+    monkeypatch.setattr(health, "admin_stopped", lambda path=None: False)
+    c = FrontierChunky()
+    c.running = "world"
+
+    class Conn:
+        def __enter__(self):
+            return type("R", (), {"command": staticmethod(c)})()
+
+        def __exit__(self, *a):
+            return None
+
+    monkeypatch.setattr(health.mc_rcon, "connect", lambda *a, **k: Conn())
+    st = health.run_pregen(State(pregen_current="world", pregen_done=["x"]), True)
+    assert c.log == ["chunky cancel", "chunky confirm"] and c.running is None
+    assert st.pregen_current is None and st.pregen_done == ["x"]
+    c.log.clear()
+    assert health.run_pregen(st, True) is st and c.log == []  # nothing of ours left: nothing sent

@@ -272,6 +272,10 @@
   },
   "mc_world_expected": false,
   "mc_world_library": [],
+  "monitoring_pregen_enabled": true,
+  "monitoring_pregen_frontier": true,
+  "monitoring_pregen_margin": 1024,
+  "monitoring_pregen_max_radius": 10000,
   "timezone": "UTC"
  },
  "tfvars": {

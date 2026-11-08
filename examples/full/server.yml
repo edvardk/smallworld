@@ -24,6 +24,10 @@ host:
 # players.yml are kept and announced; true = players.yml is the whole whitelist).
 minecraft: {version: "26.3", accept_eula: true, motd: "Lighthouse", strict_whitelist: false}
 backups: {bucket: lighthouse-backups}
+# v1.4: Chunky pre-generation while nobody is online: each bordered dimension up to its border, then 1024 blocks
+# beyond the farthest generated chunk (frontier), never past 10000 blocks from 0,0 (the defaults, spelled out).
+world:
+  pregenerate: {enabled: true, frontier: true, margin: 1024, max_radius: 10000}
 jvm: {gc: zgc, heap_mb: 6144}
 performance:
   profile: vanilla
