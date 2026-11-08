@@ -22,7 +22,7 @@ divergences are listed under "Divergences"; add one only with a reason and a tes
 | `actions/` | actions | restart, plugin, moderate, world_* done; the rest stubs |
 | `link/`, `daemon.rs` | link | **done** (verify/ws vectors; envelope, nonce, WebSocket and poll sections of scenarios 1, 2, 20 match golden with stubs elsewhere); final wiring of selftest/client loops waits for misc/data |
 | `ship/` | ship | stubs |
-| `data/`, `panel/rejected.rs` | data | stubs |
+| `data/`, `panel/rejected.rs` | data | **done**: vectors parsers/round/rejected/constants/client requests + a Python differential corpus; scenario 17 (`client_codes`) passes on its own; 4 (`status`), 14 (`logs_rejected`), `tail` and 24 (`state_roundtrip`) pass in a local merge with ship + actions |
 | `sync/` | sync | **done**: players.yml, GitHub client, round (`sync_pending`, `sync_world`, `merge_sync`, `revert_live`), alerts, `panel_loop`; vectors players/merge_sync/worlds/texts; mixed Python+Rust writers test (`sync/mixed.rs`). Scenarios 12 (`pending_expiry`, `world_pr`) and 23's pending.json half match their goldens in everything sync writes; they still wait on data (startup pushes) and actions (`whitelist`, `cancel`) |
 | `misc/` | misc | **done** (vectors pass; wiring for the daemon: `misc::Misc`, see "misc" below) |
 
@@ -174,6 +174,22 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
   client code never logged; the tail scrubbed (ship's `Scrubber`) and sent through link's `WsSender`.
 - Proof: vectors for the parsers, `parse_tps_all`, `player_names`, `py_round`, `mask_address`, the rejected
   feed, `parse_client_request`; scenarios 4, 14, 17, 19.
+- **As ported** (for the other modules):
+  - Daemon entries (`daemon::run`): `data::metrics_loop`, `data::inventory_loop`,
+    `data::client_codes::client_loop` (when `settings.client`), and `data::wire(&Arc<Daemon>)` before the loops
+    (the executor's tail: `ConsoleTail` reading `Daemon::ws_sender`, scrubbed with ship's `Scrubber::new(
+    known_secrets(..))` per run). `Daemon::new` takes `data::status_sample()` (`collect(Counters())`).
+    Counters and spool live in data (`data::metrics_state`, one daemon per process).
+  - `data::PANEL_EXTRAS` (set in `daemon::run`): sync's `self.github is not None` and misc's `product_state()`
+    / `selftest_state.public()` for `panel_state`.
+  - **ship's wiring (open):** `Agent.observe_logs` is `data::observe_logs(&d.panel.rejected, entries)` (true:
+    set `inventory_due`); pass it as `run_logs_loop`'s `observe`. Proven in the local merge (scenario 14).
+  - `RejectedLogins`: `entries()` (= Python), `feed(&[(ts_ms, msg)])` (= Python), `drop_name`; `load`/`observe`
+    are kept for the declared interface.
+  - The PersistentRcon is shared through `data::persistent_rcon::stats_rcon(server_dir)` (one per dir, also
+    for `status`); `RconFailure` sorts errors as `rcon_stats` catches them.
+  - The loops take explicit arguments (`run_metrics_loop`, `run_inventory_loop`, `ClientCodes::run`) so they
+    can be tested without a daemon.
 
 ### actions (the remaining do_<action>s)
 
@@ -259,7 +275,7 @@ The harness (`origin/agent-harness`, merged) runs 25 black-box scenarios against
 `pytest tests/agent_parity --impl=rust --agent-bin=rust/dist/smallworld-agent-x86_64-unknown-linux-musl` (or a
 `cargo build` binary). Vectors for the pure functions: `tests/agent_parity/vectors/*.json` (16 files; regenerate
 with `scripts/parity_vectors.py --check`). CI runs the scenarios listed in `RUST_PARITY_SCENARIOS` (ci.yml job
-`rust`): **add yours there when your module passes them.** Passing now: `cli`.
+`rust`): **add yours there when your module passes them.** Passing now: `cli`. With a debug build and the stubs switch: `client_codes` (data alone); with ship + actions merged locally: also `status`, `logs_rejected`, `tail`, `state_roundtrip` (add them to `RUST_PARITY_SCENARIOS` with the dist rebuild: the committed binary still refuses to start the daemon).
 
 | # | Scenario(s) | Module(s) |
 |---|---|---|
@@ -319,6 +335,13 @@ Gotchas the goldens encode (keep them; both are logged as known issues to fix in
 - Self-test probe (misc): a GitHub reply that isn't JSON reads as `ValueError("Expecting value: line 1 column 1
   (char 0)")` whatever the actual JSONDecodeError position; base64 and the subscript errors follow CPython's
   texts for the common cases. Only the step's `detail` text can differ, never the outcome.
+- data: `str.isdigit()` checks (systemctl's `MemoryCurrent`, `cpuN`) accept `Nd` digits only; Python's
+  `isdigit` also takes superscripts, then `int()` of them raises. A big integer in a /proc or GC-log field
+  saturates at i64 (Python: a big int). Neither occurs in real output.
+- data: `json.loads` of an untrusted server file accepts UTF-8 (with or without BOM) only; Python's also
+  auto-detects UTF-16/32.
+- data: the status sample, spool lines and inventory objects have sorted keys (Python: insertion order); only
+  their JSON meaning reaches the Worker/harness. rejected.json is written in Python's key order.
 - argv that isn't UTF-8 is decoded lossily (Python: surrogateescape); such an argument can't match `CLI_LOGIN`
   or parse as JSON in either.
 
