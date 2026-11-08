@@ -277,3 +277,4 @@ Gotchas the goldens encode (keep them; both are logged as known issues to fix in
   re-acquire (a concurrent test's fork shares the lock's descriptor until its exec). Tests only. phase 1.
 - 2026-11-08, `sys.rs`: add `monotonic()` (CLOCK_MONOTONIC, for `unit_uptime_s`) and `disk_usage(path)`
   (`shutil.disk_usage`); `systemd.rs`: `run` becomes `pub(crate)` (data's `systemctl show` queries). Additive. data.
+- 2026-11-08, `jobs.rs`: add `Event::clear` (`threading.Event.clear`, for `inventory_due`). Additive. data.

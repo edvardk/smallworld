@@ -39,6 +39,11 @@ impl Event {
         *lock(&self.flag)
     }
 
+    /// `event.clear()`.
+    pub fn clear(&self) {
+        *lock(&self.flag) = false;
+    }
+
     /// `event.wait(seconds)`: true if set (at once or within the time).
     pub fn wait(&self, seconds: f64) -> bool {
         let deadline = Instant::now() + Duration::from_secs_f64(seconds.max(0.0));
