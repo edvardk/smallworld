@@ -271,6 +271,7 @@ Gotchas the goldens encode (keep them; both are logged as known issues to fix in
 
 (One line per change to a shared file after phase 1: date, file, what, who.)
 
+- 2026-11-08, `panel/pending.rs`: `Pending::snapshot()` (= `with pending.locked(): pending.load()`), additive. sync.
 - 2026-11-08, `tests/agent_parity/fakes.py` `make_cert`: a CA + leaf instead of a self-signed CA certificate
   (rustls refuses the latter). phase 1.
 - 2026-11-08, core `flock.rs` tests and `jobs.rs` test `the_file_lock_is_shared_across_runners`: retry the
