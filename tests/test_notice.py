@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from conftest import Replay
 
-from mcctl import cli, configrepo, home, http, notice, ui
+from mcctl import cli, configrepo, http, notice, ui
 
 REPO_NAME = "edvardk/smallworld"
 URL = f"https://api.github.com/repos/{REPO_NAME}/releases/latest"
@@ -109,17 +109,3 @@ def test_a_command_shows_it_after_its_output_and_children_stay_quiet(
     assert os.environ[notice.OPT_OUT_ENV] == "1"  # a re-executed pinned mcctl stays quiet
     assert cli.main(["validate", "-C", str(config_repo)]) == 0
     assert "is out" not in capsys.readouterr().err and asked == [REPO_NAME]
-
-
-def test_home_header_has_an_update_row(config_repo: Path) -> None:
-    out = ui.Out(io.StringIO(), rich=False)
-    probe = home.StatusProbe(lambda cfg: home.remote.Status(reachable=False, error="offline"))
-    rows = dict(
-        home.header_rows(
-            config_repo, "-C", probe, out, update=lambda p: notice.for_pin(p, lambda r: "v2.0.0")
-        )
-    )
-    assert "Smallworld v2.0.0 is out" in rows["Update"]
-    rows = dict(home.header_rows(config_repo, "-C", probe, out, update=lambda p: None))
-    assert "Update" not in rows
-    assert "Update" not in dict(home.header_rows(config_repo, "-C", probe, out))  # tests: no lookup at all

@@ -475,8 +475,8 @@ def test_python_requirements_are_resolved_and_hash_pinned() -> None:
     # Supersets agree on versions, so a laptop, CI and the cached product venv run the same packages.
     assert v.items() <= d.items() <= dev.items()
     pyproject = (REPO / "pyproject.toml").read_text()
-    deps = ", ".join(  # questionary: the home screen's menus (v1.3); tzdata: zoneinfo on Windows
-        f'"{name}=={v[name.lower()]}"' for name in ("PyYAML", "questionary", "rich", "tzdata")
+    deps = ", ".join(  # textual: the dashboard (mcctl/dashboard.py); tzdata: zoneinfo on Windows
+        f'"{name}=={v[name.lower()]}"' for name in ("PyYAML", "rich", "textual", "tzdata")
     )
     assert f"dependencies = [{deps}]" in pyproject
 

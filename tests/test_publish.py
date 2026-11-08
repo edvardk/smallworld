@@ -166,6 +166,7 @@ def make(
     online: list[int | None] | None = None,
     product_rc: int = 0,
     gh: bool = True,
+    merge: bool = True,
 ) -> tuple[init.Ctx, Fake, publish.Tools, io.StringIO]:
     fake = Fake(env["root"], env["origin"], env["tmp"])
     clock = Clock()
@@ -177,7 +178,9 @@ def make(
         now=clock.now,
         sleep=clock.sleep,
     )
-    ctx = init.Ctx(root=env["root"], ui=UI(answers=answers or {}, out=out), deps=deps, opts=init.Options())
+    # tests run unattended; most stand for `--merge` (the unattended default leaves the pull request unmerged)
+    answers = {"publish_merge": True} | (answers or {}) if merge else (answers or {})
+    ctx = init.Ctx(root=env["root"], ui=UI(answers=answers, out=out), deps=deps, opts=init.Options())
     tools = publish.Tools(online=Online(online or [0]), product=Product(product_rc), max_wait_minutes=10)
     return ctx, fake, tools, out
 
@@ -380,6 +383,20 @@ def test_pr_route_merge_declined(env: dict[str, Any]) -> None:
     assert go(ctx, tools) == 0 and not fake.gh_calls("pr", "merge") and "waits for you" in out.getvalue()
 
 
+def test_unattended_publish_leaves_the_pr_unless_merge(env: dict[str, Any]) -> None:
+    """No terminal and no --merge: the pull request is opened, its checks followed, and left unmerged."""
+    ctx, fake, tools, out = make(env, merge=False)
+    edit(env["root"], {"minecraft.motd": "x"})
+    assert go(ctx, tools) == 0 and fake.gh_calls("pr", "create") and not fake.gh_calls("pr", "merge")
+    assert "waits for you" in out.getvalue()
+
+
+def test_unattended_publish_merges_with_merge(env: dict[str, Any]) -> None:
+    ctx, fake, tools, _ = make(env, answers={"publish_merge": True}, merge=False)  # = --merge
+    edit(env["root"], {"minecraft.motd": "x"})
+    assert go(ctx, tools) == 0 and fake.gh_calls("pr", "merge")
+
+
 def test_rerun_on_a_publish_branch_reuses_it(env: dict[str, Any]) -> None:
     root = env["root"]
     ctx, _, tools, _ = make(env)
@@ -580,6 +597,17 @@ def test_players_add_goes_through_a_pull_request(env: dict[str, Any]) -> None:
     assert git(env["origin"], "show", "main:players.yml").count("NewPal") == 1
 
 
+def test_players_unattended_leaves_the_pr_unless_merge(env: dict[str, Any]) -> None:
+    ctx, fake, tools, out = make(env, merge=False)
+    uuid = "00000000-0000-4000-8000-0000000000f1"
+    assert players.change(ctx, "add", "NewPal", uuid=uuid, tools=tools) == 0, out.getvalue()
+    assert (
+        fake.gh_calls("pr", "create")
+        and not fake.gh_calls("pr", "merge")
+        and "waits for you" in out.getvalue()
+    )
+
+
 def test_players_pr_failure_restores_players_yml(env: dict[str, Any]) -> None:
     root = env["root"]
     before = (root / configrepo.PLAYERS_YML).read_text()
@@ -631,5 +659,26 @@ def test_cli_publish_and_players_flags(monkeypatch: pytest.MonkeyPatch, env: dic
     assert cli.run(["players", "add", "X", "--push", "-C", root]) == 0
     assert cli.run(["players", "add", "X", "--no-push", "-C", root]) == 0
     assert [c["route"] for c in calls] == ["pr", "push", "commit"]
+
+
+def test_cli_unattended_merge_answers(monkeypatch: pytest.MonkeyPatch, env: dict[str, Any]) -> None:
+    """Without a terminal, publish and players answer the merge question "no" unless --merge (cli._conversation)."""
+    monkeypatch.setattr("sys.stdin", io.StringIO())
+    root = str(env["root"])
+    seen: list[Any] = []
+
+    def merge_answer(ctx: init.Ctx) -> Any:
+        return ctx.ui.confirm("publish_merge", "merge?", default=ctx.ui.interactive)
+
+    monkeypatch.setattr(publish, "run", lambda ctx, **kw: seen.append(merge_answer(ctx)) or 0)
+    monkeypatch.setattr(players, "change", lambda ctx, *a, **kw: seen.append(merge_answer(ctx)) or 0)
+    for argv in (
+        ["publish"],
+        ["publish", "--merge"],
+        ["players", "add", "X"],
+        ["players", "add", "X", "--merge"],
+    ):
+        assert cli.run([*argv, "-C", root]) == 0
+    assert seen == [False, True, False, True]
     with pytest.raises(SystemExit):
         cli.build_parser().parse_args(["players", "add", "X", "--push", "--no-push"])

@@ -6,8 +6,9 @@
 - `--live SNAPSHOT`: the panel's restore, `mc-restore@<id>.service` (as the ops user: maintenance window ->
   **safety snapshot** (tag pre-restore) -> stop -> fetch -> mc-restore-apply.service as minecraft -> start),
   started with `sudo systemctl` by the deploy user, so no new polkit rule. It takes the same typed
-  confirmation as the panel (`restore <first 8 hex>`), shows who is online first, and prints the unit's STEP
-  lines and the safety snapshot to undo it with.
+  confirmation as the panel (`restore <first 8 hex>`; `--confirm TEXT` gives it up front: scripts, the
+  dashboard), shows who is online first, and prints the unit's STEP lines and the safety snapshot to undo
+  it with.
 """
 
 from __future__ import annotations
@@ -74,7 +75,8 @@ def to_dir(ctx: init.Ctx, target: str, snapshot: str | None) -> int:
     return 0
 
 
-def live(ctx: init.Ctx, snapshot: str, *, dry_run: bool = False) -> int:
+def live(ctx: init.Ctx, snapshot: str, *, dry_run: bool = False, confirm: str | None = None) -> int:
+    """`confirm`: the typed confirmation given up front (`--confirm`, the dashboard); None: asked."""
     ui = ctx.ui
     try:
         serverops.check_snapshot(snapshot)
@@ -106,7 +108,9 @@ def live(ctx: init.Ctx, snapshot: str, *, dry_run: bool = False) -> int:
         ui.say("(dry run: nothing was changed)")
         return 0
     want = f"restore {sid[:8]}"
-    typed = ui.typed("confirm_restore")(f"Type `{want}` to replace the live world: ").strip()
+    if confirm is None:
+        confirm = ui.typed("confirm_restore")(f"Type `{want}` to replace the live world: ")
+    typed = confirm.strip()
     if typed != want:
         ui.say("Aborted: nothing was changed.")
         return 1

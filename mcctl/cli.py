@@ -1,6 +1,6 @@
 """mcctl command line (design §4). Each `cmd_*` here parses arguments and calls the module that does the work:
 
-  (none: the home screen, v1.3)     home, homecfg (the remembered config repo)
+  (none: the dashboard)             home, dashboard, homecfg (the remembered config repo)
   validate, render, schema          configrepo, render, schema
   deploy, plan, apply, bootstrap    deploy, tf, bootstrap (re-executed from the pin: product)
   doctor, metrics                   doctor (+ pinmove, wfsecrets), metrics
@@ -60,6 +60,7 @@ if TYPE_CHECKING:
 SCHEMA_FILE = Path("schema") / "server.schema.json"  # relative to the working directory (product checkout)
 # `-C` not given (identity-compared): the current directory, or the remembered config repo (mcctl/homecfg.py).
 DEFAULT_DIR = Path(".")
+RESTART_ANSWERS = ("now", "wait", "cancel")  # = publish.RESTART_CHOICES (`publish --restart`)
 
 
 def _repo(args: argparse.Namespace) -> configrepo.ConfigRepo:
@@ -830,10 +831,12 @@ def cmd_players(args: argparse.Namespace) -> int:
     if args.action in actions.MODERATION:  # v1.3: live moderation over RCON, never players.yml
         rem = _remote(args)
         return actions.guarded(rem, lambda: actions.moderate(rem, args.action, args.name, args.reason))
+    ctx = _ctx(args)
+    _conversation(ctx, args)  # unattended: the pull request is left unmerged unless --merge
     return _p12(
         "players",
         lambda: players.change(
-            _ctx(args),
+            ctx,
             args.action,
             args.name or "",
             uuid=args.uuid,
@@ -844,13 +847,20 @@ def cmd_players(args: argparse.Namespace) -> int:
     )
 
 
-def _conversation(ctx: init.Ctx) -> None:
-    """Without a terminal on stdin, publish's questions take their defaults (the safe answers: wait for an
-    empty server, no Terraform apply); with one, it asks."""
+def _conversation(ctx: init.Ctx, args: argparse.Namespace) -> None:
+    """Without a terminal on stdin, publish's (and players') questions take their defaults (the safe answers:
+    don't merge, wait for an empty server, no Terraform apply); with one, it asks. `--merge`/`--no-merge` and
+    `--restart` answer the merge and the players-online questions up front (the dashboard collects them
+    first): then nothing is asked and the other questions take their safe defaults too."""
     from mcctl import ui as ui_mod
 
-    if not sys.stdin.isatty():
-        ctx.ui = ui_mod.UI(answers={})
+    preset: dict[str, object] = {}
+    if getattr(args, "merge", None) is not None:
+        preset["publish_merge"] = args.merge
+    if getattr(args, "restart", None):
+        preset["publish_restart"] = args.restart
+    if preset or not sys.stdin.isatty():
+        ctx.ui = ui_mod.UI(answers=preset)
 
 
 def cmd_publish(args: argparse.Namespace) -> int:
@@ -859,7 +869,7 @@ def cmd_publish(args: argparse.Namespace) -> int:
     from mcctl import publish
 
     ctx = _ctx(args)
-    _conversation(ctx)
+    _conversation(ctx, args)
     tools = publish.Tools(max_wait_minutes=args.max_wait)
     return _p12(
         "publish",
@@ -881,7 +891,9 @@ def cmd_restore(args: argparse.Namespace) -> int:
 
     ctx = _ctx(args)
     if args.live:
-        return _p12("restore", lambda: restorecmd.live(ctx, args.live, dry_run=args.dry_run))
+        return _p12(
+            "restore", lambda: restorecmd.live(ctx, args.live, dry_run=args.dry_run, confirm=args.confirm)
+        )
     if args.to:
         return _p12("restore", lambda: restorecmd.to_dir(ctx, args.to, args.snapshot))
     return _p12("restore", lambda: restorecmd.list_snapshots(ctx))
@@ -1070,6 +1082,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func=cmd_console)
 
     confirm_help = "the typed confirmation (scripts); without it a terminal asks, anything else refuses"
+    merge_help = (
+        "answer the merge question up front: --merge merges once the checks pass (that deploys), --no-merge "
+        "leaves the pull request to you (the default without a terminal)"
+    )
     sp = sub.add_parser("worlds", help="the world library (like the panel): list, create, switch, delete")
     wsub = sp.add_subparsers(dest="action", required=True, metavar="ACTION")
     w = wsub.add_parser("list", help="the active world, archived worlds, the library")
@@ -1259,6 +1275,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-follow", action="store_true", help="open the pull request, then stop (no checks, merge, deploy)"
     )
     sp.add_argument("--reason", default="", help="kick/ban: shown to the player (one line, 100 characters)")
+    sp.add_argument("--merge", action=argparse.BooleanOptionalAction, default=None, help=merge_help)
     sp.set_defaults(func=cmd_players)
 
     sp = sub.add_parser(
@@ -1280,6 +1297,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--max-wait", type=int, default=120, metavar="MIN", help="wait at most MIN minutes")
     sp.add_argument("--no-follow", action="store_true", help="open the PR (or push), then stop")
     sp.add_argument("-m", "--message", help="the commit message / PR title (default: a summary)")
+    sp.add_argument("--merge", action=argparse.BooleanOptionalAction, default=None, help=merge_help)
+    sp.add_argument(
+        "--restart",
+        choices=RESTART_ANSWERS,
+        help="answer the players-online question up front: now (countdown), wait (= --wait-empty), cancel",
+    )
     sp.set_defaults(func=cmd_publish)
 
     sp = sub.add_parser("restore", help="snapshots: --list, --to DIR (scratch, verified), --live ID (typed)")
@@ -1290,6 +1313,9 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--live", metavar="SNAPSHOT", help="replace the live world (safety snapshot first)")
     sp.add_argument("--snapshot", help="--to: this snapshot instead of the latest")
     sp.add_argument("--dry-run", action="store_true", help="--live: show the plan only")
+    sp.add_argument(
+        "--confirm", metavar="TEXT", help="--live: the typed confirmation (`restore <8 hex>`) up front"
+    )
     sp.set_defaults(func=cmd_restore)
     return p
 
@@ -1354,8 +1380,8 @@ def remember_config_dir(args: argparse.Namespace) -> None:
 
 
 def run(argv: list[str], *, update_notice: bool = False) -> int:
-    """Parse and run one command (argv without --plain): `main` and the home screen's items. `update_notice`
-    (main only; the home screen has its own row): v1.3, say when a newer minor/major release is out."""
+    """Parse and run one command (argv without --plain). `update_notice`
+    (main only; the dashboard has its own line): v1.3, say when a newer minor/major release is out."""
     args = build_parser().parse_args(argv)
     args.argv = list(argv)  # without --plain: an older pinned product doesn't know the flag
     resolve_config_dir(args)
@@ -1382,7 +1408,7 @@ def main(argv: list[str] | None = None) -> int:
         ui.set_plain()  # MCCTL_PLAIN=1: this process and a re-executed (pinned) mcctl
     from mcctl import home
 
-    if (opened := home.wanted(argv)) is not None:  # v1.3: plain `mcctl` on a terminal opens the home screen
+    if (opened := home.wanted(argv)) is not None:  # plain `mcctl` on a terminal: the dashboard
         return home.main(opened)
     return run(argv, update_notice=True)
 

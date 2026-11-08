@@ -140,7 +140,7 @@ used to drift apart silently (v1.2.2 reached the server and the Worker in separa
 | mc-agent runs older code than installed | restart it (a deploy does) |
 
 `mcctl doctor` checks the same against the config repo's pin as it is now (rows `versions` and `panel → git`,
-read from the watchdog's D1 with the Cloudflare token), and the home screen and `mcctl status` show the deployed
+read from the watchdog's D1 with the Cloudflare token), and the dashboard and `mcctl status` show the deployed
 version over SSH.
 
 ### The Panel → Git self-test (v1.3)
@@ -265,7 +265,7 @@ The ones you will use (all take `-C $C`; the complete list is in [reference.md](
 
 | Command | What it does |
 |---|---|
-| `mcctl` | v1.3: on a terminal, the home screen: a status header and a menu of these commands ([reference](reference.md#the-home-screen-and-the-remembered-config-repo-v13)); remembers the config repo, so `-C` is optional |
+| `mcctl` | on a terminal, the dashboard: the web panel's tabs (Overview, Players, Worlds, Plugins, Backups, Logs, Console, Publish, Health) with live status, every action's output kept on screen and the typed confirmations; ctrl+p lists every action ([reference](reference.md#the-dashboard-and-the-remembered-config-repo)); remembers the config repo, so `-C` is optional |
 | `mcctl doctor` | checks tools, `.env`, every credential live (writes `expiry.yml`: commit it), the product pin, DNS, the tailnet, the watchdog; `--fix` repairs what it can (file mode, a stale product pin after a typed `yes`) |
 | `mcctl status [--json]` | server state, players, TPS/MSPT, last backup, last deploy run, drift (disabled plugins, open panel PRs) |
 | `mcctl deploy [--check] [--force-restart]` | deploy from your computer (the same playbook and secrets as CI; `--check` is a dry run with a diff; `--force-restart`: restart now even outside `maintenance.window`) |

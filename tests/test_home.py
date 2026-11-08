@@ -1,7 +1,5 @@
-"""v1.3 phase 1: the home screen (plain `mcctl` on a terminal), the remembered config repo, `-C` precedence.
-
-The menu is driven by simulated keypresses (prompt_toolkit's pipe input, DummyOutput); no SSH, no network:
-the status probe and the command functions are replaced.
+"""When plain `mcctl` opens the dashboard (mcctl/home.py), the status probe, the remembered config repo, `-C`
+precedence. The dashboard itself: tests/test_dashboard.py. No SSH, no network: the probe is replaced.
 """
 
 from __future__ import annotations
@@ -12,31 +10,9 @@ import threading
 from pathlib import Path
 
 import pytest
-from prompt_toolkit.input import create_pipe_input
-from prompt_toolkit.output import DummyOutput
 
 from mcctl import cli, home, homecfg, remote, ui
-from tests.conftest import TEST_SHA, make_config_repo
-
-UP, DOWN, ENTER, CTRL_C, ESC = "\x1b[A", "\x1b[B", "\r", "\x03", "\x1b"
-
-
-class Scripted(home.Prompter):
-    """Sends one chunk of keys before each prompt (a prompt may drop keys typed ahead of it)."""
-
-    def __init__(self, inp: object, keys: list[str]) -> None:
-        super().__init__({"input": inp, "output": DummyOutput()})
-        self.inp, self.keys = inp, list(keys)
-        self.selects: list[tuple[str, list]] = []
-
-    def select(self, message: str, choices: list, default: str | None = None) -> str | None:
-        self.selects.append((message, choices))
-        self.inp.send_text(self.keys.pop(0))  # type: ignore[attr-defined]
-        return super().select(message, choices, default)
-
-    def text(self, message: str) -> str | None:
-        self.inp.send_text(self.keys.pop(0))  # type: ignore[attr-defined]
-        return super().text(message)
+from tests.conftest import make_config_repo
 
 
 def online(cfg: object = None) -> remote.Status:
@@ -52,20 +28,7 @@ def online(cfg: object = None) -> remote.Status:
     )
 
 
-def make_home(root: Path | None, keys: list[str], inp: object, **kw: object) -> tuple[home.Home, io.StringIO]:
-    buf = io.StringIO()
-    h = home.Home(
-        home.Launch(root),
-        out=ui.Out(buf, rich=False),
-        prompter=Scripted(inp, keys),
-        probe=kw.pop("probe", home.StatusProbe(online)),  # type: ignore[arg-type]
-        cwd=kw.pop("cwd", Path.cwd()),  # type: ignore[arg-type]
-        **kw,  # type: ignore[arg-type]
-    )
-    return h, buf
-
-
-# --- when the home screen opens -----------------------------------------------------------------------------
+# --- when the dashboard opens -----------------------------------------------------------------------------
 
 
 class FakeTTY(io.StringIO):
@@ -85,8 +48,8 @@ def test_interactive_needs_both_terminals_and_no_plain_switch() -> None:
         assert not home.interactive(tty_env(**env), FakeTTY(), FakeTTY()), env
 
 
-def test_interactive_without_questionary(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(home, "HAVE_QUESTIONARY", False)
+def test_interactive_without_textual(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(home, "HAVE_TEXTUAL", False)
     assert not home.interactive(tty_env(), FakeTTY(), FakeTTY())
 
 
@@ -104,13 +67,13 @@ def test_plain_keeps_the_usage_error_on_a_terminal(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr("sys.stdin", FakeTTY())
     monkeypatch.setattr("sys.stdout", FakeTTY())
     assert home.wanted([]) == home.Launch(None)  # this "terminal" would open it...
-    monkeypatch.setattr(home, "main", lambda launch: pytest.fail("opened the home screen"))
+    monkeypatch.setattr(home, "main", lambda launch: pytest.fail("opened the dashboard"))
     with pytest.raises(SystemExit) as e:
         cli.main(["--plain"])  # ...but not with --plain
     assert e.value.code == 2
 
 
-def test_on_a_terminal_bare_mcctl_opens_the_home_screen(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_on_a_terminal_bare_mcctl_opens_the_dashboard(monkeypatch: pytest.MonkeyPatch) -> None:
     opened: list[home.Launch] = []
     monkeypatch.setattr(home, "interactive", lambda: True)
     monkeypatch.setattr(home, "main", lambda launch: opened.append(launch) or 0)
@@ -123,114 +86,7 @@ def test_on_a_terminal_bare_mcctl_opens_the_home_screen(monkeypatch: pytest.Monk
     assert e.value.code == 2
 
 
-# --- the menu -------------------------------------------------------------------------------------------------
-
-
-def test_header_and_groups(config_repo: Path) -> None:
-    with create_pipe_input() as inp:
-        h, buf = make_home(config_repo, [UP + ENTER], inp)  # up from Status wraps to Quit
-        assert h.loop() == 0
-    text = buf.getvalue()
-    assert "Deployment" in text and "Config repo" in text and f"{config_repo.resolve()} (-C)" in text
-    assert "pinned v0.0.0 · this mcctl" in text
-    assert "Server       online · 2/20 players · TPS 19.9, MSPT 12.3" in text
-    assert "Last deploy  success (2026-11-07T10:00:00Z)" in text
-    assert "Panel PRs    1 open" in text
-    _, choices = h.prompter.selects[0]  # type: ignore[attr-defined]
-    groups = [c.title.strip("─ ") for c in choices if isinstance(c, home.questionary.Separator)]
-    assert groups[:9] == [
-        "Server",
-        "Players",
-        "Worlds",
-        "Config",
-        "Publish",
-        "Health",
-        "Updates",
-        "Secrets",
-        "Metrics",
-    ]
-    disabled = {c.value: c.disabled for c in choices if getattr(c, "disabled", None)}
-    assert disabled["settings"] == "v1.3, coming"
-    for key in ("publish", "publish-preview", "publish-revert", "player-add", "player-op"):
-        assert key not in disabled, key  # Part B: live
-    for key in ("console", "restart", "worlds", "world-switch", "kick", "plugins", "restore", "backup-now"):
-        assert key not in disabled, key  # phase 2: live
-    assert "status" not in disabled and "quit" not in disabled
-
-
-def test_status_runs_the_status_command_then_quit(config_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    seen = []
-    monkeypatch.setattr(cli, "cmd_status", lambda args: seen.append(args) or 0)
-    monkeypatch.delenv("CI", raising=False)
-    with create_pipe_input() as inp:
-        h, buf = make_home(config_repo, [ENTER, UP + ENTER], inp)
-        assert h.loop() == 0
-    (args,) = seen
-    assert args.command == "status" and args.json is False
-    assert args.config_dir == config_repo.resolve()
-    assert args.argv == ["status", "-C", str(config_repo.resolve())]
-    assert "mcctl status: exit 0" in buf.getvalue()
-    assert homecfg.load().current == config_repo.resolve()  # an explicit -C that worked is remembered
-
-
-@pytest.mark.parametrize("key", [CTRL_C, ESC])
-def test_ctrl_c_and_esc_quit_with_0(config_repo: Path, key: str) -> None:
-    with create_pipe_input() as inp:
-        h, _ = make_home(config_repo, [key], inp)
-        assert h.loop() == 0
-
-
-def test_a_failing_command_returns_to_the_menu(config_repo: Path) -> None:
-    calls: list[list[str]] = []
-
-    def runner(argv: list[str]) -> int:
-        calls.append(argv)
-        raise SystemExit(1)
-
-    with create_pipe_input() as inp:
-        # Logs (one down from Status), then Quit
-        h, buf = make_home(config_repo, [DOWN + ENTER, UP + UP + ENTER], inp, runner=runner)
-        assert h.loop() == 0
-    assert calls == [["logs", "-C", str(config_repo.resolve())]]
-    assert "mcctl logs: exit 1" in buf.getvalue()
-
-
-def test_config_get_asks_for_the_setting(config_repo: Path) -> None:
-    calls: list[list[str]] = []
-    with create_pipe_input() as inp:
-        h, _ = make_home(config_repo, ["minecraft.motd" + ENTER], inp, runner=lambda a: calls.append(a) or 0)
-        h.run_item(home.ITEMS["config-get"])
-    assert calls == [["config", "get", "minecraft.motd", "-C", str(config_repo.resolve())]]
-
-
-def test_without_a_config_repo_items_say_so(tmp_path: Path) -> None:
-    with create_pipe_input() as inp:
-        h, buf = make_home(None, [], inp, runner=lambda a: pytest.fail("ran"), cwd=tmp_path)
-        h.show_header()
-        assert h.run_item(home.ITEMS["status"]) is None
-    assert "none: “Switch config repo”" in buf.getvalue()
-    assert "no config repo yet" in buf.getvalue()
-
-
-def test_switch_config_repo_by_path(config_repo: Path, tmp_path: Path) -> None:
-    other = make_config_repo(tmp_path / "other")
-    with create_pipe_input() as inp:
-        h, _ = make_home(config_repo, [ENTER, f"{other}{ENTER}"], inp)  # default: "Enter a path…"
-        assert h.switch()
-    assert h.root == other.resolve() and h.source == "remembered"
-    assert homecfg.load().current == other.resolve()
-    with create_pipe_input() as inp:  # now it's in the picker; "Back" changes nothing
-        h, _ = make_home(config_repo, [DOWN + ENTER], inp)
-        assert not h.switch()
-    titles = [c.title for c in h.prompter.selects[0][1]]  # type: ignore[attr-defined]
-    assert titles[0] == str(other.resolve()) and titles[-1] == "Back"
-
-
-def test_switch_refuses_a_folder_that_isnt_a_config_repo(config_repo: Path, tmp_path: Path) -> None:
-    with create_pipe_input() as inp:
-        h, buf = make_home(config_repo, [ENTER, f"{tmp_path}{ENTER}"], inp)
-        assert not h.switch()
-    assert h.root == config_repo.resolve() and "isn't a config repo" in buf.getvalue()
+# --- the config repo it opens, the status probe ------------------------------------------------------
 
 
 def test_initial_repo_precedence(config_repo: Path, tmp_path: Path) -> None:
@@ -239,30 +95,6 @@ def test_initial_repo_precedence(config_repo: Path, tmp_path: Path) -> None:
     assert home._initial(home.Launch(config_repo), tmp_path) == (config_repo.resolve(), "-C")
     assert home._initial(home.Launch(None), config_repo) == (config_repo.resolve(), "current directory")
     assert home._initial(home.Launch(None), tmp_path) == (other.resolve(), "remembered")
-
-
-# --- the status header ------------------------------------------------------------------------------------
-
-
-def test_status_failures_read_unknown(config_repo: Path) -> None:
-    def boom(cfg: object) -> remote.Status:
-        raise RuntimeError("boom")
-
-    out = ui.Out(io.StringIO(), rich=False)
-    rows = dict(home.header_rows(config_repo, "-C", home.StatusProbe(boom), out))
-    assert rows["Server"] == "unknown (RuntimeError: boom)"
-    down = home.StatusProbe(lambda cfg: remote.Status(reachable=False, error="ssh x: timed out"))
-    rows = dict(home.header_rows(config_repo, "-C", down, out))
-    assert rows["Server"] == "unknown (ssh x: timed out)" and "Last deploy" in rows
-
-
-def test_a_broken_config_repo_still_shows_the_header(config_repo: Path) -> None:
-    (config_repo / "server.yml").write_text("name: [not, valid\n")
-    out = ui.Out(io.StringIO(), rich=False)
-    rows = dict(home.header_rows(config_repo, "-C", home.StatusProbe(lambda c: pytest.fail("probed")), out))
-    assert rows["Deployment"].startswith("unknown (")
-    assert rows["Product"].startswith("pinned v0.0.0")
-    assert rows["Server"].startswith("unknown (")
 
 
 def test_probe_budget_cache_and_late_answer(config_repo: Path) -> None:
@@ -432,97 +264,3 @@ def test_a_reexecuted_command_gets_the_remembered_c(
     root = str(config_repo.resolve())
     assert seen[0].argv == ["lock", "update", "-C", root, "--dry-run"]
     assert seen[1].argv == ["logs", "-C", root, "-f"]
-
-
-# --- phase 2: actions with questions and typed confirmations ------------------------------------------------
-
-
-def run_keys(config_repo: Path, key: str, keys: list[str]) -> tuple[list[list[str]], str]:
-    calls: list[list[str]] = []
-    with create_pipe_input() as inp:
-        h, buf = make_home(config_repo, keys, inp, runner=lambda a: calls.append(a) or 0)
-        h.run_item(home.ITEMS[key])
-    return calls, buf.getvalue()
-
-
-def test_world_switch_asks_name_countdown_then_the_typed_confirmation(config_repo: Path) -> None:
-    calls, _ = run_keys(
-        config_repo, "world-switch", ["creative" + ENTER, ENTER, "switch to creative" + ENTER]
-    )
-    root = str(config_repo.resolve())
-    assert calls == [
-        ["worlds", "switch", "creative", "--countdown", "60", "--confirm", "switch to creative", "-C", root]
-    ]
-
-
-@pytest.mark.parametrize("last", [ESC, ENTER])  # Esc or nothing typed at the confirmation
-def test_an_unconfirmed_destructive_item_runs_nothing(config_repo: Path, last: str) -> None:
-    calls, text = run_keys(config_repo, "world-delete", ["creative" + ENTER, last])
-    assert calls == [] and "not confirmed: nothing was changed" in text
-
-
-def test_esc_at_a_question_returns_to_the_menu(config_repo: Path) -> None:
-    calls, _ = run_keys(config_repo, "world-switch", [ESC])
-    assert calls == []
-
-
-def test_world_create_picks_type_preset_and_countdown(config_repo: Path) -> None:
-    keys = ["farm" + ENTER, DOWN + ENTER, ENTER, "-5" + ENTER, DOWN + ENTER, "create farm" + ENTER]
-    calls, _ = run_keys(config_repo, "world-create", keys)
-    assert calls[0][:-2] == [
-        "worlds", "create", "farm", "--type", "large_biomes", "--preset", "survival_smp", "--seed", "-5",
-        "--countdown", "10", "--confirm", "create farm",
-    ]  # fmt: skip
-
-
-def test_kick_without_a_reason_and_restart_with_a_countdown(config_repo: Path) -> None:
-    root = str(config_repo.resolve())
-    calls, text = run_keys(config_repo, "kick", ["jonas_r" + ENTER, ENTER])
-    assert calls == [["players", "kick", "jonas_r", "-C", root]] and "$ mcctl players kick jonas_r" in text
-    calls, _ = run_keys(config_repo, "ban", ["griefer_99" + ENTER, "griefing again" + ENTER])
-    assert calls == [["players", "ban", "griefer_99", "--reason", "griefing again", "-C", root]]
-    calls, _ = run_keys(config_repo, "restart", [UP + ENTER])  # 60 is first: up wraps to 0
-    assert calls == [["restart", "--countdown", "0", "-C", root]]
-
-
-def test_plugin_and_restore_items(config_repo: Path) -> None:
-    root = str(config_repo.resolve())
-    calls, _ = run_keys(config_repo, "plugin-disable", ["chunky" + ENTER, ENTER, "disable chunky" + ENTER])
-    assert calls == [
-        ["plugins", "disable", "chunky", "--countdown", "60", "--confirm", "disable chunky", "-C", root]
-    ]
-    calls, _ = run_keys(
-        config_repo, "restore", ["abcd1234" + ENTER]
-    )  # restore asks its own typed confirmation
-    assert calls == [["restore", "--live", "abcd1234", "-C", root]]
-    calls, _ = run_keys(config_repo, "console", [])
-    assert calls == [["console", "-C", root]]
-
-
-def test_every_action_item_names_a_real_command() -> None:
-    parser = cli.build_parser()
-    for _, items in home.MENU:
-        for item in items:
-            if item.coming or not item.argv:
-                continue
-            argv = list(item.argv) + ["x" for ask in item.asks if not ask.flag]
-            if item.ask:
-                argv.append("x")
-            args = parser.parse_args(argv)
-            assert callable(args.func), item.key
-
-
-def test_header_shows_the_deployed_version_against_the_pin(config_repo: Path) -> None:
-    """v1.3: the server's product-version.json (over the same SSH status call) next to the pin."""
-    out = ui.Out(io.StringIO(), rich=False)
-
-    def at(commit: str) -> home.StatusProbe:
-        st = online()
-        st.product = {"version": "0.0.0", "commit": commit}
-        return home.StatusProbe(lambda cfg: st)
-
-    rows = dict(home.header_rows(config_repo, "-C", at(TEST_SHA), out))
-    assert rows["Deployed"] == f"v0.0.0 ({TEST_SHA[:12]}) · as pinned"
-    rows = dict(home.header_rows(config_repo, "-C", at("2" * 40), out))
-    assert rows["Deployed"] == f"v0.0.0 ({'2' * 12}) · deployed {'2' * 12}, pinned {TEST_SHA[:12]}: deploy"
-    assert "Deployed" not in dict(home.header_rows(config_repo, "-C", home.StatusProbe(online), out))

@@ -12,6 +12,9 @@ Sources, all against the neutral fixtures ("Lighthouse"):
     brand   scripts/brand_art.py build (brand-server-icon.png, brand-drink.png; it also rebuilds the
             committed art, byte-reproducibly: a no-op unless a pixel grid changed)
     setup   scripts/setup_screenshot.py (setup-mock.svg: `mcctl setup --mock` with tests/e2e/answers.yml)
+    dashboard  scripts/dashboard_screenshot.py (mcctl-dashboard-{overview,confirm,palette}.svg: the terminal
+            dashboard at 120x36 against the tests' fakes, tests/dashboard_fakes.py; every tab on demand with
+            `scripts/dashboard_screenshot.py --all -o DIR`)
 """
 
 from __future__ import annotations
@@ -38,7 +41,7 @@ FEATURE_SHOTS = (
     "client-setup-desktop.png",
     "client-setup-phone.png",
 )
-SOURCES = ("panel", "brand", "setup")
+SOURCES = ("panel", "brand", "setup", "dashboard")
 
 
 def panel() -> None:
@@ -66,13 +69,18 @@ def setup() -> None:
     subprocess.run(cmd, cwd=ROOT, env=env, check=True)
 
 
+def dashboard() -> None:
+    cmd = [sys.executable, "scripts/dashboard_screenshot.py", "-o", str(IMAGES)]
+    subprocess.run(cmd, cwd=ROOT, check=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--only", nargs="+", choices=SOURCES, default=list(SOURCES), help="sources to regenerate")
     args = ap.parse_args(argv)
     IMAGES.mkdir(parents=True, exist_ok=True)
     for source in args.only:
-        {"panel": panel, "brand": brand, "setup": setup}[source]()
+        {"panel": panel, "brand": brand, "setup": setup, "dashboard": dashboard}[source]()
         print(f"{source}: done")
     return 0
 
