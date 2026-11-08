@@ -284,19 +284,42 @@ pub fn run_logs_loop(
     }
 }
 
-/// The logs loop's entry for the daemon (`Agent.logs_loop`, runs until `stop`). The daemon (link's wiring)
-/// passes `observe` = `Agent.observe_logs` (the rejected-logins feed, then `inventory_due`) through
-/// `run_logs_loop`; this wrapper has no panel to feed and ships only.
-pub fn logs_loop(daemon: &crate::daemon::Daemon) {
-    static WARN: std::sync::OnceLock<Warnings> = std::sync::OnceLock::new();
-    let link = Link::new(daemon.settings.clone());
+/// `Agent.observe_logs(entries)`: minecraft.service's delivered lines into the rejected-logins feed; a change
+/// makes the inventory due.
+///
+/// # Errors
+/// What the feed raises (the log round fails, as in Python).
+pub fn observe_logs(daemon: &crate::daemon::Daemon, entries: &[Obj]) -> Result<(), AgentError> {
+    let lines: Vec<(i64, String)> = entries
+        .iter()
+        .map(|e| {
+            let ts = e.get("ts").and_then(Value::as_i64).unwrap_or(0);
+            let msg = e.get("msg").and_then(Value::as_str).unwrap_or("");
+            (ts, msg.to_string())
+        })
+        .collect();
+    if daemon.panel.rejected.feed(&lines)? {
+        daemon.inventory_due.set();
+    }
+    Ok(())
+}
+
+/// The daemon's logs loop (`Agent.logs_loop`, a `daemon::LoopFn`; runs until `stop`): `run_logs_loop` with the
+/// daemon's link, `WARN` and `observe_logs`. Never returns an error: each round's failure is logged there.
+///
+/// # Errors
+/// None (the signature is the daemon's loop type).
+#[allow(clippy::unnecessary_wraps)] // the daemon's LoopFn type
+pub fn logs_loop(daemon: &crate::daemon::Daemon) -> Result<(), AgentError> {
+    let observe = |entries: &[Obj]| observe_logs(daemon, entries);
     run_logs_loop(
         &daemon.settings,
-        &link,
+        &daemon.link,
         &daemon.stop,
-        WARN.get_or_init(Warnings::default),
-        None,
+        daemon.warn,
+        Some(&observe),
     );
+    Ok(())
 }
 
 /// The hidden `selftest-scrub` subcommand, for differential tests only (tests/test_rust_scrub_fuzz.py drives
