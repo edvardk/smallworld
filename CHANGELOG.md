@@ -138,6 +138,17 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   first, which was never sent, so the new world's pass could continue the old world's saved task.
 - A task Chunky resumed by itself after a restart (`continue-on-restart`) no longer stays marked as paused in
   health's state (alerts named pre-generation as the likely cause again).
+- **World library on the Minecraft 26.x folder layout:** a switch now knows that a 26.x world is the one
+  `world/` folder with every dimension inside (`world/dimensions/minecraft/{overworld,the_nether,the_end}/`;
+  the Bukkit names `world_nether`/`world_the_end` stay for borders and pre-generation). Switches between 26.x
+  worlds already carried the Nether and the End inside `world/`; what changes: an archive is checked before
+  anything changes and one with region files in both the 26.x and the pre-26 layout is refused (the server
+  would stop with "already exists" or merge old chunks in); pre-26 folders without region files next to a
+  26.x world are left out and named; a world **archived before the 26.x upgrade** switches in with its three
+  folders and the banner says the server migrates it at start (a 30-second pause). Stale `world_nether/` or
+  `world_the_end/` on the server are still removed (they are in the archive taken first), so they can never
+  be migrated into the next world. `world_info.py` reports the 26.x layout (docs/operations.md "World
+  library").
 
 ## [1.3.1] - 2026-11-07
 

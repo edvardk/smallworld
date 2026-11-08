@@ -13,6 +13,7 @@ import re
 import struct
 import subprocess
 import threading
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -47,6 +48,31 @@ def level_dat(world: Path, dv: int) -> None:
     body = b"\x0a" + name("") + b"\x0a" + name("Data") + b"\x03" + name("DataVersion") + struct.pack(">i", dv)
     world.mkdir(parents=True, exist_ok=True)
     (world / "level.dat").write_bytes(gzip.compress(body + b"\x00\x00"))
+
+
+DIMS = ("overworld", "the_nether", "the_end")
+# Region folders per dimension: 26.x (as the pinned Purpur 26.3 writes a world: everything under world/, no
+# world_nether/ or world_the_end/; the map fixture tests/fixtures/world-26.3 has the same tree) and pre-26
+# (Bukkit's split folders, as worlds archived before the 26.x upgrade have them).
+REGIONS = {
+    "26.x": [f"world/dimensions/minecraft/{d}/region" for d in DIMS],
+    "pre-26": ["world/region", "world_nether/DIM-1/region", "world_the_end/DIM1/region"],
+}
+
+
+def make_world(root: Path, layout: str, dv: int, mark: str) -> None:
+    """A world in root (a server dir or the staging dir) in the given layout: level.dat, player data and one
+    region file per dimension holding `mark` and the dimension, so a test can tell whose chunks it sees."""
+    level_dat(root / "world", dv)
+    (root / "world" / ("players/data" if layout == "26.x" else "playerdata")).mkdir(parents=True)
+    for rel, dim in zip(REGIONS[layout], DIMS, strict=True):
+        (root / rel).mkdir(parents=True)
+        (root / rel / "r.0.0.mca").write_text(f"{mark} {dim}")
+
+
+def chunks(root: Path) -> dict[str, str]:
+    """Every region file under root -> its content."""
+    return {f.relative_to(root).as_posix(): f.read_text() for f in sorted(root.rglob("r.*.mca"))}
 
 
 def snap(name: str, sid: str, time: str, dv: int | None = 4671, size: int = 2 * 10**9) -> dict[str, Any]:
@@ -220,9 +246,8 @@ class FakeOps(worlds.Ops):
 
     def fetch(self, snapshot_id: str) -> Path:
         self.box.events.append(f"fetch {snapshot_id[:8]}")
-        level_dat(worlds.STAGING / "world", self.box.archive_dv)
-        (worlds.STAGING / "world" / "playerdata").mkdir()
-        (worlds.STAGING / "world_nether").mkdir()
+        make_world(worlds.STAGING, self.box.archive_layout, self.box.archive_dv, "archived")
+        self.box.stage(worlds.STAGING)
         return worlds.STAGING
 
     def forget(self, ids: list[str]) -> None:
@@ -236,15 +261,23 @@ class FakeOps(worlds.Ops):
 
 
 class Box:
-    def __init__(self, tmp: Path, monkeypatch: pytest.MonkeyPatch, *, running: bool = True) -> None:
+    def __init__(
+        self,
+        tmp: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        running: bool = True,
+        layout: str = "26.x",
+        archive_layout: str = "26.x",
+    ) -> None:
         self.srv = tmp / "server"
         self.dv, self.archive_dv = 4671, 4671
+        self.archive_layout = archive_layout
+        self.stage: Callable[[Path], None] = lambda root: None  # extra files in the fetched archive
         self.running = running
         self.fail_apply = self.fail_archive = False
         self.events: list[str] = []
-        level_dat(self.srv / "world", self.dv)
-        (self.srv / "world" / "playerdata").mkdir()
-        (self.srv / "world_nether").mkdir()
+        make_world(self.srv, layout, self.dv, "active")
         (self.srv / "server.properties").write_text("level-name=world\ndifficulty=easy\nmotd=x\n")
         state = tmp / "state"
         state.mkdir()
@@ -291,8 +324,8 @@ def test_create_archives_first_then_swaps_and_generates(tmp_path: Path, monkeypa
     props = (box.srv / "server.properties").read_text()
     assert "level-seed=123" in props and "level-type=minecraft:flat" in props and "gamemode=creative" in props
     assert "motd=x" in props  # the rest stays
-    assert not (box.srv / "world" / "playerdata").exists()  # a new world: its own (empty) player data
-    assert not (box.srv / "world_nether").exists()
+    assert not (box.srv / "world" / "players").exists()  # a new world: its own (empty) player data
+    assert chunks(box.srv) == {}  # every dimension of the old world went (it is in the archive)
     st = worlds.load_state()
     assert st["active"] == "creative" and st["since"]
     assert not notify.admin_stopped() and not worlds.MANIFEST.exists()
@@ -310,15 +343,138 @@ def test_switch_fetches_the_archive_and_keeps_the_rest_of_the_server_dir(tmp_pat
     worlds.run_panel(req("switch", "creative", preset="peaceful"), box.ops, box.srv)
     assert "fetch cccccccc" in box.events
     assert box.events.index("archive main dv=4671 running=False") < box.events.index("fetch cccccccc")
-    assert (box.srv / "world" / "playerdata").is_dir() and (
-        box.srv / "world_nether"
-    ).is_dir()  # from the archive
+    assert (box.srv / "world" / "players" / "data").is_dir()  # from the archive
+    # all three dimensions came with world/ (26.x), none of the active world's chunks stayed
+    assert chunks(box.srv) == {
+        rel + "/r.0.0.mca": f"archived {d}" for rel, d in zip(REGIONS["26.x"], DIMS, strict=True)
+    }
+    assert not (box.srv / "world_nether").exists() and not (box.srv / "world_the_end").exists()
     assert (box.srv / "whitelist.json").exists()  # shared by every world
     props = (box.srv / "server.properties").read_text()
     assert (
         "difficulty=peaceful" in props and "level-seed" not in props
     )  # an existing world keeps its own seed
     assert worlds.load_state()["active"] == "creative"
+
+
+@pytest.mark.parametrize("layout", ["26.x", "pre-26"])
+def test_create_removes_every_dimension_of_the_old_world_in_either_layout(
+    tmp_path, monkeypatch, layout
+) -> None:
+    box = Box(tmp_path, monkeypatch, layout=layout)
+    box.archives()
+    worlds.run_panel(req("create", "fresh"), box.ops, box.srv)
+    assert chunks(box.srv) == {} and not (box.srv / "world_nether").exists()
+    assert (box.srv / "world" / "level.dat").exists()  # generated by the (fake) server
+
+
+def test_a_pre_26_archive_switches_in_whole_and_the_server_migrates_it(tmp_path, monkeypatch, capsys) -> None:
+    """A world archived before the 26.x upgrade: its three folders replace the 26.x world (Paper moves them
+    into world/dimensions/ at start-up); nothing of the 26.x world stays to be merged in."""
+    box = Box(tmp_path, monkeypatch, archive_layout="pre-26")
+    box.archives(snap("old", "0ld00000", "2026-01-02T10:00:00Z"))
+    worlds.run_panel(req("switch", "old"), box.ops, box.srv)
+    assert chunks(box.srv) == {
+        rel + "/r.0.0.mca": f"archived {d}" for rel, d in zip(REGIONS["pre-26"], DIMS, strict=True)
+    }
+    assert not (box.srv / "world" / "dimensions").exists()
+    out = capsys.readouterr().out
+    assert "pre-26 folder layout (world/, world_nether/, world_the_end/)" in out and "30-second" in out
+    assert "STEP 6/7: starting the server with old (it moves the pre-26 folders into world/dimensions/" in out
+
+
+def test_an_archive_with_both_layouts_is_refused_before_anything_changes(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    box = Box(tmp_path, monkeypatch)
+    box.archives(snap("odd", "0dd00000", "2026-11-02T10:00:00Z"))
+
+    def stale_nether(root: Path) -> None:
+        (root / "world_nether/DIM-1/region").mkdir(parents=True)
+        (root / "world_nether/DIM-1/region/r.0.0.mca").write_text("stale")
+
+    box.stage = stale_nether
+    before = chunks(box.srv)
+    with pytest.raises(SystemExit):
+        worlds.run_panel(req("switch", "odd"), box.ops, box.srv)
+    out = capsys.readouterr().out
+    assert "both the 26.x layout" in out and "minecraft:the_nether" in out
+    assert "FAILED before anything changed" in out and "start mc-world-apply.service" not in box.events
+    assert chunks(box.srv) == before and box.running and worlds.load_state()["active"] == "main"
+
+
+def test_stale_split_folders_without_chunks_are_left_out_and_named(tmp_path, monkeypatch, capsys) -> None:
+    box = Box(tmp_path, monkeypatch)
+    box.archives(snap("creative", "cccccccc", "2026-11-02T10:00:00Z"))
+
+    def leftovers(root: Path) -> None:
+        (root / "world_nether").mkdir()
+        (root / "world_nether" / "paper-world.yml").write_text("x")
+        (root / "world_the_end").mkdir()
+
+    box.stage = leftovers
+    worlds.run_panel(req("switch", "creative"), box.ops, box.srv)
+    assert not (box.srv / "world_nether").exists() and not (box.srv / "world_the_end").exists()
+    assert len(chunks(box.srv)) == 3
+    assert "left out world_nether/, world_the_end/" in capsys.readouterr().out
+
+
+def test_a_stale_split_folder_on_the_server_never_reaches_the_next_world(tmp_path, monkeypatch) -> None:
+    """A world_nether/ left next to a 26.x world (it went into the archive with the server dir) is removed
+    by the switch: the server would otherwise migrate its chunks into the world switched in."""
+    box = Box(tmp_path, monkeypatch)
+    (box.srv / "world_nether/DIM-1/region").mkdir(parents=True)
+    (box.srv / "world_nether/DIM-1/region/r.0.0.mca").write_text("stale")
+    box.archives(snap("creative", "cccccccc", "2026-11-02T10:00:00Z"))
+    worlds.run_panel(req("switch", "creative"), box.ops, box.srv)
+    assert "stale" not in chunks(box.srv).values() and not (box.srv / "world_nether").exists()
+
+
+def test_region_dims_and_check_layout(tmp_path: Path) -> None:
+    new, old, empty = tmp_path / "new", tmp_path / "old", tmp_path / "empty"
+    make_world(new, "26.x", 4671, "n")
+    (new / "world/dimensions/smallworld/extra/region").mkdir(parents=True)
+    (new / "world/dimensions/smallworld/extra/region/r.1.-1.mca").write_text("x")
+    (new / "world/dimensions/minecraft/the_end/region/r.0.0.mca").unlink()  # an End nobody visited
+    assert worlds.region_dims(new, "world") == {
+        "26.x": ["minecraft:overworld", "minecraft:the_nether", "smallworld:extra"],
+        "pre-26": [],
+    }
+    assert worlds.check_layout(new, "world") == ("26.x", [new / "world"], [])
+    make_world(old, "pre-26", 4000, "o")
+    assert worlds.region_dims(old, "world") == {"26.x": [], "pre-26": list(worlds.DIMENSIONS)}
+    assert worlds.check_layout(old, "world") == (
+        "pre-26",
+        [old / "world", old / "world_nether", old / "world_the_end"],
+        [],
+    )
+    # a world that never saved a chunk: level.dat only
+    level_dat(empty / "world", 4671)
+    assert worlds.check_layout(empty, "world") == ("26.x", [empty / "world"], [])
+    # a region folder reached through a symlink counts for nothing (and is never copied as a folder)
+    (empty / "elsewhere/DIM-1/region").mkdir(parents=True)
+    (empty / "elsewhere/DIM-1/region/r.0.0.mca").write_text("x")
+    (empty / "world_nether").symlink_to(empty / "elsewhere")
+    assert worlds.region_dims(empty, "world")["pre-26"] == []
+    assert worlds.check_layout(empty, "world") == ("26.x", [empty / "world"], [])
+    # vanilla's pre-26 DIM-1 inside the world folder next to 26.x data: mixed
+    (new / "world/DIM-1/region").mkdir(parents=True)
+    (new / "world/DIM-1/region/r.0.0.mca").write_text("x")
+    with pytest.raises(worlds.WorldError, match=r"both the 26\.x layout"):
+        worlds.check_layout(new, "world")
+
+
+def test_apply_refuses_a_mixed_staging_before_removing_anything(tmp_path, monkeypatch) -> None:
+    box = Box(tmp_path, monkeypatch, running=False)
+    make_world(worlds.STAGING, "26.x", 4671, "archived")
+    (worlds.STAGING / "world/region").mkdir()
+    (worlds.STAGING / "world/region/r.0.0.mca").write_text("old overworld")
+    before = chunks(box.srv)
+    with restore.restore_lock():
+        worlds.write_manifest({"name": "x", "level": "world", "create": False, "properties": {}})
+        with pytest.raises(worlds.WorldError, match=r"both the 26\.x layout"):
+            worlds.apply(box.srv)
+    assert chunks(box.srv) == before
 
 
 def test_switch_refuses_a_newer_world_before_anything_changes(tmp_path, monkeypatch) -> None:
@@ -336,7 +492,7 @@ def test_switch_refuses_a_newer_level_dat_found_after_the_fetch(tmp_path, monkey
     with pytest.raises(SystemExit):
         worlds.run_panel(req("switch", "creative"), box.ops, box.srv)
     assert "start mc-world-apply.service" not in box.events and box.events[-3] == "start minecraft.service"
-    assert (box.srv / "world" / "playerdata").is_dir() and not notify.admin_stopped()
+    assert (box.srv / "world" / "players" / "data").is_dir() and not notify.admin_stopped()
     assert "FAILED before anything changed" in capsys.readouterr().out
     assert worlds.load_state()["active"] == "main"
 
@@ -356,7 +512,7 @@ def test_a_failed_archive_leaves_the_world_and_starts_it_again(tmp_path, monkeyp
     box.fail_archive = True
     with pytest.raises(SystemExit):
         worlds.run_panel(req("create", "new"), box.ops, box.srv)
-    assert box.running and not notify.admin_stopped() and (box.srv / "world" / "playerdata").is_dir()
+    assert box.running and not notify.admin_stopped() and (box.srv / "world" / "players" / "data").is_dir()
     assert "FAILED before anything changed (restic failed)" in capsys.readouterr().out
 
 
@@ -459,6 +615,8 @@ def test_apply_refuses_without_the_lock_a_stopped_server_or_a_world_manifest(tmp
 def test_data_version_reads_level_dat(tmp_path: Path) -> None:
     level_dat(tmp_path / "w", 4671)
     assert worlds.data_version(tmp_path / "w") == 4671
+    make_world(tmp_path / "26x", "26.x", 5023, "m")  # 26.x: level.dat stays at the world folder's top
+    assert worlds.data_version(tmp_path / "26x" / "world") == 5023
     assert worlds.data_version(tmp_path / "missing") is None
     (tmp_path / "bad").mkdir()
     (tmp_path / "bad" / "level.dat").write_bytes(b"not gzip")

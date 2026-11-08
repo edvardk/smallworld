@@ -844,8 +844,12 @@ def _world_round() -> None:
     world is archived first (restic, tags world-archive + world:<name>, as mcops) -> mc-world-apply.service swaps the
     folders as minecraft -> the server generates the new world (the seed matches over RCON, server.properties has
     the type) -> pending.json -> a deploy honours it (worlds-library.json) -> a server.yml pull request -> merged;
-    switch back -> the old world (a marker file in it) is back; delete the archived world; refusals."""
+    switch back -> the old world (a marker file in it, and every dimension's region files: 26.x keeps them all in
+    world/dimensions/) is back; delete the archived world; refusals."""
     marker = SERVER / "world" / "e2e-world-marker.txt"
+    dims = SERVER / "world" / "dimensions"
+    regions = sorted(f.relative_to(dims).as_posix() for f in dims.glob("*/*/region/r.*.mca"))
+    expect(bool(regions), f"the 26.x world keeps its region files in world/dimensions/ ({len(regions)})")
     marker.write_text("the original world")
     pw = pwd.getpwnam("minecraft")
     os.chown(marker, pw.pw_uid, pw.pw_gid)
@@ -864,6 +868,8 @@ def _world_round() -> None:
     archives = restic_snapshots("--tag", "world-archive,world:world")
     expect(bool(archives), f"the old world was archived first (world-archive + world:world: {len(archives)})")
     expect(not marker.exists(), "the new world doesn't have the old world's files")
+    expect(not any((SERVER / f"world{s}").exists() for s in ("_nether", "_the_end")),
+           "26.x: no world_nether/ or world_the_end/ next to the new world")  # fmt: skip
     expect(server_answers(), "the new world's server accepts connections")
     expect("8675309" in rcon_safe("seed"), f"the new world has the seed ({rcon_safe('seed')})")
     props = (SERVER / "server.properties").read_text()
@@ -904,6 +910,8 @@ def _world_round() -> None:
         marker.exists() and marker.read_text() == "the original world",
         "the archived world is back, files and all",
     )
+    missing = [r for r in regions if not (dims / r).is_file()]
+    expect(not missing, f"every dimension's region files are back ({len(regions)}; missing {missing[:5]})")
     expect(world_state().get("active") == "world", "worlds.json: world is active again")
     expect(server_answers(), "the server accepts connections after switching back")
     expect(

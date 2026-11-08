@@ -2,14 +2,17 @@
 """The world library (v1.2): several worlds per server, only the active one on the box. Stdlib only.
 
 The active world always lives in the server dir under the fixed level-name (server.yml minecraft.level_name,
-e.g. world/, world_nether/, world_the_end/), so backups, restores, borders and pre-generation work as before.
+e.g. world/), so backups, restores, borders and pre-generation work as before. Since Minecraft 26.x that one
+folder holds every dimension (<level>/dimensions/minecraft/<dimension>/); worlds archived before 26.x have
+Bukkit's split folders (world/, world_nether/, world_the_end/) and still switch in: see LAYOUT.
 Every other world is a restic snapshot of the server dir in the existing R2 repository, tagged
 `world-archive`, `world:<name>` and `dv:<DataVersion>`. `backup.py`'s `forget` only ever selects snapshots
 tagged `auto`, so archives are never forgotten by the retention policy; only `world_delete` forgets them
 (and only once the bucket lock allows: older than KEEP_WITHIN_DAYS, the rest later, see forget_due).
 
-Each world folder has its own playerdata/, advancements/ and stats/, so inventories, ender chests and XP are
-per world. The whitelist, ops and bans are files of the server dir and are shared by every world.
+Each world folder has its own player data (players/data, players/advancements, players/stats since 26.x;
+playerdata/, advancements/, stats/ before), so inventories, ender chests and XP are per world. The whitelist,
+ops and bans are files of the server dir and are shared by every world.
 
     worlds.py --panel   # mc-world.service (as the ops user, restic credentials): the request the agent wrote
     worlds.py --apply      # mc-world-apply.service (as minecraft, no credentials): swap the world folders
@@ -66,7 +69,18 @@ SEED = re.compile(r"(-?[0-9]{1,19})?")  # = mcctl.schema SEED ("" = random)
 ARCHIVE_TAG = "world-archive"
 KEEP_ARCHIVES = 2  # newest archive snapshots kept per world; older ones are forgotten (after the bucket lock)
 STORAGE_NOTE_BYTES = 10 * 10**9  # R2's free storage: the panel shows a note above this
-DIMENSION_SUFFIXES = ("", "_nether", "_the_end")  # Bukkit's world folders (Paper/Purpur)
+# LAYOUT. Since 26.x every dimension lives in the one world folder (level-name), level.dat and players/
+# at its top: <level>/dimensions/<namespace>/<dimension>/region (vanilla LevelResource; seen in a world
+# written by the pinned Purpur 26.3, which writes no <level>_nether/ or <level>_the_end/). Before 26.x
+# Paper/Purpur kept a folder per Bukkit world: <level>/region, <level>_nether/DIM-1/region,
+# <level>_the_end/DIM1/region. At start-up Paper's WorldFolderMigration moves such a world into the new
+# layout (after a 30-second warning) and deletes the old folders; a file both layouts hold stops the start
+# ("already exists"), and region files only the old layout holds would be merged in. The Bukkit world names
+# (RCON, Chunky) are still <level>, <level>_nether and <level>_the_end. A switch therefore removes all three
+# folders from the server dir, copies a 26.x archive's <level>/ alone (split folders without region files
+# are left out and named) and a pre-26 archive's three folders (Paper migrates them), and refuses an archive
+# with region files in both layouts.
+LEGACY_SUFFIXES = ("_nether", "_the_end")  # pre-26 Bukkit world folders next to <level>/
 
 # World types -> server.properties (keys checked against server-config/keys/<version>/server.properties.txt
 # by tests/test_worlds.py). level-type values are vanilla's world preset ids (data/minecraft/worldgen/
@@ -353,8 +367,61 @@ def level_name(server_dir: Path | None = None) -> str:
     return mc_rcon.read_properties(props).get("level-name", "world") if props.exists() else "world"
 
 
-def world_dirs(server_dir: Path, level: str) -> list[Path]:
-    return [server_dir / f"{level}{s}" for s in DIMENSION_SUFFIXES]
+def world_dirs(root: Path, level: str) -> list[Path]:
+    """Every folder a world can have in root: <level>/ (all of a 26.x world) and the pre-26 split folders."""
+    return [root / level, *(root / f"{level}{s}" for s in LEGACY_SUFFIXES)]
+
+
+def _real_dir(p: Path) -> bool:
+    return p.is_dir() and not p.is_symlink()
+
+
+def _regions(root: Path, rel: str) -> bool:
+    """root/rel is a region folder with at least one region file, and no part of it under root is a symlink
+    (the server can write there: never count or copy a folder elsewhere)."""
+    d = root / rel
+    try:
+        if not d.is_dir() or d.resolve() != root.resolve() / rel:
+            return False
+        return any(f.is_file() and not f.is_symlink() for f in d.glob("r.*.mca"))
+    except OSError:
+        return False
+
+
+def region_dims(root: Path, level: str) -> dict[str, list[str]]:
+    """Which dimensions hold region files, per layout: {"26.x": [...], "pre-26": [...]} (dimension ids)."""
+    new: list[str] = []
+    base = root / level / "dimensions"
+    if _real_dir(base):
+        for ns in sorted(base.iterdir()):
+            for dim in sorted(ns.iterdir()) if _real_dir(ns) else []:
+                if _regions(root, f"{level}/dimensions/{ns.name}/{dim.name}/region"):
+                    new.append(f"{ns.name}:{dim.name}")
+    places = {
+        "minecraft:overworld": [f"{level}/region"],
+        "minecraft:the_nether": [f"{level}/DIM-1/region", f"{level}_nether/DIM-1/region"],
+        "minecraft:the_end": [f"{level}/DIM1/region", f"{level}_the_end/DIM1/region"],
+    }
+    old = [dim for dim, rels in places.items() if any(_regions(root, rel) for rel in rels)]
+    return {"26.x": new, "pre-26": old}
+
+
+def check_layout(root: Path, level: str) -> tuple[str, list[Path], list[Path]]:
+    """The world in root (a fetched archive): (layout "26.x" | "pre-26", the folders to copy, the folders left
+    out). WorldError for one with region files in both layouts: Paper would refuse it at start-up or merge old
+    chunks into it, so it is restored by hand, if at all."""
+    dims = region_dims(root, level)
+    if dims["26.x"] and dims["pre-26"]:
+        raise WorldError(
+            f"the archive has region files in both the 26.x layout ({level}/dimensions/: "
+            f"{', '.join(dims['26.x'])}) and the pre-26 one ({', '.join(dims['pre-26'])}); the server would "
+            "refuse or merge them at start-up, so it isn't switched in (restore it by hand)"
+        )
+    present = [d for d in world_dirs(root, level) if _real_dir(d)]
+    legacy = [d for d in present if d != root / level]
+    if dims["pre-26"] or (legacy and not _real_dir(root / level / "dimensions")):
+        return "pre-26", present, []
+    return "26.x", [d for d in present if d not in legacy], legacy
 
 
 def version_check(target_dv: int | None, current_dv: int | None) -> str:
@@ -721,6 +788,7 @@ def run_panel(req: dict[str, Any], ops: Ops, server_dir: Path | None = None) -> 
     prior = read_marker() if was_stopped else None
     notify.maintenance(180, f"world switch to {name}")
     applied = marked = False
+    layout = "26.x"
     saved = ""
     import restore
 
@@ -752,6 +820,21 @@ def run_panel(req: dict[str, Any], ops: Ops, server_dir: Path | None = None) -> 
                     raise WorldError(f"archive {archive['short_id']} has no {level}/level.dat")
                 if why := version_check(staged_dv, current_dv):
                     raise WorldError(why)
+                layout, _, left_out = check_layout(staged, level)
+                if layout == "pre-26":
+                    found = ", ".join(d.name + "/" for d in world_dirs(staged, level) if _real_dir(d))
+                    print(
+                        f"WARNING: archive {archive['short_id']} has the pre-26 folder layout ({found}): the "
+                        f"server moves it into {level}/dimensions/ when it starts (after a 30-second pause), "
+                        "one way (the archive itself stays as it was)",
+                        flush=True,
+                    )
+                if left_out:
+                    print(
+                        f"WARNING: left out {', '.join(d.name + '/' for d in left_out)}: pre-26 folders "
+                        f"without region files next to a 26.x world (still in archive {archive['short_id']})",
+                        flush=True,
+                    )
             write_manifest(
                 {
                     "name": name,
@@ -775,7 +858,10 @@ def run_panel(req: dict[str, Any], ops: Ops, server_dir: Path | None = None) -> 
         if was_stopped:
             step(7, total, f"done: {name} is active; the server stays stopped (it was admin-stopped before)")
             return f"WORLD {name} active (server stopped; {previous} archived as {saved[:8]})"
-        step(6, total, f"starting the server with {name}" + (" (generating it)" if create else ""))
+        how = " (generating it)" if create else ""
+        if layout == "pre-26":
+            how = f" (it moves the pre-26 folders into {level}/dimensions/ first: a 30-second pause)"
+        step(6, total, f"starting the server with {name}{how}")
         ops.systemctl("start", UNIT)
         verify(entry, create, sdir, level)
         ops.backup_now()
@@ -897,15 +983,16 @@ def apply(server_dir: Path | None = None) -> str:
         restore.is_real_dir(STAGING / level) and (STAGING / level / "level.dat").is_file()
     ):
         raise WorldError(f"nothing staged in {STAGING}")
+    copy = [] if create else check_layout(STAGING, level)[1]  # before anything is removed
+    # All three, whatever the layout: a stale <level>_nether/ left next to the new world would be migrated
+    # into it at start-up. Whatever they held is in the archive run_panel took first.
     for d in world_dirs(sdir, level):
         if d.is_symlink():
             d.unlink()
         elif d.exists():
             shutil.rmtree(d)
-    if not create:
-        for d in world_dirs(STAGING, level):
-            if restore.is_real_dir(d):
-                restore.copy_into(d, sdir / d.name)
+    for d in copy:
+        restore.copy_into(d, sdir / d.name)
     set_properties(sdir / "server.properties", props)
     (sdir / "logs").mkdir(mode=0o750, exist_ok=True)
     return f"applied {record['name']} ({'new' if create else 'from its archive'})"
