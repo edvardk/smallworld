@@ -17,6 +17,7 @@ This page explains the code to someone who knows Python and wants to learn Rust.
 - [The files, one by one](#the-files-one-by-one)
 - [The stop path](#the-stop-path)
 - [What "identical" means, and how it is proved](#what-identical-means-and-how-it-is-proved)
+- [Which Python is the spec](#which-python-is-the-spec)
 - [Build, test and run it yourself](#build-test-and-run-it-yourself)
 - [Exercises](#exercises)
 
@@ -300,7 +301,7 @@ and `int()` (`PyInt`: Python ints have no size limit, so the number is kept as i
 `argparse` accepts more than most people know: `--rad 5` for `--radius 5`, `--radius=5`, `-5` as a value but `-x`
 as an unknown option, `--` to end options, `-h` anywhere. A drop-in must accept and refuse the same command lines
 with the same `error:` line and exit status 2, so this file is a small copy of argparse's own algorithm
-(`_parse_known_args` in Python 3.13), limited to the options `mc_rcon.py` defines. It is the most intricate file;
+(`_parse_known_args` in Python 3.13.5, the spec), limited to the options `mc_rcon.py` defines. It is the most intricate file;
 read it last. The usage and help texts are argparse-like, not identical (nothing parses them).
 
 ### ops.rs: the operations
@@ -372,7 +373,7 @@ directory), login and command timeouts (the real 10 s), countdown marks and its 
 rule idempotency (two runs: `CHANGED` then `OK`, same packets), stop with `$MAINPID`, non-UTF-8 arguments, and about
 80 argparse command lines.
 
-Known differences, all outside anything the product or a person types:
+Known differences from the spec Python, all outside anything the product or a person types:
 
 - Python's `int()` and `\d` also accept non-ASCII decimal digits (`٣`); the binary accepts ASCII digits only.
 - `repr()` of unassigned or rare "format" Unicode characters may show them raw where Python escapes them.
@@ -381,6 +382,40 @@ Known differences, all outside anything the product or a person types:
 - A countdown of about 292 years (Python fails its sleep with `EINVAL`); the countdown skips spawning notify.py
   when no Discord webhook is configured (Python would still import alerts.py and notify.py).
 - Usage and help texts are argparse-like, not byte for byte; the `error:` line and exit status 2 are identical.
+
+## Which Python is the spec
+
+`mc_rcon.py` itself doesn't behave the same on every Python: argparse changed between patch releases (newer ones
+treat `-hX`, `-=x` and a `--` before the subcommand differently; the list of choices in an error is quoted in some
+releases and not in others), and CPython rewords some messages (`time.sleep`'s overflow, `os.kill`'s in 3.14). A
+drop-in has to copy one of them, so the binary's spec is **CPython 3.13.5, Debian 13's `python3`**: the Python of
+the e2e image and of a fresh server (the roles also allow Debian 12, Python 3.11.2, and Ubuntu 24.04,
+3.12.3). On that Python, `tests/test_rust_rcon.py` demands exact parity (CI's `rust` job runs it there).
+
+On the other Pythons a server may run (3.11, 3.12, other 3.13.x) the same tests demand parity except for the
+documented, version-dependent behaviours below, where that Python's alternative is accepted from `mc_rcon.py`
+and the binary must still give the spec's answer (`KNOWN` and `ARGPARSE_KNOWN` in the test). On Pythons no
+server runs (3.14 and later) the side-by-side tests are skipped with that reason; the rest of the file (no
+dependencies, pins, the `ExecStop` fallback) still runs.
+
+| Behaviour | Spec (3.13.5) and the binary | Elsewhere |
+|---|---|---|
+| `time.sleep` past ~292 years (`countdown 99999999999`) | `OverflowError: timestamp too large to convert to C PyTime_t` | 3.11, 3.12: `... C _PyTime_t`; some 3.13 builds: `timestamp out of range for C PyTime_t` |
+| argparse's invalid-choice list | `(choose from cmd, stop, ...)` | quoted (`'cmd', 'stop', ...`) in 3.11, 3.12 before 3.12.8, 3.13 before 3.13.3 and from 3.13.14 |
+| `cmd -hello`, `stop -hfoo` (`-h` with letters glued on) | help, exit 0 | older patch releases (Debian 12's 3.11.2, 3.12.0): `argument -h/--help: ignored explicit argument 'ello'`, exit 2 |
+| `cmd -=x`, `worldborder -=x` | `ambiguous option: -=x could match -h, --help...` | older patch releases (3.11.x, 3.12.0, 3.13.0): `the following arguments are required: ...` |
+| `-- cmd list` (a `--` before the subcommand) | the `--` is dropped, `cmd list` runs | older patch releases (3.11.x, 3.12.0, 3.13.0): `invalid choice: '--'` |
+| `os.kill` past a C int (`MAINPID=99999999999`) | `signed integer is greater than maximum` | 3.14: `Python int too large to convert to C int` (not a server Python) |
+| `cmd -1x`, `cmd -5.` | unknown option: `the following arguments are required: command` | 3.14: taken as a word (not a server Python) |
+
+**No production call site reaches any of them.** `ExecStop` runs `smallworld-rcon stop` with systemd's real
+`$MAINPID`; the deploy runs `countdown 60` (`mc_restart_countdown_seconds`), `worldborder --dimension D --radius R`
+and `gamerule --name N --value V --dimension D ...` with values from the schema-checked `server.yml`; the `mc`
+helper always starts with `cmd`, so a `--` can never come before the subcommand and its only exposure is a person
+typing nonsense: `mc -=x` fails with exit status 2 and sends nothing on every Python (only the wording of the
+`error:` line differs), and `mc -hello` prints help where Debian 12's Python refused it with status 2; neither
+sends anything to the server. So the binary behaves exactly as `mc_rcon.py` did on any supported server for
+everything the product and its admin use.
 
 ## Build, test and run it yourself
 

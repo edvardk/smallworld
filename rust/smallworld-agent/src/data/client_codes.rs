@@ -295,7 +295,7 @@ impl ClientCodes {
 /// None (the loop runs until `stop`).
 #[allow(clippy::unnecessary_wraps)] // daemon::LoopFn
 pub fn client_loop(d: &crate::daemon::Daemon) -> AResult<()> {
-    ClientCodes::for_link(&d.link).run(&d.warn, &d.stop);
+    ClientCodes::for_link(&d.link).run(d.warn, &d.stop);
     Ok(())
 }
 

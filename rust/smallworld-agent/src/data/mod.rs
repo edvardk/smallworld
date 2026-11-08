@@ -241,7 +241,7 @@ pub fn wire(d: &Arc<Daemon>) {
 #[allow(clippy::unnecessary_wraps)] // daemon::LoopFn
 pub fn metrics_loop(d: &Daemon) -> AResult<()> {
     let ws = || d.ws_connected.load(std::sync::atomic::Ordering::SeqCst);
-    run_metrics_loop(&d.link, metrics_state(d), &d.warn, &ws, &d.stop);
+    run_metrics_loop(&d.link, metrics_state(d), d.warn, &ws, &d.stop);
     Ok(())
 }
 
@@ -268,7 +268,7 @@ pub fn inventory_loop(d: &Daemon) -> AResult<()> {
         &d.link,
         d.panel.server_dir.as_deref(),
         &state,
-        &d.warn,
+        d.warn,
         &d.inventory_due,
         &d.stop,
     );

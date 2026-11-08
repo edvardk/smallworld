@@ -472,6 +472,40 @@
      "error": "",
      "trigger": "panel"
     },
+    "last_panel": {
+     "ok": true,
+     "ts": "<time>",
+     "configured": true,
+     "steps": [
+      {
+       "step": "token",
+       "ok": true,
+       "detail": "the Worker minted a token (40 characters), TokenCache accepted it"
+      },
+      {
+       "step": "permissions",
+       "ok": true,
+       "detail": "contents + pull_requests write"
+      },
+      {
+       "step": "repository",
+       "ok": true,
+       "detail": "parity-owner/parity-config readable, push allowed"
+      },
+      {
+       "step": "main",
+       "ok": true,
+       "detail": "main at a1b2c3d4a1b2, players.yml has 2 whitelisted"
+      },
+      {
+       "step": "pulls",
+       "ok": true,
+       "detail": "pull requests reachable (nothing was created)"
+      }
+     ],
+     "error": "",
+     "trigger": "panel"
+    },
     "failures": 0,
     "alerted": false
    }
