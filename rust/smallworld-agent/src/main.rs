@@ -54,10 +54,13 @@ fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args_os()
         .map(|a| String::from_utf8_lossy(&a.into_vec()).into_owned())
         .collect();
-    let code = if argv.get(1).map(String::as_str) == Some("cli") {
-        cli::main(&argv[2..])
-    } else {
-        daemon::main()
+    let code = match argv.get(1).map(String::as_str) {
+        Some("cli") => cli::main(&argv[2..]),
+        // Hidden, for the differential tests only (ship::selftest_scrub: a pure function of stdin).
+        Some("selftest-scrub") => {
+            ship::selftest_scrub(&mut std::io::stdin(), &mut std::io::stdout())
+        }
+        _ => daemon::main(),
     };
     ExitCode::from(code)
 }
