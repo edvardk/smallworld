@@ -311,8 +311,8 @@ final class MapRoom implements Listener {
         private final int top;
         private long painted = Long.MIN_VALUE;
         private boolean complete;
-        private int lastTry = Integer.MIN_VALUE;
-        private int lastCursors = Integer.MIN_VALUE;
+        private int lastTry = Wayfinding.NEVER;
+        private int lastCursors = Wayfinding.NEVER;
 
         Painter(int col, int top) {
             super(false);
@@ -333,7 +333,7 @@ final class MapRoom implements Listener {
             }
             int now = Bukkit.getCurrentTick();
             long gen = prerender.generation(w);
-            if ((gen != painted || !complete) && now - lastTry >= RETRY_TICKS) {
+            if ((gen != painted || !complete) && Wayfinding.due(now, lastTry, RETRY_TICKS)) {
                 lastTry = now;
                 complete = true;
                 for (int l1 = 0; l1 < 128; l1++) {
@@ -349,7 +349,7 @@ final class MapRoom implements Listener {
                 painted = gen;
                 repaints++;
             }
-            if (spec.cursors() && now - lastCursors >= CURSOR_TICKS) {
+            if (spec.cursors() && Wayfinding.due(now, lastCursors, CURSOR_TICKS)) {
                 lastCursors = now;
                 canvas.setCursors(cursors(w));
             }

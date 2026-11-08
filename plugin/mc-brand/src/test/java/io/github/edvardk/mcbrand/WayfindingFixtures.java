@@ -94,6 +94,8 @@ public final class WayfindingFixtures {
             centres.add(List.of(c[0], (int) c[1], Wayfinding.snap(c[0], (int) c[1] + 1)));
         }
         out.put("pocket_centre", centres);
+        out.put("due", List.of(Wayfinding.due(5000, Wayfinding.NEVER, 20), Wayfinding.due(5000, 4981, 20),
+                Wayfinding.due(5000, 4980, 20), Wayfinding.due(0, Wayfinding.NEVER, 100)));
         out.put("prerender", PreRender.fixtures());
         out.put("map_room", MapRoom.fixtures());
 

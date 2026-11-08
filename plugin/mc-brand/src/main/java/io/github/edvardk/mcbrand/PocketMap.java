@@ -285,9 +285,9 @@ final class PocketMap implements Listener {
         private UUID world;
         private int lastPx = Integer.MIN_VALUE;
         private int lastPz;
-        private int lastCursors = Integer.MIN_VALUE;
-        private int lastRecentre = Integer.MIN_VALUE;
-        private int lastSample = Integer.MIN_VALUE;
+        private int lastCursors = Wayfinding.NEVER;
+        private int lastRecentre = Wayfinding.NEVER;
+        private int lastSample = Wayfinding.NEVER;
         private long preGen = Long.MIN_VALUE;
         private boolean wantPre = true;
 
@@ -308,16 +308,16 @@ final class PocketMap implements Listener {
             }
             int now = Bukkit.getCurrentTick();
             boolean held = held(viewer, view.getId());
-            if (held && scale != -1 && now - lastRecentre >= RECENTRE_TICKS) {
+            if (held && scale != -1 && Wayfinding.due(now, lastRecentre, RECENTRE_TICKS)) {
                 lastRecentre = now;
                 recentre(view, viewer);
             }
             boolean changed = pixels(view, canvas, viewer, held, now);
-            if (held && now - lastSample >= SAMPLE_TICKS && prerender.usable(view.getWorld())) {
+            if (held && Wayfinding.due(now, lastSample, SAMPLE_TICKS) && prerender.usable(view.getWorld())) {
                 lastSample = now;
                 sample(view, canvas);
             }
-            if (changed || now - lastCursors >= CURSOR_TICKS) {
+            if (changed || Wayfinding.due(now, lastCursors, CURSOR_TICKS)) {
                 lastCursors = now;
                 cursors(view, canvas, viewer);
             }

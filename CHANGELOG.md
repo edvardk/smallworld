@@ -44,6 +44,8 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ### Changed
 
+- mc-brand's tick timers no longer subtract an `Integer.MIN_VALUE` "never" sentinel (which overflowed): the pocket
+  map re-centres on its holder again (v1.3's re-centre never fired).
 - mc-brand's pocket map centres on even pixels (`Wayfinding.snap(x, scale + 1)`), so its dither parity is the
   tiles'; the picture re-centres every 2 · 2^scale blocks instead of 2^scale.
 - `scripts/build_rust.py` builds every binary of the workspace (`BINARIES`: smallworld-rcon, smallworld-map).

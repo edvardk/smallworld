@@ -59,7 +59,7 @@ final class PreRender {
     private static final class Meta {
         volatile long generation = -1;
         volatile boolean usable;
-        volatile long checked = Long.MIN_VALUE;
+        volatile long checked; // 0 = never: the first request reads it
         volatile boolean refreshing;
     }
 
@@ -108,11 +108,20 @@ final class PreRender {
         return m.usable ? m.generation : -1;
     }
 
+    /**
+     * Is meta.json due for a re-read at {@code now} (ms) after the last one at {@code checked} (0 = never)? Never
+     * compare with a sentinel by subtraction: {@code now - Long.MIN_VALUE} overflows to a negative number, which
+     * kept the first read from ever happening (the v1.4 e2e found it).
+     */
+    static boolean due(long now, long checked) {
+        return checked == 0 || now - checked >= META_MS;
+    }
+
     private Meta meta(World w) {
         String key = w.getKey().toString();
         Meta m = metas.computeIfAbsent(key, k -> new Meta());
         long now = System.currentTimeMillis();
-        if (!m.refreshing && now - m.checked >= META_MS) {
+        if (!m.refreshing && due(now, m.checked)) {
             m.refreshing = true;
             Path world = Bukkit.getWorldContainer().toPath().resolve(Bukkit.getWorlds().get(0).getName());
             Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> refresh(key, m, world));
@@ -330,6 +339,8 @@ final class PreRender {
     /** Fixed inputs for the fixtures (tests/test_wayfinding.py): window coordinates and shading. */
     static List<Object> fixtures() {
         return List.of(grid(-64, 0, 0), grid(128, 1, 127), grid(-4096, 4, 64), tileOf(-1), tileOf(511),
-                tileOf(512), shade(0x7fb238, 0).getRGB() & 0xffffff, shade(0x7fb238, 3).getRGB() & 0xffffff);
+                tileOf(512), shade(0x7fb238, 0).getRGB() & 0xffffff, shade(0x7fb238, 3).getRGB() & 0xffffff,
+                due(1_762_579_467_000L, 0), due(1_762_579_467_000L, 1_762_579_467_000L - META_MS + 1),
+                due(1_762_579_467_000L, 1_762_579_467_000L - META_MS));
     }
 }

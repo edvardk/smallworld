@@ -245,6 +245,25 @@ def test_compass_does_no_per_tick_work() -> None:
     )
 
 
+def test_tick_timers_never_subtract_a_sentinel() -> None:
+    """v1.4 e2e: `now - Integer.MIN_VALUE` (and Long's) overflows to a negative number, so a timer that starts at
+    MIN_VALUE and fires on `now - last >= every` never fires: the pocket map never re-centred, the map room never
+    painted, PreRender never read meta.json. Timers go through Wayfinding.due / PreRender.due; no field that starts
+    at a MIN_VALUE sentinel is ever subtracted."""
+    assert FIX["due"] == [True, False, True, True]
+    for java in sorted(BRAND.glob("*.java")):
+        src = java.read_text()
+        for name in re.findall(r"\b(?:int|long) (\w+) = (?:Integer|Long)\.MIN_VALUE;", src):
+            assert not re.search(rf"-\s*(?:\w+\.)?{name}\b", src), (  # also `now - m.checked`
+                f"{java.name}: {name} starts at MIN_VALUE and is subtracted"
+            )
+    for java in ("PocketMap.java", "MapRoom.java"):
+        src = (BRAND / java).read_text()
+        assert not re.search(r"now - last\w+ >=", src), java
+    assert "Wayfinding.due(now, lastRecentre, RECENTRE_TICKS)" in (BRAND / "PocketMap.java").read_text()
+    assert "Wayfinding.due(now, lastTry, RETRY_TICKS)" in (BRAND / "MapRoom.java").read_text()
+
+
 def test_pocket_map_centres_on_even_pixels() -> None:
     """v1.4: the pocket map's centre is a multiple of 2 * 2^scale (Wayfinding.snap(x, scale + 1)), so the dither
     parity (k1 + l1) & 1 vanilla draws with equals the tiles' (gx + gz) & 1 (docs/reference.md "The pocket map's
@@ -267,7 +286,10 @@ def jdiv(a: int, b: int) -> int:
 
 def test_prerender_window_and_shading() -> None:
     """v1.4: PreRender's window coordinates (gx = cx / 2^s + k1 - 64, tiles of 512) and vanilla's shading."""
-    g1, g2, g3, t1, t2, t3, low, lowest = FIX["prerender"]
+    g1, g2, g3, t1, t2, t3, low, lowest, first, early, late = FIX["prerender"]
+    # meta.json's re-read: due at once the first time, then once a minute (a sentinel compared by subtraction
+    # overflowed and the first read never happened: the v1.4 e2e)
+    assert (first, early, late) == (True, False, True)
     assert [g1, g2, g3] == [jdiv(-64, 1) + 0 - 64, jdiv(128, 2) + 127 - 64, jdiv(-4096, 16) + 64 - 64]
     assert [t1, t2, t3] == [-1 // 512, 511 // 512, 512 // 512]
 
@@ -283,8 +305,10 @@ def test_prerender_window_and_shading() -> None:
         "runTaskAsynchronously",  # file reads off the main thread
         "MAX_TILES = 16",  # 16 x 256 KB = 4 MB
         "data.length != SIZE",  # a tile is checked before use
+        "due(now, m.checked)",
     ):
         assert needle in pre, needle
+    assert "= Long.MIN_VALUE" not in pre  # no sentinel compared by subtraction
     pm = (BRAND / "PocketMap.java").read_text()
     assert "prerender.window(" in pm and "private boolean fill(" in pm and "private void sample(" in pm
 

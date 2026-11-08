@@ -504,3 +504,32 @@ def test_p16_cpu_affinity_split_pins_the_jvm_off_the_helpers_cpu() -> None:
             assert directive in lines, f"{unit}: {directive}"
     off = render(UNITS["minecraft.service"][0]).splitlines()
     assert not any(ln.startswith("AllowedCPUs=") for ln in off)
+
+
+def test_the_jvm_can_read_the_world_map_output() -> None:
+    """v1.4: mc-brand (the JVM, minecraft.service) reads what the map role writes and installs: the plugin config's
+    prerender_dir is mc-map.service's StateDirectory, its colors_file the role's installed colours, both pass the
+    plugin's own path checks (Settings.file), and minecraft.service's sandbox neither hides nor masks them (it
+    may leave them read-only: ProtectSystem=strict)."""
+    import re as _re
+
+    gv = render(REPO / "ansible/roles/map/templates/mc-map.service.j2")
+    assert "StateDirectory=mc-map" in gv.splitlines() and GROUP_VARS["mc_map_dir"] == "/var/lib/mc-map"
+    assert "Group=minecraft" in gv.splitlines() and "StateDirectoryMode=0750" in gv.splitlines()
+    tpl = (REPO / "ansible/roles/plugins/templates/mc-brand.yml.j2").read_text()
+    assert "'pocket_map': {'prerender_dir': mc_map_dir, 'colors_file': mc_map_colors}" in tpl
+    tasks = (REPO / "ansible/roles/map/tasks/main.yml").read_text()
+    assert '{src: map-colors.tsv, dest: "{{ mc_map_colors }}"}' in tasks and "group: minecraft" in tasks
+    colors = GROUP_VARS["mc_map_colors"].replace("{{ mc_root }}", GROUP_VARS["mc_root"])
+    settings = (REPO / "plugin/mc-brand/src/main/java/io/github/edvardk/mcbrand/Settings.java").read_text()
+    prefixes = dict(_re.findall(r'file\(pocketMap\.getString\("(\w+)"\), "([^"]+)"\)', settings))
+    assert GROUP_VARS["mc_map_dir"].startswith(prefixes["prerender_dir"])
+    assert colors.startswith(prefixes["colors_file"])
+    unit = render(UNITS["minecraft.service"][0])
+    for directive in ("InaccessiblePaths", "TemporaryFileSystem", "BindPaths", "BindReadOnlyPaths"):
+        for line in (ln for ln in unit.splitlines() if ln.startswith(directive + "=")):
+            for path in line.split("=", 1)[1].split():
+                path = path.lstrip("-+").split(":")[0]
+                for wanted in (GROUP_VARS["mc_map_dir"], colors):
+                    assert not (wanted + "/").startswith(path.rstrip("/") + "/"), (line, wanted)
+    assert "ProtectHome=true" in unit  # /home only: /var/lib and /opt stay visible
