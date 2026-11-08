@@ -30,6 +30,8 @@ pub mod segments;
 pub mod sidecar;
 pub mod snapshot;
 pub mod stats;
+#[cfg(test)]
+mod vectors;
 
 use crate::daemon::lock;
 use crate::jobs::Event;

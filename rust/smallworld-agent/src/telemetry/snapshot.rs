@@ -4,8 +4,8 @@
 //! symlink, capped).
 //!
 //! Python keeps the parsed snapshot as a dict; here it is typed. Where Python echoes a raw JSON value, a
-//! boolean `ts`/`cx`/`cz` (an `int` to Python) reads as 0/1 and an integer beyond 64 bits saturates (PORTING.md
-//! "Divergences"; the plugin writes neither).
+//! boolean `ts` (an `int` to Python) reads as 0/1, and an integer beyond 64 bits saturates or (`ts`) is refused
+//! (PORTING.md "Divergences"; the plugin writes neither). A hot chunk's boolean `cx`/`cz` is echoed as written.
 
 use super::json::{J, OMap, loads_bytes};
 use regex::Regex;
@@ -25,7 +25,7 @@ pub static UUID: LazyLock<Regex> = LazyLock::new(|| {
 pub static NAME: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_]{1,16}\n?\z").expect("NAME"));
 /// telemetry.py `SNAP_NAME` (`\d` is any `Nd` digit: Python's str pattern without re.ASCII).
-static SNAP_NAME: LazyLock<Regex> =
+pub static SNAP_NAME: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^snap-(\d{1,12})\.json\n?\z").expect("SNAP_NAME"));
 
 /// telemetry.py `clean_text(text, limit)` for a str: whitespace (U+001C..U+001F too) to spaces, what
@@ -80,8 +80,9 @@ pub fn fps(v: Option<&J>) -> Option<i64> {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Hot {
     pub w: String,
-    pub cx: i64,
-    pub cz: i64,
+    /// `cx`/`cz` as the plugin wrote them: an int, or a bool (an int to Python, echoed as written).
+    pub cx: J,
+    pub cz: J,
     /// ent, tiles, vil, items (`HOT_KEYS`).
     pub counts: [i64; 4],
 }
@@ -96,8 +97,8 @@ impl Hot {
     pub fn to_j(&self) -> J {
         OMap::new()
             .with("w", self.w.as_str())
-            .with("cx", self.cx)
-            .with("cz", self.cz)
+            .with("cx", self.cx.clone())
+            .with("cz", self.cz.clone())
             .with("ent", self.counts[0])
             .with("tiles", self.counts[1])
             .with("vil", self.counts[2])
@@ -117,17 +118,17 @@ pub fn parse_hot(raw: Option<&J>) -> Vec<Hot> {
         let Some(J::Str(w)) = c.get("w") else {
             continue;
         };
-        let (Some(cx), Some(cz)) = (
-            c.get("cx").and_then(J::as_py_int),
-            c.get("cz").and_then(J::as_py_int),
-        ) else {
+        let (Some(cx), Some(cz)) = (c.get("cx"), c.get("cz")) else {
             continue;
         };
+        if cx.as_py_int().is_none() || cz.as_py_int().is_none() {
+            continue;
+        }
         let count = |k: &str| int_num(c.get(k)).max(0);
         out.push(Hot {
             w: clean_str(w, 64),
-            cx,
-            cz,
+            cx: cx.clone(),
+            cz: cz.clone(),
             counts: [count("ent"), count("tiles"), count("vil"), count("items")],
         });
     }
@@ -139,16 +140,17 @@ pub fn merge_hot(snaps: &[Snapshot]) -> Vec<Hot> {
     let mut by: Vec<Hot> = Vec::new();
     for s in snaps {
         for c in &s.srv.hot {
-            let i = if let Some(i) = by
-                .iter()
-                .position(|a| a.w == c.w && a.cx == c.cx && a.cz == c.cz)
-            {
+            let i = if let Some(i) = by.iter().position(|a| {
+                a.w == c.w
+                    && a.cx.as_py_int() == c.cx.as_py_int()
+                    && a.cz.as_py_int() == c.cz.as_py_int()
+            }) {
                 i
             } else {
                 by.push(Hot {
                     w: c.w.clone(),
-                    cx: c.cx,
-                    cz: c.cz,
+                    cx: c.cx.clone(),
+                    cz: c.cz.clone(),
                     counts: [0; 4],
                 });
                 by.len() - 1
@@ -286,6 +288,39 @@ pub struct Snapshot {
     pub win_ms: i64,
     pub srv: Srv,
     pub pl: Vec<Player>,
+}
+
+impl Snapshot {
+    /// The dict `parse_snapshot` returns, in its key order.
+    pub fn to_j(&self) -> J {
+        let mut srv = OMap::new();
+        for (i, k) in SRV_KEYS.iter().enumerate() {
+            srv.insert(*k, self.srv.nums[i]);
+        }
+        srv.insert(
+            "spikes",
+            J::List(
+                self.srv
+                    .spikes
+                    .iter()
+                    .map(|(t, ms)| J::List(vec![J::Int(*t), J::Float(*ms)]))
+                    .collect(),
+            ),
+        );
+        srv.insert(
+            "worlds",
+            J::List(self.srv.worlds.iter().map(World::to_j).collect()),
+        );
+        srv.insert("scanned", self.srv.scanned);
+        srv.insert("hot", J::List(self.srv.hot.iter().map(Hot::to_j).collect()));
+        OMap::new()
+            .with("seq", self.seq)
+            .with("ts", self.ts)
+            .with("win_ms", self.win_ms)
+            .with("srv", srv)
+            .with("pl", J::List(self.pl.iter().map(Player::to_j).collect()))
+            .into()
+    }
 }
 
 /// telemetry.py `parse_snapshot(data)`.

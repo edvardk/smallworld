@@ -443,7 +443,8 @@ jobs:
       - name: Telemetry parity scenarios against the Rust agent
         env:
           RUST_TELEMETRY_SCENARIOS: >-
-            bad_snapshots identity lag minute_row sessions startup_errors
+            backfill_errors backfill_quiet bad_snapshots identity lag minute_row online overhead segments
+            sessions startup_errors state_roundtrip
         run: |
           read -ra scenarios <<< "$RUST_TELEMETRY_SCENARIOS"
           k=$(printf '%s\n' "${scenarios[@]}" | sed 's/.*/test_telemetry_scenario[&]/' | paste -sd' ' | sed 's/ / or /g')
