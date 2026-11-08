@@ -89,24 +89,28 @@ deploy removes every live player it doesn't list (pending panel adds still count
 
 ### Switching the agent's implementation (v1.4)
 
-mc-agent comes in two implementations (reference.md "Two agent implementations"): `python` (`scripts/mc_agent.py`,
-the default) and `rust` (`smallworld-agent`, the port; the default becomes `rust` in a later release, after a soak).
+mc-agent comes in two implementations (reference.md "Two agent implementations"): `rust` (`smallworld-agent`, the
+port; the default since v1.4.0) and `python` (`scripts/mc_agent.py`, the supported fallback).
 Both run as `mcops` in the same sandbox and share every state file (`/var/lib/mc-agent/`, `pending.json`, the job
-lock, the markers), so switching either way loses nothing and needs nothing but a deploy.
+lock, the markers, the telemetry's `telemetry-id.json` and segments), so switching either way loses nothing and
+needs nothing but a deploy. Both run the experience telemetry inside the agent process: there is no telemetry unit
+to watch.
 
-- **Switch:** `mcctl config set agent.implementation rust -C $C`, then publish and deploy as for any change (push
-  to main, or `mcctl deploy -C $C`). The deploy points `/opt/minecraft/bin/mc-agent` at the binary, rewrites
-  `mc-agent.service` (`ExecStart=.../smallworld-agent run`) and restarts it; with experience telemetry on it then
-  starts `mc-telemetry.service`, which runs the telemetry the Python agent ran in-process (after the agent's
-  restart, so the two never write the telemetry's files at once). Nothing else changes: the panel, Discord and
-  mcctl's actions work the same.
-- **Check:** `systemctl status mc-agent mc-telemetry` on the box (the agent's line `mc-agent 1.x.y: pushing to
+- **Upgrading to v1.4.0:** a deployment whose `server.yml` doesn't set `agent.implementation` gets the default, so
+  its first v1.4.0 deploy switches a box that ran the Python agent to the Rust one: the deploy points
+  `/opt/minecraft/bin/mc-agent` at the binary, rewrites `mc-agent.service` (`ExecStart=.../smallworld-agent run`)
+  and restarts it once; the telemetry restarts with it, in the same process, on the same `telemetry-id.json` and
+  segments. (A box that ran a v1.4 pre-release has its old `mc-telemetry.service` stopped and removed first.) A
+  second deploy changes nothing. Nothing else changes: the panel, Discord and mcctl's actions work the same.
+- **Switch back to Python:** `mcctl config set agent.implementation python -C $C` (it writes
+  `agent: {implementation: python}` into `server.yml`), then publish and deploy as for any change (push to main,
+  or `mcctl deploy -C $C`): mc-agent restarts as the Python script, with its in-process telemetry, on the same
+  files. Back to the default: `mcctl config set agent.implementation rust -C $C` (or remove the line) and deploy.
+- **Check:** `systemctl status mc-agent` on the box (the agent's line `mc-agent 1.x.y: pushing to
   ...` at start is the same), `cat /opt/minecraft/product-version.json` (`"agent": {"implementation": "rust",
   "sha256": ...}`), and the panel's Health tab (metrics arriving, Versions row green). `readlink
   /opt/minecraft/bin/mc-agent` names the implementation mcctl's actions run.
-- **Roll back:** `mcctl config set agent.implementation python -C $C` and deploy. The deploy stops and removes
-  `mc-telemetry.service` first, then restarts mc-agent as the Python script with its in-process telemetry.
-  If a deploy is impossible and the Rust agent misbehaves, `sudo systemctl stop mc-agent mc-telemetry` on the box
+- **If a deploy is impossible** and the running agent misbehaves, `sudo systemctl stop mc-agent` on the box
   silences it (the server and its backups don't depend on it; the panel then shows the host's agent as down)
   until the next deploy.
 
@@ -934,8 +938,9 @@ Two independent watchers, so a dead box is noticed even though it can't report i
     `GET /status` shows freshness only (no addresses, no messages), and `mcctl doctor` / `mcctl init` check
     that the cron ran in the last 15 minutes. Worker invocation logs are off (they would record request
     headers, i.e. the bearer token); only the Worker's own error lines are logged.
-- **`mc-agent`** (P8, `panel.mode: cloudflare`, the default; `scripts/mc_agent.py`, or v1.4's Rust port with
-  `agent.implementation: rust` ([switching](#switching-the-agents-implementation-v14)); runs as `mcops`,
+- **`mc-agent`** (P8, `panel.mode: cloudflare`, the default; v1.4's Rust port `smallworld-agent` by default,
+  or `scripts/mc_agent.py` with `agent.implementation: python`
+  ([switching](#switching-the-agents-implementation-v14)); runs as `mcops`,
   `MemoryMax=64M`): outbound HTTPS only, bearer `AGENT_TOKEN`.
   - every `monitoring.metrics_interval_s` (60 s) one sample (TPS, MSPT, players, heap and GC pauses from the
     GC log, JVM memory, CPU, steal, load, memory, disk, network) → `POST /ingest/metrics` → D1 day tables; samples

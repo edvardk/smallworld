@@ -1,0 +1,254 @@
+{
+ "meta": {
+  "generator": "scripts/telemetry_vectors.py",
+  "doc": "load_identity / save_identity, Config.from_env clamps"
+ },
+ "vectors": {
+  "load_identity": [
+   {
+    "file": "{\"src\": \"0badc0de\", \"seq\": 42}",
+    "out": {
+     "src": "0badc0de",
+     "seq": 42
+    }
+   },
+   {
+    "file": "{\"src\": \"0badc0de\", \"seq\": \"7\"}",
+    "out": {
+     "src": "0badc0de",
+     "seq": 7
+    }
+   },
+   {
+    "file": "{\"src\": \"0badc0de\", \"seq\": 7.9}",
+    "out": {
+     "src": "0badc0de",
+     "seq": 7
+    }
+   },
+   {
+    "file": "{\"src\": \"0badc0de\", \"seq\": true}",
+    "out": {
+     "src": "0badc0de",
+     "seq": 1
+    }
+   },
+   {
+    "file": "{\"src\": \"0BADC0DE\", \"seq\": 1}",
+    "out": {
+     "new_random_src": true,
+     "seq": 0
+    }
+   },
+   {
+    "file": "{\"src\": \"0badc0d\", \"seq\": 1}",
+    "out": {
+     "new_random_src": true,
+     "seq": 0
+    }
+   },
+   {
+    "file": "{\"src\": \"0badc0de\"}",
+    "out": {
+     "new_random_src": true,
+     "seq": 0
+    }
+   },
+   {
+    "file": "{\"seq\": 1}",
+    "out": {
+     "new_random_src": true,
+     "seq": 0
+    }
+   },
+   {
+    "file": "[]",
+    "out": {
+     "new_random_src": true,
+     "seq": 0
+    }
+   },
+   {
+    "file": "not json",
+    "out": {
+     "new_random_src": true,
+     "seq": 0
+    }
+   },
+   {
+    "file": "",
+    "out": {
+     "new_random_src": true,
+     "seq": 0
+    }
+   },
+   {
+    "file": "{\"src\": 12345678, \"seq\": 1}",
+    "out": {
+     "src": "12345678",
+     "seq": 1
+    }
+   },
+   {
+    "file": "{\"src\": \"0badc0de\", \"seq\": -3}",
+    "out": {
+     "src": "0badc0de",
+     "seq": -3
+    }
+   },
+   {
+    "file": "{\"src\": \"0badc0de\", \"seq\": \" 5 \"}",
+    "out": {
+     "src": "0badc0de",
+     "seq": 5
+    }
+   },
+   {
+    "file": null,
+    "out": {
+     "new_random_src": true,
+     "seq": 0
+    }
+   }
+  ],
+  "save_identity": {
+   "src": "0badc0de",
+   "seq": 43,
+   "file": "{\"src\": \"0badc0de\", \"seq\": 43}"
+  },
+  "config_from_env": [
+   {
+    "env": {},
+    "out": {
+     "ok": {
+      "snap_dir": "/run/mc-telemetry",
+      "verdict_dir": "/run/mc-verdicts",
+      "segment_dir": "/var/lib/mc-telemetry/segments",
+      "stats_dir": "/opt/minecraft/server/world/stats",
+      "segment_days": 30,
+      "segment_cap_mb": 200,
+      "backfill_window": "",
+      "backfill_pause_s": 2.0,
+      "read_s": 5.0,
+      "segment_s": 300
+     }
+    }
+   },
+   {
+    "env": {
+     "SEGMENT_DAYS": "0",
+     "SEGMENT_CAP_MB": "5",
+     "SEGMENT_S": "10",
+     "BACKFILL_PAUSE_S": "-1",
+     "BACKFILL_WINDOW": "2:00-6:00"
+    },
+    "out": {
+     "ok": {
+      "snap_dir": "/run/mc-telemetry",
+      "verdict_dir": "/run/mc-verdicts",
+      "segment_dir": "/var/lib/mc-telemetry/segments",
+      "stats_dir": "/opt/minecraft/server/world/stats",
+      "segment_days": 1,
+      "segment_cap_mb": 10,
+      "backfill_window": "",
+      "backfill_pause_s": 0.0,
+      "read_s": 5.0,
+      "segment_s": 30
+     }
+    }
+   },
+   {
+    "env": {
+     "SEGMENT_DAYS": "7",
+     "SEGMENT_CAP_MB": "50",
+     "SEGMENT_S": "60",
+     "BACKFILL_PAUSE_S": "0.5",
+     "BACKFILL_WINDOW": "02:00-06:00",
+     "TELEMETRY_DIR": "/x",
+     "VERDICT_DIR": "",
+     "SEGMENT_DIR": "/s"
+    },
+    "out": {
+     "ok": {
+      "snap_dir": "/x",
+      "verdict_dir": "/run/mc-verdicts",
+      "segment_dir": "/s",
+      "stats_dir": "/opt/minecraft/server/world/stats",
+      "segment_days": 7,
+      "segment_cap_mb": 50,
+      "backfill_window": "02:00-06:00",
+      "backfill_pause_s": 0.5,
+      "read_s": 5.0,
+      "segment_s": 60
+     }
+    }
+   },
+   {
+    "env": {
+     "BACKFILL_WINDOW": "25:00-26:99"
+    },
+    "out": {
+     "ok": {
+      "snap_dir": "/run/mc-telemetry",
+      "verdict_dir": "/run/mc-verdicts",
+      "segment_dir": "/var/lib/mc-telemetry/segments",
+      "stats_dir": "/opt/minecraft/server/world/stats",
+      "segment_days": 30,
+      "segment_cap_mb": 200,
+      "backfill_window": "25:00-26:99",
+      "backfill_pause_s": 2.0,
+      "read_s": 5.0,
+      "segment_s": 300
+     }
+    }
+   },
+   {
+    "env": {
+     "SEGMENT_S": "soon"
+    },
+    "out": {
+     "error": "invalid literal for int() with base 10: 'soon'",
+     "type": "ValueError"
+    }
+   },
+   {
+    "env": {
+     "SEGMENT_DAYS": " 3 "
+    },
+    "out": {
+     "ok": {
+      "snap_dir": "/run/mc-telemetry",
+      "verdict_dir": "/run/mc-verdicts",
+      "segment_dir": "/var/lib/mc-telemetry/segments",
+      "stats_dir": "/opt/minecraft/server/world/stats",
+      "segment_days": 3,
+      "segment_cap_mb": 200,
+      "backfill_window": "",
+      "backfill_pause_s": 2.0,
+      "read_s": 5.0,
+      "segment_s": 300
+     }
+    }
+   },
+   {
+    "env": {
+     "SEGMENT_S": "\u0663\u0660"
+    },
+    "out": {
+     "ok": {
+      "snap_dir": "/run/mc-telemetry",
+      "verdict_dir": "/run/mc-verdicts",
+      "segment_dir": "/var/lib/mc-telemetry/segments",
+      "stats_dir": "/opt/minecraft/server/world/stats",
+      "segment_days": 30,
+      "segment_cap_mb": 200,
+      "backfill_window": "",
+      "backfill_pause_s": 2.0,
+      "read_s": 5.0,
+      "segment_s": 30
+     }
+    }
+   }
+  ]
+ }
+}

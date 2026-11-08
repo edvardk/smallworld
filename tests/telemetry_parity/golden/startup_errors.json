@@ -1,0 +1,49 @@
+{
+ "notes": {
+  "experience_off": {
+   "exit": 2
+  },
+  "short_token": {
+   "exit": 2
+  },
+  "remote_http": {
+   "exit": 2
+  },
+  "bad_number": {
+   "exit": 2
+  }
+ },
+ "exits": [],
+ "requests": [],
+ "files": {},
+ "systemd": {
+  "systemctl": [],
+  "journalctl": []
+ },
+ "output": [
+  {
+   "stdout": [],
+   "stderr": [
+    "mc-telemetry: EXPERIENCE is off: the telemetry sidecar has nothing to do"
+   ]
+  },
+  {
+   "stdout": [],
+   "stderr": [
+    "mc-telemetry: AGENT_TOKEN and COMMAND_HMAC_KEY must be set (>= 32 characters)"
+   ]
+  },
+  {
+   "stdout": [],
+   "stderr": [
+    "mc-telemetry: INGEST_URL must be https:// (http:// only for a loopback address)"
+   ]
+  },
+  {
+   "stdout": [],
+   "stderr": [
+    "mc-telemetry: invalid literal for int() with base 10: 'soon'"
+   ]
+  }
+ ]
+}

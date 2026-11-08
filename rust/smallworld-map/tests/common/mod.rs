@@ -357,10 +357,27 @@ pub fn write(path: &Path, data: &[u8]) {
     std::fs::write(path, data).unwrap();
 }
 
-/// A fresh temporary directory under the target dir (no tempfile crate).
-pub fn tmpdir(name: &str) -> std::path::PathBuf {
+/// A fresh temporary directory (no tempfile crate), removed with everything in it when the guard is dropped,
+/// so a run leaves nothing behind in the system temp directory (a failing test's assert unwinds through the drop
+/// too).
+pub struct TmpDir(std::path::PathBuf);
+
+impl std::ops::Deref for TmpDir {
+    type Target = Path;
+    fn deref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TmpDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+pub fn tmpdir(name: &str) -> TmpDir {
     let d = std::env::temp_dir().join(format!("smallworld-map-test-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
-    d
+    TmpDir(d)
 }

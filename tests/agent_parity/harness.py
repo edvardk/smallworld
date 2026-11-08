@@ -155,6 +155,20 @@ def namespaces_work(tmp: Path) -> str:
     return ""
 
 
+def impl_for(config: Any) -> tuple[Any, str]:
+    """(Impl, why it can't run or '') from the session's --impl/--agent-bin (tests/conftest.py); shared with
+    tests/telemetry_parity."""
+    if config.getoption("--impl") == "python":
+        return PYTHON, ""
+    binary = config.getoption("--agent-bin")
+    if not binary:
+        return None, "--impl=rust needs --agent-bin=PATH (the Rust agent isn't built here)"
+    path = Path(binary).resolve()
+    if not path.is_file() or not os.access(path, os.X_OK):
+        return None, f"--agent-bin {binary}: not an executable file"
+    return Impl("rust", (str(path),)), ""
+
+
 # --- normalisation ------------------------------------------------------------------------------------------
 
 TIME_KEYS = {"ts", "at", "iat", "since", "until", "finished_at", "deadline", "started", "finished", "created",
@@ -242,13 +256,16 @@ def summarise(items: Any, head: int = 25, tail: int = 5) -> Any:
 class Box:
     """The production paths the agent sees, as host directories (bound into its mount namespace)."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, mounts: dict[str, str] | None = None) -> None:
         self.root = root
-        for sub in MOUNTS.values():
+        self.mounts = (
+            MOUNTS if mounts is None else mounts
+        )  # tests/telemetry_parity adds /var/lib/mc-telemetry
+        for sub in self.mounts.values():
             (root / sub).mkdir(parents=True, exist_ok=True)
 
     def host(self, path: str) -> Path:
-        for prod, sub in sorted(MOUNTS.items(), key=lambda kv: -len(kv[0])):
+        for prod, sub in sorted(self.mounts.items(), key=lambda kv: -len(kv[0])):
             if path == prod or path.startswith(prod + "/"):
                 return self.root / sub / path[len(prod) :].lstrip("/")
         raise ValueError(f"{path} isn't in the box")
@@ -270,7 +287,7 @@ class Box:
     def files(self) -> dict[str, tuple[str, int, bytes]]:
         """production path -> (type, mode, content) of every file and directory in the box."""
         out: dict[str, tuple[str, int, bytes]] = {}
-        for prod, sub in MOUNTS.items():
+        for prod, sub in self.mounts.items():
             base = self.root / sub
             for p in sorted(base.rglob("*")):
                 rel = prod + "/" + str(p.relative_to(base))
@@ -281,6 +298,8 @@ class Box:
                     out[rel] = ("dir", st.st_mode & 0o7777, b"")
                 elif p.is_socket():
                     out[rel] = ("socket", st.st_mode & 0o7777, b"")
+                elif p.is_fifo():  # never opened: reading a FIFO would block
+                    out[rel] = ("fifo", st.st_mode & 0o7777, b"")
                 else:
                     out[rel] = ("file", st.st_mode & 0o7777, p.read_bytes())
         return out
@@ -391,6 +410,21 @@ class AgentProc:
         return self.proc.poll() is None
 
 
+def install_fake_systemd(tmp: Path) -> tuple[Path, Path]:
+    """fake_systemd.py as `systemctl` and `journalctl` in tmp/fakebin (first on the agent's PATH), answering
+    from and recording into tmp/ctl. Returns (ctl, fakebin)."""
+    ctl, fakebin = tmp / "ctl", tmp / "fakebin"
+    ctl.mkdir(exist_ok=True)
+    fakebin.mkdir(exist_ok=True)
+    source = (HERE / "fake_systemd.py").read_text()
+    source = source.replace('os.environ.get("PARITY_FAKE_CTL", ".")', repr(str(ctl)))
+    for tool in ("systemctl", "journalctl"):
+        p = fakebin / tool
+        p.write_text(f"#!{sys.executable} -I\n{source}")
+        p.chmod(0o755)
+    return ctl, fakebin
+
+
 # --- a scenario ---------------------------------------------------------------------------------------------
 
 
@@ -410,16 +444,7 @@ class Scenario:
         self.rcon = FakeRcon(RCON_PASSWORD, self.box.host("/opt/minecraft/server"))
         self.rcon.known = {n.lower(): (u, n) for n, u in UUIDS.items()}
         self.journal = Journal(tmp / "journal.sock")
-        self.ctl = tmp / "ctl"
-        self.ctl.mkdir(exist_ok=True)
-        self.fakebin = tmp / "fakebin"
-        self.fakebin.mkdir(exist_ok=True)
-        source = (HERE / "fake_systemd.py").read_text()
-        source = source.replace('os.environ.get("PARITY_FAKE_CTL", ".")', repr(str(self.ctl)))
-        for tool in ("systemctl", "journalctl"):
-            p = self.fakebin / tool
-            p.write_text(f"#!{sys.executable} -I\n{source}")
-            p.chmod(0o755)
+        self.ctl, self.fakebin = install_fake_systemd(tmp)
         self.systemd: dict[str, Any] = {
             "show": {
                 "minecraft.service": {
@@ -796,3 +821,25 @@ def read_golden(name: str) -> Any:
 def write_golden(name: str, trace: Any) -> None:
     GOLDEN.mkdir(exist_ok=True)
     (GOLDEN / f"{name}.json").write_text(json.dumps(trace, indent=1, ensure_ascii=False) + "\n")
+
+
+def differences(want: Any, got: Any, path: str = "$", out: list[str] | None = None) -> list[str]:
+    out = [] if out is None else out
+    if len(out) >= 25:
+        return out
+    if isinstance(want, dict) and isinstance(got, dict):
+        for k in list(dict.fromkeys([*want, *got])):
+            if k not in got:
+                out.append(f"{path}.{k}: missing (golden: {str(want[k])[:160]})")
+            elif k not in want:
+                out.append(f"{path}.{k}: unexpected ({str(got[k])[:160]})")
+            else:
+                differences(want[k], got[k], f"{path}.{k}", out)
+    elif isinstance(want, list) and isinstance(got, list):
+        for i, (a, b) in enumerate(zip(want, got, strict=False)):
+            differences(a, b, f"{path}[{i}]", out)
+        if len(want) != len(got):
+            out.append(f"{path}: {len(got)} items, golden has {len(want)}")
+    elif want != got:
+        out.append(f"{path}: {str(got)[:200]!r} != golden {str(want)[:200]!r}")
+    return out

@@ -56,18 +56,16 @@ product/config-repo split, GitHub settings and releasing. New here? Start with t
   `smallworld-rcon` (Rust, `rust/`), identical to `mc_rcon.py`'s command line; `ExecStop` falls back to
   `mc_rcon.py stop` only if the binary gives no answer at all ([the stop path](rust/smallworld-rcon.md#the-stop-path)).
 - **Two agent implementations (v1.4).** `server.yml` `agent.implementation` picks what runs as mc-agent:
-  `python` (default; `scripts/mc_agent.py`, the experience telemetry in the same process) or `rust`
-  (`smallworld-agent`, the complete port, proved against the Python agent by the parity harness; the default
-  flips in a later release, after a soak). Every box gets the pinned binary (`/opt/minecraft/bin/smallworld-agent`,
+  `rust` (the default since v1.4.0; `smallworld-agent`, the complete port, proved against the Python agent by
+  the parity harnesses) or `python` (the supported fallback; `scripts/mc_agent.py`, the experience telemetry in
+  the same process). Every box gets the pinned binary (`/opt/minecraft/bin/smallworld-agent`,
   root 0755) and `/opt/minecraft/bin/mc-agent`, a symlink to the chosen implementation that mcctl's actions run
   (`mc-agent cli`; `mc_agent.py cli` on a box older than v1.4). `mc-agent.service` runs the chosen one directly,
-  in the same sandbox, as the same user. In rust mode with experience on, the telemetry (`scripts/telemetry.py`,
-  not ported) runs beside it as **`mc-telemetry.service`** (`mc_agent.py telemetry`, as `mcops`, same sandbox):
-  the same snapshots in, minute rows, segments and verdicts out, plus `/var/lib/mc-telemetry/online.json`
-  (`{uuid: {u, n, tips, join}}`, rewritten after every poll; older than 30 s = nobody online) that the Rust agent
-  reads for in-game messages, and its own reader of systemd's resource lines for the overhead card. Both
-  implementations share every state file, so a switch either way is a deploy; a new binary, a switch or a new
-  product version restarts the agent (and the sidecar). `product-version.json` records
+  in the same sandbox, as the same user. Both run the experience telemetry in-process (the Rust agent: its
+  `telemetry` module, the port of `scripts/telemetry.py`, proved by its own parity harness): the same snapshots in,
+  minute rows, segments and verdicts out, `player_message` reading who is online from it, no unit of its own. Both
+  implementations share every state file (`telemetry-id.json` and the segments included), so a switch either way
+  is a deploy; a new binary, a switch or a new product version restarts the agent. `product-version.json` records
   `agent: {implementation, sha256}`. Operations: [operations.md](operations.md#switching-the-agents-implementation-v14).
 - **Verified keys.** `scripts/config_keys.py` rebuilds the pinned Purpur jar from the vanilla jar and Purpur's
   patch (hash-checked), then lists every config key via `javap`. No server code is run. `pytest` fails if an

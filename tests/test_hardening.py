@@ -22,8 +22,6 @@ UNITS = {
     "mc-health.service": (REPO / "ansible/roles/monitoring/templates/mc-health.service.j2", 2.5),
     "mc-restore-apply.service": (REPO / "ansible/roles/backups/templates/mc-restore-apply.service.j2", 2.5),
     "mc-agent.service": (REPO / "ansible/roles/agent/templates/mc-agent.service.j2", 2.5),
-    # v1.4: the telemetry sidecar beside the Rust agent (as mcops, agent.env)
-    "mc-telemetry.service": (REPO / "ansible/roles/agent/templates/mc-telemetry.service.j2", 2.5),
     # P10: the panel's plugin switch (as minecraft) and restore (as mcops; a template, scored as one instance)
     "mc-plugins-apply.service": (REPO / "ansible/roles/plugins/templates/mc-plugins-apply.service.j2", 2.5),
     "mc-restore@abcdef12.service": (REPO / "ansible/roles/backups/templates/mc-restore@.service.j2", 2.5),
@@ -133,8 +131,7 @@ def test_every_unit_gets_the_sandbox(unit: str) -> None:
 
 FENCE_HONOURING = ("minecraft.service", "mc-backup.service", "mc-prune.service", "mc-agent.service",
                    "mc-health.service", "mc-reboot-gate.service", "mc-world.service",
-                   "mc-backup-check.service", "mc-restart-window.service", "mc-map.service",
-                   "mc-telemetry.service")  # fmt: skip
+                   "mc-backup-check.service", "mc-restart-window.service", "mc-map.service")  # fmt: skip
 
 
 @pytest.mark.parametrize("unit", FENCE_HONOURING)
@@ -437,41 +434,53 @@ def test_agent_may_write_only_the_markers_directory() -> None:
 
 def test_the_rust_agent_unit_runs_the_binary_and_keeps_the_sandbox() -> None:
     """v1.4: agent.implementation rust runs smallworld-agent (the real path, not the mc-agent symlink) with the
-    same user, groups, sandbox, limits and writable paths; the telemetry state is the sidecar's."""
+    same user, groups, sandbox, limits, state directories and writable paths: the telemetry runs in-process in both
+    (telemetry-id.json in mc-agent's state, the segments in mc-telemetry's, verdicts.tsv and messages.tsv in the
+    verdict directory), so a switch carries the identity and the segments over."""
     py = render(UNITS["mc-agent.service"][0]).splitlines()
     rust = render(UNITS["mc-agent.service"][0], mc_agent_implementation="rust").splitlines()
     assert (
         "ExecStart=/opt/minecraft/bin/mc_agent.py" in py
         and "ExecStart=/opt/minecraft/bin/smallworld-agent run" in rust
     )
-    assert "StateDirectory=mc-agent mc-telemetry" in py and "StateDirectory=mc-agent" in rust
+    assert "StateDirectory=mc-agent mc-telemetry" in py and "StateDirectory=mc-agent mc-telemetry" in rust
     assert not any(line.startswith("Environment=PYTHON") for line in rust)
+    for lines in (py, rust):
+        assert (
+            "SupplementaryGroups=minecraft systemd-journal" in lines
+        )  # the logs loop feeds the overhead card
+        assert "ReadWritePaths=/run/mc-verdicts" in lines  # experience on (the default)
 
     def kept(lines: list[str]) -> list[str]:
-        return [
-            ln for ln in lines if not ln.startswith(("#", "ExecStart=", "StateDirectory=", "Environment="))
-        ]
+        return [ln for ln in lines if ln and not ln.startswith(("#", "ExecStart=", "Environment="))]
 
-    assert kept(py) == kept(rust)  # nothing else differs: sandbox, MDWE, limits, ReadWritePaths, fence
+    assert kept(py) == kept(rust)  # nothing else differs: sandbox, MDWE, limits, state, ReadWritePaths, fence
 
 
-def test_the_sidecar_unit_is_the_agents_telemetry_half() -> None:
-    """mc-telemetry.service: the agent's user, groups and environment file (the agent token), the telemetry's
-    state (telemetry-id.json in mc-agent's, segments + online.json in mc-telemetry's), the verdict directory
-    writable (verdicts.tsv for the plugin), nothing else."""
-    text = render(UNITS["mc-telemetry.service"][0])
-    lines = text.splitlines()
-    for want in ("User=mcops", "SupplementaryGroups=minecraft systemd-journal", "EnvironmentFile=/etc/minecraft/agent.env",
-                 "StateDirectory=mc-agent mc-telemetry", "UMask=0077", "MemoryMax=64M",
-                 "ExecStart=/opt/minecraft/bin/mc_agent.py telemetry"):  # fmt: skip
-        assert want in lines, want
-    assert [ln for ln in lines if ln.startswith("ReadWritePaths=")] == ["ReadWritePaths=/run/mc-verdicts"]
+def test_no_telemetry_unit_of_its_own() -> None:
+    """v1.4: the Rust agent runs the telemetry in-process (smallworld-agent's telemetry module), as the Python agent
+    does: no mc-telemetry.service in any mode. A pre-release box's sidecar is stopped and removed before mc-agent is
+    (re)started, so two telemetry writers never share telemetry-id.json and the segments; nothing restarts it."""
+    assert not (REPO / "ansible/roles/agent/templates/mc-telemetry.service.j2").exists()
+    tasks = yaml.safe_load((REPO / "ansible/roles/agent/tasks/main.yml").read_text())
+    names = [t["name"] for t in tasks]
+    assert names.index("Remove the old telemetry sidecar") < names.index("Install and run mc-agent")
+    removal = tasks[names.index("Remove the old telemetry sidecar")]
+    assert "when" not in removal
+    steps = {t["name"]: t for t in removal["block"]}
+    assert steps["Stop and disable the telemetry sidecar"]["ansible.builtin.systemd_service"] == {
+        "name": "mc-telemetry.service", "state": "stopped", "enabled": False}  # fmt: skip
+    assert steps["Remove the telemetry sidecar unit"]["ansible.builtin.file"]["state"] == "absent"
+    text = (REPO / "ansible/roles/agent").glob("**/*")
+    for f in text:
+        if f.is_file() and f.suffix in (".yml", ".j2"):
+            body = f.read_text()
+            assert "mc_agent.py telemetry" not in body and "agent_sidecar " not in body, f
 
 
 def test_agent_restarts_follow_code_switch_and_product_version() -> None:
     """v1.4: the binary, the mc-agent symlink and the product version file notify `mc-agent code changed`
-    (a release that changed no script used to leave the old code running: installed != running); the handler pair
-    also restarts the telemetry sidecar where it is installed, after the agent."""
+    (a release that changed no script used to leave the old code running: installed != running)."""
     base = yaml.safe_load((REPO / "ansible/roles/base/tasks/main.yml").read_text())
     by_name = {t["name"]: t for t in base}
     for name in ("Install server-side scripts", "Install smallworld-agent",
@@ -491,35 +500,39 @@ def test_agent_restarts_follow_code_switch_and_product_version() -> None:
     )
     handlers = yaml.safe_load((REPO / "ansible/roles/agent/handlers/main.yml").read_text())
     listeners = [h["name"] for h in handlers if "mc-agent code changed" in str(h.get("listen", ""))]
-    assert listeners == ["Is mc-agent installed (its code changed)?", "Restart mc-agent (its code changed)",
-                         "Is the telemetry sidecar installed?", "Restart the telemetry sidecar"]  # fmt: skip
+    assert listeners == ["Is mc-agent installed (its code changed)?", "Restart mc-agent (its code changed)"]
     defaults = yaml.safe_load((REPO / "ansible/roles/base/defaults/main.yml").read_text())
     env = jinja2.Environment(undefined=jinja2.StrictUndefined)  # noqa: S701 - not HTML
     env.filters["bool"] = bool  # Ansible's filter, for booleans
     for impl, entry in (("python", "mc_agent.py"), ("rust", "smallworld-agent")):
         assert env.from_string(defaults["base_agent_entry"]).render(mc_agent_implementation=impl) == entry
-    agent = yaml.safe_load((REPO / "ansible/roles/agent/defaults/main.yml").read_text())["agent_sidecar"]
-    for mode, impl, exp, want in (("cloudflare", "rust", True, "True"), ("cloudflare", "python", True, "False"),
-                                  ("cloudflare", "rust", False, "False"), ("off", "rust", True, "False")):  # fmt: skip
-        got = env.from_string(agent).render(
-            mc_panel_mode=mode, mc_agent_implementation=impl, mc_experience_enabled=exp
-        )
-        assert got == want, (mode, impl, exp)
+    assert "agent_sidecar" not in yaml.safe_load((REPO / "ansible/roles/agent/defaults/main.yml").read_text())
 
 
-def test_the_sidecar_starts_only_after_the_python_agent_stopped() -> None:
-    """A switch to rust: mc-agent is restarted (Python's in-process telemetry gone) before the sidecar starts, so two
-    telemetry writers never share telemetry-id.json; a switch back removes the sidecar before the handler restarts
-    the Python agent."""
-    tasks = yaml.safe_load((REPO / "ansible/roles/agent/tasks/main.yml").read_text())
-    inner = [t["name"] for t in tasks[0]["block"]]
+def test_a_switch_restarts_the_agent_once() -> None:
+    """v1.4 (rust is the default; a python box upgrading switches): the code-changed pair restarts only a unit that
+    already runs the selected implementation. The minecraft role's mid-play flush comes before the agent role
+    rewrites the unit, whose own handler (Restart mc-agent) then restarts it: once, with the new ExecStart."""
+    handlers = yaml.safe_load((REPO / "ansible/roles/agent/handlers/main.yml").read_text())
+    by_name = {h["name"]: h for h in handlers}
+    probe = by_name["Is mc-agent installed (its code changed)?"]
+    assert probe["ansible.builtin.slurp"]["src"] == "/etc/systemd/system/mc-agent.service"
+    assert probe["failed_when"] is False  # no unit (fresh box, no panel): nothing to restart
+    restart = by_name["Restart mc-agent (its code changed)"]
+    assert restart["when"][0] == "agent_unit_for_code_change.content is defined"
     assert (
-        inner.index("Install the mc-agent unit")
-        < inner.index("Restart mc-agent now when its unit changed in rust mode (the sidecar starts next)")
-        < inner.index("Enable and start the telemetry sidecar")
+        "agent_exec_start in (agent_unit_for_code_change.content | b64decode).splitlines()" in restart["when"]
     )
-    removal = next(t for t in tasks if t["name"] == "Remove the telemetry sidecar where it doesn't belong")
-    assert removal["when"] == "not agent_sidecar"
+    env = jinja2.Environment(undefined=jinja2.StrictUndefined)  # noqa: S701 - not HTML
+    want = {impl: env.from_string(restart["vars"]["agent_exec_start"]).render(
+        mc_bin_dir="/opt/minecraft/bin", mc_agent_implementation=impl) for impl in ("python", "rust")}  # fmt: skip
+    for impl, other in (("python", "rust"), ("rust", "python")):
+        unit = render(UNITS["mc-agent.service"][0], mc_agent_implementation=impl).splitlines()
+        assert want[impl] in unit and want[other] not in unit, impl
+    tasks = yaml.safe_load((REPO / "ansible/roles/agent/tasks/main.yml").read_text())
+    block = next(t for t in tasks if t["name"] == "Install and run mc-agent")["block"]
+    unit_task = next(t for t in block if t["name"] == "Install the mc-agent unit")
+    assert unit_task["notify"] == "Restart mc-agent"
 
 
 TIMELY_UNITS = (
@@ -527,7 +540,6 @@ TIMELY_UNITS = (
     "mc-health.service",
     "mc-backup.service",
     "mc-restart-window.service",
-    "mc-telemetry.service",  # v1.4: the agent's telemetry half (minute rows have a deadline too)
 )  # P13 review M1: deadlines
 IDLE_UNITS = ("mc-prune.service", "mc-reboot-gate.service", "mc-backup-check.service")
 

@@ -2,7 +2,7 @@
 # mc-agent (design §5a): metrics, logs and signed commands between this server and the Cloudflare Worker.
 # Outbound HTTPS only. Runs as {{ mc_ops_user }}, never as minecraft (it holds the agent token and the command key);
 # systemd-journal lets it read the journal it ships. v1.4, server.yml agent.implementation: {{ mc_agent_implementation }}
-# ({{ 'smallworld-agent, the Rust port; the experience telemetry runs in mc-telemetry.service' if mc_agent_implementation == 'rust' else 'scripts/mc_agent.py, the telemetry in-process' }}).
+# ({{ 'smallworld-agent, the Rust port' if mc_agent_implementation == 'rust' else 'scripts/mc_agent.py' }}; the experience telemetry runs in-process either way).
 [Unit]
 Description=Minecraft agent (metrics, logs, panel commands -> Cloudflare Worker)
 Wants=network-online.target
@@ -16,20 +16,16 @@ User={{ mc_ops_user }}
 Group={{ mc_ops_user }}
 SupplementaryGroups=minecraft systemd-journal
 EnvironmentFile={{ mc_etc_dir }}/agent.env
-{% if mc_agent_implementation == 'rust' %}
-# The telemetry (and its mc-telemetry state) is the sidecar's; the agent only reads its online.json there.
-StateDirectory=mc-agent
-StateDirectoryMode=0700
-UMask=0077
-ExecStart={{ mc_bin_dir }}/smallworld-agent run
-{% else %}
+{% if mc_agent_implementation != 'rust' %}
 Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
-# P13: mc-telemetry/segments = the box's own copy of the experience data (gzip segments, 30 days, disk-capped)
+{% endif %}
+# P13: mc-telemetry/segments = the box's own copy of the experience data (gzip segments, 30 days, disk-capped);
+# telemetry-id.json (the rows' source id and sequence) lives in mc-agent's. The same directories for both
+# implementations, so a python <-> rust switch carries the identity and the segments over.
 StateDirectory=mc-agent mc-telemetry
 StateDirectoryMode=0700
 UMask=0077
-ExecStart={{ mc_bin_dir }}/mc_agent.py
-{% endif %}
+ExecStart={{ mc_bin_dir }}/{{ 'smallworld-agent run' if mc_agent_implementation == 'rust' else 'mc_agent.py' }}
 Restart=always
 RestartSec=10
 # Design §5a: ~25 MB; never at the server's expense.

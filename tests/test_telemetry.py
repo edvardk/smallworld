@@ -18,6 +18,7 @@ import mc_agent
 import mc_rcon
 import pytest
 import telemetry
+import yaml
 
 ED = "3f2a0000-0000-4000-8000-000000000c41"
 MIA = "4f2a0000-0000-4000-8000-000000001c41"
@@ -648,7 +649,7 @@ def test_busiest_chunks_parsed_and_merged_per_minute() -> None:
     assert b is not None and len(telemetry.summarize_server([b])["hot"]) == telemetry.MAX_HOT
 
 
-# --- v1.4: the telemetry sidecar (agent.implementation rust: mc_agent.py telemetry) ---------------------------
+# --- v1.4: `mc_agent.py telemetry`, the telemetry alone (the parity harness's entry point) ---------------
 
 
 def agent_settings(tmp_path: Path) -> mc_agent.Settings:
@@ -672,7 +673,7 @@ def test_the_python_agent_runs_telemetry_in_process_unchanged(
 def test_the_sidecar_publishes_who_is_online_for_the_rust_agent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """online.json = {uuid: {u, n, tips, join}} (what rust actions/telemetry.rs reads), rewritten after every
+    """online.json = {uuid: {u, n, tips, join}} (as rust telemetry/sidecar.rs writes it), rewritten after every
     poll, atomically and 0640, and narrowed: no position, world or client details leave the telemetry."""
     snaps = tmp_path / "snap"
     snaps.mkdir()
@@ -748,10 +749,28 @@ def test_the_sidecar_refuses_without_experience(
     assert mc_agent.telemetry_main() == 2
 
 
-def test_the_sidecar_unit_runs_the_sidecar() -> None:
-    """mc-telemetry.service runs `mc_agent.py telemetry`, and the script dispatches that argument to it."""
+def test_the_telemetry_subcommand_has_no_unit() -> None:
+    """`mc_agent.py telemetry` dispatches to telemetry_main (the telemetry parity harness's entry point, with
+    `smallworld-agent telemetry`), and no unit runs it: both agents run the telemetry in-process (v1.4)."""
     repo = Path(__file__).parent.parent
-    unit = (repo / "ansible/roles/agent/templates/mc-telemetry.service.j2").read_text()
-    assert "ExecStart={{ mc_bin_dir }}/mc_agent.py telemetry" in unit
     src = (repo / "scripts/mc_agent.py").read_text()
     assert 'telemetry_main() if sys.argv[1:2] == ["telemetry"] else main()' in src
+    units = [p for p in (repo / "ansible").rglob("*.service.j2") if "mc_agent.py telemetry" in p.read_text()]
+    assert units == []
+    main_rs = (repo / "rust/smallworld-agent/src/main.rs").read_text()
+    assert 'Some("telemetry")' in main_rs and "telemetry::sidecar::main()" in main_rs
+
+
+def test_ci_gates_every_telemetry_scenario_on_the_rust_agent() -> None:
+    """v1.4: ci.yml's rust job runs every telemetry parity scenario against the committed release binary; a new
+    scenario (a golden file) must be added there too."""
+    repo = Path(__file__).parent.parent
+    ci = yaml.safe_load((repo / ".github/workflows/ci.yml").read_text())
+    step = next(
+        s
+        for s in ci["jobs"]["rust"]["steps"]
+        if s.get("name") == "Telemetry parity scenarios against the Rust agent"
+    )
+    listed = step["env"]["RUST_TELEMETRY_SCENARIOS"].split()
+    golden = sorted(p.stem for p in (repo / "tests/telemetry_parity/golden").glob("*.json"))
+    assert sorted(listed) == golden and len(listed) == len(set(listed))

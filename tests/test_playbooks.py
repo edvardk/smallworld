@@ -301,14 +301,16 @@ def test_deploys_restart_mc_agent_when_its_code_changes() -> None:
     assert install.get("notify") == "mc-agent code changed"
 
     # A flush can run the handlers before the agent role installed the unit (fresh box), and boxes without the
-    # panel never have it: the listeners stat the unit first and restart only an installed agent.
+    # panel never have it: the listeners read the unit first and restart only an installed agent (v1.4: one that
+    # already runs the selected implementation; test_hardening.py test_a_switch_restarts_the_agent_once).
     handlers = yaml.safe_load((REPO / "ansible/roles/agent/handlers/main.yml").read_text())
     listening = [h for h in handlers if h.get("listen") == "mc-agent code changed"]
     assert [next(iter(k for k in h if k.startswith("ansible.builtin."))) for h in listening] == [
-        "ansible.builtin.stat",
+        "ansible.builtin.slurp",
         "ansible.builtin.systemd_service",
     ]
-    stat, restart = listening
-    assert stat["ansible.builtin.stat"]["path"] == "/etc/systemd/system/mc-agent.service"
+    probe, restart = listening
+    assert probe["ansible.builtin.slurp"]["src"] == "/etc/systemd/system/mc-agent.service"
+    assert probe["failed_when"] is False
     assert restart["ansible.builtin.systemd_service"]["state"] == "restarted"
-    assert restart["when"] == f"{stat['register']}.stat.exists"
+    assert restart["when"][0] == f"{probe['register']}.content is defined"

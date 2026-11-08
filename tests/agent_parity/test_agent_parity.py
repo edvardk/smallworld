@@ -29,25 +29,12 @@ pytestmark = pytest.mark.skipif(
 
 if sys.platform.startswith("linux"):
     from fakes import make_cert
-    from harness import GOLDEN, PYTHON, Impl, Scenario, namespaces_work, read_golden, write_golden
+    from harness import GOLDEN, Scenario, differences, impl_for, namespaces_work, read_golden, write_golden
     from scenarios import SCENARIOS
 else:  # collected on every OS, run on Linux only
     SCENARIOS = {}
 
 NAMES = sorted(SCENARIOS)
-
-
-def impl_for(config: pytest.Config) -> tuple[Any, str]:
-    """(Impl, why it can't run or '')."""
-    if config.getoption("--impl") == "python":
-        return PYTHON, ""
-    binary = config.getoption("--agent-bin")
-    if not binary:
-        return None, "--impl=rust needs --agent-bin=PATH (the Rust agent isn't built here)"
-    path = Path(binary).resolve()
-    if not path.is_file() or not os.access(path, os.X_OK):
-        return None, f"--agent-bin {binary}: not an executable file"
-    return Impl("rust", (str(path),)), ""
 
 
 def run_one(name: str, impl: Any, tmp: Path, cert: tuple[Path, Path]) -> Any:
@@ -107,28 +94,6 @@ def parity_runs(request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPat
     with ThreadPoolExecutor(max_workers=max(4, min(12, len(wanted) or 1))) as pool:
         futures = {name: pool.submit(run_one, name, impl, tmp, cert) for name in wanted}
         return {"traces": {name: f.result() for name, f in futures.items()}, "tmp": tmp}
-
-
-def differences(want: Any, got: Any, path: str = "$", out: list[str] | None = None) -> list[str]:
-    out = [] if out is None else out
-    if len(out) >= 25:
-        return out
-    if isinstance(want, dict) and isinstance(got, dict):
-        for k in list(dict.fromkeys([*want, *got])):
-            if k not in got:
-                out.append(f"{path}.{k}: missing (golden: {str(want[k])[:160]})")
-            elif k not in want:
-                out.append(f"{path}.{k}: unexpected ({str(got[k])[:160]})")
-            else:
-                differences(want[k], got[k], f"{path}.{k}", out)
-    elif isinstance(want, list) and isinstance(got, list):
-        for i, (a, b) in enumerate(zip(want, got, strict=False)):
-            differences(a, b, f"{path}[{i}]", out)
-        if len(want) != len(got):
-            out.append(f"{path}: {len(got)} items, golden has {len(want)}")
-    elif want != got:
-        out.append(f"{path}: {str(got)[:200]!r} != golden {str(want)[:200]!r}")
-    return out
 
 
 @pytest.mark.parametrize("name", NAMES)

@@ -4,7 +4,8 @@ The Rust port of the on-box agent: `scripts/mc_agent.py` plus the agent half of 
 helpers they run in-process (`notify.py`, `worlds.py`, `health.py`, `alerts.py`, `mc_rcon.py`). This file is the
 contract between the people (and agents) porting it in parallel: which Python each module ports, its interface,
 what it must pass, and the rules everyone follows. Line numbers are `scripts/mc_agent.py` unless prefixed
-`panel:` (`scripts/mc_panel.py`), at the `rust-agent` branch point (v1.4, rust-rcon).
+`panel:` (`scripts/mc_panel.py`), at the `rust-agent` branch point (v1.4, rust-rcon). The telemetry module ports
+`scripts/telemetry.py` (v1.4.0, "telemetry" below).
 
 **Python is the spec.** Copy its logic, don't redesign. Every refusal text, audit entry, file (content, mode,
 type), RCON line, systemctl/journalctl argv, Worker request (semantic JSON) and Discord text must match. The only
@@ -19,13 +20,14 @@ divergences are listed under "Divergences"; add one only with a reason and a tes
 | `types.rs`, `sys.rs`, `unicode.rs`, `settings.rs`, `http.rs`, `notify.rs`, `systemd.rs`, `worlds.rs` | phase 1 | done (shared) |
 | `jobs.rs` | jobs | **done**: runner (foreground + background, cancel, announcements); the daemon's reports are link's `daemon::report_job` |
 | `panel/plugins.rs`, `panel/pending.rs` | phase 1 / sync | done (`record`, `record_world`, `update`); `merge_sync` is sync's |
-| `actions/` | actions | **done**: every `do_<action>`, `Telemetry` (sidecar online.json + `Messages`), console vectors + differential fuzzing; daemon scenarios match golden in their action sections, full gate waits for data (below) |
+| `actions/` | actions | **done**: every `do_<action>`, the `Telemetry` trait (implemented by the telemetry module), console vectors + differential fuzzing; daemon scenarios match golden in their action sections, full gate waits for data (below) |
 | `link/`, `daemon.rs` | link | **done** (verify/ws vectors; envelope, nonce, WebSocket and poll sections of scenarios 1, 2, 20 match golden with stubs elsewhere); final wiring of selftest/client loops waits for misc/data |
 | `ship/` | ship | **done**: vectors, differential fuzzing (`tests/test_rust_scrub_fuzz.py`), scenarios `logs_rejected`, `tail` |
 | `data/`, `panel/rejected.rs` | data | **done**: vectors parsers/round/rejected/constants/client requests + a Python differential corpus; scenario 17 (`client_codes`) passes on its own; 4 (`status`), 14 (`logs_rejected`), `tail` and 24 (`state_roundtrip`) pass in a local merge with ship + actions |
 | `sync/` | sync | **done**: players.yml, GitHub client, round (`sync_pending`, `sync_world`, `merge_sync`, `revert_live`), alerts, `panel_loop`; vectors players/merge_sync/worlds/texts; mixed Python+Rust writers test (`sync/mixed.rs`). Scenarios 12 (`pending_expiry`, `world_pr`) and 23's pending.json half match their goldens in everything sync writes; they still wait on data (startup pushes) and actions (`whitelist`, `cancel`) |
 | `misc/` | misc | **done** (vectors pass; wiring for the daemon: `misc::Misc`, see "misc" below) |
 | integration | integration | **done** (v1.4): the dist binaries rebuilt with every module, all 25 scenarios in `RUST_PARITY_SCENARIOS`, the deploy switch (`agent.implementation`, "Integration" below) |
+| `telemetry/` | telemetry | **done** (v1.4.0): telemetry.py + `make_telemetry`, in-process in the daemon; `smallworld-agent telemetry` = `mc_agent.py telemetry`; all 13 telemetry scenarios and every vector group pass; agent scenario `experience` proves the in-process wiring ("telemetry" below) |
 
 Stubs return `AgentError::NotPorted("module::fn")` (or, where the final signature is infallible, a safe
 placeholder documented as such, e.g. the scrubber redacts everything). `daemon::NOT_PORTED` lists the modules
@@ -174,8 +176,8 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
     files), so it can only print what it was given, scrubbed. `tests/test_rust_scrub_fuzz.py` (Hypothesis,
     derandomized, 300 examples; `SCRUB_FUZZ_EXAMPLES`, `SCRUB_FUZZ_RANDOM=1`) skips until the dist binary has
     it (after the integration rebuild) or `SMALLWORLD_AGENT_BIN` points at a cargo build.
-  - `observe_all` (telemetry's overhead card) isn't ported: in rust mode the telemetry sidecar reads systemd's
-    resource lines itself (design §1.3).
+  - `observe_all` (telemetry's overhead card, v1.4.0): `ShipParts.observe_all` sees every entry of a batch before
+    scrubbing; `logs_loop` passes the in-process telemetry's `Overhead::observe_journal` when `EXPERIENCE=1`.
   - Fixed in both (v1.4 integration): a journal `PRIORITY` of digits `int()` refuses (`"²"`, which `isdigit()`
     accepts; more than 4300 digits) used to raise an uncaught `ValueError` in `read_journal`, so every log round
     failed at that line and the cursor never passed it (a local user could stall shipping with a native journal
@@ -220,8 +222,8 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
 
 - Ports: 1419-1452 `do_status`, `do_selftest`, `do_lookup`, `do_console`; 1454-1541 `_stop_now`, `do_stop`,
   `do_start`, `do_backup`; 1543-1565 `do_tail`, `do_cancel`; 1567-1612 `do_whitelist`, `do_rejected_dismiss`;
-  1662-1688 `do_player_message` (+ telemetry.py `Messages` 848-900, reading the sidecar's `online.json`,
-  stale > 30 s = nobody online); 1690-1745 `do_restore`.
+  1662-1688 `do_player_message` (telemetry.py `Messages` and `online()` now come from the telemetry module);
+  1690-1745 `do_restore`.
 - Files: `actions/power.rs`, `actions/info.rs`, `actions/moderate.rs`, `actions/restore.rs` (reuse
   `actions/world.rs::follow_steps`), the `actions::Telemetry` trait implementation.
 - Must: the admin-stopped marker written first (0644, `fsx::replace_write`), then `systemctl stop`; whitelist
@@ -238,12 +240,11 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
 - **For the daemon wiring (link):** `Executor::new(sample, tail, panel, telemetry)` with `sample` = data's
   `collect(Counters())` (a fresh `Counters`, the shared persistent RCON), `tail` = data's `ConsoleTail.request`
   (always passed; it refuses itself without the WebSocket), `panel.selftest`/`panel.lookup` = misc's, `panel.changed` = set `inventory_due`;
-  `telemetry` = `Some(Arc::new(actions::telemetry::Sidecar::from_env(&env)?))` when `EXPERIENCE=1` (a bad
-  `MESSAGE_*` value is `main`'s exit 2, like Python's `int()` in `make_telemetry`), else `None`.
-- **The sidecar's `online.json`** (telemetry side, design §1.3): `/var/lib/mc-telemetry/online.json`, a JSON object
-  `{uuid: {"u", "n", "tips", "join"}}` (exactly `Telemetry.online()`), rewritten every poll; readable by mcops.
-  Older than 30 s by mtime, missing or not an object = nobody online. `Messages` state (per-player/broadcast
-  limits, hourly count) is the agent's, in memory, as in Python.
+  `telemetry` = the in-process `telemetry::Telemetry` when `EXPERIENCE=1` (`telemetry::make_telemetry`; a bad
+  `SEGMENT_*`/`BACKFILL_PAUSE_S`/`MESSAGE_*` value is Python's `ValueError` in `Agent(s)`: a traceback, exit 1),
+  else `None`.
+- (v1.4.0) `online.json` is gone from the agent: `player_message` reads `Telemetry.online()` in-process. Only
+  `smallworld-agent telemetry` (the harness's entry point, as `mc_agent.py telemetry`) still writes it.
 - Scenario status (2026-11-08, debug build behind the stub gate, on top of link + sync + misc): with a local,
   uncommitted harness tweak that skips the startup metrics/inventory pushes (data) and drops the data plane's
   trace parts (inventory notes and pushes, `rcon.stats_connections`, `systemd.probes`, spool.jsonl), these match
@@ -318,7 +319,42 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
   alert texts use the same template. Both are pinned by `texts.json`; fold into one at integration.
 - `GhRepo::from_env` repeats `github_from_env`'s checks (sync's `GitHub` carries the same repo/api/branch).
 
+### telemetry (scripts/telemetry.py, v1.4.0)
+
+- Ports: telemetry.py whole (`clean_text`, snapshots, `SnapshotReader`, minute rows, `Sessions`, `Overhead`,
+  `unit_stats`, stats, `Segments`, `in_window`/`quiet`, `Pacer`, `Backfill`, verdicts, `Messages`, `Config`,
+  identity, `Telemetry`), mc_agent.py `make_telemetry` (2286-2323), the daemon's telemetry thread (2594-2596), the
+  logs loop's `observe_all` (840-851), and the `telemetry` subcommand (2800-2904: `online_map`, `write_online`,
+  `SidecarTelemetry`, `overhead_round`, `overhead_loop`, `telemetry_main`).
+- Files: `telemetry/json.rs` (an insertion-ordered value with Python's `json.loads`/`dumps`: segments' NDJSON and
+  verdicts.tsv depend on dict order), `snapshot.rs`, `minute.rs` (`py_sum` = CPython >= 3.12 `sum()`), `overhead.rs`,
+  `stats.rs`, `segments.rs`, `backfill.rs`, `messages.rs` (was `actions/telemetry.rs`), `mod.rs` (verdicts, Config,
+  identity, `Telemetry`, `make_telemetry`), `sidecar.rs` (`smallworld-agent telemetry`), `vectors.rs` (tests).
+- Design: **in-process**, as the Python agent. `Daemon.telemetry: Option<Arc<telemetry::Telemetry>>`, built in
+  `Daemon::new` (`self.telemetry.stop = self.stop`), its thread `daemon::telemetry_loop`; `Executor.telemetry` is
+  the same `Arc` (`impl actions::Telemetry`); the logs loop feeds `Telemetry.overhead`. The loop's state (`Core`)
+  sits behind a mutex only its thread takes; `online()` clones the latest snapshot's `Arc` under a lock never held
+  across I/O (Python's lock-free read, P13 review L4). Each round is `catch_unwind`, logged on stdout as Python's
+  `print(f"telemetry round failed: ...")`. mc-agent.service already had the telemetry's paths (StateDirectory
+  `mc-agent mc-telemetry`, the verdict directory, `systemd-journal`), so the sidecar unit went away with no
+  sandbox change (a separate unit had no sandbox advantage: the same user, token and paths).
+- Proof: `tests/telemetry_parity` (13 scenarios of `<bin> telemetry` against Python's goldens: all pass with
+  `--impl=rust`), its vectors in `cargo test` (`telemetry/vectors.rs`: every group, compared as compact JSON
+  text), the agent scenario `experience` (the daemon with `EXPERIENCE=1`: minute rows, player_message's online view
+  and limits, messages.tsv), e2e `telemetry_check.py` on both telemetry shards (`E2E_AGENT_IMPL`: rust, the
+  default, and python).
+- Python issues kept for parity (the goldens and vectors lock them in; fix in both later, with a test on each side):
+  `NaN`/`Infinity` in a snapshot's integer field raises from `int()` (`ValueError`/`OverflowError`: the round fails
+  and the reader never moves past that file; Rust raises the same exception, `snapshot::py_int`, vectors
+  `python_raises`); a backfill row the Worker refuses with a 4xx is retried forever (the Pacer never gives it up);
+  `latest` is never cleared after the plugin goes quiet (`quiet()` and `online()` keep the last snapshot).
+
 ## Parity gate (tests/agent_parity)
+
+The telemetry port (v1.4.0, `scripts/telemetry.py` -> `<bin> telemetry`) has its own gate,
+`tests/telemetry_parity` (docs/ci.md "The telemetry parity harness"): `pytest tests/telemetry_parity --impl=rust
+--agent-bin=PATH` runs its scenarios against `PATH telemetry` (the module the daemon runs in-process); vectors in
+`tests/telemetry_parity/vectors/*.json` (`scripts/telemetry_vectors.py`).
 
 The harness (`origin/agent-harness`, merged) runs 25 black-box scenarios against `<bin> run` (daemon) or
 `<bin> cli ...` inside `unshare -rm` and compares with `tests/agent_parity/golden/`:
@@ -368,20 +404,19 @@ Gotchas the goldens encode (keep them; both are logged as known issues to fix in
 
 ## Integration (v1.4, as deployed)
 
-- `server.yml` `agent.implementation: python | rust` (default `python`, `mcctl/schema.py`) renders
+- `server.yml` `agent.implementation: python | rust` (default `rust` since v1.4.0, `mcctl/schema.py`) renders
   `mc_agent_implementation`. The base role installs `/opt/minecraft/bin/smallworld-agent` (root 0755, the pin
   asserted first) on every box and points `/opt/minecraft/bin/mc-agent` at the chosen implementation;
   `mc-agent.service` runs `smallworld-agent run` (any first argument but `cli` and the hidden selftests runs the
   daemon, as in Python). mcctl's `agent_command` runs `mc-agent cli`, or `mc_agent.py cli` on a pre-1.4 box
   (`sudo test -x`); `mc-run` names `mc-agent-cli-*` units for all three entry paths.
-- The telemetry sidecar is `mc_agent.py telemetry` (`telemetry_main`, Python only; Rust has no such subcommand):
-  `make_telemetry` as in-process, plus `online.json` (`SidecarTelemetry.poll`, the four keys this contract
-  names), its own reader of systemd's resource lines (`overhead_round`, cursor in
-  `/var/lib/mc-telemetry/journal.json`) and `mc-telemetry.service` in the overhead units. Python mode is unchanged.
+- Telemetry runs in-process in both implementations (v1.4.0; the pre-release sidecar `mc-telemetry.service` is
+  gone: the agent role stops and removes a leftover unit before it installs or starts mc-agent).
 - Restarts: a new binary, the symlink or `product-version.json` (`agent: {implementation, sha256}`) notify the
-  handler pair `mc-agent code changed`, which also restarts the sidecar where installed. A switch to rust restarts
-  mc-agent before the sidecar starts, so two telemetry writers never overlap.
-- e2e: `agent-a`, `agent-b`, `telemetry-brand` with `impl: rust` in `e2e-mock.yml`.
+  handler pair `mc-agent code changed`, which restarts only a unit already running the selected implementation:
+  on a switch (or a python box upgrading to the rust default) the unit's own change restarts it, once.
+- e2e: every shard deploys the default (rust); `agent-a`, `agent-b`, `telemetry-brand` again with `impl: python`
+  in `e2e-mock.yml`.
 
 ## Divergences (documented, deliberate)
 
@@ -406,8 +441,23 @@ Gotchas the goldens encode (keep them; both are logged as known issues to fix in
   first argument but `cli` runs the daemon). Pure: no RCON, no file, no audit, no program run.
 - `read_json_list` (whitelist/ops checks): `json.loads(bytes)`'s UTF-16/32 auto-detection isn't reproduced
   (UTF-8, with or without a BOM, is); the server writes UTF-8.
-- `player_message` reads who is online from the telemetry sidecar's `online.json` (stale > 30 s = nobody)
-  instead of the in-process `Telemetry.online()`.
+- telemetry: a minute row's `stats` object lists its players in sorted order; Python's comes from iterating a set
+  (`online().keys() | {...}`), which varies with the hash seed. Same content.
+- telemetry: a snapshot's integer beyond 64 bits (Python: a big int) saturates where Python `int()`s it, and makes
+  a `ts` invalid (the snapshot is skipped); one beyond a float's range reads as an infinity (Python's `float()`
+  raises `OverflowError: int too large to convert to float` in `_num` itself); a `NaN` among the values `sorted()`
+  or `sort(key=...)` orders may come out in another order; a boolean `ts` (an int to Python) reads as 0/1 where Python echoes
+  `true` in the row's `raw`. The plugin writes neither (a hot chunk's boolean `cx`/`cz` is echoed as Python does).
+- telemetry: a segment with a corrupt deflate stream is unreadable (given up, a gap), as a truncated or non-gzip
+  one is in both; Python raises an uncaught `zlib.error` for it (the round fails). The segments are the agent's own.
+- telemetry: `telemetry-id.json` with a non-finite `seq` reads as invalid (a new id); Python's `int()` raises an
+  uncaught `OverflowError` and the agent doesn't start. The file is the agent's own.
+- telemetry: `sum()` is CPython >= 3.12's (Neumaier-compensated for floats). A Python 3.11 box (Debian 12) sums
+  uncompensated; the two can differ in the last bit of a mean before `round()`.
+- telemetry: `OSError` texts in the loop's log line are rebuilt from errno and the path (`[Errno 13] Permission
+  denied: '...'`); `unit_stats`' undecodable output is `UnicodeDecodeError` with a fixed message.
+- telemetry: the Unicode tables are the crate's (newer than the generating Python's 15.1 in places: U+0897 and the
+  other code points Unicode 16 assigned are printable here); the vectors check every other code point.
 - Self-test probe (misc): a GitHub reply that isn't JSON reads as `ValueError("Expecting value: line 1 column 1
   (char 0)")` whatever the actual JSONDecodeError position; base64 and the subscript errors follow CPython's
   texts for the common cases. Only the step's `detail` text can differ, never the outcome.
@@ -470,3 +520,11 @@ Gotchas the goldens encode (keep them; both are logged as known issues to fix in
 - 2026-11-08, `main.rs`: the hidden `selftest-scrub` subcommand (`ship::selftest_scrub`, see ship's notes). ship.
 - 2026-11-08, `panel/rejected.rs`: a `feed` stub with data's signature (superseded by data's port at merge). ship.
 - 2026-11-08, `daemon.rs`: `NOT_PORTED` is empty (ship done). ship.
+- 2026-11-08, `link/mod.rs`: `Link::request_body` (the reply before `json.loads`; `request` = it + loads). Additive.
+  telemetry.
+- 2026-11-08, `ship/mod.rs`: `ShipParts.observe_all` / `ObserveAll` and `run_logs_loop(.., observe_all)` (Python's
+  `ship_logs(observe_all=...)`); `logs_loop` passes the telemetry's overhead. telemetry.
+- 2026-11-08, `daemon.rs`: `Daemon.telemetry`, `telemetry_loop`, the executor's `Telemetry` from the module
+  (`actions/telemetry.rs` moved to `telemetry/messages.rs`, its online.json reader removed); `main.rs`: the
+  `telemetry` subcommand. telemetry.
+- 2026-11-08, `tests/agent_parity`: scenario `experience` + its golden (from Python). telemetry.

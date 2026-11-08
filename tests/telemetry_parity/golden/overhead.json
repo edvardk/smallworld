@@ -1,0 +1,466 @@
+{
+ "notes": {},
+ "exits": [
+  {
+   "sidecar": 0
+  }
+ ],
+ "requests": [
+  {
+   "route": "POST /ingest/experience",
+   "status": 200,
+   "auth": true,
+   "user_agent": "smallworld mc-agent",
+   "content_type": "application/json",
+   "body": {
+    "agent": "1",
+    "live": true,
+    "rows": [
+     {
+      "v": 1,
+      "id": "0badc0de:3",
+      "src": "0badc0de",
+      "seq": 3,
+      "ts": 1768471200000,
+      "srv": {
+       "ticks": 200,
+       "tps": 20.0,
+       "mean": 12.5,
+       "p50": 11.0,
+       "p95": 20.0,
+       "p99": 30.0,
+       "p999": 40.0,
+       "max": 45.0,
+       "spikes": 0,
+       "chunks": 400,
+       "entities": 300,
+       "tiles": 40,
+       "worlds": [
+        {
+         "n": "world",
+         "chunks": 400,
+         "entities": 300,
+         "tiles": 50,
+         "ticking": 40,
+         "players": 0
+        }
+       ],
+       "hot": [],
+       "heap_used_mb": 2048.0,
+       "heap_max_mb": 6656.0,
+       "self_p99_us": 80.2,
+       "self_max_us": 150.0,
+       "budget_skips": 0,
+       "lost_windows": 0,
+       "samples": 1,
+       "gc_heap_after_mb": 1200,
+       "gc_max_pause_ms": 12.3
+      },
+      "pl": [],
+      "raw": [
+       {
+        "ts": 1768471205000,
+        "tps": 20.0,
+        "p50": 11.0,
+        "p99": 30.0,
+        "p999": 40.0,
+        "max": 45.0,
+        "pl": {}
+       }
+      ],
+      "ev": [],
+      "lag": [],
+      "running": [],
+      "ovh": {
+       "minecraft.service": {
+        "mem_mb": 3072.0,
+        "mem_peak_mb": 4096.0,
+        "cpu_pct": null,
+        "io_read_kb": null,
+        "io_write_kb": null
+       },
+       "mc-agent.service": {
+        "mem_mb": 40.0,
+        "mem_peak_mb": 48.0,
+        "cpu_pct": null,
+        "io_read_kb": null,
+        "io_write_kb": null
+       },
+       "mc-telemetry.service": {
+        "mem_mb": 20.0,
+        "mem_peak_mb": 17592186044416.0,
+        "cpu_pct": null,
+        "io_read_kb": null,
+        "io_write_kb": null
+       }
+      },
+      "backlog": {
+       "segments": 0,
+       "rows": 0,
+       "bytes": 0,
+       "oldest": null,
+       "stored_segments": 0,
+       "stored_bytes": 0
+      },
+      "stats": {}
+     }
+    ]
+   }
+  },
+  {
+   "route": "POST /ingest/experience",
+   "status": 200,
+   "auth": true,
+   "user_agent": "smallworld mc-agent",
+   "content_type": "application/json",
+   "body": {
+    "agent": "1",
+    "live": true,
+    "rows": [
+     {
+      "v": 1,
+      "id": "0badc0de:4",
+      "src": "0badc0de",
+      "seq": 4,
+      "ts": 1768471260000,
+      "srv": {
+       "ticks": 200,
+       "tps": 20.0,
+       "mean": 12.5,
+       "p50": 11.0,
+       "p95": 20.0,
+       "p99": 30.0,
+       "p999": 40.0,
+       "max": 45.0,
+       "spikes": 0,
+       "chunks": 400,
+       "entities": 300,
+       "tiles": 40,
+       "worlds": [
+        {
+         "n": "world",
+         "chunks": 400,
+         "entities": 300,
+         "tiles": 50,
+         "ticking": 40,
+         "players": 0
+        }
+       ],
+       "hot": [],
+       "heap_used_mb": 2048.0,
+       "heap_max_mb": 6656.0,
+       "self_p99_us": 80.2,
+       "self_max_us": 150.0,
+       "budget_skips": 0,
+       "lost_windows": 0,
+       "samples": 1,
+       "gc_heap_after_mb": 1200,
+       "gc_max_pause_ms": 0.0
+      },
+      "pl": [],
+      "raw": [
+       {
+        "ts": 1768471265000,
+        "tps": 20.0,
+        "p50": 11.0,
+        "p99": 30.0,
+        "p999": 40.0,
+        "max": 45.0,
+        "pl": {}
+       }
+      ],
+      "ev": [],
+      "lag": [],
+      "running": [],
+      "ovh": {
+       "minecraft.service": {
+        "mem_mb": 3073.0,
+        "mem_peak_mb": 4096.0,
+        "cpu_pct": "<number>",
+        "io_read_kb": 2048.0,
+        "io_write_kb": 0.0
+       },
+       "mc-agent.service": {
+        "mem_mb": 40.0,
+        "mem_peak_mb": 48.0,
+        "cpu_pct": null,
+        "io_read_kb": 0.0,
+        "io_write_kb": 1.0
+       },
+       "mc-telemetry.service": {
+        "mem_mb": 20.0,
+        "mem_peak_mb": 17592186044416.0,
+        "cpu_pct": "<number>",
+        "io_read_kb": null,
+        "io_write_kb": 0.0
+       }
+      },
+      "backlog": {
+       "segments": 0,
+       "rows": 0,
+       "bytes": 0,
+       "oldest": null,
+       "stored_segments": 0,
+       "stored_bytes": 0
+      }
+     }
+    ]
+   }
+  },
+  {
+   "route": "POST /ingest/experience",
+   "status": 200,
+   "auth": true,
+   "user_agent": "smallworld mc-agent",
+   "content_type": "application/json",
+   "body": {
+    "agent": "1",
+    "live": true,
+    "rows": [
+     {
+      "v": 1,
+      "id": "0badc0de:5",
+      "src": "0badc0de",
+      "seq": 5,
+      "ts": 1768471320000,
+      "srv": {
+       "ticks": 200,
+       "tps": 20.0,
+       "mean": 12.5,
+       "p50": 11.0,
+       "p95": 20.0,
+       "p99": 30.0,
+       "p999": 40.0,
+       "max": 45.0,
+       "spikes": 0,
+       "chunks": 400,
+       "entities": 300,
+       "tiles": 40,
+       "worlds": [
+        {
+         "n": "world",
+         "chunks": 400,
+         "entities": 300,
+         "tiles": 50,
+         "ticking": 40,
+         "players": 0
+        }
+       ],
+       "hot": [],
+       "heap_used_mb": 2048.0,
+       "heap_max_mb": 6656.0,
+       "self_p99_us": 80.2,
+       "self_max_us": 150.0,
+       "budget_skips": 0,
+       "lost_windows": 0,
+       "samples": 1,
+       "gc_heap_after_mb": 1200,
+       "gc_max_pause_ms": 0.0
+      },
+      "pl": [],
+      "raw": [
+       {
+        "ts": 1768471325000,
+        "tps": 20.0,
+        "p50": 11.0,
+        "p99": 30.0,
+        "p999": 40.0,
+        "max": 45.0,
+        "pl": {}
+       }
+      ],
+      "ev": [],
+      "lag": [],
+      "running": [],
+      "ovh": {
+       "minecraft.service": {
+        "mem_mb": 3073.0,
+        "mem_peak_mb": 4096.0,
+        "cpu_pct": "<number>",
+        "io_read_kb": 0.0,
+        "io_write_kb": 0.0
+       },
+       "mc-agent.service": {
+        "mem_mb": 40.0,
+        "mem_peak_mb": 48.0,
+        "cpu_pct": "<number>",
+        "io_read_kb": 0.0,
+        "io_write_kb": 0.0
+       },
+       "mc-telemetry.service": {
+        "mem_mb": 20.0,
+        "mem_peak_mb": 17592186044416.0,
+        "cpu_pct": "<number>",
+        "io_read_kb": null,
+        "io_write_kb": 0.0
+       },
+       "mc-backup.service": {
+        "cpu_ms": 64600.0,
+        "runs": 2,
+        "mem_peak_mb": 1536.0
+       },
+       "mc-health": {
+        "cpu_ms": 350.0,
+        "runs": 1,
+        "mem_peak_mb": 0.0
+       },
+       "mc-prune.service": {
+        "cpu_ms": 12.8,
+        "runs": 1,
+        "mem_peak_mb": 2.5
+       }
+      },
+      "backlog": {
+       "segments": 0,
+       "rows": 0,
+       "bytes": 0,
+       "oldest": null,
+       "stored_segments": 0,
+       "stored_bytes": 0
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "files": {
+  "/run/mc-verdicts/verdicts.tsv": {
+   "type": "file",
+   "mode": "0o640",
+   "content": "mc-verdicts 1 <now_ms>\n"
+  },
+  "/var/lib/mc-agent/telemetry-id.json": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "json": {
+     "src": "0badc0de",
+     "seq": 6
+    },
+    "bytes": "{\"src\": \"0badc0de\", \"seq\": 6}"
+   }
+  },
+  "/var/lib/mc-telemetry/journal.json": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "json": {
+     "cursor": "s=telparity;i=00008",
+     "day": "",
+     "rows": 0
+    },
+    "bytes": "{\"cursor\": \"s=telparity;i=00008\", \"day\": \"\", \"rows\": 0}"
+   }
+  },
+  "/var/lib/mc-telemetry/online.json": {
+   "type": "file",
+   "mode": "0o640",
+   "content": {
+    "json": {},
+    "bytes": "{}"
+   }
+  }
+ },
+ "systemd": {
+  "systemctl": [
+   [
+    "is-active",
+    "mc-backup.service",
+    "mc-restore-apply.service",
+    "mc-prune.service"
+   ],
+   [
+    "show",
+    "-p",
+    "Id",
+    "-p",
+    "CPUUsageNSec",
+    "-p",
+    "MemoryCurrent",
+    "-p",
+    "MemoryPeak",
+    "-p",
+    "IOReadBytes",
+    "-p",
+    "IOWriteBytes",
+    "minecraft.service",
+    "mc-agent.service",
+    "mc-telemetry.service"
+   ],
+   [
+    "is-active",
+    "mc-backup.service",
+    "mc-restore-apply.service",
+    "mc-prune.service"
+   ],
+   [
+    "show",
+    "-p",
+    "Id",
+    "-p",
+    "CPUUsageNSec",
+    "-p",
+    "MemoryCurrent",
+    "-p",
+    "MemoryPeak",
+    "-p",
+    "IOReadBytes",
+    "-p",
+    "IOWriteBytes",
+    "minecraft.service",
+    "mc-agent.service",
+    "mc-telemetry.service"
+   ],
+   [
+    "is-active",
+    "mc-backup.service",
+    "mc-restore-apply.service",
+    "mc-prune.service"
+   ],
+   [
+    "show",
+    "-p",
+    "Id",
+    "-p",
+    "CPUUsageNSec",
+    "-p",
+    "MemoryCurrent",
+    "-p",
+    "MemoryPeak",
+    "-p",
+    "IOReadBytes",
+    "-p",
+    "IOWriteBytes",
+    "minecraft.service",
+    "mc-agent.service",
+    "mc-telemetry.service"
+   ]
+  ],
+  "journalctl": [
+   [
+    "-o",
+    "json",
+    "--no-pager",
+    "--output-fields=_SYSTEMD_UNIT,SYSLOG_IDENTIFIER,PRIORITY,MESSAGE,MC_AUDIT,UNIT",
+    "--since=-5min",
+    "SYSLOG_IDENTIFIER=systemd"
+   ],
+   [
+    "-o",
+    "json",
+    "--no-pager",
+    "--output-fields=_SYSTEMD_UNIT,SYSLOG_IDENTIFIER,PRIORITY,MESSAGE,MC_AUDIT,UNIT",
+    "--after-cursor=s=telparity;i=00008",
+    "SYSLOG_IDENTIFIER=systemd"
+   ]
+  ]
+ },
+ "output": [
+  {
+   "stdout": [
+    "mc-telemetry <version>: pushing to 127.0.0.1"
+   ],
+   "stderr": []
+  }
+ ]
+}

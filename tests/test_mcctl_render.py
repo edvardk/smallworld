@@ -586,6 +586,16 @@ def test_panel_title_strips_formatting_codes(full: schema.ServerConfig) -> None:
     assert render.tfvars(full, "o/r")["panel_access_emails"] == list(full.panel.access.emails or [])
 
 
+def test_agent_implementation_defaults_to_rust() -> None:
+    """v1.4.0: the Rust agent is the default (CHANGELOG "Changed"); python stays a supported fallback."""
+    data = full_data()
+    data.pop("agent", None)
+    assert render.group_vars(schema.load_server(data))["mc_agent_implementation"] == "rust"
+    data["agent"] = {"implementation": "python"}
+    assert render.group_vars(schema.load_server(data))["mc_agent_implementation"] == "python"
+    assert schema.field_errors("agent.implementation", "perl")  # neither
+
+
 def test_p16_performance_knobs_defaults() -> None:
     data = full_data()
     data.pop("jvm"), data.pop("performance")

@@ -1036,7 +1036,8 @@ with mc_panel.Pending(Path("/var/lib/mc-agent/pending.json")).update() as d:
 
 def cli_argv(action: str, args: dict[str, Any] | None = None) -> list[str]:
     """= mcctl.actions.agent_argv(CLI_LOGIN, action, args): v1.4's entry point, the symlink to whichever
-    implementation the deploy chose (agent.implementation; the rust shards run the Rust cli this way)."""
+    implementation the deploy chose (agent.implementation; the default shards run the Rust cli this way, the python
+    shards mc_agent.py)."""
     argv = ["sudo", "/usr/local/bin/mc-run", "-/etc/minecraft/notify.env", "/opt/minecraft/bin/mc-agent",
             "cli", CLI_LOGIN, action]  # fmt: skip
     if args is not None:
@@ -1272,8 +1273,9 @@ def implementation() -> str:
 
 
 def implementation_checks() -> None:
-    """v1.4: the unit, the entry point and the telemetry sidecar match agent.implementation. The rounds are the
-    same for both implementations (black box); the e2e's rust shards deploy with agent.implementation: rust."""
+    """v1.4: the unit, the entry point match agent.implementation (no telemetry unit: in-process). The rounds are the
+    same for both implementations (black box); the e2e deploys the default, rust, and python in its python
+    shards."""
     impl = implementation()
     print(f"agent.implementation: {impl}")
     want = "smallworld-agent" if impl == "rust" else "mc_agent.py"
@@ -1285,16 +1287,9 @@ def implementation_checks() -> None:
     st = AGENT_BIN.stat() if AGENT_BIN.exists() else None
     expect(st is not None and st.st_uid == 0 and st.st_mode & 0o777 == 0o755,
            f"smallworld-agent is installed (root, 0755) whichever runs: {oct(st.st_mode) if st else 'missing'}")  # fmt: skip
-    sidecar = show("mc-telemetry.service", "LoadState", "ActiveState", "User", "MainPID")
-    if impl == "rust":
-        expect(sidecar.get("ActiveState") == "active" and sidecar.get("User") == "mcops",
-               f"the telemetry sidecar runs as mcops ({sidecar})")  # fmt: skip
-        spid = sidecar.get("MainPID", "0")
-        expect(
-            as_minecraft_read(f"/proc/{spid}/environ") == 13, "minecraft can't read the sidecar's environment"
-        )
-    else:
-        expect(sidecar.get("LoadState") == "not-found", f"no telemetry sidecar in python mode ({sidecar})")
+    sidecar = show("mc-telemetry.service", "LoadState")
+    expect(sidecar.get("LoadState") == "not-found",
+           f"no telemetry unit in {impl} mode: mc-agent runs the telemetry in-process ({sidecar})")  # fmt: skip
 
 
 def setup() -> None:

@@ -11,7 +11,6 @@
 //! | world.rs | world_create, world_switch, world_delete, `worlds_inventory` | ported |
 //! | restore.rs | restore | ported |
 //! | info.rs | status, selftest, lookup, console, tail, cancel, player_message | ported |
-//! | telemetry.rs | the `Telemetry` trait over the sidecar's online.json + telemetry.py `Messages` | ported |
 
 pub mod console;
 pub mod info;
@@ -19,7 +18,6 @@ pub mod moderate;
 pub mod plugin;
 pub mod power;
 pub mod restore;
-pub mod telemetry;
 pub mod world;
 
 use crate::jobs::{ClockFn, Jobs};
@@ -107,9 +105,9 @@ impl Panel {
     }
 }
 
-/// player_message's view of the telemetry sidecar (owner: actions, with the sidecar's online.json; PORTING.md).
+/// player_message's view of the in-process telemetry (`telemetry::Telemetry` implements it; PORTING.md).
 pub trait Telemetry: Send + Sync {
-    /// `t.online()`: uuid -> {u, n, tips, join}.
+    /// `t.online()`: uuid -> the player's dict from the latest snapshot.
     fn online(&self) -> AResult<Obj>;
     /// `t.messages.check(to, kind, now, online)`: why not to send, or "".
     fn check(&self, to: &str, kind: &str, now: f64, online: &Obj) -> AResult<String>;

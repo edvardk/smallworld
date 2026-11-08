@@ -89,8 +89,8 @@ Read and write** besides Secrets and Administration.
 
 Two system users (P7 review). `minecraft` runs the JVM, so every plugin runs as it. `mcops` runs everything that
 holds a credential: `mc-backup`, `mc-prune`, `mc-backup-check` (v1.2, the weekly backup test), `mc-health` (and
-its self-heal), `notify.py`, the fetch half of a restore, every `mc-run`/`mc-restic` command, `mc-agent` (P8, in
-either implementation) and v1.4's telemetry sidecar `mc-telemetry` (rust mode).
+its self-heal), `notify.py`, the fetch half of a restore, every `mc-run`/`mc-restic` command and `mc-agent` (P8, in
+either implementation, with the experience telemetry in-process).
 
 | | `minecraft` (JVM, plugins) | `mcops` (helpers) |
 |---|---|---|
@@ -663,7 +663,8 @@ What the nightly pre-render (`smallworld-map`, role `map`) and its readers in mc
 
 ## The Rust agent (v1.4)
 
-What `agent.implementation: rust` (smallworld-agent, the port of mc-agent; default `python`) changes:
+What `agent.implementation: rust` (smallworld-agent, the port of mc-agent; the default since v1.4.0, `python`
+the supported fallback) changes:
 
 - **A new binary, `/opt/minecraft/bin/smallworld-agent`**, `root:root 0755`, on every box whichever implementation
   runs (mcctl's actions may run it in any panel mode). As smallworld-rcon: the committed build in `rust/dist/` for
@@ -676,24 +677,27 @@ What `agent.implementation: rust` (smallworld-agent, the port of mc-agent; defau
   `systemd-journal`), `EnvironmentFile`, `UMask=0077`, limits, `ReadWritePaths` and the whole `mc_systemd_sandbox`
   with `MemoryDenyWriteExecute=true` (static musl, ring, no JIT, no W+X mapping) and `SystemCallFilter=@system-service`;
   its `systemd-analyze security` score is the same (≤ 2.5, offline in `tests/test_hardening.py` for both
-  implementations, live in the e2e's rust shard: `hardening_check.py --agent` also checks the running binary has
-  no_new_privs and its seccomp filter). polkit is unchanged: the rules name the user and the unit, never the
-  executable. Its state in rust mode is `/var/lib/mc-agent` only.
+  implementations, live in the e2e's agent-a shards, rust and python: `hardening_check.py --agent` also checks the
+  running process has no_new_privs and its seccomp filter). polkit is unchanged: the rules name the user and the
+  unit, never the executable. Its state is the Python agent's: `/var/lib/mc-agent` and `/var/lib/mc-telemetry`.
 - **Same behaviour, proved.** Python is the spec: the console allowlist, HMAC verification and nonces, refusal
   texts, audit entries, file modes, RCON lines, systemctl calls and the scrubber match `mc_agent.py`
-  (`rust/smallworld-agent/PORTING.md`: shared test vectors, 25 black-box parity scenarios against the release
-  binary in CI, differential fuzzing of the console allowlist and of the scrubber + journal parser). Every
+  (`rust/smallworld-agent/PORTING.md`: shared test vectors, 26 black-box parity scenarios plus 13 telemetry
+  scenarios against the release binary in CI, differential fuzzing of the console allowlist and of the scrubber + journal parser). Every
   documented divergence is listed there with its reason; none widens what a command may do. The scrubber's claims
   in [Privilege separation](#privilege-separation) hold for both implementations word for word.
-- **The telemetry sidecar, `mc-telemetry.service`** (rust mode with experience on): `scripts/telemetry.py`, which
-  the Rust agent doesn't port, runs as `mc_agent.py telemetry` in its own unit, as `mcops` with the same
-  `EnvironmentFile` (it posts with the agent token, so never as `minecraft`), the standard sandbox plus
-  `MemoryDenyWriteExecute=true` and the same exposure gate (≤ 2.5, offline and in the e2e). It may write only its
-  state (`/var/lib/mc-agent` for the telemetry id, as in-process; `/var/lib/mc-telemetry`) and the verdict directory;
-  `SupplementaryGroups=systemd-journal` lets it read systemd's own resource lines (`SYSLOG_IDENTIFIER=systemd`),
-  which it only counts, never ships. It hands the Rust agent `/var/lib/mc-telemetry/online.json` (UUID, name, tips
-  flag, join time per online player; `mcops` 0640 in a 0700 directory): nothing running as `minecraft` can read or
-  forge it, and a stale or missing file only makes `player_message` refuse ("player isn't online").
+- **The experience telemetry runs in-process** (v1.4.0): the Rust agent ports `scripts/telemetry.py` (its
+  `telemetry` module) and runs it as a thread of `mc-agent.service`, as the Python agent does: one process fewer
+  than v1.4's pre-releases, which ran it beside the Rust agent as `mc-telemetry.service` with its own copy of the
+  agent token and a hand-off file (`/var/lib/mc-telemetry/online.json`). Both are gone: `player_message` reads who
+  is online from the telemetry in memory, and a deploy stops and removes a leftover sidecar unit. The telemetry
+  writes only what it wrote in-process (`/var/lib/mc-agent/telemetry-id.json`, `/var/lib/mc-telemetry/segments`,
+  `verdicts.tsv`/`messages.tsv` in the verdict directory), all inside the agent unit's `StateDirectory=` and
+  `ReadWritePaths=`; the snapshots, stats files and GC log it reads from minecraft-writable directories go through
+  `read_untrusted` (no FIFO, no symlink, capped); both implementations parse a snapshot the same way, known
+  weaknesses included (a `NaN`/`Infinity` in an integer field fails the round at that file: kept for parity, listed
+  for a fix in both). `smallworld-agent telemetry`, the parity
+  harness's entry point (as `mc_agent.py telemetry`), has no unit.
 - **Supply chain.** smallworld-rcon and smallworld-map stay std only. The agent uses a small set of crates (TLS with rustls + ring
   and the system CA bundle, JSON, RustCrypto HMAC/SHA, gzip, regex, Unicode tables, libc), each pinned exactly in
   `rust/Cargo.toml` and at least two weeks old, listed in `rust/allowed-crates.txt` (CI fails if `Cargo.lock` holds

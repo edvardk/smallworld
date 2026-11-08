@@ -223,6 +223,9 @@ class FakeWorker:
         self.fail: dict[str, int] = {}
         self.github_tokens: list[tuple[int, Any]] = []  # scripted /agent/github-token replies (then default)
         self.client_codes: list[tuple[int, Any]] = []  # scripted /agent/client-code replies
+        # route -> fn(request record) -> (status, JSON body) or None for the default answer (tests/telemetry_parity:
+        # /ingest/experience verdicts, 5xx and 429 paths)
+        self.replies: dict[str, Callable[[dict[str, Any]], tuple[int, Any] | None]] = {}
         self.srv = _serve(self)
         self.url = f"http://127.0.0.1:{self.srv.server_address[1]}"
 
@@ -282,6 +285,10 @@ class FakeWorker:
             return h.reply(401, {"error": "unauthorized"})
         if route in self.fail:
             return h.reply(self.fail[route], {"error": "scripted failure"})
+        if route in self.replies:
+            scripted = self.replies[route](rec)
+            if scripted is not None:
+                return h.reply(scripted[0], scripted[1])
         if route == "GET /agent/commands":
             with self.lock:
                 commands, self.queue = self.queue[:], []
