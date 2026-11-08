@@ -28,7 +28,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 /// Modules still stubs (each owner removes its name when ported; `main` refuses to start while any remain).
-pub const NOT_PORTED: [&str; 3] = ["ship", "data", "actions"];
+pub const NOT_PORTED: [&str; 0] = [];
 
 /// The test-only switch (see the module comment).
 pub const ALLOW_STUBS_ENV: &str = "SMALLWORLD_AGENT_ALLOW_STUBS";
@@ -108,14 +108,19 @@ impl Daemon {
         misc.wire(&mut panel);
         let panel = Arc::new(panel);
         // `Executor(lambda: collect(Counters()), self.tail.request, self.panel, self.telemetry)`: data wires the
-        // console tail (`ConsoleTail.request`, which needs `Daemon::ws`); the telemetry view is actions' (the
-        // sidecar's online.json), `None` until then.
-        // `Counters()`: data owns its shape (a unit struct while it is a stub).
-        #[allow(clippy::default_constructed_unit_structs)]
-        let sample: crate::actions::SampleFn = Arc::new(|| {
-            crate::data::metrics::collect(&mut crate::data::metrics::Counters::default())
-        });
-        let executor = Executor::new(sample, None, Some(Arc::clone(&panel)), None);
+        // console tail (`ConsoleTail.request`, which needs `Daemon::ws`); the telemetry view (actions') is below.
+        let sample = crate::data::status_sample();
+        // `self.telemetry = self.make_telemetry() if s.experience else None`: in rust mode telemetry is the
+        // Python sidecar; the agent keeps `Messages` and reads its online.json (actions/telemetry.rs). A bad
+        // MESSAGE_* number is `int()`'s ValueError, as in Python.
+        let telemetry: Option<Arc<dyn crate::actions::Telemetry>> = if settings.experience {
+            Some(Arc::new(crate::actions::telemetry::Sidecar::from_env(
+                &process_env(),
+            )?))
+        } else {
+            None
+        };
+        let executor = Executor::new(sample, None, Some(Arc::clone(&panel)), telemetry);
         Ok(Self {
             settings,
             stop,
@@ -212,7 +217,29 @@ pub fn run(daemon: &Arc<Daemon>) -> std::io::Result<()> {
         ("panel", Box::new(crate::sync::panel_loop)),
         ("selftest", Box::new(selftest_loop)),
     ];
-    // if daemon.settings.client: ("client", crate::data::client_codes::client_loop): data declares it
+    let mut loops = loops;
+    if daemon.settings.client {
+        loops.push(("client", Box::new(crate::data::client_codes::client_loop)));
+    }
+    // `Executor(..., self.tail.request, ...)`: the console tail reads `Agent.ws` (data)
+    crate::data::wire(daemon);
+    // `Agent.panel_state()`'s parts from sync (`self.github is not None`) and misc (product, self-test)
+    {
+        let d = Arc::downgrade(daemon);
+        let configured = crate::sync::github::github_from_env(
+            &process_env(),
+            Some(Arc::new(crate::sync::github::FixedToken(String::new()))),
+        )
+        .is_ok_and(|g| g.is_some());
+        let _ = crate::data::PANEL_EXTRAS.set(Arc::new(move || {
+            let Some(d) = d.upgrade() else {
+                return Ok((configured, Value::Null, Value::Null));
+            };
+            let product = d.misc.product_state().map_or(Value::Null, Value::Object);
+            let selftest = d.misc.selftest.state.public()?.unwrap_or(Value::Null);
+            Ok((configured, product, selftest))
+        }));
+    }
     for (name, f) in loops {
         spawn_loop(name, daemon, f)?;
     }
