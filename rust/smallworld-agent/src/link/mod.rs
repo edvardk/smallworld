@@ -51,6 +51,29 @@ impl Link {
         content_type: &str,
         timeout_s: f64,
     ) -> Result<Value, IngestError> {
+        let raw = self.request_body(method, path, body, content_type, timeout_s)?;
+        std::str::from_utf8(&raw)
+            .ok()
+            .and_then(smallworld_core::pyjson::loads)
+            .ok_or_else(|| IngestError {
+                message: format!("{method} {path}: reply isn't JSON"),
+                status: None,
+            })
+    }
+
+    /// `request`'s reply body before `json.loads` (`b"{}"` for an empty one), for a caller that reads the reply
+    /// in its own order (telemetry: the verdicts' player order reaches verdicts.tsv).
+    ///
+    /// # Errors
+    /// As `request`, except "reply isn't JSON" (the caller's to decide).
+    pub fn request_body(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+        content_type: &str,
+        timeout_s: f64,
+    ) -> Result<Vec<u8>, IngestError> {
         let url = format!("{}{path}", self.settings.ingest_url);
         let auth = format!("Bearer {}", self.settings.token);
         let mut headers = vec![("Authorization", auth.as_str()), ("User-Agent", USER_AGENT)];
@@ -75,18 +98,11 @@ impl Link {
                 status: None,
             },
         })?;
-        let raw: &[u8] = if resp.body.is_empty() {
-            b"{}"
+        Ok(if resp.body.is_empty() {
+            b"{}".to_vec()
         } else {
-            &resp.body
-        };
-        std::str::from_utf8(raw)
-            .ok()
-            .and_then(smallworld_core::pyjson::loads)
-            .ok_or_else(|| IngestError {
-                message: format!("{method} {path}: reply isn't JSON"),
-                status: None,
-            })
+            resp.body
+        })
     }
 
     /// `post_json(s, path, payload)`: compact JSON (`separators=(",", ":")`).
