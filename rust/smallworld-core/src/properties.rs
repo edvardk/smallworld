@@ -26,8 +26,17 @@ const PROPERTIES_MAX_BYTES: u64 = 1 << 20;
 /// The settings of a server.properties file. A type alias is just a shorter name for a type.
 pub type Properties = HashMap<PyStr, PyStr>;
 
+/// mc_rcon.py `UNTRUSTED_MAX_BYTES`: `read_untrusted`'s default limit.
+pub const UNTRUSTED_MAX_BYTES: u64 = 16 << 20;
+
 /// `read_untrusted(path, 1 << 20)`: the first 1 MiB of a regular file, never through a symlink.
 pub fn read_untrusted(path: &PyStr) -> Result<Vec<u8>, PyError> {
+    read_untrusted_limit(path, PROPERTIES_MAX_BYTES)
+}
+
+/// `read_untrusted(path, limit)`: the first `limit` bytes of a regular file, never through a symlink, never
+/// blocking (a FIFO opens at once and is refused).
+pub fn read_untrusted_limit(path: &PyStr, limit: u64) -> Result<Vec<u8>, PyError> {
     let os_path = std::ffi::OsStr::from_bytes(&path.to_os_bytes()).to_owned();
     // `?` here: if opening fails, return the error (with the path, as Python's OSError has it).
     let file = OpenOptions::new()
@@ -47,7 +56,7 @@ pub fn read_untrusted(path: &PyStr) -> Result<Vec<u8>, PyError> {
     // `take` limits the reader to N bytes; `read_to_end` collects them. `&file` borrows the file: we lend it to
     // the reader without giving it away (it is closed when `file` goes out of scope at the end of the function).
     (&file)
-        .take(PROPERTIES_MAX_BYTES)
+        .take(limit)
         .read_to_end(&mut data)
         .map_err(|e| PyError::from_io(&e))?;
     Ok(data)

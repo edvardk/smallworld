@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 /// Runs a command with a timeout like `subprocess.run(argv, timeout=..., capture_output=True)`: the child is
 /// killed on timeout (`TimeoutExpired`); returns the exit code and stdout. A missing binary is the `OSError`
 /// Python raises (`FileNotFoundError`).
-fn run(argv: &[&str], timeout: Duration) -> AResult<(Option<i32>, Vec<u8>)> {
+pub(crate) fn run(argv: &[&str], timeout: Duration) -> AResult<(Option<i32>, Vec<u8>)> {
     let mut child = Command::new(argv[0])
         .args(&argv[1..])
         .stdin(Stdio::inherit())

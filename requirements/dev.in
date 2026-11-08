@@ -1,7 +1,7 @@
 # Product development and the product's CI (lint, tests). Includes everything the other sets pin.
 -r deploy.in
 ansible-lint==26.10.1
-hypothesis==6.170.9  # differential fuzzing of the Rust agent against the Python one (tests/test_rust_scrub_fuzz.py)
+hypothesis==6.169.0  # differential tests of the Rust agent against the Python one (tests/test_rust_agent_console.py)
 pytest==9.2.0
 ruff==0.17.3
 yamllint==1.38.0

@@ -54,13 +54,21 @@ fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args_os()
         .map(|a| String::from_utf8_lossy(&a.into_vec()).into_owned())
         .collect();
-    let code = match argv.get(1).map(String::as_str) {
-        Some("cli") => cli::main(&argv[2..]),
-        // Hidden, for the differential tests only (ship::selftest_scrub: a pure function of stdin).
-        Some("selftest-scrub") => {
-            ship::selftest_scrub(&mut std::io::stdin(), &mut std::io::stdout())
+    let code = if argv.get(1).map(String::as_str) == Some("cli") {
+        cli::main(&argv[2..])
+    } else if argv.get(1).map(String::as_str) == Some("selftest-console") && argv.len() == 2 {
+        // Hidden, test-only (PORTING.md "Divergences"): the console allowlist on stdin, nothing executed.
+        let mut input = String::new();
+        if std::io::Read::read_to_string(&mut std::io::stdin(), &mut input).is_err() {
+            2
+        } else {
+            actions::console::selftest_main(&input, &mut std::io::stdout())
         }
-        _ => daemon::main(),
+    } else if argv.get(1).map(String::as_str) == Some("selftest-scrub") && argv.len() == 2 {
+        // Hidden, test-only (PORTING.md "Divergences"): the scrubber and journal_entry on stdin, a pure function.
+        ship::selftest_scrub(&mut std::io::stdin(), &mut std::io::stdout())
+    } else {
+        daemon::main()
     };
     ExitCode::from(code)
 }
