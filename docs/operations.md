@@ -699,7 +699,7 @@ fills a sidebar and a boss bar and checks them; also the e2e test).
 
 **Wayfinding** (v1.3; [features](features.md#finding-friends-without-mods-the-compass-map-and-help) has the
 picture). The compass is a boss bar of its own (under or over the HUD's top bar), redrawn only when its player
-turns or moves (at most every 4 ticks) or someone else moves (at most once a second); nothing runs while nobody
+turns or moves (v1.4.1: on the next tick, up to 20 times a second; it was every 4 ticks) or someone else moves (at most once a second); nothing runs while nobody
 moves (`/mcbrand status`: `compass showing/renders/updates`). Who gets it by default follows the client: off for
 the Smallworld mod together with Xaero's maps, on otherwise (`branding.compass.default_on: false` makes it
 opt-in for everyone); players override it with `/compass on|off`. The pocket map is one map id per player (kept

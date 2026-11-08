@@ -31,6 +31,10 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   at the panel's fair/poor thresholds) and tells the mod not to draw its own for players whose HUD shows;
   `client.fps.hud` now only applies to players with `/hud off` (or with `branding.hud` off). The FPS refreshes
   every `client.fps.interval_seconds` (default 5 s). No new client pack is needed.
+- The friend compass turns smoothly: a player who turns is redrawn on the next tick (up to 20 times a second)
+  instead of every 4 ticks (5 times a second). It still costs nothing while nobody moves, and the boss bar is
+  only resent when the line actually changed. The line is drawn by the server, so it trails a turn by the
+  player's ping.
 
 ## [1.4.0] - 2026-11-08
 

@@ -236,8 +236,13 @@ def test_compass_does_no_per_tick_work() -> None:
     assert "runTaskTimer" not in compass  # only one-shot tasks, scheduled when someone moved
     assert "runTaskLater(plugin, this::flushFast, FAST_TICKS)" in compass
     assert "runTaskLater(plugin, this::flushSlow, SLOW_TICKS)" in compass
-    assert re.search(r"static final long FAST_TICKS = 4L;", compass)
-    assert "if (!line.equals(lines.get(v.getUniqueId())))" in compass  # the bar only when the text changed
+    # v1.4.1: a turning viewer is redrawn on the next tick (was 4 ticks, 5 updates a second: laggy); still one-shot
+    assert re.search(r"static final long FAST_TICKS = 1L;", compass)
+    assert "if (fast == null) {" in compass  # several move events in one tick: one task, one redraw
+    # the bar's name only when the rendered line differs from the last one sent (turning in place sends nothing)
+    render = compass.split("private void render(Player v, BossBar bar)", 1)[1].split("\n    }\n")[0]
+    assert "if (!line.equals(lines.get(v.getUniqueId())))" in render
+    assert render.count("bar.name(") == 1 and render.index("bar.name(") > render.index("if (!line.equals(")
     plugin = (BRAND / "BrandPlugin.java").read_text()
     assert (
         "public void onMove(PlayerMoveEvent e)" in plugin
