@@ -198,6 +198,42 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
   Python's (`schema.budget` >= `daily_budget`, tests/test_agent.py).
 - Proof: vectors for `token_shape`/`TOKEN_RE`, `TokenCache` expiry parse, the budget constants; scenarios 5, 6.
 
+## Parity gate (tests/agent_parity)
+
+The harness (`origin/agent-harness`, merged) runs 25 black-box scenarios against `<bin> run` (daemon) or
+`<bin> cli ...` inside `unshare -rm` and compares with `tests/agent_parity/golden/`:
+`pytest tests/agent_parity --impl=rust --agent-bin=rust/dist/smallworld-agent-x86_64-unknown-linux-musl` (or a
+`cargo build` binary). Vectors for the pure functions: `tests/agent_parity/vectors/*.json` (16 files; regenerate
+with `scripts/parity_vectors.py --check`). CI runs the scenarios listed in `RUST_PARITY_SCENARIOS` (ci.yml job
+`rust`): **add yours there when your module passes them.** Passing now: `cli`.
+
+| # | Scenario(s) | Module(s) |
+|---|---|---|
+| 1-3 | `verify` (envelope), `nonce_store`, `console`; `auth_settings` | link; actions (console) |
+| 4 | `status` | data (+ actions `do_status`) |
+| 5 | `lookup` | misc (+ actions `do_lookup`) |
+| 6 | `selftest_ok`, `selftest_failures` | misc (+ sync's alert texts) |
+| 7-8 | `stop_start`, `countdown_cancel`, `backup` | actions, jobs |
+| 9-11 | `plugin`, `restore`, `worlds` | actions, jobs |
+| 12-13 | `whitelist_pr`, `pending_expiry`, `world_pr` | sync |
+| 14, 18 | `logs_rejected`, `tail` | ship, data |
+| 15 | moderate (in `console`/`cli`) | actions |
+| 17 | `client_codes` | data |
+| 20 | `ws_reconnect`, `poll_fallback` | link |
+| 22 | `cli` | done (phase 1) |
+| 23 | `locks` | jobs (needs the daemon) |
+| 24 | `state_roundtrip` | everyone (integration) |
+
+Gotchas the goldens encode (keep them; both are logged as known issues to fix in Python and Rust together):
+- error texts carry Python exception names (`IsADirectoryError`, `CalledProcessError`, `TimeoutExpired`): use
+  `AgentError::Os(class)` / `errno::io_class`;
+- `Jobs._run` reports the final state **before** releasing `job.lock` (jobs.rs does: `work` reports, then `run`
+  drops the guard);
+- `verify` accepts `iat: NaN` (vector case `nan`). serde_json can't parse a bare `NaN`; the vector feeds it
+  through Python's parser, so match the vector's expected result for that case explicitly.
+- The harness's TLS fake now uses a CA-signed leaf (rustls refuses a self-signed CA certificate as the server's;
+  `fakes.make_cert`).
+
 ## Ordering
 
 1. Phase 1 (this commit series): core, shared modules, cli. Everyone branches from `rust-agent`.
@@ -235,5 +271,7 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
 
 (One line per change to a shared file after phase 1: date, file, what, who.)
 
+- 2026-11-08, `tests/agent_parity/fakes.py` `make_cert`: a CA + leaf instead of a self-signed CA certificate
+  (rustls refuses the latter). phase 1.
 - 2026-11-08, core `flock.rs` tests and `jobs.rs` test `the_file_lock_is_shared_across_runners`: retry the
   re-acquire (a concurrent test's fork shares the lock's descriptor until its exec). Tests only. phase 1.

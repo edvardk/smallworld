@@ -418,6 +418,17 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           pytest -q tests/test_rust_rcon.py tests/test_rust_agent_cli.py
 
+      # The black-box parity harness (tests/agent_parity) against the committed Rust agent: the scenarios ported so
+      # far (rust/smallworld-agent/PORTING.md "Parity gate"; each module adds its own when it lands). The
+      # differential step above already lifted the AppArmor restriction on user namespaces.
+      - name: Parity scenarios against the Rust agent
+        env:
+          RUST_PARITY_SCENARIOS: "cli"
+        run: |
+          k=$(printf '%s\n' $RUST_PARITY_SCENARIOS | sed 's/.*/test_scenario[&]/' | paste -sd' ' | sed 's/ / or /g')
+          pytest -q tests/agent_parity/test_agent_parity.py -k "$k" --impl=rust \
+            --agent-bin="$PWD/rust/dist/smallworld-agent-x86_64-unknown-linux-musl"
+
   # v1.2: the world library's seed catalogue (worlds/seeds.yml). Boots the pinned server jar once per seed
   # (throwaway world, RCON on 127.0.0.1 with a random password), runs each claim's /locate and fails when a claim
   # no longer holds or the committed watchdog/panel/seeds.json (the panel's "verified on <version>" badge)
