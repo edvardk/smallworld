@@ -4,9 +4,11 @@ import java.io.File;
 import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import net.kyori.adventure.key.Key;
@@ -101,7 +103,7 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
     @Override
     public void onEnable() {
         s = Settings.load(YamlConfiguration.loadConfiguration(new File(getDataFolder(), "config.yml")));
-        hud = new Hud(this, s, BrandPlugin::glyphs);
+        hud = new Hud(this, s, BrandPlugin::glyphs, p -> smallworld.fps(p.getUniqueId())); // v1.4.1: FPS in the HUD
         glass = new Drink(this, s);
         modpack = new Modpack(this, s);
         view = new View(this, s);
@@ -531,11 +533,15 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (args.length == 2 && command.getName().equalsIgnoreCase("hud")
+                && (args[0].equalsIgnoreCase("hide") || args[0].equalsIgnoreCase("show"))) {
+            return Hud.Part.words(); // v1.4.1
+        }
         if (args.length != 1) {
             return List.of();
         }
         return switch (command.getName().toLowerCase(Locale.ROOT)) {
-            case "hud" -> List.of("top", "side", "off");
+            case "hud" -> List.of("top", "side", "off", "hide", "show", "minimal", "full", "parts", "reset");
             case "mcbrand" -> List.of("status", "selftest");
             case "modpack" -> List.of("off", "on");
             case "view" -> List.of("8", "10", "12", "14", "16", "reset");
@@ -619,11 +625,15 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
             p.sendMessage(Component.text("The HUD is off on this server.", s.subtle()));
             return;
         }
+        if (args.length > 0 && hudParts(p, args)) {
+            return;
+        }
         // /hud top|side|off (on = top); /hud alone: off if one is showing, else top
         Hud.Mode m = args.length > 0 ? Hud.Mode.parse(args[0], null)
                 : hud.showing(p) == Hud.Mode.OFF ? Hud.Mode.TOP : Hud.Mode.OFF;
         if (m == null) {
-            p.sendMessage(Component.text("Usage: /hud [top|side|off]", s.subtle()));
+            p.sendMessage(Component.text("Usage: /hud [top|side|off], /hud hide|show <part>, /hud minimal, /hud full,"
+                    + " /hud parts, /hud reset", s.subtle()));
             return;
         }
         hud.set(p, m);
@@ -632,6 +642,63 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
             case SIDE -> "HUD in the sidebar (/hud top for the top of the screen, /hud off to hide it)";
             case OFF -> "HUD off (/hud to show it again)";
         }, s.subtle()));
+    }
+
+    /**
+     * v1.4.1: /hud hide|show &lt;part&gt;, /hud minimal, /hud full, /hud parts, /hud reset (per player, {@link
+     * Hud.Part}): the player's changes to the server's default parts (branding.hud.parts), stored as deltas
+     * ({@link Hud#setShown}). Returns false for anything else (a mode).
+     */
+    private boolean hudParts(Player p, String[] args) {
+        String sub = args[0].toLowerCase(Locale.ROOT);
+        Set<Hud.Part> def = s.hudParts();
+        Set<Hud.Part> shown = hud.shownParts(p);
+        String off = hud.mode(p) == Hud.Mode.OFF ? " The HUD itself is off: /hud top or /hud side shows it." : "";
+        switch (sub) {
+            case "parts" -> {
+                List<String> states = new ArrayList<>();
+                boolean changed = false;
+                for (Hud.Part part : Hud.Part.values()) {
+                    boolean mine = shown.contains(part) != def.contains(part);
+                    changed |= mine;
+                    states.add(part.word() + (shown.contains(part) ? " on" : " off") + (mine ? "*" : ""));
+                }
+                p.sendMessage(Component.text("HUD parts: " + String.join(", ", states)
+                        + (changed ? " (* = your change; /hud reset goes back to the server's default)"
+                                : " (the server's default)")
+                        + ". /hud hide|show <part>, /hud minimal, /hud full." + off, s.subtle()));
+            }
+            case "reset" -> {
+                hud.resetParts(p);
+                p.sendMessage(Component.text("HUD parts back to the server's default: " + Hud.words(def) + "."
+                        + off, s.subtle()));
+            }
+            case "minimal", "full" -> {
+                hud.setShown(p, sub.equals("full") ? EnumSet.allOf(Hud.Part.class) : Hud.MINIMAL);
+                p.sendMessage(Component.text((sub.equals("full") ? "HUD: every part shown"
+                        : "HUD: just the name, players and health") + " (/hud reset for the server's default)."
+                        + off, s.subtle()));
+            }
+            case "hide", "show" -> {
+                Hud.Part part = args.length > 1 ? Hud.Part.parse(args[1]) : null;
+                if (part == null) {
+                    p.sendMessage(Component.text((args.length > 1 ? "There is no HUD part \"" + args[1] + "\". "
+                            : "Which part? ") + "Parts: " + String.join(", ", Hud.Part.words())
+                            + " (/hud parts shows yours).", s.subtle()));
+                    return true;
+                }
+                Set<Hud.Part> wanted = Hud.effective(def, Hud.choose(def, hud.deltas(p), part, sub.equals("show")));
+                hud.setShown(p, wanted);
+                p.sendMessage(Component.text("HUD: " + part.word() + (sub.equals("hide") ? " hidden" : " shown")
+                        + (wanted.isEmpty()
+                                ? " (every part is hidden: the top bar shows the server name; /hud off hides it)"
+                                : "") + "." + off, s.subtle()));
+            }
+            default -> {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void admin(CommandSender to, String[] args) {
@@ -673,15 +740,17 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
         }
         Msg.Speed sp = Msg.Speed.of(Bukkit.getServer()); // for ops: the technical numbers
         to.sendMessage(Component.text(String.format(Locale.ROOT,
-                "mc-brand %s: hud task runs=%d last=%dus max=%dus, hud write errors=%d, drinks=%d, glasses removed=%d;"
+                "mc-brand %s: hud task runs=%d last=%dus max=%dus, hud write errors=%d, hud parts default=%s;"
+                        + " drinks=%d, glasses removed=%d;"
                         + " TPS %.1f, MSPT %.1f (p95 %.1f) = %s; modpack requests=%d codes=%d failures=%d;"
                         + " view checks=%d raised=%d (now %d) lowered=%d; smallworld hellos=%d"
-                        + " malformed=%d outdated=%d; xaero handshakes=%d updates=%d fair play=%d;"
+                        + " fps reports=%d malformed=%d outdated=%d; xaero handshakes=%d updates=%d fair play=%d;"
                         + " compass showing=%d renders=%d updates=%d; pocket maps given=%d removed=%d recentres=%d",
-                s.name(), hud.runs, hud.lastNs / 1000, hud.maxNs / 1000, hud.writeErrors, glass.drinks, glass.removed,
+                s.name(), hud.runs, hud.lastNs / 1000, hud.maxNs / 1000, hud.writeErrors, Hud.words(s.hudParts()),
+                glass.drinks, glass.removed,
                 sp.tps(), sp.mspt(), sp.p95(), sp.health().word, modpack.requests, modpack.codes, modpack.failures,
                 view.checks, view.raisedCount, view.raisedNow(), view.lowered, smallworld.hellos,
-                smallworld.malformed, smallworld.outdatedPrompts, xaero.handshakes, xaero.updates,
+                smallworld.fpsReports, smallworld.malformed, smallworld.outdatedPrompts, xaero.handshakes, xaero.updates,
                 xaero.fairPlay, compass.showing(), compass.renders, compass.updates, pocketMap.given,
                 pocketMap.removed, pocketMap.recentres)));
     }

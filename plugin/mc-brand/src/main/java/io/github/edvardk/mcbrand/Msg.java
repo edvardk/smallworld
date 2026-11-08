@@ -36,6 +36,10 @@ final class Msg {
     // MESSAGES.fps and mc-telemetry's FPS_TIP); the sidebar shows FPS_HINT (no room for the sentence there).
     static final String FPS_TIP = "The server and your connection look fine, so stutter is likely your PC's frame rate. Press F3 to see your FPS (top-left). Lowering render distance or installing Sodium usually helps.";
     static final String FPS_HINT = "FPS: press F3";
+    // v1.4.1: the client mod's reported FPS inside the HUD; the thresholds are the Worker's RULES.fps_fair/fps_poor
+    static final String YOUR_FPS = "Your FPS";
+    static final int FPS_FAIR = 30;
+    static final int FPS_POOR = 20;
     static final int PING_FINE_MS = 150;
 
     static final String SPEED = "Speed";
@@ -153,6 +157,15 @@ final class Msg {
 
     static String tick(double mspt, boolean decimals) {
         return String.format(Locale.ROOT, decimals ? "%.1f of 50 ms" : "%.0f of 50 ms", mspt);
+    }
+
+    /** v1.4.1: green from FPS_FAIR, yellow from FPS_POOR, red below (the Worker's fair / poor verdicts). */
+    static NamedTextColor fpsColor(int fps) {
+        return fps >= FPS_FAIR ? NamedTextColor.GREEN : fps >= FPS_POOR ? NamedTextColor.YELLOW : NamedTextColor.RED;
+    }
+
+    static String fps(int fps) {
+        return fps + " fps";
     }
 
     static TextColor tickColor(double mspt) {

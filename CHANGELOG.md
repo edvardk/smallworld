@@ -6,6 +6,50 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Added
+
+- Which parts of the HUD players see: `name`, `players` (or `online`), `health`, `tps`, `mspt`, `ping`, `fps`
+  (top bar and sidebar alike; the sidebar's title stays, and a top bar with every part hidden shows just the
+  server name). New `server.yml` field `branding.hud.parts` sets the server's default (default: every part, so
+  nothing changes unless you set it; an unknown part fails validation with the list of parts). Players add to it
+  and take away from it, remembered per player: `/hud hide <part>`, `/hud show <part>`, `/hud minimal` (just
+  `name`, `players` and `health`), `/hud full` (every part), `/hud parts` (what's on, `*` where it differs from
+  the server's default) and `/hud reset` (back to the server's default). Only a player's differences from the
+  default are kept, so a later change of `branding.hud.parts` still reaches every part they never touched.
+  `/mcbrand status` shows the server's default parts.
+
+### Security
+
+- Hardening from a CodeQL review (no vulnerability found): mc-agent's WebSocket and mcctl's HTTPS client set
+  TLS 1.2 as the minimum explicitly (Python's default since 3.10, as the Rust agent already does); the panel
+  selects views and loaders from Maps and builds the view element without interpolating the tab id, on top of
+  the `TABS` check.
+
+### Fixed
+
+- The panel showed a whitelist add (or any action's result) only after a page reload when the agent's inventory
+  arrived later than 6 s: it now reloads the open tab four times over about 20 s after an action.
+- The Panel -> Git self-test no longer fails at "repository" with `the token can't push (permissions.push is
+  false)` when the Worker reported the token's granted permissions: `GET /repos` `permissions.push` describes a
+  user's role and is false for a GitHub App installation token, whose push comes from its contents:write grant
+  (checked by the "permissions" step). It still decides with an older Worker that reports no permissions. The
+  test stays read-only (mc_panel.py and the Rust agent alike).
+- The world map render (`mc-map.service`) has its 4 h cap again: `RuntimeMaxSec=` has no effect in a
+  `Type=oneshot` unit (systemd ignored it, logging so), so the unit now uses `TimeoutStartSec=4h`; a test refuses
+  `RuntimeMaxSec=` in any oneshot unit the product installs.
+- The client mod's FPS number no longer overlaps the top HUD: it was drawn as its own element at the boss bar
+  title's height, just right of the bar, so it sat on mc-brand's `/hud top` line. mc-brand now shows the FPS the
+  mod reports inside its HUD (the boss bar's line ends with "· 144 fps", the sidebar has a "Your FPS" line, coloured
+  at the panel's fair/poor thresholds) and tells the mod never to draw its own, `/hud off` included (with the
+  HUD off there is no FPS on screen). `client.fps.hud` is now the server's default for the HUD's `fps` part:
+  `false` takes `fps` out of `branding.hud.parts`, and players can still `/hud show fps`. mc-brand's
+  `config.yml` no longer has `client.fps_hud` (rendered into `hud.parts`). The FPS refreshes every
+  `client.fps.interval_seconds` (default 5 s). No new client pack is needed.
+- The friend compass turns smoothly: a player who turns is redrawn on the next tick (up to 20 times a second)
+  instead of every 4 ticks (5 times a second). It still costs nothing while nobody moves, and the boss bar is
+  only resent when the line actually changed. The line is drawn by the server, so it trails a turn by the
+  player's ping.
+
 ## [1.4.0] - 2026-11-08
 
 ### Added

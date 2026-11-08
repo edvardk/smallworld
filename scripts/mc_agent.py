@@ -2029,7 +2029,9 @@ class WebSocket:
         raw = socket.create_connection((host, port), timeout=timeout)
         sock: socket.socket = raw
         if secure:
-            sock = ssl.create_default_context().wrap_socket(raw, server_hostname=host)
+            tls = ssl.create_default_context()
+            tls.minimum_version = ssl.TLSVersion.TLSv1_2  # the default since 3.10, made explicit
+            sock = tls.wrap_socket(raw, server_hostname=host)
         key = base64.b64encode(secrets.token_bytes(16)).decode()
         path = parts.path or "/"
         if parts.query:

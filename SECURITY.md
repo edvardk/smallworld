@@ -638,7 +638,7 @@ What the nightly pre-render (`smallworld-map`, role `map`) and its readers in mc
   `MemoryDenyWriteExecute`, `PrivateNetwork=true`, `IPAddressDeny=any`, `RestrictAddressFamilies=AF_UNIX`,
   `PrivateIPC`, `ProcSubset=pid`, `SystemCallFilter=~@privileged @resources`, `InaccessiblePaths=` for the
   credential directories (`/etc/minecraft`, `/var/lib/mc-agent`, the restic cache, ...), idle priority,
-  `MemoryMax=512M`, `RuntimeMaxSec=4h`. **Read-only on the world by the sandbox**, not only by file modes:
+  `MemoryMax=512M`, `TimeoutStartSec=4h` (a oneshot unit's run cap). **Read-only on the world by the sandbox**, not only by file modes:
   `ProtectSystem=strict` leaves nothing writable but its `StateDirectory=mc-map`. No credentials, no network, no
   polkit verb (nothing but the timer and root start it). Within the `systemd-analyze security` gate (≤ 2.5:
   `tests/test_hardening.py`, `tests/e2e/hardening_check.py`); `tests/e2e/map_check.py` proves `mcmap` can't write

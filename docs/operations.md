@@ -683,6 +683,7 @@ mechanic touches farms). The defaults are generic; set your own and push (`mcctl
 | `branding.discord_invite` | none | `/discord` (a clickable link) and the pause menu's "Community" link |
 | `branding.rules_url`, `.website` | none | more pause-menu links (https only) |
 | `branding.hud.*` | available, `default_mode: top` | the HUD (below), refreshed every 5 s; the tab list's header/footer |
+| `branding.hud.parts` | every part: `[name, players, health, tps, mspt, ping, fps]` | v1.4.1: the HUD parts everyone sees until they change their own (below); players add and take away (`/hud show\|hide <part>`, `/hud minimal`, `/hud full`), `/hud reset` goes back to this; `online` = `players`; an unknown name fails validation; `client.fps.hud: false` takes `fps` out |
 | `branding.drink.*` | off | the signature drink (below): `name`, `command` (default `drink`), `lore`, `color`, `texture` |
 | `branding.resource_pack.*` | off | the drink's texture and the `{glyph}` icon (below): `prompt`, `description`, `glyph` |
 | `branding.holograms[]` | none | floating texts: `x`/`y`/`z` or `at: spawn` (v1.3: 3 blocks above the world spawn), `lines`, `health`, `help` (v1.3: appends `/help`'s list) |
@@ -691,7 +692,8 @@ mechanic touches farms). The defaults are generic; set your own and push (`mcctl
 
 **Commands** (everyone): `/help` (v1.3, alias `/commands`: the list below, built from what's on; vanilla's list is
 `/minecraft:help`), `/rules [page]`, `/discord`, `/hud [top|side|off]` (remembered per player; `/hud` alone
-switches between the top bar and off), `/drink` (and the drink's own `branding.drink.command`), `/compass
+switches between the top bar and off; v1.4.1: `/hud hide <part>`, `/hud show <part>`, `/hud minimal`, `/hud full`,
+`/hud parts`, `/hud reset`, below), `/drink` (and the drink's own `branding.drink.command`), `/compass
 [on|off|hide|show|auto]` and `/map [zoom]` (v1.3). A new player command goes into `Help.entries` (the plugin's
 one list; `tests/test_wayfinding.py` fails otherwise). Operators and the console: `/mcbrand status` (the plugin's task
 time, and the technical numbers: TPS, MSPT, p95) and `/mcbrand selftest` (renders every text with a sample player,
@@ -699,7 +701,7 @@ fills a sidebar and a boss bar and checks them; also the e2e test).
 
 **Wayfinding** (v1.3; [features](features.md#finding-friends-without-mods-the-compass-map-and-help) has the
 picture). The compass is a boss bar of its own (under or over the HUD's top bar), redrawn only when its player
-turns or moves (at most every 4 ticks) or someone else moves (at most once a second); nothing runs while nobody
+turns or moves (v1.4.1: on the next tick, up to 20 times a second; it was every 4 ticks) or someone else moves (at most once a second); nothing runs while nobody
 moves (`/mcbrand status`: `compass showing/renders/updates`). Who gets it by default follows the client: off for
 the Smallworld mod together with Xaero's maps, on otherwise (`branding.compass.default_on: false` makes it
 opt-in for everyone); players override it with `/compass on|off`. The pocket map is one map id per player (kept
@@ -713,10 +715,27 @@ Smallworld mod; `xaerominimap:main` / `xaeroworldmap:main`, or any `xaero*` name
 
 - **top**: a bar at the top centre of the screen, one line: `My Server · 3 online · Smooth · 20/20 TPS · 8 of
   50 ms · you 23 ms` (the last number is the player's own connection). The bar fills with the share of the 50 ms
-  tick budget the server uses, and its colour is the server's health.
+  tick budget the server uses, and its colour is the server's health. v1.4.1: with the Smallworld client mod the
+  line ends with the player's own frame rate, `· 144 fps` (green from 30, yellow from 20, red below; refreshed
+  every `client.fps.interval_seconds`). The mod never draws an FPS of its own (it sat on this line), not even with
+  `/hud off`: mc-brand's HUD is the only place it shows.
 - **side**: the sidebar (the client always puts it at the right): every player with a coloured dot and their ping
   (green under 80 ms, yellow under 200 ms, red above), then `Server Smooth`, `Speed 20.0/20 TPS`, `Tick time 8.3
-  of 50 ms` and `FPS: press F3`.
+  of 50 ms` and `FPS: press F3` (v1.4.1: `Your FPS 144 fps` instead for players with the Smallworld client mod).
+- **parts** (v1.4.1): `name` (the server name), `players` (`3 online`; in the sidebar the player list; `online`
+  works too), `health` (the Smooth word), `tps`, `mspt` (tick time), `ping` (in the sidebar the numbers next to the
+  names) and `fps`. `branding.hud.parts` is the server's default (all of them unless you list fewer;
+  `client.fps.hud: false` takes `fps` out). Each player adds to it and takes away from it, remembered per player
+  like the mode:
+  - `/hud hide <part>` and `/hud show <part>` (tab-completed);
+  - `/hud minimal`: just `name`, `players` and `health`; `/hud full`: every part;
+  - `/hud parts`: each part on or off, `*` where it differs from the server's default;
+  - `/hud reset`: back to the server's default.
+
+  Only the differences are kept (e.g. `+fps,-mspt`; a choice that matches the default is dropped), so when you
+  change `branding.hud.parts` later, every player still gets the change for the parts they never touched. The
+  sidebar's title stays; a top bar with every part hidden shows just the server name (`/hud off` hides the bar).
+  The "Settling in…" bar after a join is the same for everyone.
 
 **What the words and numbers mean** (the same wording in the HUD, the tab list, `/lag` and the hover texts in chat):
 

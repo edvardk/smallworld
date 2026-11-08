@@ -485,7 +485,237 @@ def test_hud_modes_default_top_and_backwards_compatible() -> None:
     assert "legacy hud 1->top/side 0->off" in (REPO / "tests/e2e/brand_check.py").read_text()
     assert "p.showBossBar(bar)" in src and "p.hideBossBar(bar)" in src
     plugin = (JAVA / "BrandPlugin.java").read_text()
-    assert 'case "hud" -> List.of("top", "side", "off")' in plugin
+    assert (
+        'case "hud" -> List.of("top", "side", "off", "hide", "show", "minimal", "full", "parts", "reset")'
+        in plugin
+    )
+
+
+def test_hud_parts_are_per_player_and_filter_both_hud_modes() -> None:
+    """v1.4.1: /hud hide|show <part>, /hud minimal|full, /hud parts, /hud reset; kept in the player's PDC like
+    the mode, as deltas on the server's default (branding.hud.parts)."""
+    src = (JAVA / "Hud.java").read_text()
+    plugin = (JAVA / "BrandPlugin.java").read_text()
+    enum = src.split("enum Part {", 1)[1].split(";", 1)[0]
+    parts = [p.strip().lower() for p in enum.split(",")]
+    assert parts == ["name", "players", "health", "tps", "mspt", "ping", "fps"] == list(schema.HUD_PARTS)
+    assert 'new NamespacedKey(plugin, "hud_parts")' in src
+    # stored as deltas; no key at all = the server's default
+    assert "p.getPersistentDataContainer().remove(partsKey);" in src
+    assert "parseDeltas(p.getPersistentDataContainer().get(partsKey, PersistentDataType.STRING))" in src
+    assert "hiddenParts.remove(id);" in src  # the cache goes with the player
+    # the boss bar: one condition per part, separators only between shown parts, all hidden = the name alone
+    bar = src.split("boolean glyph,\n            Set<Part> hidden) {", 1)[1].split("\n    }\n", 1)[0]
+    for part in ("NAME", "PLAYERS", "HEALTH", "TPS", "MSPT", "PING", "FPS"):
+        assert f"!hidden.contains(Part.{part})" in bar, part
+    assert "if (parts.isEmpty()) {\n            parts.add(name);" in bar
+    assert "if (i > 0) {\n                b.append(sep);" in bar
+    # the sidebar: every line tagged with its part; ping = the numbers next to the names
+    for tag in ("Part.PLAYERS));", "Part.HEALTH));", "Part.TPS));", "Part.MSPT));", "null, Part.FPS));"):
+        assert tag in src, tag
+    viewer = src.split("List<Line> forViewer(", 1)[1].split("\n    }\n", 1)[0]
+    assert "hidden.contains(l.part())" in viewer and "hidden.contains(Part.PING)" in viewer
+    # the join grace period is unchanged: the settling bar and lines are never filtered
+    assert "update(b, mine ? settlingLines : forViewer(" in src
+    assert "update(b, unsettled ? all : forViewer(" in src
+    settling = src.split("Component barTextSettling(", 1)[1].split("\n    }\n", 1)[0]
+    assert "hidden" not in settling
+    # the commands: parts, reset, hide|show <part> with a helpful message for an unknown part; tab completion
+    cmd = plugin.split("private boolean hudParts(Player p, String[] args) {", 1)[1].split("\n    }\n", 1)[0]
+    for case in ('case "parts" ->', 'case "reset" ->', 'case "minimal", "full" ->', 'case "hide", "show" ->'):
+        assert case in cmd, case
+    assert "There is no HUD part" in cmd and "Hud.Part.words()" in cmd
+    assert "if (args.length > 0 && hudParts(p, args)) {" in plugin
+    assert "return Hud.Part.words(); // v1.4.1" in plugin
+    assert '"[top|side|off|minimal|full|parts]"' in (JAVA / "Help.java").read_text()
+    usage = yaml.safe_load((REPO / "plugin/mc-brand/src/main/resources/plugin.yml").read_text())
+    assert "/hud hide|show <part>" in usage["commands"]["hud"]["usage"]
+    assert "/hud minimal | /hud full" in usage["commands"]["hud"]["usage"]
+    e2e = (REPO / "tests/e2e/brand_check.py").read_text()
+    for needle in (
+        '"hud parts name,players,health,tps,mspt,ping,fps, hidden bar [ · 3 online · Smooth · 144 fps], all hidden"',
+        '" name only true, sidebar true, parse PING/PLAYERS/null"',
+    ):
+        assert needle in e2e
+    ops = (REPO / "docs/operations.md").read_text()
+    assert "`/hud hide <part>`" in ops and "`/hud reset`" in ops
+    assert "`/hud minimal`" in ops and "`/hud full`" in ops
+
+
+# --- v1.4.1: the server's default HUD parts and the players' deltas -------------------------------------------
+
+HUD_PARTS = list(schema.HUD_PARTS)
+
+
+def deltas_model(stored: str | None) -> dict[str, bool]:
+    """The spec of Hud.parseDeltas: "+part" / "-part", anything else ignored, the last one counts."""
+    out: dict[str, bool] = {}
+    if stored is None or len(stored) > 256:
+        return out
+    for w in stored.split(","):
+        t = w.strip()
+        name = {"online": "players"}.get(t[1:].lower(), t[1:].lower())
+        if len(t) >= 2 and t[0] in "+-" and name in HUD_PARTS:
+            out[name] = t[0] == "+"
+    return dict(sorted(out.items(), key=lambda kv: HUD_PARTS.index(kv[0])))
+
+
+def fmt(deltas: dict[str, bool]) -> str:
+    return ",".join(("+" if v else "-") + k for k, v in deltas.items())
+
+
+def words(parts: set[str]) -> str:
+    return ",".join(p for p in HUD_PARTS if p in parts) or "none"
+
+
+def effective(default: set[str], deltas: dict[str, bool]) -> set[str]:
+    return {p for p in HUD_PARTS if deltas.get(p, p in default)}
+
+
+def deltas_for(default: set[str], wanted: set[str]) -> dict[str, bool]:
+    return {p: p in wanted for p in HUD_PARTS if (p in wanted) != (p in default)}
+
+
+def choose(default: set[str], deltas: dict[str, bool], part: str, show: bool) -> dict[str, bool]:
+    wanted = effective(default, deltas)
+    wanted = wanted | {part} if show else wanted - {part}
+    return deltas_for(default, wanted)
+
+
+def test_hud_part_deltas_model_matches_the_selftest() -> None:
+    """The selftest's fixed case, worked out here from the spec: the e2e test then proves the plugin agrees."""
+    default = {"name", "players", "health", "tps", "fps"}
+    stored = deltas_model("+mspt,-fps, bogus,+speed,ping,-NAME,+fps,-")
+    assert fmt(stored) == "-name,+mspt,+fps"  # garbage ignored, the last "fps" counts
+    assert words(effective(default, stored)) == "players,health,tps,mspt,fps"
+    hide_fps = choose(default, stored, "fps", False)
+    assert fmt(hide_fps) == "-name,+mspt,-fps"
+    back = choose(default, hide_fps, "mspt", False)  # matches the default again: the delta goes
+    assert fmt(back) == "-name,-fps"
+    # a later server default reaches the parts the player never touched (ping), not the ones they did
+    assert words(effective({"name", "players", "ping"}, back)) == "players,ping"
+    minimal = deltas_for(default, {"name", "players", "health"})
+    full = deltas_for(default, set(HUD_PARTS))
+    assert (fmt(minimal), fmt(full)) == ("-tps,-fps", "+mspt,+ping")
+    assert effective(default, minimal) == {"name", "players", "health"} and effective(default, full) == set(
+        HUD_PARTS
+    )
+    assert words(effective(default, deltas_model(None))) == "name,players,health,tps,fps"  # /hud reset
+    assert deltas_model(fmt(back)) == back
+    # nothing stored that matches the default, ever; a showing part shown again is no delta
+    assert choose(default, {}, "tps", True) == {} and choose(default, {}, "mspt", False) == {}
+    # garbage is safe: too long, no sign, signs only, an unknown part
+    for junk in ("x" * 300, "tps,mspt", "+,-,++,--", "+speed,-bogus", "", ",,,"):
+        assert deltas_model(junk) == {}, junk
+    needle = (
+        f"deltas {fmt(stored)} -> {words(effective(default, stored))}, hide fps {fmt(hide_fps)}, hide mspt "
+        f"{fmt(back)}, later default players,ping, minimal {fmt(minimal)}, full {fmt(full)}, reset "
+        f"name,players,health,tps,fps, round trip true"
+    )
+    e2e = (REPO / "tests/e2e/brand_check.py").read_text()
+    flat = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', e2e))
+    assert needle in flat
+
+
+def test_hud_part_deltas_in_the_plugin() -> None:
+    """Hud.java keeps the deltas as the model above: the stored form, the presets, a matching choice dropped."""
+    src = (JAVA / "Hud.java").read_text()
+    plugin = (JAVA / "BrandPlugin.java").read_text()
+    settings = (JAVA / "Settings.java").read_text()
+    assert "static final Set<Part> MINIMAL = EnumSet.of(Part.NAME, Part.PLAYERS, Part.HEALTH);" in src
+    parse = src.split("static Map<Part, Boolean> parseDeltas(String stored) {", 1)[1].split("\n    }\n", 1)[0]
+    assert "stored.length() > MAX_STORED" in parse  # not ours: ignored
+    assert "t.charAt(0) != '+' && t.charAt(0) != '-'" in parse and "if (p != null) {" in parse
+    # a choice is stored as the difference to the server's default: equal = no delta
+    diff = src.split("static Map<Part, Boolean> deltasFor(", 1)[1].split("\n    }\n", 1)[0]
+    assert "if (wanted.contains(p) != serverDefault.contains(p)) {" in diff
+    eff = src.split("static Set<Part> effective(", 1)[1].split("\n    }\n", 1)[0]
+    assert "if (show == null ? serverDefault.contains(p) : show) {" in eff
+    shown = src.split("void setShown(Player p, Set<Part> wanted) {", 1)[1].split("\n    }\n", 1)[0]
+    assert "formatDeltas(deltasFor(s.hudParts(), wanted))" in shown
+    assert "if (v.isEmpty()) {\n            p.getPersistentDataContainer().remove(partsKey);" in shown
+    reset = src.split("void resetParts(Player p) {", 1)[1].split("\n    }\n", 1)[0]
+    assert "p.getPersistentDataContainer().remove(partsKey);" in reset
+    assert "return effective(s.hudParts(), deltas(p));" in src
+    # the commands: presets, reset, show|hide through choose(); /hud parts marks the player's changes
+    cmd = plugin.split("private boolean hudParts(Player p, String[] args) {", 1)[1].split("\n    }\n", 1)[0]
+    assert 'hud.setShown(p, sub.equals("full") ? EnumSet.allOf(Hud.Part.class) : Hud.MINIMAL);' in cmd
+    assert 'Hud.choose(def, hud.deltas(p), part, sub.equals("show"))' in cmd
+    assert "hud.resetParts(p);" in cmd
+    assert "boolean mine = shown.contains(part) != def.contains(part);" in cmd and '(mine ? "*" : "")' in cmd
+    # the server's default: branding.hud.parts (old config: every part), in /mcbrand status
+    assert (
+        'hud.isList("parts") ? Hud.parseParts(hud.getStringList("parts")) : EnumSet.allOf(Hud.Part.class)'
+        in settings
+    )
+    assert "hud parts default=%s;" in plugin and "Hud.words(s.hudParts())" in plugin
+    assert '"hud default " + words(s.hudParts())' in src
+
+
+def test_hud_parts_schema() -> None:
+    assert load().branding.hud.parts == HUD_PARTS
+    assert load(hud={"parts": ["name", "online", "health"]}).branding.hud.parts == [
+        "name",
+        "online",
+        "health",
+    ]
+    assert load(hud={"parts": []}).branding.hud.parts == []
+    (e,) = errors(hud={"parts": ["name", "speed"]})
+    assert e == (
+        "branding.hud.parts: unknown HUD part 'speed' (did you mean 'tps'?); the parts are name, players, health, "
+        "tps, mspt, ping, fps ('online' = players)"
+    )
+    (e,) = errors(hud={"parts": ["helth"]})
+    assert "unknown HUD part 'helth' (did you mean 'health'?)" in e
+    (e,) = errors(hud={"parts": ["TPS"]})
+    assert "unknown HUD part 'TPS' (did you mean 'tps'?)" in e
+    (e,) = errors(hud={"parts": ["players", "online"]})
+    assert e == "branding.hud.parts: 'players' is listed twice ('online' is players)"
+    (e,) = errors(hud={"parts": [3]})  # the item type reports it; the check skips it
+    assert e.startswith("branding.hud.parts[0]: expected a string, got 3")
+    assert schema.field_errors("branding.hud.parts", ["name", "bogus"])
+    assert not schema.field_errors("branding.hud.parts", ["name", "fps"])
+    js = json.loads((REPO / "schema/server.schema.json").read_text())
+    prop = js["properties"]["branding"]["properties"]["hud"]["properties"]["parts"]
+    assert prop["items"]["enum"] == [*HUD_PARTS, "online"] and prop["uniqueItems"] is True
+    assert prop["default"] == HUD_PARTS
+
+
+def test_hud_parts_render() -> None:
+    def parts(hud: dict[str, object] | None = None, fps_hud: bool = True) -> list[str]:
+        data = example_server() | {"client": {"enabled": True, "fps": {"hud": fps_hud}}}
+        if hud is not None:
+            data["branding"] = {"hud": hud}
+        return render.brand_plugin(schema.load_server(data))["hud"]["parts"]
+
+    assert parts() == HUD_PARTS  # today's look
+    # canonical names in the plugin's order, "online" = players
+    assert parts({"parts": ["fps", "online", "name"]}) == ["name", "players", "fps"]
+    assert parts({"parts": []}) == []
+    # client.fps.hud false: fps out of the server's default
+    assert parts(fps_hud=False) == [p for p in HUD_PARTS if p != "fps"]
+    assert parts({"parts": ["name", "fps"]}, fps_hud=False) == ["name"]
+    full = yaml.safe_load(FULL.read_text())
+    assert full["branding"]["hud"]["parts"] == ["name", "players", "health", "tps", "ping", "fps"]
+    golden = json.loads((REPO / "tests/fixtures/full-render.json").read_text())
+    assert golden["group_vars"]["mc_brand"]["hud"]["parts"] == full["branding"]["hud"]["parts"]
+    assert "fps_hud" not in golden["group_vars"]["mc_brand"]["client"]
+
+
+def test_hud_parts_docs() -> None:
+    ops = (REPO / "docs/operations.md").read_text()
+    row = next(ln for ln in ops.splitlines() if ln.startswith("| `branding.hud.parts` |"))
+    for word in ("/hud minimal", "/hud full", "/hud reset", "client.fps.hud: false", *HUD_PARTS):
+        assert word in row, word
+    assert "+fps,-mspt" in ops
+    features = (REPO / "docs/features.md").read_text()
+    assert "`branding.hud.parts`" in features and "`/hud minimal`" in features
+    changelog = (REPO / "CHANGELOG.md").read_text().split("## [1.4.0]", 1)[0]
+    assert "`branding.hud.parts`" in changelog and "`/hud minimal`" in changelog
+    for heading in ("### Added", "### Fixed", "### Security"):
+        assert changelog.count(heading) <= 1, heading
+    doc = schema.BrandingHud.__dataclass_fields__["parts"].metadata["doc"]
+    assert "/hud reset" in doc and "client.fps.hud" in doc
 
 
 def java_const(text: str, name: str) -> str:

@@ -22,7 +22,7 @@ mc_telemetry_jar_sha256: "da8a6cfc8ec299bc158a25f18ee472c5bea4d51025fdeab64bf027
 # (scripts/brand_art.py check). v1.2: the optional resource pack's sha1 (mc_brand_pack_sha1: the Worker's
 # /pack/<sha1>.zip and server.properties resource-pack-sha1) is rendered: mcctl render builds the pack from the
 # config repo's art (mcctl/brandpack.py).
-mc_brand_jar_sha256: "59e229618b7357d9638c80c958f0239be2403991e5ec99d6cfa64b8035452d30"
+mc_brand_jar_sha256: "95fcab32f858eb93900165e2708fe554f5c297c3c7c75df481d2b2da20513c82"
 mc_brand_icon_sha256: "939ecfd72097963dd7f221bf7df9972cf6d8f4a58ef9f0cdd7fd546edff52372"
 restic_sha256:
   amd64: f415415624dcc452f2a02b8c33641791a8c6d6d3b65bbb3543fcf9a25151585c
@@ -44,8 +44,8 @@ mc_smallworld_map_sha256:
 # Installed on every box by the base role (checked against this pin first); runs as mc-agent with
 # server.yml agent.implementation: rust.
 mc_smallworld_agent_sha256:
-  amd64: 473fa352273dc5cf798a5d10f195eb6b161cdc68831c44d8c9ef0156c17d3449
-  arm64: 5d96a3c9ad49f6a39b2e1e16f5fee62d7d57aec9fba66125ec6642a7c3caf4f0
+  amd64: dba8e3e7d0a337375f7db9c616f3facc3a436ec0b262ef6eea6db626da9793cc
+  arm64: 4f48686754d5f6d4fe99fa1a5a4071033bbf00f5da7077ec8befecdf5d810f8e
 
 # --- OS tuning -----------------------------------------------------------------------------------
 base_zram_enabled: true

@@ -85,7 +85,8 @@ def test_config_payload_bytes() -> None:
     assert bytes([1, 5, 1]).hex() == "010501"
     settings = (BRAND / "Settings.java").read_text()
     assert 'clamp(client.getInt("fps_interval_seconds", 5), 2, 60)' in settings  # = the client's own clamp
-    assert 'client.getBoolean("fps_hud", true)' in settings
+    # v1.4.1: no HUD flag from the config any more: client.fps.hud is rendered into hud.parts
+    assert "fps_hud" not in settings
     assert 'packs(client.getConfigurationSection("packs"))' in settings
 
 
@@ -93,9 +94,12 @@ def test_schema_and_render_of_the_fps_settings() -> None:
     data = example_server() | {"client": {"enabled": True, "fps": {"interval_seconds": 10, "hud": False}}}
     cfg = schema.load_server(data)
     client = render.brand_plugin(cfg)["client"]
-    assert client["fps_interval_seconds"] == 10 and client["fps_hud"] is False
-    defaults = render.brand_plugin(schema.load_server(example_server()))["client"]
-    assert (defaults["fps_interval_seconds"], defaults["fps_hud"]) == (5, True)
+    assert client["fps_interval_seconds"] == 10 and "fps_hud" not in client
+    # v1.4.1: client.fps.hud is the server's default for the HUD's fps part (branding.hud.parts)
+    assert "fps" not in render.brand_plugin(cfg)["hud"]["parts"]
+    default_render = render.brand_plugin(schema.load_server(example_server()))
+    assert default_render["client"]["fps_interval_seconds"] == 5
+    assert default_render["hud"]["parts"] == list(schema.HUD_PARTS)
     for bad in (1, 61):
         data = example_server() | {"client": {"fps": {"interval_seconds": bad}}}
         try:
@@ -160,6 +164,56 @@ def test_worker_reads_fps_and_builds_the_diagnosis() -> None:
     assert "Server fine, your PC: ${fps} FPS" in worker
     mjs = (REPO / "watchdog/test/experience.test.mjs").read_text()
     assert "'server fine, your PC' with the measured frame rate" in mjs
+
+
+def test_fps_is_shown_inside_the_hud_not_on_top_of_it() -> None:
+    """v1.4.1: the mod drew its FPS at the boss bar title's height (y = 3), right of the 182-px bar, so it sat on
+    mc-brand's long "/hud top" line. mc-brand listens to the reports itself, shows them inside the HUD (boss bar
+    and sidebar) and always clears the config's HUD flag (decision for v1.4.1: /hud off hides the FPS too)."""
+    sw = (BRAND / "Smallworld.java").read_text()
+    hud = (BRAND / "Hud.java").read_text()
+    msg = (BRAND / "Msg.java").read_text()
+    plugin = (BRAND / "BrandPlugin.java").read_text()
+    assert 'FPS = "smallworld:fps"' in sw
+    assert "registerIncomingPluginChannel(plugin, FPS, this)" in sw
+    assert "unregisterIncomingPluginChannel(plugin, FPS, this)" in sw
+    assert "report(player, Wire.decodeFps(message).fps())" in sw
+    assert "value < 0 || value > Wire.MAX_FPS" in sw  # WIRE.md's range; anything else is malformed
+    assert "fps.remove(p.getUniqueId())" in sw  # nothing kept beyond the session
+    # the mod never draws its own: every player with the mod gets the HUD flag off, whatever their /hud mode
+    assert "return config(intervalSeconds, false);" in sw
+    assert "p.sendPluginMessage(plugin, CONFIG, playerConfig(s.clientFpsInterval()));" in sw
+    assert sw.count("sendPluginMessage(") == 1
+    for gone in ("clientHud(", "hudShowsFps", "hudChanged", "clientFpsHud"):
+        assert gone not in sw + plugin, gone
+    assert "p -> smallworld.fps(p.getUniqueId())" in plugin
+    # boss bar: last, only with a report; sidebar: the hint line becomes the viewer's FPS
+    assert (
+        "if (fps >= 0 && !hidden.contains(Part.FPS)) {\n"
+        "            parts.add(Component.text(Msg.fps(fps), Msg.fpsColor(fps)));" in hud
+    )
+    assert "barText(online, speed, health, p.getPing(), fps.applyAsInt(p), glyphs.test(p), hidden(p))" in hud
+    assert "forViewer(lines, fps.applyAsInt(p), hidden(p))" in hud
+    assert "List<Line> mine = withFps(lines, fps);" in hud
+    assert "new Line(Component.text(Msg.YOUR_FPS, s.subtle())" in hud
+    # the colours are the Worker's fair/poor thresholds
+    worker = (REPO / "watchdog/worker.js").read_text()
+    fair = re.search(r"fps_fair: (\d+),", worker)
+    poor = re.search(r"fps_poor: (\d+),", worker)
+    assert fair and poor
+    assert f"FPS_FAIR = {fair.group(1)};" in msg and f"FPS_POOR = {poor.group(1)};" in msg
+    # client.fps.hud: the server's default for the fps part; the docs say the mod never draws its own
+    doc = schema.ClientFps.__dataclass_fields__["hud"].metadata["doc"]
+    assert "the mod never draws its own" in doc and "takes fps out of branding.hud.parts" in doc
+    assert "`flags` bit 0 is always cleared" in WIRE_MD and "`/hud off`\n  included" in WIRE_MD
+    ops = (REPO / "docs/operations.md").read_text()
+    assert "not even with\n  `/hud off`" in ops
+    e2e = (REPO / "tests/e2e/brand_check.py").read_text()
+    for needle in (
+        "player config 010500",
+        "fps bar true/true, fps line Your FPS 24 fps hint true, fps colours green/yellow/red",
+    ):
+        assert needle in e2e
 
 
 def test_wire_doc_says_the_server_side_is_built() -> None:

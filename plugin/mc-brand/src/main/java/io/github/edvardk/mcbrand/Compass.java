@@ -35,14 +35,18 @@ import org.bukkit.scheduler.BukkitTask;
  * {@code /compass hide} keeps the player off everyone else's compass and pocket map (PDC; spectators and invisible
  * players are never shown).
  *
- * <p>Cost: nothing per tick. A viewer who turns or moves (PlayerMoveEvent) is marked and redrawn at most every
- * {@link #FAST_TICKS} ticks by a one-shot task scheduled on demand; other players' movement redraws every viewer at
- * most every {@link #SLOW_TICKS} ticks, also on demand. With nobody moving no task runs. The boss bar's name is set
- * only when the line changed.
+ * <p>Cost: nothing per tick while nobody moves. A viewer who turns or moves (PlayerMoveEvent) is marked and
+ * redrawn by a one-shot task scheduled on demand {@link #FAST_TICKS} tick later (v1.4.1: 1, was 4: the line
+ * follows a turn at up to 20 updates a second instead of 5; several move events in one tick give one redraw);
+ * other players' movement redraws every viewer at most every {@link #SLOW_TICKS} ticks, also on demand. With
+ * nobody moving no task runs. A redraw is one strip layout per dirty viewer (a few dozen items, no IO); the boss
+ * bar's name is sent only when the rendered line differs from the last one sent, so turning less than a pixel's
+ * worth (0.75 degrees: {@link Wayfinding#WIDTH_PX} px for 2 x {@link Wayfinding#HALF_FOV} degrees) sends nothing.
+ * The line is drawn by the server, so what a player sees still trails their turn by their ping plus up to a tick.
  */
 final class Compass {
     static final long DECIDE_TICKS = 40L;
-    static final long FAST_TICKS = 4L;
+    static final long FAST_TICKS = 1L; // v1.4.1: the next tick (was 4: 5 updates a second felt laggy)
     static final long SLOW_TICKS = 20L;
 
     enum Pref { AUTO, ON, OFF }

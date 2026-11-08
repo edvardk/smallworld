@@ -27,7 +27,6 @@
   "mc_brand": {
    "client": {
     "enabled": true,
-    "fps_hud": true,
     "fps_interval_seconds": 5,
     "prompt": true,
     "url": "https://play.lighthouse.internal/"
@@ -88,6 +87,14 @@
     "enabled": true,
     "interval_seconds": 5,
     "max_players": 8,
+    "parts": [
+     "name",
+     "players",
+     "health",
+     "tps",
+     "ping",
+     "fps"
+    ],
     "settle_seconds": 10,
     "tab_header": "Lighthouse",
     "tab_list": true

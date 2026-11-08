@@ -389,9 +389,86 @@
   "push_false": {
    "id": "cmd009",
    "ok": true,
-   "output": "failed at repository: parity-owner/parity-config: the token can't push (permissions.push is false)"
+   "output": "passed: token, permissions, repository, main, pulls"
   },
   "push_false_state": {
+   "last": {
+    "ok": true,
+    "ts": "<time>",
+    "configured": true,
+    "steps": [
+     {
+      "step": "token",
+      "ok": true,
+      "detail": "the Worker minted a token (40 characters), TokenCache accepted it"
+     },
+     {
+      "step": "permissions",
+      "ok": true,
+      "detail": "contents + pull_requests write"
+     },
+     {
+      "step": "repository",
+      "ok": true,
+      "detail": "parity-owner/parity-config readable; push comes from the token's contents:write grant (permissions.push describes a user role)"
+     },
+     {
+      "step": "main",
+      "ok": true,
+      "detail": "main at a1b2c3d4a1b2, players.yml has 2 whitelisted"
+     },
+     {
+      "step": "pulls",
+      "ok": true,
+      "detail": "pull requests reachable (nothing was created)"
+     }
+    ],
+    "error": "",
+    "trigger": "panel"
+   },
+   "last_panel": {
+    "ok": true,
+    "ts": "<time>",
+    "configured": true,
+    "steps": [
+     {
+      "step": "token",
+      "ok": true,
+      "detail": "the Worker minted a token (40 characters), TokenCache accepted it"
+     },
+     {
+      "step": "permissions",
+      "ok": true,
+      "detail": "contents + pull_requests write"
+     },
+     {
+      "step": "repository",
+      "ok": true,
+      "detail": "parity-owner/parity-config readable; push comes from the token's contents:write grant (permissions.push describes a user role)"
+     },
+     {
+      "step": "main",
+      "ok": true,
+      "detail": "main at a1b2c3d4a1b2, players.yml has 2 whitelisted"
+     },
+     {
+      "step": "pulls",
+      "ok": true,
+      "detail": "pull requests reachable (nothing was created)"
+     }
+    ],
+    "error": "",
+    "trigger": "panel"
+   },
+   "failures": 0,
+   "alerted": false
+  },
+  "push_false_old_worker": {
+   "id": "cmd010",
+   "ok": true,
+   "output": "failed at repository: parity-owner/parity-config: the token can't push (permissions.push is false)"
+  },
+  "push_false_old_worker_state": {
    "last": {
     "ok": false,
     "ts": "<time>",
@@ -405,7 +482,7 @@
      {
       "step": "permissions",
       "ok": true,
-      "detail": "contents + pull_requests write"
+      "detail": "not reported by this Worker (checked through the repository below)"
      },
      {
       "step": "repository",
@@ -429,7 +506,7 @@
      {
       "step": "permissions",
       "ok": true,
-      "detail": "contents + pull_requests write"
+      "detail": "not reported by this Worker (checked through the repository below)"
      },
      {
       "step": "repository",
@@ -444,7 +521,7 @@
    "alerted": false
   },
   "push_unknown": {
-   "id": "cmd010",
+   "id": "cmd011",
    "ok": true,
    "output": "passed: token, permissions, repository, main, pulls"
   },
@@ -521,7 +598,7 @@
    "alerted": false
   },
   "alert": {
-   "id": "cmd011",
+   "id": "cmd012",
    "ok": true,
    "output": "failed at token: no GitHub token from the Worker: POST /agent/github-token: HTTP 502"
   },
@@ -558,7 +635,7 @@
    "alerted": true
   },
   "recovered": {
-   "id": "cmd012",
+   "id": "cmd013",
    "ok": true,
    "output": "passed: token, permissions, repository, main, pulls"
   },
@@ -662,6 +739,9 @@
   },
   {
    "push_false": 0
+  },
+  {
+   "push_false_old_worker": 0
   },
   {
    "push_unknown": 0
@@ -867,6 +947,14 @@
    }
   ],
   "POST /agent/github-token": [
+   {
+    "auth": true,
+    "user_agent": "smallworld mc-agent",
+    "content_type": "application/json",
+    "body": {
+     "agent": "1"
+    }
+   },
    {
     "auth": true,
     "user_agent": "smallworld mc-agent",
@@ -1217,6 +1305,27 @@
    "event": "ws-ended",
    "session": 11,
    "unmasked": 0
+  },
+  {
+   "event": "ws-open",
+   "session": 12,
+   "auth": true,
+   "user_agent": "smallworld mc-agent",
+   "version": "13",
+   "connection_upgrade": true
+  },
+  {
+   "event": "ws-hello",
+   "session": 12,
+   "message": {
+    "type": "hello",
+    "agent": "1"
+   }
+  },
+  {
+   "event": "ws-ended",
+   "session": 12,
+   "unmasked": 0
   }
  ],
  "console": [],
@@ -1253,6 +1362,42 @@
    "path": "/repos/parity-owner/parity-config/pulls",
    "query": "state=open&per_page=1",
    "token": 0,
+   "accept": "application/vnd.github+json",
+   "api_version": "2022-11-28",
+   "user_agent": "smallworld mc-agent"
+  },
+  {
+   "method": "GET",
+   "path": "/repos/parity-owner/parity-config",
+   "query": "",
+   "token": 1,
+   "accept": "application/vnd.github+json",
+   "api_version": "2022-11-28",
+   "user_agent": "smallworld mc-agent"
+  },
+  {
+   "method": "GET",
+   "path": "/repos/parity-owner/parity-config/git/ref/heads/main",
+   "query": "",
+   "token": 1,
+   "accept": "application/vnd.github+json",
+   "api_version": "2022-11-28",
+   "user_agent": "smallworld mc-agent"
+  },
+  {
+   "method": "GET",
+   "path": "/repos/parity-owner/parity-config/contents/players.yml",
+   "query": "ref=a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4",
+   "token": 1,
+   "accept": "application/vnd.github+json",
+   "api_version": "2022-11-28",
+   "user_agent": "smallworld mc-agent"
+  },
+  {
+   "method": "GET",
+   "path": "/repos/parity-owner/parity-config/pulls",
+   "query": "state=open&per_page=1",
+   "token": 1,
    "accept": "application/vnd.github+json",
    "api_version": "2022-11-28",
    "user_agent": "smallworld mc-agent"
@@ -1396,7 +1541,7 @@
   }
  ],
  "rcon": {
-  "stats_connections": 12,
+  "stats_connections": 13,
   "connections": []
  },
  "systemd": {
@@ -1890,6 +2035,66 @@
   [
    [
     "MESSAGE",
+    "panel selftest ok=True trigger=panel"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "selftest"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=selftest ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "selftest"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
     "panel selftest ok=False trigger=panel"
    ],
    [
@@ -2144,7 +2349,8 @@
     "nonce-selftest_failures-0009": "<time>",
     "nonce-selftest_failures-0010": "<time>",
     "nonce-selftest_failures-0011": "<time>",
-    "nonce-selftest_failures-0012": "<time>"
+    "nonce-selftest_failures-0012": "<time>",
+    "nonce-selftest_failures-0013": "<time>"
    }
   },
   "/var/lib/mc-agent/selftest.json": {

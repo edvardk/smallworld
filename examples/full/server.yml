@@ -71,7 +71,11 @@ branding:
   join:
     first_join: "Welcome to {server}, {player}! {glyph} Warm up by the lamp and stay a while"
     welcome_back: "Welcome back, {player} — last seen {ago} ago"
-  hud: {default_mode: top}
+  hud:
+    default_mode: top
+    # v1.4.1: the parts everyone sees until they change their own (/hud show|hide <part>, /hud minimal,
+    # /hud full, /hud reset); default: all of name, players, health, tps, mspt, ping, fps
+    parts: [name, players, health, tps, ping, fps]
   drink:
     enabled: true
     name: Cocoa Mug

@@ -3,6 +3,8 @@ package io.github.edvardk.mcbrand;
 import io.papermc.paper.scoreboard.numbers.NumberFormat;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -12,11 +14,13 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
+import java.util.function.ToIntFunction;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TextComponent;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Server;
@@ -45,6 +49,19 @@ import org.bukkit.scoreboard.ScoreboardManager;
  *       format or blank. Entries are "mcb.N": vanilla hides score holders starting with '#'
  *       (Scoreboard.HIDDEN_SCORE_PREFIX; the v1.0.0 HUD showed its title and no line because of it), and '.'
  *       can't be in a player name.
+ *   <li>v1.4.1: the viewer's own FPS, as the Smallworld client mod last reported it ({@link Smallworld#fps}, every
+ *       client.fps.interval_seconds): "· 144 fps" at the end of the boss bar's line, and a "Your FPS" line in the
+ *       sidebar in place of the "FPS: press F3" hint. Players without the mod see neither. The mod's own FPS
+ *       element is always switched off ({@link Smallworld#playerConfig}, /hud off included): it was drawn at the
+ *       boss bar title's height, right of the 182-px bar, so it sat on this line's text.
+ *   <li>v1.4.1: <b>parts</b>: {@link Part} name, players, health, tps, mspt, ping, fps. The server's default is
+ *       branding.hud.parts ({@link Settings#hudParts}); each player adds to and takes away from it ({@code /hud
+ *       hide|show <part>}, {@code /hud minimal}, {@code /hud full}, {@code /hud parts}, {@code /hud reset}), kept
+ *       in their PDC as deltas ("+fps,-mspt", {@link #parseDeltas}): a part they never touched follows a later
+ *       change of the server's default. In the sidebar, {@code players} is the player list, {@code ping} the
+ *       numbers next to the names, and the title (the server name) stays. A top bar with every part hidden shows
+ *       the server name alone (/hud off hides the bar). The join grace period's "Settling in…" bar and sidebar
+ *       are unchanged.
  * </ul>
  *
  * <p>The {glyph} icon (resource pack font) is shown only to players whose client loaded the pack ({@code glyphs}).
@@ -55,6 +72,135 @@ final class Hud {
     static final String ENTRY_PREFIX = "mcb."; // never '#': the client hides those
     private static final long LOG_EVERY_NS = 60_000_000_000L; // a failing write is logged at most once a minute
     private static final Component DOT = Component.text("● "); // ● before a player's name, coloured by ping
+
+    /** v1.4.1: the pieces of the HUD a player can hide (/hud hide|show), in the order the top bar shows them. */
+    enum Part {
+        NAME, PLAYERS, HEALTH, TPS, MSPT, PING, FPS;
+
+        String word() {
+            return name().toLowerCase(Locale.ROOT);
+        }
+
+        /** A part's name as players type it (any case; "online" = players), else null. */
+        static Part parse(String s) {
+            if (s == null) {
+                return null;
+            }
+            String v = s.toLowerCase(Locale.ROOT);
+            if (v.equals("online")) {
+                return PLAYERS;
+            }
+            for (Part p : values()) {
+                if (p.word().equals(v)) {
+                    return p;
+                }
+            }
+            return null;
+        }
+
+        static List<String> words() {
+            List<String> out = new ArrayList<>();
+            for (Part p : values()) {
+                out.add(p.word());
+            }
+            return out;
+        }
+    }
+
+    /** v1.4.1: /hud minimal: everything but these. */
+    static final Set<Part> MINIMAL = EnumSet.of(Part.NAME, Part.PLAYERS, Part.HEALTH);
+    private static final int MAX_STORED = 256; // a longer PDC value is not ours: ignored
+
+    /** v1.4.1: branding.hud.parts as rendered (unknown names dropped; no list at all: every part). */
+    static Set<Part> parseParts(List<String> names) {
+        Set<Part> out = EnumSet.noneOf(Part.class);
+        for (String w : names) {
+            Part p = Part.parse(w == null ? null : w.strip());
+            if (p != null) {
+                out.add(p);
+            }
+        }
+        return out;
+    }
+
+    static String words(Set<Part> parts) {
+        List<String> out = new ArrayList<>();
+        for (Part p : Part.values()) {
+            if (parts.contains(p)) {
+                out.add(p.word());
+            }
+        }
+        return out.isEmpty() ? "none" : String.join(",", out);
+    }
+
+    /**
+     * v1.4.1: a player's stored choices, deltas on top of the server's default: "+fps,-mspt" (true = shown,
+     * false = hidden). Anything else (no sign, an unknown part, garbage, a value too long to be ours) is ignored;
+     * a part given twice: the last one counts.
+     */
+    static Map<Part, Boolean> parseDeltas(String stored) {
+        Map<Part, Boolean> out = new EnumMap<>(Part.class);
+        if (stored == null || stored.length() > MAX_STORED) {
+            return out;
+        }
+        for (String w : stored.split(",")) {
+            String t = w.strip();
+            if (t.length() < 2 || (t.charAt(0) != '+' && t.charAt(0) != '-')) {
+                continue;
+            }
+            Part p = Part.parse(t.substring(1));
+            if (p != null) {
+                out.put(p, t.charAt(0) == '+');
+            }
+        }
+        return out;
+    }
+
+    /** The stored form, in Part order ("" = no deltas: the key is removed). */
+    static String formatDeltas(Map<Part, Boolean> deltas) {
+        List<String> out = new ArrayList<>();
+        for (Part p : Part.values()) {
+            Boolean show = deltas.get(p);
+            if (show != null) {
+                out.add((show ? "+" : "-") + p.word());
+            }
+        }
+        return String.join(",", out);
+    }
+
+    /** The parts a player sees: the server's default with their deltas applied. */
+    static Set<Part> effective(Set<Part> serverDefault, Map<Part, Boolean> deltas) {
+        Set<Part> out = EnumSet.noneOf(Part.class);
+        for (Part p : Part.values()) {
+            Boolean show = deltas.get(p);
+            if (show == null ? serverDefault.contains(p) : show) {
+                out.add(p);
+            }
+        }
+        return out;
+    }
+
+    /** The deltas that turn the server's default into {@code wanted}: a choice that matches the default is none. */
+    static Map<Part, Boolean> deltasFor(Set<Part> serverDefault, Set<Part> wanted) {
+        Map<Part, Boolean> out = new EnumMap<>(Part.class);
+        for (Part p : Part.values()) {
+            if (wanted.contains(p) != serverDefault.contains(p)) {
+                out.put(p, wanted.contains(p));
+            }
+        }
+        return out;
+    }
+
+    /** /hud show|hide &lt;part&gt;: the player's deltas with that choice (dropped where it matches the default). */
+    static Map<Part, Boolean> choose(Set<Part> serverDefault, Map<Part, Boolean> deltas, Part part, boolean show) {
+        Set<Part> wanted = effective(serverDefault, deltas);
+        if (show) {
+            wanted.add(part);
+        } else {
+            wanted.remove(part);
+        }
+        return deltasFor(serverDefault, wanted);
+    }
 
     enum Mode {
         TOP, SIDE, OFF;
@@ -79,10 +225,13 @@ final class Hud {
     private final Settings s;
     private final Logger log;
     private final Predicate<Player> glyphs;
+    private final ToIntFunction<Player> fps; // v1.4.1: the client mod's latest report, -1 none
     private long lastLogNs = -LOG_EVERY_NS;
     long writeErrors;
     private final NamespacedKey modeKey;
     private final NamespacedKey legacyKey; // v1.0.0: BYTE 1 = sidebar on, 0 = off
+    private final NamespacedKey partsKey; // v1.4.1: STRING, deltas on the server's default ("+fps,-mspt")
+    private final Map<UUID, Set<Part>> hiddenParts = new HashMap<>(); // cache: what each online player hides
     private final Map<UUID, Board> boards = new HashMap<>();
     private final Map<UUID, BossBar> bars = new HashMap<>();
     // v1.1: players in their join grace period: {join time ms, previous ping sample} (Msg.settled)
@@ -94,7 +243,12 @@ final class Hud {
     long maxNs;
     Msg.Speed lastSpeed;
 
-    record Line(Component text, Component number) {}
+    /** One sidebar line; {@code part}: the {@link Part} it belongs to (v1.4.1), null = always shown. */
+    record Line(Component text, Component number, Part part) {
+        Line(Component text, Component number) {
+            this(text, number, null);
+        }
+    }
 
     private static final class Board {
         final Scoreboard sb;
@@ -107,12 +261,14 @@ final class Hud {
         }
     }
 
-    Hud(BrandPlugin plugin, Settings settings, Predicate<Player> glyphs) {
+    Hud(BrandPlugin plugin, Settings settings, Predicate<Player> glyphs, ToIntFunction<Player> fps) {
         this.s = settings;
         this.log = plugin.getLogger();
         this.glyphs = glyphs;
+        this.fps = fps;
         this.modeKey = new NamespacedKey(plugin, "hud_mode");
         this.legacyKey = new NamespacedKey(plugin, "hud");
+        this.partsKey = new NamespacedKey(plugin, "hud_parts");
     }
 
     /** The player's mode: their /hud choice, else the server's default (OFF while the HUD is switched off). */
@@ -161,6 +317,47 @@ final class Hud {
         apply(p, m);
     }
 
+    /** v1.4.1: the player's deltas on the server's default parts, from their PDC. */
+    Map<Part, Boolean> deltas(Player p) {
+        return parseDeltas(p.getPersistentDataContainer().get(partsKey, PersistentDataType.STRING));
+    }
+
+    /** v1.4.1: the parts this player sees (the server's default and their deltas). */
+    Set<Part> shownParts(Player p) {
+        return effective(s.hudParts(), deltas(p));
+    }
+
+    /** v1.4.1: the parts this player doesn't see, worked out once per join (and on every change). */
+    Set<Part> hidden(Player p) {
+        return hiddenParts.computeIfAbsent(p.getUniqueId(), id -> {
+            Set<Part> h = EnumSet.allOf(Part.class);
+            h.removeAll(shownParts(p));
+            return h;
+        });
+    }
+
+    /**
+     * v1.4.1: /hud hide|show|minimal|full|reset: the player wants to see {@code wanted}; stored as deltas on the
+     * server's default (none: the key is removed, the player follows the default), the HUD redrawn at once.
+     */
+    void setShown(Player p, Set<Part> wanted) {
+        String v = formatDeltas(deltasFor(s.hudParts(), wanted));
+        if (v.isEmpty()) {
+            p.getPersistentDataContainer().remove(partsKey);
+        } else {
+            p.getPersistentDataContainer().set(partsKey, PersistentDataType.STRING, v);
+        }
+        hiddenParts.remove(p.getUniqueId());
+        refresh(p);
+    }
+
+    /** v1.4.1: /hud reset: no deltas, the server's default. */
+    void resetParts(Player p) {
+        p.getPersistentDataContainer().remove(partsKey);
+        hiddenParts.remove(p.getUniqueId());
+        refresh(p);
+    }
+
     private void apply(Player p, Mode m) {
         hide(p);
         Msg.Speed speed = Msg.Speed.of(Bukkit.getServer());
@@ -174,7 +371,8 @@ final class Hud {
             Board b = newBoard(glyphs.test(p));
             boards.put(p.getUniqueId(), b);
             p.setScoreboard(b.sb);
-            update(b, lines(Bukkit.getServer(), speed, smoother.current(), settling.keySet(), unsettled));
+            List<Line> all = lines(Bukkit.getServer(), speed, smoother.current(), settling.keySet(), unsettled);
+            update(b, unsettled ? all : forViewer(all, fps.applyAsInt(p), hidden(p)));
         }
     }
 
@@ -217,6 +415,7 @@ final class Hud {
     }
 
     void forget(UUID id) {
+        hiddenParts.remove(id);
         boards.remove(id);
         bars.remove(id);
         settling.remove(id);
@@ -284,7 +483,7 @@ final class Hud {
                     if (mine && settlingLines == null) {
                         settlingLines = lines(server, speed, health, unsettled, true);
                     }
-                    update(b, mine ? settlingLines : lines);
+                    update(b, mine ? settlingLines : forViewer(lines, fps.applyAsInt(p), hidden(p)));
                 }
                 BossBar bar = bars.get(id);
                 if (bar != null) {
@@ -381,19 +580,50 @@ final class Hud {
 
     /** The boss bar's one line: name · online · health · speed · tick time · the viewer's ping. */
     Component barText(int online, Msg.Speed speed, Msg.Health health, int ping, boolean glyph) {
+        return barText(online, speed, health, ping, -1, glyph);
+    }
+
+    /** v1.4.1: ... · the viewer's ping · the viewer's FPS (the client mod's report; {@code fps < 0}: none). */
+    Component barText(int online, Msg.Speed speed, Msg.Health health, int ping, int fps, boolean glyph) {
+        return barText(online, speed, health, ping, fps, glyph, Set.of());
+    }
+
+    /** v1.4.1: the line without the parts the viewer hid (/hud hide); every part hidden: the server name alone. */
+    Component barText(int online, Msg.Speed speed, Msg.Health health, int ping, int fps, boolean glyph,
+            Set<Part> hidden) {
+        Component name = Texts.withGlyph(Texts.bold(s.name(), s.accent()), glyph);
+        List<Component> parts = new ArrayList<>();
+        if (!hidden.contains(Part.NAME)) {
+            parts.add(name);
+        }
+        if (!hidden.contains(Part.PLAYERS)) {
+            parts.add(Component.text(online + " online", s.text()));
+        }
+        if (!hidden.contains(Part.HEALTH)) {
+            parts.add(Component.text(health.word, health.color));
+        }
+        if (!hidden.contains(Part.TPS)) {
+            parts.add(Component.text(Msg.tps(speed.tps(), false), Texts.tpsColor(speed.tps())));
+        }
+        if (!hidden.contains(Part.MSPT)) {
+            parts.add(Component.text(Msg.tick(speed.mspt(), false), Msg.tickColor(speed.mspt())));
+        }
+        if (ping >= 0 && !hidden.contains(Part.PING)) {
+            parts.add(Component.text("you " + ping + " ms", Texts.pingColor(ping)));
+        }
+        if (fps >= 0 && !hidden.contains(Part.FPS)) {
+            parts.add(Component.text(Msg.fps(fps), Msg.fpsColor(fps)));
+        }
+        if (parts.isEmpty()) {
+            parts.add(name);
+        }
         Component sep = Component.text(" · ", s.secondary());
-        TextComponent.Builder b = Component.text()
-                .append(Texts.withGlyph(Texts.bold(s.name(), s.accent()), glyph))
-                .append(sep)
-                .append(Component.text(online + " online", s.text()))
-                .append(sep)
-                .append(Component.text(health.word, health.color))
-                .append(sep)
-                .append(Component.text(Msg.tps(speed.tps(), false), Texts.tpsColor(speed.tps())))
-                .append(sep)
-                .append(Component.text(Msg.tick(speed.mspt(), false), Msg.tickColor(speed.mspt())));
-        if (ping >= 0) {
-            b.append(sep).append(Component.text("you " + ping + " ms", Texts.pingColor(ping)));
+        TextComponent.Builder b = Component.text();
+        for (int i = 0; i < parts.size(); i++) {
+            if (i > 0) {
+                b.append(sep);
+            }
+            b.append(parts.get(i));
         }
         return b.build();
     }
@@ -406,7 +636,7 @@ final class Hud {
                 bar.color(BossBar.Color.WHITE);
                 return;
             }
-            bar.name(barText(online, speed, health, p.getPing(), glyphs.test(p)));
+            bar.name(barText(online, speed, health, p.getPing(), fps.applyAsInt(p), glyphs.test(p), hidden(p)));
             bar.progress(speed.load());
             bar.color(health.bar);
         } catch (RuntimeException e) {
@@ -427,35 +657,84 @@ final class Hud {
         List<Line> out = new ArrayList<>();
         List<Player> players = new ArrayList<>(server.getOnlinePlayers());
         players.sort((a, b) -> a.getName().compareToIgnoreCase(b.getName()));
-        out.add(new Line(Component.text("Online " + players.size() + "/" + server.getMaxPlayers(), s.subtle()), null));
+        out.add(new Line(Component.text("Online " + players.size() + "/" + server.getMaxPlayers(), s.subtle()), null,
+                Part.PLAYERS));
         int shown = Math.min(players.size(), s.hudMaxPlayers());
         for (int i = 0; i < shown; i++) {
             Player p = players.get(i);
             if (unsettled.contains(p.getUniqueId())) {
                 out.add(new Line(Component.text().append(DOT.color(s.subtle()))
-                        .append(Component.text(p.getName(), s.text())).build(), Component.text("\u2026", s.subtle())));
+                        .append(Component.text(p.getName(), s.text())).build(), Component.text("\u2026", s.subtle()),
+                        Part.PLAYERS));
                 continue;
             }
             int ping = p.getPing();
             out.add(new Line(Component.text().append(DOT.color(Texts.pingColor(ping)))
                     .append(Component.text(p.getName(), s.text())).build(),
-                    Component.text(ping + " ms", Texts.pingColor(ping))));
+                    Component.text(ping + " ms", Texts.pingColor(ping)), Part.PLAYERS));
         }
         if (players.size() > shown) {
-            out.add(new Line(Component.text(" +" + (players.size() - shown) + " more", s.subtle()), null));
+            out.add(new Line(Component.text(" +" + (players.size() - shown) + " more", s.subtle()), null, Part.PLAYERS));
         }
         out.add(new Line(Component.text(" "), null));
         if (forSettling) {
             out.add(new Line(Component.text(Msg.SERVER, s.subtle()), Component.text(Msg.SETTLING, s.subtle())));
             return out.subList(0, Math.min(out.size(), MAX_LINES));
         }
-        out.add(new Line(Component.text(Msg.SERVER, s.subtle()), Component.text(h.word, h.color)));
+        out.add(new Line(Component.text(Msg.SERVER, s.subtle()), Component.text(h.word, h.color), Part.HEALTH));
         out.add(new Line(Component.text(Msg.SPEED, s.subtle()),
-                Component.text(Msg.tps(speed.tps(), true), Texts.tpsColor(speed.tps()))));
+                Component.text(Msg.tps(speed.tps(), true), Texts.tpsColor(speed.tps())), Part.TPS));
         out.add(new Line(Component.text(Msg.TICK_TIME, s.subtle()),
-                Component.text(Msg.tick(speed.mspt(), true), Msg.tickColor(speed.mspt()))));
-        out.add(new Line(Component.text(Msg.FPS_HINT, s.subtle()), null));
+                Component.text(Msg.tick(speed.mspt(), true), Msg.tickColor(speed.mspt())), Part.MSPT));
+        out.add(new Line(Component.text(Msg.FPS_HINT, s.subtle()), null, Part.FPS));
         return out.subList(0, Math.min(out.size(), MAX_LINES));
+    }
+
+    /**
+     * v1.4.1: one viewer's sidebar: the shared lines with the "FPS: press F3" hint replaced by their reported FPS
+     * ({@code fps < 0}, or no hint line (settling, cut at MAX_LINES): the shared list itself).
+     */
+    List<Line> withFps(List<Line> lines, int fps) {
+        if (fps < 0) {
+            return lines;
+        }
+        Component hint = Component.text(Msg.FPS_HINT, s.subtle());
+        for (int i = lines.size() - 1; i >= 0; i--) {
+            if (hint.equals(lines.get(i).text())) {
+                List<Line> out = new ArrayList<>(lines);
+                out.set(i, new Line(Component.text(Msg.YOUR_FPS, s.subtle()),
+                        Component.text(Msg.fps(fps), Msg.fpsColor(fps)), Part.FPS));
+                return out;
+            }
+        }
+        return lines;
+    }
+
+    /**
+     * v1.4.1: one viewer's sidebar: {@link #withFps}, then the parts they hid left out ({@code ping}: the numbers
+     * next to the names); blank lines left at the end go too. Nothing hidden and no FPS: the shared list itself.
+     */
+    List<Line> forViewer(List<Line> lines, int fps, Set<Part> hidden) {
+        List<Line> mine = withFps(lines, fps);
+        if (hidden.isEmpty()) {
+            return mine;
+        }
+        List<Line> out = new ArrayList<>();
+        for (Line l : mine) {
+            if (l.part() != null && hidden.contains(l.part())) {
+                continue;
+            }
+            out.add(l.part() == Part.PLAYERS && l.number() != null && hidden.contains(Part.PING)
+                    ? new Line(l.text(), null, l.part()) : l);
+        }
+        while (!out.isEmpty() && out.get(out.size() - 1).part() == null
+                && Texts.flat(out.get(out.size() - 1).text()).isBlank()) {
+            out.remove(out.size() - 1);
+        }
+        while (!out.isEmpty() && out.get(0).part() == null && Texts.flat(out.get(0).text()).isBlank()) {
+            out.remove(0);
+        }
+        return out;
     }
 
     /** Writes the lines that changed. Each line on its own: one that fails is logged (rate-limited) and retried
@@ -517,6 +796,67 @@ final class Hud {
                 + "; boss bar: " + Texts.flat(bar.name()) + " (fill " + String.format(Locale.ROOT, "%.2f", bar.progress())
                 + ", " + bar.color() + "); default mode " + Mode.parse(s.hudDefaultMode(), Mode.TOP).word() + "; "
                 + legacySelftest() + "; " + Msg.selftest() + ", settle " + s.hudSettleSeconds() + " s; settling bar: "
-                + Texts.flat(barTextSettling(1, false));
+                + Texts.flat(barTextSettling(1, false)) + "; " + fpsSelftest(server, speed) + "; "
+                + partsSelftest(server, speed);
+    }
+
+    /**
+     * v1.4.1, for /mcbrand selftest: hidden parts on the boss bar (fixed inputs), every part hidden (the name
+     * alone), the sidebar without them, the server's default with a player's deltas, the presets, a delta that
+     * matches the default dropped, the stored form (garbage ignored) and the parser.
+     */
+    String partsSelftest(Server server, Msg.Speed speed) {
+        Set<Part> some = EnumSet.of(Part.TPS, Part.MSPT, Part.PING);
+        String bar = Texts.flat(barText(3, speed, Msg.Health.SMOOTH, 23, 144, false, some));
+        String all = Texts.flat(barText(3, speed, Msg.Health.SMOOTH, 23, 144, false, EnumSet.allOf(Part.class)));
+        boolean nameOnly = all.equals(Texts.flat(Texts.withGlyph(Texts.bold(s.name(), s.accent()), false)));
+        List<String> side = new ArrayList<>();
+        for (Line l : forViewer(lines(server, speed), 144, EnumSet.of(Part.TPS, Part.MSPT, Part.FPS))) {
+            side.add(Texts.flat(l.text()).strip());
+        }
+        boolean sideOk = side.contains(Msg.SERVER) && !side.contains(Msg.SPEED) && !side.contains(Msg.TICK_TIME)
+                && !side.contains(Msg.YOUR_FPS) && !side.contains(Msg.FPS_HINT);
+        return "hud parts " + String.join(",", Part.words()) + ", hidden bar ["
+                + bar.substring(bar.indexOf(" · ")) + "], all hidden name only " + nameOnly + ", sidebar " + sideOk
+                + ", parse " + Part.parse("Ping") + "/" + Part.parse("online") + "/" + Part.parse("speed")
+                + "; " + deltaSelftest();
+    }
+
+    /** v1.4.1: the deltas on a fixed server default (no mspt, no ping) and the configured default. */
+    String deltaSelftest() {
+        Set<Part> def = EnumSet.of(Part.NAME, Part.PLAYERS, Part.HEALTH, Part.TPS, Part.FPS);
+        Map<Part, Boolean> stored = parseDeltas("+mspt,-fps, bogus,+speed,ping,-NAME,+fps,-");
+        Map<Part, Boolean> fps = choose(def, stored, Part.FPS, false); // differs from the default: kept
+        Map<Part, Boolean> back = choose(def, fps, Part.MSPT, false); // matches the default: dropped
+        Set<Part> later = EnumSet.of(Part.NAME, Part.PLAYERS, Part.PING); // the server's default changed
+        return "hud default " + words(s.hudParts()) + ", deltas " + formatDeltas(stored) + " -> "
+                + words(effective(def, stored)) + ", hide fps " + formatDeltas(fps) + ", hide mspt "
+                + formatDeltas(back) + ", later default " + words(effective(later, back)) + ", minimal "
+                + formatDeltas(deltasFor(def, MINIMAL)) + ", full " + formatDeltas(deltasFor(def,
+                        EnumSet.allOf(Part.class))) + ", reset " + words(effective(def, parseDeltas(null)))
+                + ", round trip " + parseDeltas(formatDeltas(back)).equals(back);
+    }
+
+    /**
+     * v1.4.1, for /mcbrand selftest: the FPS in the boss bar's line (last, only with a report), the sidebar's FPS
+     * line in place of the hint, and the colours at the Worker's thresholds.
+     */
+    String fpsSelftest(Server server, Msg.Speed speed) {
+        String with = Texts.flat(barText(1, speed, speed.health(), 23, 144, false));
+        String without = Texts.flat(barText(1, speed, speed.health(), 23, -1, false));
+        List<Line> base = lines(server, speed);
+        List<Line> mine = withFps(base, 24);
+        Line last = null;
+        for (Line l : mine) {
+            if (Texts.flat(l.text()).equals(Msg.YOUR_FPS)) {
+                last = l;
+            }
+        }
+        return "fps bar " + with.endsWith(" · you 23 ms · 144 fps") + "/" + !without.contains("fps")
+                + ", fps line " + (last == null ? "-" : Texts.flat(last.text()) + " " + Texts.flat(last.number()))
+                + " hint " + (withFps(base, -1) == base) + ", fps colours "
+                + NamedTextColor.NAMES.key(Msg.fpsColor(Msg.FPS_FAIR)) + "/"
+                + NamedTextColor.NAMES.key(Msg.fpsColor(Msg.FPS_FAIR - 1)) + "/"
+                + NamedTextColor.NAMES.key(Msg.fpsColor(Msg.FPS_POOR - 1));
     }
 }

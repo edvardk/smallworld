@@ -517,12 +517,18 @@ async function runAction(action, args, what = LABELS[action] || action) {
   return null;
 }
 
-// Fresh data after an action: the agent pushes its inventory right away; reload what the open tab shows.
+// Fresh data after an action: the agent pushes its inventory on a state change, but at most every 5 s
+// (INVENTORY_MIN_GAP_S), so the new state can land later than 6 s; reload the open tab a few times over ~20 s.
+const AFTER_ACTION_MS = [1500, 6000, 12000, 20000];
 function afterAction() {
-  for (const id of Object.keys(loaded)) loaded[id] = 0;
+  for (const ms of AFTER_ACTION_MS) {
+    setTimeout(() => {
+      for (const id of loaded.keys()) loaded.set(id, 0);
+      refresh().catch(() => {});
+    }, ms);
+  }
+  for (const id of loaded.keys()) loaded.set(id, 0);
   pollJob();
-  setTimeout(() => refresh().catch(() => {}), 1500);
-  setTimeout(() => refresh().catch(() => {}), 6000);
 }
 
 const JOB = { job: null, skew: 0, fast: null, announced: new Set() };
@@ -777,8 +783,9 @@ function go(id, focus = false) {
 
 // --- views -------------------------------------------------------------------------------------------------------
 
-const V = {};
-const LOADERS = {};
+// Each tab's view and loader, defined below; read through VIEWS / LOADS (Maps), never by indexing with a tab id.
+const V = Object.create(null);
+const LOADERS = Object.create(null);
 
 function banners(o) {
   const ws = (o.warnings || []).map((w) => {
@@ -2158,13 +2165,17 @@ V.audit = () => {
   </section>`;
 };
 
+// A tab id (from the URL fragment, checked against TABS) only ever selects an entry of these Maps.
+const VIEWS = new Map(Object.entries(V));
+const LOADS = new Map(Object.entries(LOADERS));
+
 // --- render + data flow -------------------------------------------------------------------------------------------
 
 // A tab switch builds the view afresh (and plays its rise animation); every later update of the same tab is a
 // patch in the next animation frame (update()).
 function render() {
   paintView(true);
-  if (LOADERS[current] && !loading.has(current) && needsLoad(current)) load(current);
+  if (LOADS.has(current) && !loading.has(current) && needsLoad(current)) load(current);
 }
 function update() {
   onFrame("view", () => paintView(false));
@@ -2175,8 +2186,15 @@ function paintView(full) {
   main.setAttribute("aria-labelledby", `tab-${current}`);
   const view = main.firstElementChild;
   const fresh = full || !view || view.dataset.tab !== current;
-  if (fresh) main.innerHTML = `<div class="view" data-tab="${current}">${V[current]()}</div>`;
-  else patch(view, V[current]());
+  let paint = VIEWS.get(current);
+  if (typeof paint !== "function") paint = V.overview;
+  if (fresh) {
+    const div = document.createElement("div");
+    div.className = "view";
+    div.dataset.tab = current;
+    div.innerHTML = paint();
+    main.replaceChildren(div);
+  } else patch(view, paint());
   applyDyn(main);
   watchCharts(main, fresh);
   if (current === "overview") paintOverview();
@@ -2191,17 +2209,19 @@ function once(el) {
   WIRED.add(el);
   return true;
 }
-const loaded = {};
+const loaded = new Map(); // tab id -> when its loader last finished
 const loading = new Set();
-const needsLoad = (id) => !loaded[id] || Date.now() - loaded[id] > POLL_MS;
+const needsLoad = (id) => !loaded.get(id) || Date.now() - loaded.get(id) > POLL_MS;
 async function load(id) {
+  const loader = LOADS.get(id);
+  if (!loader) return;
   loading.add(id);
   try {
-    await LOADERS[id]();
-    loaded[id] = Date.now();
+    await loader();
+    loaded.set(id, Date.now());
   } catch (e) {
     if (!(e instanceof ApiError && e.message === "forbidden")) toast(`Couldn't load ${id}: ${e.message}`);
-    loaded[id] = Date.now();
+    loaded.set(id, Date.now());
   } finally {
     loading.delete(id);
   }
@@ -2216,7 +2236,7 @@ async function refresh() {
   });
   if (current === "overview") {
     update();
-  } else if (current !== "console" && LOADERS[current] && needsLoad(current) && !(current === "players" && $("#wlName")?.value)) {
+  } else if (current !== "console" && LOADS.has(current) && needsLoad(current) && !(current === "players" && $("#wlName")?.value)) {
     load(current);
   } else if (current === "health" && $("#h-hc")) {
     update();

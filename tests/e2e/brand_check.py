@@ -161,6 +161,26 @@ def main() -> int:
             "smallworld hello true, pack CURRENT/OUTDATED/NONE/UNKNOWN, config 010501",
             "v1.2: WIRE.md's worked example decodes, the outdated-pack rule, the config payload",
         ),
+        (
+            "player config 010500",
+            "v1.4.1: every player with the mod gets the HUD flag off (/hud off too): the mod never draws its FPS",
+        ),
+        (
+            "fps bar true/true, fps line Your FPS 24 fps hint true, fps colours green/yellow/red",
+            "v1.4.1: the reported FPS inside the HUD (boss bar line, sidebar line), the Worker's thresholds",
+        ),
+        (
+            "hud parts name,players,health,tps,mspt,ping,fps, hidden bar [ · 3 online · Smooth · 144 fps], all hidden"
+            " name only true, sidebar true, parse PING/PLAYERS/null",
+            "v1.4.1: /hud hide|show <part> on the boss bar and the sidebar, the parser",
+        ),
+        (
+            "deltas -name,+mspt,+fps -> players,health,tps,mspt,fps, hide fps -name,+mspt,-fps, hide mspt"
+            " -name,-fps, later default players,ping, minimal -tps,-fps, full +mspt,+ping, reset"
+            " name,players,health,tps,fps, round trip true",
+            "v1.4.1: a player's deltas on a server default: garbage ignored, a choice matching the default dropped,"
+            " a later default reaching untouched parts, /hud minimal, /hud full, /hud reset",
+        ),
         ("pack is out of date", "v1.2: the outdated-pack line"),
         (
             "xaero tracked 020a01000172000b000169000000040123456789abcdeffedcba9876543210060001783ff8000000000000"
@@ -206,6 +226,12 @@ def main() -> int:
     st2 = rcon(box, "mcbrand status")
     m = re.search(r"runs=(\d+) last=(\d+)us max=(\d+)us", st2)
     expect(m is not None and int(m.group(1)) > 0, f"the HUD/tab task runs: {st2!r}")
+    # v1.4.1: branding.hud.parts, rendered into the plugin's config, is the server's default (selftest and status)
+    parts = ",".join(plugin_conf.get("hud", {}).get("parts", [])) or "none"
+    expect(
+        f"hud default {parts}, deltas " in self_test, f"selftest: the server's default HUD parts are {parts}"
+    )
+    expect(f"hud parts default={parts};" in st2, f"/mcbrand status: the server's default HUD parts ({parts})")
     if m:
         print(f"  task time: last {m.group(2)} us, max {m.group(3)} us (nobody online)", flush=True)
     journal2 = sh(box, "journalctl -u minecraft --no-pager -o cat --since '-2min'").stdout

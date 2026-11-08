@@ -136,6 +136,7 @@ class WsSession:
         self.send_lock = threading.Lock()
         self.closed = threading.Event()
         self.unmasked = 0  # client frames without a mask (RFC 6455 5.1 says every client frame is masked)
+        self.worker_closed = False  # the fake sent the close first (close())
 
     def _read(self, n: int) -> bytes:
         data = self.h.rfile.read(n)
@@ -174,6 +175,7 @@ class WsSession:
         self.send(0x1, text.encode())
 
     def close(self, code: int = 1000) -> None:
+        self.worker_closed = True
         with contextlib.suppress(OSError):
             self.send(0x8, struct.pack(">H", code))
 
@@ -189,7 +191,12 @@ class WsSession:
                 if op == 0xA:
                     continue
                 if op == 0x8:
-                    self.worker.event("ws-close", session=self.index, code=data[:2].hex())
+                    # Recorded only as the agent's answer to the Worker's close (ws_reconnect). A close the agent
+                    # starts itself happens at shutdown, where whether it is sent at all depends on timing: the
+                    # Python agent's control loop is a daemon thread that may or may not reach `ws.close()`
+                    # before the process exits after SIGTERM.
+                    if self.worker_closed:
+                        self.worker.event("ws-close", session=self.index, code=data[:2].hex())
                     with contextlib.suppress(OSError):
                         self.send(0x8, data[:2])
                     return

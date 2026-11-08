@@ -17,8 +17,8 @@ commands:
     description: Get your drink back if you lost it (one at a time; branding.drink.command adds its own name).
     permission: mcbrand.drink
   hud:
-    description: Show or hide the sidebar (players, ping, server speed).
-    usage: /hud [on|off]
+    description: Where the HUD is (top bar, sidebar or off) and which parts it shows (players, ping, server speed, FPS).
+    usage: /hud [top|side|off] | /hud hide|show <part> | /hud minimal | /hud full | /hud parts | /hud reset
     permission: mcbrand.hud
   modpack:
     description: Your personal link to the server's optional client (smoother FPS, further views).
