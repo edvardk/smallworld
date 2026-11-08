@@ -197,12 +197,6 @@
     "hand_deleted": "20250101T0000-0badc0de-9-9.ndjson.gz",
     "dropped": [],
     "state_after": {
-     "20250101T0000-0badc0de-9-9.ndjson.gz": {
-      "r2": false,
-      "todo": [
-       0
-      ]
-     },
      "20251101T0000-0badc0de-1-2.ndjson.gz": {
       "r2": true,
       "todo": []

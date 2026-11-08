@@ -231,7 +231,8 @@
   {
    "event": "ws-close",
    "session": 0,
-   "code": "03e8"
+   "code": "03e8",
+   "by": "worker"
   },
   {
    "event": "ws-ended",
@@ -253,6 +254,12 @@
     "type": "hello",
     "agent": "1"
    }
+  },
+  {
+   "event": "ws-close",
+   "session": 1,
+   "code": "03e8",
+   "by": "agent"
   },
   {
    "event": "ws-ended",

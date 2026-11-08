@@ -171,7 +171,9 @@ def bad_snapshots(s: TelScenario) -> None:
     """What the plugin (a less privileged process) leaves in /run/mc-telemetry is never trusted: bad names,
     bad JSON, a wrong version, more than MAX_SNAPSHOT_BYTES (only the first MiB is read: a valid document padded
     with whitespace still parses, a cut one doesn't), a timestamp older than the last read loop's, a symlink, a FIFO, a directory, junk
-    fields; then the plugin restarts (its sequence starts again at 0) and is followed."""
+    fields; then the plugin restarts (its sequence starts again at 0) and is followed. v1.5: within one read a
+    snapshot older than the one before it is dropped; a bool `ts` is no int; NaN, an infinity or 1e400 in a field
+    skips the snapshot (logged once) and reading goes on."""
     s.identity(SRC, 0)
     d = s.box.host("/run/mc-telemetry")
     s.write_snap(snap(1, minute(0, 0), [player("Alice", minute(0, -5))]))
@@ -181,6 +183,7 @@ def bad_snapshots(s: TelScenario) -> None:
     s.write_snap(big, seq=4)
     s.write_snap(json.dumps(snap(5, minute(0, 20), [player("Bob", minute(0, 18))])).encode() + b" " * (1 << 20),
                  seq=5)  # fmt: skip
+    s.write_snap(snap(6, minute(0, 15), [player("Carol", 1)]))  # older than snap 5, in the same read: dropped
     os.symlink("snap-1.json", d / "snap-7.json")
     os.mkfifo(d / "snap-8.json", 0o640)
     (d / "snap-9.json").mkdir()
@@ -214,7 +217,14 @@ def bad_snapshots(s: TelScenario) -> None:
     s.wait_requests(2)
     s.clear_snaps()  # the plugin restarted (Writer.clean) and starts again at 0
     s.write_snap(snap(0, minute(2, 5), [player("Bob", minute(2, 0))]))
-    s.write_snap(snap(1, minute(2, 15), [player("Bob", minute(2, 0))]))
+    bob = json.dumps(snap(1, minute(2, 7), [player("Bob", minute(2, 0))]))
+    s.write_snap(bob.replace('"ping": 40', '"ping": NaN').encode(), seq=1)  # an int field
+    s.write_snap(
+        bob.replace('"heap_used_mb": 2048', '"heap_used_mb": Infinity').encode(), seq=2
+    )  # a float one
+    s.write_snap(bob.replace('"scanned": 120', '"scanned": 1e400').encode(), seq=3)
+    s.write_snap(json.dumps(snap(4, minute(2, 9)) | {"ts": True}).encode(), seq=4)
+    s.write_snap(snap(5, minute(2, 15), [player("Bob", minute(2, 0))]))
     s.wait_requests(3)
     s.next_poll()
     s.stop()
@@ -375,7 +385,8 @@ def segments(s: TelScenario) -> None:
 def backfill_quiet(s: TelScenario) -> None:
     """Rows the Worker refused live (5xx) wait in the segment and are backfilled, oldest first, BACKFILL_BATCH
     rows a request and at most 4 requests a round, only in quiet time: a player online stops it (the next round
-    doesn't run), nobody online resumes it."""
+    doesn't run), nobody online resumes it. v1.5: a row the Worker refuses for good (413) halves the batch down
+    to it and is given up at once (logged), the backfill moves on."""
     s.identity(SRC, 0)
     for i in range(15):
         s.write_snap(snap(i + 1, minute(i, 5)))
@@ -383,6 +394,8 @@ def backfill_quiet(s: TelScenario) -> None:
     def reply(rec: dict[str, Any], n: int) -> tuple[int, Any]:
         if is_live(rec) and first_seq(rec) < 13:
             return 503, {"error": "D1 unavailable"}
+        if not is_live(rec) and any(r.get("seq") == 10 for r in rec["body"]["rows"]):
+            return 413, {"error": "body too large"}
         return 200, ok_reply(rec)
 
     s.experience = reply
@@ -396,7 +409,15 @@ def backfill_quiet(s: TelScenario) -> None:
     time.sleep(1)  # the round after that read loop (it would run at once) must not start
     s.note("backfill_while_bob_online", len(s.requests(live=False)))
     s.write_snap(snap(17, minute(16, 5)))
-    s.wait_requests(5, live=False)
+    # the 413 (rows 9-11) left the batch at one row: 9, 10 (given up), 11 and 12, then the segment is done
+    s.wait_requests(8, live=False, timeout=45)
+
+    def first_done() -> bool:
+        st = json.loads(s.box.read(f"{SEGMENTS}/state.json") or "{}")
+        first = st.get("20260115T1000-0badc0de-0-14.ndjson.gz") or {}
+        return first.get("todo") == [] and first.get("r2") is True
+
+    s.wait(first_done, 30, "the first segment delivered")
     s.next_poll()
     s.stop()
 

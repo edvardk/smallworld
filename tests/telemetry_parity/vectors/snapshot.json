@@ -1,7 +1,7 @@
 {
  "meta": {
   "generator": "scripts/telemetry_vectors.py",
-  "doc": "parse_snapshot, _fps, parse_hot, merge_hot, SNAP_NAME; python_raises: NaN/Infinity reach int()",
+  "doc": "parse_snapshot, _fps, parse_hot, merge_hot, SNAP_NAME; bad_snapshot: numbers no field can hold (v1.5)",
   "unicode_sensitive": true,
   "unidata_version": "15.1.0"
  },
@@ -106,148 +106,14 @@
     "label": "v true (bool == 1)",
     "json": "{\"v\": true, \"seq\": 7, \"ts\": 1768471205000, \"win_ms\": 10000, \"srv\": {\"tps\": 20.0, \"ticks\": 200, \"mean\": 12.5, \"p50\": 11.0, \"p95\": 20.0, \"p99\": 30.0, \"p999\": 40.0, \"max\": 45.0, \"spikes\": [[1768471201000, 55.5]], \"scanned\": 10, \"worlds\": [{\"n\": \"world\", \"chunks\": 400, \"entities\": 300, \"tiles\": 50, \"ticking\": 40, \"players\": 1}], \"hot\": [{\"w\": \"world\", \"cx\": 1, \"cz\": 2, \"ent\": 30, \"tiles\": 4, \"vil\": 1, \"items\": 2}]}, \"pl\": [{\"u\": \"aaaaaaaa-1111-4111-8111-111111111111\", \"n\": \"Alice\", \"ping\": 40, \"brand\": \"vanilla\", \"view\": 10, \"send\": 10, \"loc\": \"en_us\", \"w\": \"world\", \"cx\": 0, \"cz\": 0, \"ent\": 10, \"glide\": false, \"tips\": true, \"join\": 1768471199000, \"fps\": 120}]}",
     "out": {
-     "ok": {
-      "seq": 7,
-      "ts": 1768471205000,
-      "win_ms": 10000,
-      "srv": {
-       "tps": 20.0,
-       "ticks": 200.0,
-       "mean": 12.5,
-       "p50": 11.0,
-       "p95": 20.0,
-       "p99": 30.0,
-       "p999": 40.0,
-       "max": 45.0,
-       "self_p99_us": null,
-       "self_max_us": null,
-       "budget_skips": null,
-       "lost_windows": null,
-       "heap_used_mb": null,
-       "heap_max_mb": null,
-       "spikes": [
-        [
-         1768471201000,
-         55.5
-        ]
-       ],
-       "worlds": [
-        {
-         "n": "world",
-         "chunks": 400,
-         "entities": 300,
-         "tiles": 50,
-         "ticking": 40,
-         "players": 1
-        }
-       ],
-       "scanned": 10,
-       "hot": [
-        {
-         "w": "world",
-         "cx": 1,
-         "cz": 2,
-         "ent": 30,
-         "tiles": 4,
-         "vil": 1,
-         "items": 2
-        }
-       ]
-      },
-      "pl": [
-       {
-        "u": "aaaaaaaa-1111-4111-8111-111111111111",
-        "n": "Alice",
-        "ping": 40,
-        "brand": "vanilla",
-        "view": 10,
-        "send": 10,
-        "loc": "en_us",
-        "w": "world",
-        "cx": 0,
-        "cz": 0,
-        "ent": 10,
-        "glide": false,
-        "tips": true,
-        "join": 1768471199000,
-        "fps": 120
-       }
-      ]
-     }
+     "ok": null
     }
    },
    {
     "label": "v 1.0",
     "json": "{\"v\": 1.0, \"seq\": 7, \"ts\": 1768471205000, \"win_ms\": 10000, \"srv\": {\"tps\": 20.0, \"ticks\": 200, \"mean\": 12.5, \"p50\": 11.0, \"p95\": 20.0, \"p99\": 30.0, \"p999\": 40.0, \"max\": 45.0, \"spikes\": [[1768471201000, 55.5]], \"scanned\": 10, \"worlds\": [{\"n\": \"world\", \"chunks\": 400, \"entities\": 300, \"tiles\": 50, \"ticking\": 40, \"players\": 1}], \"hot\": [{\"w\": \"world\", \"cx\": 1, \"cz\": 2, \"ent\": 30, \"tiles\": 4, \"vil\": 1, \"items\": 2}]}, \"pl\": [{\"u\": \"aaaaaaaa-1111-4111-8111-111111111111\", \"n\": \"Alice\", \"ping\": 40, \"brand\": \"vanilla\", \"view\": 10, \"send\": 10, \"loc\": \"en_us\", \"w\": \"world\", \"cx\": 0, \"cz\": 0, \"ent\": 10, \"glide\": false, \"tips\": true, \"join\": 1768471199000, \"fps\": 120}]}",
     "out": {
-     "ok": {
-      "seq": 7,
-      "ts": 1768471205000,
-      "win_ms": 10000,
-      "srv": {
-       "tps": 20.0,
-       "ticks": 200.0,
-       "mean": 12.5,
-       "p50": 11.0,
-       "p95": 20.0,
-       "p99": 30.0,
-       "p999": 40.0,
-       "max": 45.0,
-       "self_p99_us": null,
-       "self_max_us": null,
-       "budget_skips": null,
-       "lost_windows": null,
-       "heap_used_mb": null,
-       "heap_max_mb": null,
-       "spikes": [
-        [
-         1768471201000,
-         55.5
-        ]
-       ],
-       "worlds": [
-        {
-         "n": "world",
-         "chunks": 400,
-         "entities": 300,
-         "tiles": 50,
-         "ticking": 40,
-         "players": 1
-        }
-       ],
-       "scanned": 10,
-       "hot": [
-        {
-         "w": "world",
-         "cx": 1,
-         "cz": 2,
-         "ent": 30,
-         "tiles": 4,
-         "vil": 1,
-         "items": 2
-        }
-       ]
-      },
-      "pl": [
-       {
-        "u": "aaaaaaaa-1111-4111-8111-111111111111",
-        "n": "Alice",
-        "ping": 40,
-        "brand": "vanilla",
-        "view": 10,
-        "send": 10,
-        "loc": "en_us",
-        "w": "world",
-        "cx": 0,
-        "cz": 0,
-        "ent": 10,
-        "glide": false,
-        "tips": true,
-        "join": 1768471199000,
-        "fps": 120
-       }
-      ]
-     }
+     "ok": null
     }
    },
    {
@@ -268,83 +134,30 @@
     "label": "ts true (bool is an int)",
     "json": "{\"v\": 1, \"seq\": 7, \"ts\": true, \"win_ms\": 10000, \"srv\": {\"tps\": 20.0, \"ticks\": 200, \"mean\": 12.5, \"p50\": 11.0, \"p95\": 20.0, \"p99\": 30.0, \"p999\": 40.0, \"max\": 45.0, \"spikes\": [[1768471201000, 55.5]], \"scanned\": 10, \"worlds\": [{\"n\": \"world\", \"chunks\": 400, \"entities\": 300, \"tiles\": 50, \"ticking\": 40, \"players\": 1}], \"hot\": [{\"w\": \"world\", \"cx\": 1, \"cz\": 2, \"ent\": 30, \"tiles\": 4, \"vil\": 1, \"items\": 2}]}, \"pl\": [{\"u\": \"aaaaaaaa-1111-4111-8111-111111111111\", \"n\": \"Alice\", \"ping\": 40, \"brand\": \"vanilla\", \"view\": 10, \"send\": 10, \"loc\": \"en_us\", \"w\": \"world\", \"cx\": 0, \"cz\": 0, \"ent\": 10, \"glide\": false, \"tips\": true, \"join\": 1768471199000, \"fps\": 120}]}",
     "out": {
-     "ok": {
-      "seq": 7,
-      "ts": true,
-      "win_ms": 10000,
-      "srv": {
-       "tps": 20.0,
-       "ticks": 200.0,
-       "mean": 12.5,
-       "p50": 11.0,
-       "p95": 20.0,
-       "p99": 30.0,
-       "p999": 40.0,
-       "max": 45.0,
-       "self_p99_us": null,
-       "self_max_us": null,
-       "budget_skips": null,
-       "lost_windows": null,
-       "heap_used_mb": null,
-       "heap_max_mb": null,
-       "spikes": [
-        [
-         1768471201000,
-         55.5
-        ]
-       ],
-       "worlds": [
-        {
-         "n": "world",
-         "chunks": 400,
-         "entities": 300,
-         "tiles": 50,
-         "ticking": 40,
-         "players": 1
-        }
-       ],
-       "scanned": 10,
-       "hot": [
-        {
-         "w": "world",
-         "cx": 1,
-         "cz": 2,
-         "ent": 30,
-         "tiles": 4,
-         "vil": 1,
-         "items": 2
-        }
-       ]
-      },
-      "pl": [
-       {
-        "u": "aaaaaaaa-1111-4111-8111-111111111111",
-        "n": "Alice",
-        "ping": 40,
-        "brand": "vanilla",
-        "view": 10,
-        "send": 10,
-        "loc": "en_us",
-        "w": "world",
-        "cx": 0,
-        "cz": 0,
-        "ent": 10,
-        "glide": false,
-        "tips": true,
-        "join": 1768471199000,
-        "fps": 120
-       }
-      ]
-     }
+     "ok": null
     }
    },
    {
     "label": "ts negative",
     "json": "{\"v\": 1, \"seq\": 7, \"ts\": -5, \"win_ms\": 10000, \"srv\": {\"tps\": 20.0, \"ticks\": 200, \"mean\": 12.5, \"p50\": 11.0, \"p95\": 20.0, \"p99\": 30.0, \"p999\": 40.0, \"max\": 45.0, \"spikes\": [[1768471201000, 55.5]], \"scanned\": 10, \"worlds\": [{\"n\": \"world\", \"chunks\": 400, \"entities\": 300, \"tiles\": 50, \"ticking\": 40, \"players\": 1}], \"hot\": [{\"w\": \"world\", \"cx\": 1, \"cz\": 2, \"ent\": 30, \"tiles\": 4, \"vil\": 1, \"items\": 2}]}, \"pl\": [{\"u\": \"aaaaaaaa-1111-4111-8111-111111111111\", \"n\": \"Alice\", \"ping\": 40, \"brand\": \"vanilla\", \"view\": 10, \"send\": 10, \"loc\": \"en_us\", \"w\": \"world\", \"cx\": 0, \"cz\": 0, \"ent\": 10, \"glide\": false, \"tips\": true, \"join\": 1768471199000, \"fps\": 120}]}",
     "out": {
+     "ok": null
+    }
+   },
+   {
+    "label": "ts huge",
+    "json": "{\"v\": 1, \"seq\": 7, \"ts\": 100000000000000000000, \"win_ms\": 10000, \"srv\": {\"tps\": 20.0, \"ticks\": 200, \"mean\": 12.5, \"p50\": 11.0, \"p95\": 20.0, \"p99\": 30.0, \"p999\": 40.0, \"max\": 45.0, \"spikes\": [[1768471201000, 55.5]], \"scanned\": 10, \"worlds\": [{\"n\": \"world\", \"chunks\": 400, \"entities\": 300, \"tiles\": 50, \"ticking\": 40, \"players\": 1}], \"hot\": [{\"w\": \"world\", \"cx\": 1, \"cz\": 2, \"ent\": 30, \"tiles\": 4, \"vil\": 1, \"items\": 2}]}, \"pl\": [{\"u\": \"aaaaaaaa-1111-4111-8111-111111111111\", \"n\": \"Alice\", \"ping\": 40, \"brand\": \"vanilla\", \"view\": 10, \"send\": 10, \"loc\": \"en_us\", \"w\": \"world\", \"cx\": 0, \"cz\": 0, \"ent\": 10, \"glide\": false, \"tips\": true, \"join\": 1768471199000, \"fps\": 120}]}",
+    "out": {
+     "ok": null
+    }
+   },
+   {
+    "label": "ts at MAX_TS_MS",
+    "json": "{\"v\": 1, \"seq\": 7, \"ts\": 253402300799999, \"win_ms\": 10000, \"srv\": {\"tps\": 20.0, \"ticks\": 200, \"mean\": 12.5, \"p50\": 11.0, \"p95\": 20.0, \"p99\": 30.0, \"p999\": 40.0, \"max\": 45.0, \"spikes\": [[1768471201000, 55.5]], \"scanned\": 10, \"worlds\": [{\"n\": \"world\", \"chunks\": 400, \"entities\": 300, \"tiles\": 50, \"ticking\": 40, \"players\": 1}], \"hot\": [{\"w\": \"world\", \"cx\": 1, \"cz\": 2, \"ent\": 30, \"tiles\": 4, \"vil\": 1, \"items\": 2}]}, \"pl\": [{\"u\": \"aaaaaaaa-1111-4111-8111-111111111111\", \"n\": \"Alice\", \"ping\": 40, \"brand\": \"vanilla\", \"view\": 10, \"send\": 10, \"loc\": \"en_us\", \"w\": \"world\", \"cx\": 0, \"cz\": 0, \"ent\": 10, \"glide\": false, \"tips\": true, \"join\": 1768471199000, \"fps\": 120}]}",
+    "out": {
      "ok": {
       "seq": 7,
-      "ts": -5,
+      "ts": 253402300799999,
       "win_ms": 10000,
       "srv": {
        "tps": 20.0,
@@ -413,22 +226,29 @@
     }
    },
    {
-    "label": "ts huge",
-    "json": "{\"v\": 1, \"seq\": 7, \"ts\": 100000000000000000000, \"win_ms\": 10000, \"srv\": {\"tps\": 20.0, \"ticks\": 200, \"mean\": 12.5, \"p50\": 11.0, \"p95\": 20.0, \"p99\": 30.0, \"p999\": 40.0, \"max\": 45.0, \"spikes\": [[1768471201000, 55.5]], \"scanned\": 10, \"worlds\": [{\"n\": \"world\", \"chunks\": 400, \"entities\": 300, \"tiles\": 50, \"ticking\": 40, \"players\": 1}], \"hot\": [{\"w\": \"world\", \"cx\": 1, \"cz\": 2, \"ent\": 30, \"tiles\": 4, \"vil\": 1, \"items\": 2}]}, \"pl\": [{\"u\": \"aaaaaaaa-1111-4111-8111-111111111111\", \"n\": \"Alice\", \"ping\": 40, \"brand\": \"vanilla\", \"view\": 10, \"send\": 10, \"loc\": \"en_us\", \"w\": \"world\", \"cx\": 0, \"cz\": 0, \"ent\": 10, \"glide\": false, \"tips\": true, \"join\": 1768471199000, \"fps\": 120}]}",
+    "label": "ts beyond MAX_TS_MS",
+    "json": "{\"v\": 1, \"seq\": 7, \"ts\": 253402300800000, \"win_ms\": 10000, \"srv\": {\"tps\": 20.0, \"ticks\": 200, \"mean\": 12.5, \"p50\": 11.0, \"p95\": 20.0, \"p99\": 30.0, \"p999\": 40.0, \"max\": 45.0, \"spikes\": [[1768471201000, 55.5]], \"scanned\": 10, \"worlds\": [{\"n\": \"world\", \"chunks\": 400, \"entities\": 300, \"tiles\": 50, \"ticking\": 40, \"players\": 1}], \"hot\": [{\"w\": \"world\", \"cx\": 1, \"cz\": 2, \"ent\": 30, \"tiles\": 4, \"vil\": 1, \"items\": 2}]}, \"pl\": [{\"u\": \"aaaaaaaa-1111-4111-8111-111111111111\", \"n\": \"Alice\", \"ping\": 40, \"brand\": \"vanilla\", \"view\": 10, \"send\": 10, \"loc\": \"en_us\", \"w\": \"world\", \"cx\": 0, \"cz\": 0, \"ent\": 10, \"glide\": false, \"tips\": true, \"join\": 1768471199000, \"fps\": 120}]}",
+    "out": {
+     "ok": null
+    }
+   },
+   {
+    "label": "spike time / hot chunk bools",
+    "json": "{\"v\": 1, \"seq\": 7, \"ts\": 1768471205000, \"win_ms\": 10000, \"srv\": {\"spikes\": [[true, 5], [7, 5]], \"hot\": [{\"w\": \"w\", \"cx\": true, \"cz\": 1}]}, \"pl\": [{\"u\": \"aaaaaaaa-1111-4111-8111-111111111111\", \"n\": \"Alice\", \"ping\": 40, \"brand\": \"vanilla\", \"view\": 10, \"send\": 10, \"loc\": \"en_us\", \"w\": \"world\", \"cx\": 0, \"cz\": 0, \"ent\": 10, \"glide\": false, \"tips\": true, \"join\": 1768471199000, \"fps\": 120}]}",
     "out": {
      "ok": {
       "seq": 7,
-      "ts": 100000000000000000000,
+      "ts": 1768471205000,
       "win_ms": 10000,
       "srv": {
-       "tps": 20.0,
-       "ticks": 200.0,
-       "mean": 12.5,
-       "p50": 11.0,
-       "p95": 20.0,
-       "p99": 30.0,
-       "p999": 40.0,
-       "max": 45.0,
+       "tps": null,
+       "ticks": null,
+       "mean": null,
+       "p50": null,
+       "p95": null,
+       "p99": null,
+       "p999": null,
+       "max": null,
        "self_p99_us": null,
        "self_max_us": null,
        "budget_skips": null,
@@ -437,32 +257,13 @@
        "heap_max_mb": null,
        "spikes": [
         [
-         1768471201000,
-         55.5
+         7,
+         5.0
         ]
        ],
-       "worlds": [
-        {
-         "n": "world",
-         "chunks": 400,
-         "entities": 300,
-         "tiles": 50,
-         "ticking": 40,
-         "players": 1
-        }
-       ],
-       "scanned": 10,
-       "hot": [
-        {
-         "w": "world",
-         "cx": 1,
-         "cz": 2,
-         "ent": 30,
-         "tiles": 4,
-         "vil": 1,
-         "items": 2
-        }
-       ]
+       "worlds": [],
+       "scanned": 0,
+       "hot": []
       },
       "pl": [
        {
@@ -596,52 +397,8 @@
     "label": "numbers as strings / bools",
     "json": "{\"v\": 1, \"seq\": 7, \"ts\": 1768471205000, \"win_ms\": 10000, \"srv\": {\"tps\": \"20\", \"ticks\": true, \"mean\": null, \"p50\": 1e+308, \"p99\": -0.0, \"heap_used_mb\": Infinity}, \"pl\": [{\"u\": \"aaaaaaaa-1111-4111-8111-111111111111\", \"n\": \"Alice\", \"ping\": 40, \"brand\": \"vanilla\", \"view\": 10, \"send\": 10, \"loc\": \"en_us\", \"w\": \"world\", \"cx\": 0, \"cz\": 0, \"ent\": 10, \"glide\": false, \"tips\": true, \"join\": 1768471199000, \"fps\": 120}]}",
     "out": {
-     "ok": {
-      "seq": 7,
-      "ts": 1768471205000,
-      "win_ms": 10000,
-      "srv": {
-       "tps": null,
-       "ticks": null,
-       "mean": null,
-       "p50": 1e+308,
-       "p95": null,
-       "p99": -0.0,
-       "p999": null,
-       "max": null,
-       "self_p99_us": null,
-       "self_max_us": null,
-       "budget_skips": null,
-       "lost_windows": null,
-       "heap_used_mb": {
-        "float": "Infinity"
-       },
-       "heap_max_mb": null,
-       "spikes": [],
-       "worlds": [],
-       "scanned": 0,
-       "hot": []
-      },
-      "pl": [
-       {
-        "u": "aaaaaaaa-1111-4111-8111-111111111111",
-        "n": "Alice",
-        "ping": 40,
-        "brand": "vanilla",
-        "view": 10,
-        "send": 10,
-        "loc": "en_us",
-        "w": "world",
-        "cx": 0,
-        "cz": 0,
-        "ent": 10,
-        "glide": false,
-        "tips": true,
-        "join": 1768471199000,
-        "fps": 120
-       }
-      ]
-     }
+     "error": "srv.heap_used_mb is not a finite number",
+     "type": "BadSnapshot"
     }
    },
    {
@@ -745,10 +502,6 @@
         [
          1,
          2.0
-        ],
-        [
-         1,
-         3.0
         ],
         [
          3,
@@ -1325,90 +1078,179 @@
     }
    }
   ],
-  "python_raises": [
+  "bad_snapshot": [
    {
     "label": "NaN ping",
     "json": "{\"v\":1,\"ts\":5,\"pl\":[{\"u\":\"aaaaaaaa-1111-4111-8111-111111111111\",\"n\":\"A\",\"ping\":NaN}]}",
     "out": {
-     "error": "cannot convert float NaN to integer",
-     "type": "ValueError"
+     "error": "pl.ping is not a finite number",
+     "type": "BadSnapshot"
     }
    },
    {
     "label": "Infinity scanned",
     "json": "{\"v\":1,\"ts\":5,\"srv\":{\"scanned\":Infinity}}",
     "out": {
-     "error": "cannot convert float infinity to integer",
-     "type": "OverflowError"
+     "error": "srv.scanned is not a finite number",
+     "type": "BadSnapshot"
     }
    },
    {
     "label": "1e400 world chunks",
     "json": "{\"v\":1,\"ts\":5,\"srv\":{\"worlds\":[{\"n\":\"w\",\"chunks\":1e400}]}}",
     "out": {
-     "error": "cannot convert float infinity to integer",
-     "type": "OverflowError"
+     "error": "srv.worlds.chunks is not a finite number",
+     "type": "BadSnapshot"
     }
    },
    {
     "label": "Infinity hot ent",
     "json": "{\"v\":1,\"ts\":5,\"srv\":{\"hot\":[{\"w\":\"w\",\"cx\":1,\"cz\":1,\"ent\":Infinity}]}}",
     "out": {
-     "error": "cannot convert float infinity to integer",
-     "type": "OverflowError"
+     "error": "srv.hot.ent is not a finite number",
+     "type": "BadSnapshot"
+    }
+   },
+   {
+    "label": "NaN float field",
+    "json": "{\"v\":1,\"ts\":5,\"srv\":{\"p99\":NaN}}",
+    "out": {
+     "error": "srv.p99 is not a finite number",
+     "type": "BadSnapshot"
+    }
+   },
+   {
+    "label": "Infinity float field",
+    "json": "{\"v\":1,\"ts\":5,\"srv\":{\"heap_used_mb\":Infinity}}",
+    "out": {
+     "error": "srv.heap_used_mb is not a finite number",
+     "type": "BadSnapshot"
+    }
+   },
+   {
+    "label": "1e400 float field",
+    "json": "{\"v\":1,\"ts\":5,\"srv\":{\"tps\":1e400}}",
+    "out": {
+     "error": "srv.tps is not a finite number",
+     "type": "BadSnapshot"
+    }
+   },
+   {
+    "label": "-Infinity fps",
+    "json": "{\"v\":1,\"ts\":5,\"pl\":[{\"u\":\"aaaaaaaa-1111-4111-8111-111111111111\",\"n\":\"A\",\"fps\":-Infinity}]}",
+    "out": {
+     "error": "pl.fps is not a finite number",
+     "type": "BadSnapshot"
+    }
+   },
+   {
+    "label": "NaN spike ms",
+    "json": "{\"v\":1,\"ts\":5,\"srv\":{\"spikes\":[[1,NaN]]}}",
+    "out": {
+     "error": "srv.spikes is not a finite number",
+     "type": "BadSnapshot"
+    }
+   },
+   {
+    "label": "int beyond a float",
+    "json": "{\"v\":1,\"ts\":5,\"seq\":10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000}",
+    "out": {
+     "error": "seq is not a finite number",
+     "type": "BadSnapshot"
+    }
+   },
+   {
+    "label": "int field beyond 64 bits",
+    "json": "{\"v\":1,\"ts\":5,\"pl\":[{\"u\":\"aaaaaaaa-1111-4111-8111-111111111111\",\"n\":\"A\",\"ping\":1e19}]}",
+    "out": {
+     "error": "pl.ping is out of range",
+     "type": "BadSnapshot"
+    }
+   },
+   {
+    "label": "first bad field wins",
+    "json": "{\"v\":1,\"ts\":5,\"srv\":{\"tps\":NaN,\"scanned\":Infinity},\"seq\":NaN}",
+    "out": {
+     "error": "srv.tps is not a finite number",
+     "type": "BadSnapshot"
     }
    }
   ],
   "fps": [
    {
     "in": null,
-    "out": null
+    "out": {
+     "ok": null
+    }
    },
    {
     "in": -1,
-    "out": null
+    "out": {
+     "ok": null
+    }
    },
    {
     "in": -0.5,
-    "out": null
+    "out": {
+     "ok": null
+    }
    },
    {
     "in": 0,
-    "out": 0
+    "out": {
+     "ok": 0
+    }
    },
    {
     "in": 59.9,
-    "out": 59
+    "out": {
+     "ok": 59
+    }
    },
    {
     "in": 144,
-    "out": 144
+    "out": {
+     "ok": 144
+    }
    },
    {
     "in": 10000,
-    "out": 10000
+    "out": {
+     "ok": 10000
+    }
    },
    {
     "in": 10001,
-    "out": 10000
+    "out": {
+     "ok": 10000
+    }
    },
    {
     "in": 1000000000.0,
-    "out": 10000
+    "out": {
+     "ok": 10000
+    }
    },
    {
     "in": "60",
-    "out": null
+    "out": {
+     "ok": null
+    }
    },
    {
     "in": true,
-    "out": null
+    "out": {
+     "ok": null
+    }
    },
    {
     "in": {
      "float": "-Infinity"
     },
-    "out": null
+    "out": {
+     "error": "pl.fps is not a finite number",
+     "type": "BadSnapshot"
+    }
    }
   ],
   "parse_hot": [
@@ -1459,17 +1301,7 @@
      "x",
      null
     ],
-    "out": [
-     {
-      "w": "w",
-      "cx": true,
-      "cz": false,
-      "ent": 0,
-      "tiles": 2,
-      "vil": 0,
-      "items": 0
-     }
-    ]
+    "out": []
    },
    {
     "in": [
@@ -2227,7 +2059,8 @@
    "UUID": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
    "NAME": "^[A-Za-z0-9_]{1,16}$",
    "MAX_HOT": 10,
-   "TEXT_MAX": 200
+   "TEXT_MAX": 200,
+   "MAX_TS_MS": 253402300799999
   },
   "snap_names": [
    {

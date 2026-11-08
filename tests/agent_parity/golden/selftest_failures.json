@@ -1071,6 +1071,12 @@
    }
   },
   {
+   "event": "ws-close",
+   "session": 0,
+   "code": "03e8",
+   "by": "agent"
+  },
+  {
    "event": "ws-ended",
    "session": 0,
    "unmasked": 0
@@ -1092,6 +1098,12 @@
    }
   },
   {
+   "event": "ws-close",
+   "session": 1,
+   "code": "03e8",
+   "by": "agent"
+  },
+  {
    "event": "ws-ended",
    "session": 1,
    "unmasked": 0
@@ -1113,6 +1125,12 @@
    }
   },
   {
+   "event": "ws-close",
+   "session": 2,
+   "code": "03e8",
+   "by": "agent"
+  },
+  {
    "event": "ws-ended",
    "session": 2,
    "unmasked": 0
@@ -1134,6 +1152,12 @@
    }
   },
   {
+   "event": "ws-close",
+   "session": 3,
+   "code": "03e8",
+   "by": "agent"
+  },
+  {
    "event": "ws-ended",
    "session": 3,
    "unmasked": 0
@@ -1155,6 +1179,12 @@
    }
   },
   {
+   "event": "ws-close",
+   "session": 4,
+   "code": "03e8",
+   "by": "agent"
+  },
+  {
    "event": "ws-ended",
    "session": 4,
    "unmasked": 0
@@ -1176,6 +1206,12 @@
    }
   },
   {
+   "event": "ws-close",
+   "session": 5,
+   "code": "03e8",
+   "by": "agent"
+  },
+  {
    "event": "ws-ended",
    "session": 5,
    "unmasked": 0
@@ -1197,6 +1233,12 @@
    }
   },
   {
+   "event": "ws-close",
+   "session": 6,
+   "code": "03e8",
+   "by": "agent"
+  },
+  {
    "event": "ws-ended",
    "session": 6,
    "unmasked": 0
@@ -1218,6 +1260,12 @@
    }
   },
   {
+   "event": "ws-close",
+   "session": 7,
+   "code": "03e8",
+   "by": "agent"
+  },
+  {
    "event": "ws-ended",
    "session": 7,
    "unmasked": 0
@@ -1239,6 +1287,12 @@
    }
   },
   {
+   "event": "ws-close",
+   "session": 8,
+   "code": "03e8",
+   "by": "agent"
+  },
+  {
    "event": "ws-ended",
    "session": 8,
    "unmasked": 0
@@ -1260,6 +1314,12 @@
    }
   },
   {
+   "event": "ws-close",
+   "session": 9,
+   "code": "03e8",
+   "by": "agent"
+  },
+  {
    "event": "ws-ended",
    "session": 9,
    "unmasked": 0
@@ -1281,6 +1341,12 @@
    }
   },
   {
+   "event": "ws-close",
+   "session": 10,
+   "code": "03e8",
+   "by": "agent"
+  },
+  {
    "event": "ws-ended",
    "session": 10,
    "unmasked": 0
@@ -1302,6 +1368,12 @@
    }
   },
   {
+   "event": "ws-close",
+   "session": 11,
+   "code": "03e8",
+   "by": "agent"
+  },
+  {
    "event": "ws-ended",
    "session": 11,
    "unmasked": 0
@@ -1321,6 +1393,12 @@
     "type": "hello",
     "agent": "1"
    }
+  },
+  {
+   "event": "ws-close",
+   "session": 12,
+   "code": "03e8",
+   "by": "agent"
   },
   {
    "event": "ws-ended",

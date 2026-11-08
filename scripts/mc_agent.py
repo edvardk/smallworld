@@ -64,6 +64,7 @@ import hmac
 import io
 import ipaddress
 import json
+import math
 import os
 import re
 import secrets
@@ -1174,6 +1175,13 @@ def sign(key: bytes, payload: str) -> str:
     return hmac.new(key, payload.encode(), hashlib.sha256).hexdigest()
 
 
+def _finite(x: float) -> bool:
+    try:
+        return math.isfinite(x)
+    except OverflowError:  # an int beyond a float
+        return False
+
+
 def verify(message: object, key: bytes, nonces: Nonces, now: float | None = None) -> dict[str, Any]:
     """Check signature, age and nonce of {"payload", "sig"}; returns the command. Raises Rejected."""
     now = time.time() if now is None else now
@@ -1194,8 +1202,8 @@ def verify(message: object, key: bytes, nonces: Nonces, now: float | None = None
         if not isinstance(cmd.get(name), kind):
             raise Rejected(f"missing or bad field: {name}")
     iat = cmd.get("iat")
-    if not isinstance(iat, int | float) or isinstance(iat, bool):
-        raise Rejected("missing or bad field: iat")
+    if not isinstance(iat, int | float) or isinstance(iat, bool) or not _finite(iat):
+        raise Rejected("missing or bad field: iat")  # v1.5: NaN, an infinity or beyond a float too
     if abs(now - iat / 1000) > MAX_AGE_S:  # iat in ms, like the Worker's Date.now()
         raise Rejected("too old (or from the future)")
     if not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", cmd["nonce"]) or not re.fullmatch(
@@ -1589,24 +1597,27 @@ class Executor:
                 raise Rejected(
                     f"whitelist: {name} is an operator; operators are managed in players.yml (Git)"
                 )
-        with mc_rcon.connect() as r:
-            reply = mc_rcon.strip_formatting(r.command(f"whitelist {op} {name}"))[:300]
-        entry = None
-        for _ in range(10):  # the server writes whitelist.json right after the command
-            entry = self._whitelisted(name)
-            if (entry is not None) == (op == "add"):
-                break
-            time.sleep(0.5)
-        if op == "add" and entry is None:
-            raise Rejected(f"whitelist: the server didn't add {name} ({reply or 'no reply'})")
-        if op == "remove" and entry is not None:
-            raise Rejected(f"whitelist: the server didn't remove {name} ({reply or 'no reply'})")
-        source = entry if op == "add" else before
-        assert source is not None
-        uuid, real = str(source.get("uuid", "")), str(source.get("name") or name)
-        if not mc_panel.UUID.fullmatch(uuid):
-            raise Rejected(f"whitelist: no UUID for {name} in whitelist.json")
-        panel.pending.record(op, real, uuid, self.login, panel.clock())
+        # v1.5 (the revert race): the pending lock is held from the RCON command to the record, so the sync
+        # loop's revert of a closed panel PR (also under the lock) can't undo this change from a stale view
+        with panel.pending.update() as pending:
+            with mc_rcon.connect() as r:
+                reply = mc_rcon.strip_formatting(r.command(f"whitelist {op} {name}"))[:300]
+            entry = None
+            for _ in range(10):  # the server writes whitelist.json right after the command
+                entry = self._whitelisted(name)
+                if (entry is not None) == (op == "add"):
+                    break
+                time.sleep(0.5)
+            if op == "add" and entry is None:
+                raise Rejected(f"whitelist: the server didn't add {name} ({reply or 'no reply'})")
+            if op == "remove" and entry is not None:
+                raise Rejected(f"whitelist: the server didn't remove {name} ({reply or 'no reply'})")
+            source = entry if op == "add" else before
+            assert source is not None
+            uuid, real = str(source.get("uuid", "")), str(source.get("name") or name)
+            if not mc_panel.UUID.fullmatch(uuid):
+                raise Rejected(f"whitelist: no UUID for {name} in whitelist.json")
+            mc_panel.record_entry(pending, op, real, uuid, self.login, panel.clock())
         panel.rejected.drop(real)
         panel.changed()
         return f"{reply} (live now; recorded for players.yml in Git)"
@@ -1985,6 +1996,9 @@ WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 OP_CONT, OP_TEXT, OP_BIN, OP_CLOSE, OP_PING, OP_PONG = 0x0, 0x1, 0x2, 0x8, 0x9, 0xA
 WS_MAX_MESSAGE = 1 << 20
 WS_RECV_TIMEOUT_S = 15.0
+WS_CLOSE_WAIT_S = 5.0  # v1.5: at shutdown, how long the Worker has to answer our close frame
+# v1.5: at shutdown, the telemetry's last round + its segment (an HTTP call <= 20 s)
+TELEMETRY_STOP_WAIT_S = 30.0
 WS_PING_S = 45.0  # idle this long: ping
 WS_DEAD_S = 120.0  # nothing received this long (pings unanswered): reconnect
 
@@ -2019,6 +2033,7 @@ class WebSocket:
         self.parts: list[bytes] | None = None  # a fragmented message being received
         self.last_rx = time.monotonic()
         self.send_lock = threading.Lock()  # the session thread and the console tail both send
+        self.close_sent = False  # v1.5: one close frame per session (an echo or our own 1000)
 
     @classmethod
     def connect(cls, url: str, headers: dict[str, str], timeout: float = 20.0) -> WebSocket:
@@ -2131,7 +2146,7 @@ class WebSocket:
                 continue
             if op == OP_CLOSE:
                 with contextlib.suppress(OSError):
-                    self._send(OP_CLOSE, data[:2])
+                    self.send_close(data[:2])  # the echo (none if we closed first: this is the answer)
                 return None
             if op in (OP_TEXT, OP_BIN):
                 if self.parts is not None:
@@ -2153,9 +2168,17 @@ class WebSocket:
     def ping(self) -> None:
         self._send(OP_PING, b"")
 
+    def send_close(self, payload: bytes = struct.pack(">H", 1000)) -> None:
+        """The session's one close frame (RFC 6455 5.5.1: nothing is sent after it)."""
+        with self.send_lock:
+            if self.close_sent:
+                return
+            self.close_sent = True
+            self.sock.sendall(encode_frame(OP_CLOSE, payload))
+
     def close(self) -> None:
         with contextlib.suppress(OSError):
-            self._send(OP_CLOSE, struct.pack(">H", 1000))
+            self.send_close()
         self.sock.close()
 
 
@@ -2602,6 +2625,20 @@ class Agent:
         for t in threads:
             t.start()
         self.stop.wait()
+        self.shutdown({t.name: t for t in threads})
+
+    def shutdown(self, threads: dict[str, threading.Thread]) -> None:
+        """v1.5, after SIGTERM (`stop` set): deterministic, not left to daemon threads racing the
+        interpreter's exit. The WebSocket is closed gracefully (1000; the session ends on the Worker's
+        answer), then the telemetry's RAM buffer goes to a segment (Telemetry.run ends with shutdown()). Each
+        wait is bounded."""
+        ws = self.ws
+        if ws is not None:
+            with contextlib.suppress(OSError):
+                ws.send_close()
+        for name, wait in (("control", WS_CLOSE_WAIT_S), ("telemetry", TELEMETRY_STOP_WAIT_S)):
+            if name in threads:
+                threads[name].join(wait)
 
 
 # P10: job reports (the Worker keeps them in the Control object: no D1 rows) and the inventory pushes that
@@ -2894,6 +2931,7 @@ def telemetry_main() -> int:
     for th in threads:
         th.start()
     stop.wait()
+    threads[0].join(TELEMETRY_STOP_WAIT_S)  # v1.5: its shutdown() saves the RAM buffer to a segment
     return 0
 
 

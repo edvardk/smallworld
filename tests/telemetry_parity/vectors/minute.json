@@ -49,9 +49,7 @@
      1e+308,
      1e+308
     ],
-    "out": {
-     "float": "Infinity"
-    }
+    "out": 1e+308
    },
    {
     "in": [
@@ -334,7 +332,7 @@
     "out": {
      "ticks": 597,
      "tps": 19.87,
-     "mean": 8.66,
+     "mean": 12.99,
      "p50": 11.0,
      "p95": 20.0,
      "p99": 48.25,
@@ -503,6 +501,165 @@
      "budget_skips": 0,
      "lost_windows": 0,
      "samples": 2
+    }
+   },
+   {
+    "snapshots": [
+     {
+      "tps": 20.0,
+      "ticks": 200.0,
+      "mean": null,
+      "p50": 11.0,
+      "p95": 20.0,
+      "p99": 30.0,
+      "p999": 40.0,
+      "max": 45.0,
+      "self_p99_us": null,
+      "self_max_us": null,
+      "budget_skips": null,
+      "lost_windows": null,
+      "heap_used_mb": null,
+      "heap_max_mb": null,
+      "spikes": [],
+      "worlds": [
+       {
+        "n": "world",
+        "chunks": 400,
+        "entities": 300,
+        "tiles": 50,
+        "ticking": 40,
+        "players": 0
+       }
+      ],
+      "scanned": 10,
+      "hot": []
+     },
+     {
+      "tps": 20.0,
+      "ticks": 100.0,
+      "mean": 20.0,
+      "p50": 11.0,
+      "p95": 20.0,
+      "p99": 30.0,
+      "p999": 40.0,
+      "max": 45.0,
+      "self_p99_us": null,
+      "self_max_us": null,
+      "budget_skips": null,
+      "lost_windows": null,
+      "heap_used_mb": null,
+      "heap_max_mb": null,
+      "spikes": [],
+      "worlds": [
+       {
+        "n": "world",
+        "chunks": 400,
+        "entities": 300,
+        "tiles": 50,
+        "ticking": 40,
+        "players": 0
+       }
+      ],
+      "scanned": 10,
+      "hot": []
+     }
+    ],
+    "out": {
+     "ticks": 300,
+     "tps": 20.0,
+     "mean": 20.0,
+     "p50": 11.0,
+     "p95": 20.0,
+     "p99": 30.0,
+     "p999": 40.0,
+     "max": 45.0,
+     "spikes": 0,
+     "chunks": 400,
+     "entities": 300,
+     "tiles": 40,
+     "worlds": [
+      {
+       "n": "world",
+       "chunks": 400,
+       "entities": 300,
+       "tiles": 50,
+       "ticking": 40,
+       "players": 0
+      }
+     ],
+     "hot": [],
+     "heap_used_mb": null,
+     "heap_max_mb": null,
+     "self_p99_us": null,
+     "self_max_us": null,
+     "budget_skips": 0,
+     "lost_windows": 0,
+     "samples": 2
+    }
+   },
+   {
+    "snapshots": [
+     {
+      "tps": 20.0,
+      "ticks": 200.0,
+      "mean": null,
+      "p50": 11.0,
+      "p95": 20.0,
+      "p99": 30.0,
+      "p999": 40.0,
+      "max": 45.0,
+      "self_p99_us": null,
+      "self_max_us": null,
+      "budget_skips": null,
+      "lost_windows": null,
+      "heap_used_mb": null,
+      "heap_max_mb": null,
+      "spikes": [],
+      "worlds": [
+       {
+        "n": "world",
+        "chunks": 400,
+        "entities": 300,
+        "tiles": 50,
+        "ticking": 40,
+        "players": 0
+       }
+      ],
+      "scanned": 10,
+      "hot": []
+     }
+    ],
+    "out": {
+     "ticks": 200,
+     "tps": 20.0,
+     "mean": null,
+     "p50": 11.0,
+     "p95": 20.0,
+     "p99": 30.0,
+     "p999": 40.0,
+     "max": 45.0,
+     "spikes": 0,
+     "chunks": 400,
+     "entities": 300,
+     "tiles": 40,
+     "worlds": [
+      {
+       "n": "world",
+       "chunks": 400,
+       "entities": 300,
+       "tiles": 50,
+       "ticking": 40,
+       "players": 0
+      }
+     ],
+     "hot": [],
+     "heap_used_mb": null,
+     "heap_max_mb": null,
+     "self_p99_us": null,
+     "self_max_us": null,
+     "budget_skips": 0,
+     "lost_windows": 0,
+     "samples": 1
     }
    },
    {

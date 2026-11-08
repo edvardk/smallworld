@@ -580,6 +580,41 @@
     "json": {},
     "bytes": "{}"
    }
+  },
+  "/var/lib/mc-telemetry/segments": {
+   "type": "dir",
+   "mode": "0o700"
+  },
+  "/var/lib/mc-telemetry/segments/20260115T1000-0badc0de-0-2.ndjson.gz": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "ndjson": [
+     {
+      "ref": "0badc0de:0"
+     },
+     {
+      "ref": "0badc0de:1"
+     },
+     {
+      "ref": "0badc0de:2"
+     }
+    ]
+   }
+  },
+  "/var/lib/mc-telemetry/segments/state.json": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "json": {
+     "20260115T1000-0badc0de-0-2.ndjson.gz": {
+      "r2": false,
+      "rows": 3,
+      "todo": []
+     }
+    },
+    "bytes": "{\"20260115T1000-0badc0de-0-2.ndjson.gz\": {\"r2\": false, \"rows\": 3, \"todo\": []}}"
+   }
   }
  },
  "systemd": {
@@ -662,7 +697,8 @@
  "output": [
   {
    "stdout": [
-    "mc-telemetry <version>: pushing to 127.0.0.1"
+    "mc-telemetry <version>: pushing to 127.0.0.1",
+    "telemetry: saved 20260115T1000-0badc0de-0-2.ndjson.gz at shutdown"
    ],
    "stderr": []
   }

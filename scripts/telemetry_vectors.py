@@ -17,8 +17,8 @@ ladder and the row give-up the black-box scenarios can't reach in real time), `v
 
 Files marked "unicode_sensitive" depend on the interpreter's Unicode tables (str.isspace / isprintable):
 compared only on a Python with the Unicode version they were generated with. Floats the JSON can't hold are
-{"float": "NaN" | "Infinity" | "-Infinity"} (parity_vectors.plain). Entries under "python_raises" are inputs
-on which the Python reference raises (reported as bugs, not a contract to reproduce).
+{"float": "NaN" | "Infinity" | "-Infinity"} (parity_vectors.plain). Entries under "bad_snapshot" are inputs
+parse_snapshot refuses with BadSnapshot (v1.5: a number no field can hold; skipped and logged by the reader).
 """
 
 from __future__ import annotations
@@ -202,6 +202,12 @@ def snapshot_vectors() -> dict[str, Any]:
         ("ts true (bool is an int)", good | {"ts": True}),
         ("ts negative", good | {"ts": -5}),
         ("ts huge", good | {"ts": 10**20}),
+        ("ts at MAX_TS_MS", good | {"ts": t.MAX_TS_MS}),
+        ("ts beyond MAX_TS_MS", good | {"ts": t.MAX_TS_MS + 1}),
+        (
+            "spike time / hot chunk bools",
+            good | {"srv": {"spikes": [[True, 5], [7, 5]], "hot": [{"w": "w", "cx": True, "cz": 1}]}},
+        ),
         ("srv not a dict", good | {"srv": [1]}),
         ("pl not a list", good | {"pl": {"u": UA}}),
         (
@@ -307,6 +313,14 @@ def snapshot_vectors() -> dict[str, Any]:
         ("Infinity scanned", '{"v":1,"ts":5,"srv":{"scanned":Infinity}}'),
         ("1e400 world chunks", '{"v":1,"ts":5,"srv":{"worlds":[{"n":"w","chunks":1e400}]}}'),
         ("Infinity hot ent", '{"v":1,"ts":5,"srv":{"hot":[{"w":"w","cx":1,"cz":1,"ent":Infinity}]}}'),
+        ("NaN float field", '{"v":1,"ts":5,"srv":{"p99":NaN}}'),
+        ("Infinity float field", '{"v":1,"ts":5,"srv":{"heap_used_mb":Infinity}}'),
+        ("1e400 float field", '{"v":1,"ts":5,"srv":{"tps":1e400}}'),
+        ("-Infinity fps", '{"v":1,"ts":5,"pl":[{"u":"' + UA + '","n":"A","fps":-Infinity}]}'),
+        ("NaN spike ms", '{"v":1,"ts":5,"srv":{"spikes":[[1,NaN]]}}'),
+        ("int beyond a float", '{"v":1,"ts":5,"seq":1' + "0" * 400 + "}"),
+        ("int field beyond 64 bits", '{"v":1,"ts":5,"pl":[{"u":"' + UA + '","n":"A","ping":1e19}]}'),
+        ("first bad field wins", '{"v":1,"ts":5,"srv":{"tps":NaN,"scanned":Infinity},"seq":NaN}'),
     ):
         raises.append(
             {"label": label, "json": text, "out": outcome(lambda x=text: t.parse_snapshot(x.encode()))}
@@ -357,9 +371,9 @@ def snapshot_vectors() -> dict[str, Any]:
     zero = [{"srv": {"hot": t.parse_hot([{"w": "z", "cx": i, "cz": 0} for i in range(4)])}}]
     return {
         "parse_snapshot": snapshots,
-        "python_raises": raises,
+        "bad_snapshot": raises,
         "fps": [
-            {"in": plain(v), "out": t._fps(v)}
+            {"in": plain(v), "out": outcome(lambda v=v: t._fps(v))}
             for v in (None, -1, -0.5, 0, 59.9, 144, 10000, 10001, 1e9, "60", True, float("-inf"))
         ],
         "parse_hot": [{"in": c, "out": t.parse_hot(c)} for c in hot_cases],
@@ -374,6 +388,7 @@ def snapshot_vectors() -> dict[str, Any]:
             "NAME": t.NAME.pattern,
             "MAX_HOT": t.MAX_HOT,
             "TEXT_MAX": t.TEXT_MAX,
+            "MAX_TS_MS": t.MAX_TS_MS,
         },
         "snap_names": [
             {"name": n, "match": bool(t.SNAP_NAME.match(n))}
@@ -473,6 +488,10 @@ def minute_vectors() -> dict[str, Any]:
             )
         ),
         parsed(snap_json(1, T0, [], ticks=0, mean=50.0), snap_json(2, T0 + 10000, [], ticks=3, mean=0.1)),
+        parsed(  # v1.5: the ticks of a window without a mean don't dilute the mean
+            snap_json(1, T0, [], ticks=200, mean=None), snap_json(2, T0 + 10000, [], ticks=100, mean=20.0)
+        ),
+        parsed(snap_json(1, T0, [], ticks=200, mean=None)),
         [],
     ]
     names = ["Alice", "Bob", "Carol", "Dave", "Erin"]
@@ -820,6 +839,12 @@ def backfill_vectors() -> dict[str, Any]:
             ("failed", ("URLError", 2)),
             ("failed", ("HTTP 5000", 2)),
             ("failed", ("PUT /ingest/segment: HTTP 502", 0)),
+            ("failed", ("POST /ingest/experience: HTTP 401", 1)),
+            ("failed", ("POST /ingest/experience: HTTP 404", 1)),
+            ("failed", ("POST /ingest/experience: HTTP 413", 3)),
+            ("failed", ("POST /ingest/experience: HTTP 400", 1)),
+            ("failed", ("PUT /ingest/segment: HTTP 413", 0)),
+            ("failed", ("HTTP 4000", 1)),
         ]
         + [("failed", ("POST /ingest/experience: HTTP 503", 2))]
         + [("succeeded", None)] * 21
@@ -859,6 +884,8 @@ def backfill_vectors() -> dict[str, Any]:
             "BACKFILL_ROW_GIVE_UP": t.BACKFILL_ROW_GIVE_UP,
             "BACKFILL_GROW_AFTER": t.BACKFILL_GROW_AFTER,
             "SERVER_ERROR": t.SERVER_ERROR.pattern,
+            "CLIENT_ERROR": t.CLIENT_ERROR.pattern,
+            "NOT_ROW_ERRORS": sorted(t.NOT_ROW_ERRORS),
         },
         "pacer": {"start": 1000.0, "steps": steps},
         "run_once": backfill_runs(),
@@ -898,10 +925,28 @@ def backfill_runs() -> list[dict[str, Any]]:
             "rounds": 6,
         },
         {
-            "label": "a 4xx never gives up (backs off forever)",
+            "label": "a permanent 4xx gives the row up at once (v1.5) and moves on",
             "segments": [[2, []]],
             "r2": [True],
-            "rows": ["HTTP 400"] * 8,
+            "rows": ["HTTP 400"] * 3,
+            "puts": [],
+            "may_run": None,
+            "max_requests": 1000,
+        },
+        {
+            "label": "413 for a batch: halved down to the row, given up; the rest go",
+            "segments": [[4, []]],
+            "r2": [True],
+            "rows": ["HTTP 413", "HTTP 413", None, "HTTP 413"],
+            "puts": [],
+            "may_run": None,
+            "max_requests": 1000,
+        },
+        {
+            "label": "429 and 401 back off (never given up)",
+            "segments": [[2, []]],
+            "r2": [True],
+            "rows": ["HTTP 429", "HTTP 401"] * 4,
             "puts": [],
             "may_run": None,
             "max_requests": 1000,
@@ -931,6 +976,15 @@ def backfill_runs() -> list[dict[str, Any]]:
             "r2": [False],
             "rows": [],
             "puts": ["HTTP 503"],
+            "may_run": None,
+            "max_requests": 1000,
+        },
+        {
+            "label": "segment PUT refused for good (413): given up (v1.5)",
+            "segments": [[1, []]],
+            "r2": [False],
+            "rows": [],
+            "puts": ["PUT /ingest/segment: HTTP 413"],
             "may_run": None,
             "max_requests": 1000,
         },
@@ -1152,6 +1206,10 @@ def identity_vectors() -> dict[str, Any]:
             "SEGMENT_DIR": "/s",
         },
         {"BACKFILL_WINDOW": "25:00-26:99"},
+        {"BACKFILL_WINDOW": "22:00-24:00"},
+        {"BACKFILL_WINDOW": "10:60-11:00"},
+        {"BACKFILL_WINDOW": "23:59-00:00"},
+        {"BACKFILL_WINDOW": "\u0661\u0660:00-11:00"},
         {"SEGMENT_S": "soon"},
         {"SEGMENT_DAYS": " 3 "},
         {"SEGMENT_S": "\u0663\u0660"},
@@ -1189,7 +1247,7 @@ def build() -> dict[str, dict[str, Any]]:
             snapshot_vectors(),
             unicode_sensitive=True,
             doc="parse_snapshot, _fps, parse_hot, merge_hot, SNAP_NAME; "
-            "python_raises: NaN/Infinity reach int()",
+            "bad_snapshot: numbers no field can hold (v1.5)",
         ),
         vec(
             "minute",

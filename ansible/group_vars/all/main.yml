@@ -44,8 +44,8 @@ mc_smallworld_map_sha256:
 # Installed on every box by the base role (checked against this pin first); runs as mc-agent with
 # server.yml agent.implementation: rust.
 mc_smallworld_agent_sha256:
-  amd64: dba8e3e7d0a337375f7db9c616f3facc3a436ec0b262ef6eea6db626da9793cc
-  arm64: 4f48686754d5f6d4fe99fa1a5a4071033bbf00f5da7077ec8befecdf5d810f8e
+  amd64: bbf78866ab9d2b8d182a619ad607ac031dec32deafd2676cd0a4af24109326f8
+  arm64: cd597f52335756af2779903a235256c6420282ff238ec4bb512acfa57bca92e5
 
 # --- OS tuning -----------------------------------------------------------------------------------
 base_zram_enabled: true

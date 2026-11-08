@@ -88,7 +88,7 @@
        },
        "mc-telemetry.service": {
         "mem_mb": 20.0,
-        "mem_peak_mb": 17592186044416.0,
+        "mem_peak_mb": null,
         "cpu_pct": null,
         "io_read_kb": null,
         "io_write_kb": null
@@ -189,7 +189,7 @@
        },
        "mc-telemetry.service": {
         "mem_mb": 20.0,
-        "mem_peak_mb": 17592186044416.0,
+        "mem_peak_mb": null,
         "cpu_pct": "<number>",
         "io_read_kb": null,
         "io_write_kb": 0.0
@@ -289,7 +289,7 @@
        },
        "mc-telemetry.service": {
         "mem_mb": 20.0,
-        "mem_peak_mb": 17592186044416.0,
+        "mem_peak_mb": null,
         "cpu_pct": "<number>",
         "io_read_kb": null,
         "io_write_kb": 0.0
@@ -358,6 +358,41 @@
    "content": {
     "json": {},
     "bytes": "{}"
+   }
+  },
+  "/var/lib/mc-telemetry/segments": {
+   "type": "dir",
+   "mode": "0o700"
+  },
+  "/var/lib/mc-telemetry/segments/20260115T1000-0badc0de-3-5.ndjson.gz": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "ndjson": [
+     {
+      "ref": "0badc0de:3"
+     },
+     {
+      "ref": "0badc0de:4"
+     },
+     {
+      "ref": "0badc0de:5"
+     }
+    ]
+   }
+  },
+  "/var/lib/mc-telemetry/segments/state.json": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "json": {
+     "20260115T1000-0badc0de-3-5.ndjson.gz": {
+      "r2": false,
+      "rows": 3,
+      "todo": []
+     }
+    },
+    "bytes": "{\"20260115T1000-0badc0de-3-5.ndjson.gz\": {\"r2\": false, \"rows\": 3, \"todo\": []}}"
    }
   }
  },
@@ -458,7 +493,8 @@
  "output": [
   {
    "stdout": [
-    "mc-telemetry <version>: pushing to 127.0.0.1"
+    "mc-telemetry <version>: pushing to 127.0.0.1",
+    "telemetry: saved 20260115T1000-0badc0de-3-5.ndjson.gz at shutdown"
    ],
    "stderr": []
   }

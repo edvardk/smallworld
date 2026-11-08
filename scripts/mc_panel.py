@@ -281,11 +281,15 @@ class Pending:
     def record(self, op: str, name: str, uuid: str, login: str, now: float) -> None:
         """The latest change per player wins (one already in an open PR is replaced: superseded)."""
         with self.update() as data:
-            data["entries"] = [e for e in data["entries"] if e["uuid"] != uuid]
-            data["entries"].append(
-                {"uuid": uuid, "name": name, "op": op, "ts": now, "login": login, "pr": None}
-            )
-            data["changed"] = now
+            record_entry(data, op, name, uuid, login, now)
+
+
+def record_entry(data: dict[str, Any], op: str, name: str, uuid: str, login: str, now: float) -> None:
+    """`Pending.record` on pending.json already read under the lock (`with pending.update() as data`): the
+    panel's whitelist action holds the lock across its RCON command and this (v1.5, the revert race)."""
+    data["entries"] = [e for e in data["entries"] if e["uuid"] != uuid]
+    data["entries"].append({"uuid": uuid, "name": name, "op": op, "ts": now, "login": login, "pr": None})
+    data["changed"] = now
 
 
 def merge_sync(current: dict[str, Any], snap: dict[str, Any], done: dict[str, Any]) -> dict[str, Any]:
@@ -731,6 +735,12 @@ def revert_live(entries: Iterable[dict[str, Any]], rcon: Callable[[str], str]) -
     return reverted, failed
 
 
+def closed_error(number: int, failed: list[str]) -> str:
+    """pending.json's `error` after a panel PR was closed unmerged."""
+    text = f"pull request #{number} was closed without merging: reverted on the server"
+    return text + (f" (couldn't revert {', '.join(failed)}: the next deploy follows Git)" if failed else "")
+
+
 def sync_pending(
     pending: Pending,
     gh: GitHub | None,
@@ -745,9 +755,17 @@ def sync_pending(
 
     A pull request closed without merging is a "no" from whoever closed it (P10 review): its changes are
     reverted on the live server (`whitelist remove` for an add, `whitelist add` for a remove), dropped from
-    pending.json (so the next deploy follows Git) and announced on Discord."""
+    pending.json (so the next deploy follows Git) and announced on Discord.
+
+    v1.5, the revert race: the round decides from a snapshot, without the lock, so a player changed again
+    in the panel meanwhile (an add after the closed PR's add: recorded again, live already) was reverted from
+    the stale snapshot: `whitelist remove` undid the new change on the server while pending.json kept it. The
+    revert now runs when the round's result is merged back, under the pending lock (the panel's whitelist
+    action holds it across its own RCON command and record): only the entries still as the snapshot had them
+    are reverted; a player recorded again since keeps the newer change, live and in pending.json."""
     log = log or (lambda msg, **f: None)
     run = rcon or rcon_command
+    closed: tuple[int, list[dict[str, Any]]] | None = None  # a PR closed unmerged: (number, its entries)
     # v1.3: a snapshot under the lock, the round (GitHub, RCON, Discord) without it, then merged back into
     # pending.json as it is by then (mc_agent.py cli or a panel command may have recorded something meanwhile)
     with pending.locked():
@@ -778,22 +796,12 @@ def sync_pending(
                 elif state == "closed":
                     number = int(pr["number"])
                     rejected = [e for e in entries if e.get("pr") == number]
-                    reverted, failed = revert_live(rejected, run)
                     data["entries"] = entries = [e for e in entries if e.get("pr") != number]
-                    data["error"] = (
-                        f"pull request #{number} was closed without merging: reverted on the server"
-                        + (
-                            f" (couldn't revert {', '.join(failed)}: the next deploy follows Git)"
-                            if failed
-                            else ""
-                        )
-                    )
+                    data["error"] = closed_error(number, [])  # the revert's failures: when it runs (below)
                     why = f"PR #{number} closed"
                     gone = [{"name": e["name"], "op": e["op"], "ts": now, "why": why} for e in rejected]
                     data["expired"] = (data["expired"] + gone)[-20:]
-                    alert(rejected_alert(number, reverted, failed))
-                    log(f"panel PR #{number} closed unmerged; reverted {reverted} failed {failed}",
-                        action="whitelist-pr", result="reverted")  # fmt: skip
+                    closed = (number, rejected)
                     data["pr"] = pr = None
             fresh = [e for e in entries if e.get("pr") is None]
             if fresh and (not pr) and now - data["changed"] >= batch_s:
@@ -818,11 +826,25 @@ def sync_pending(
             data["error"] = f"GitHub: {str(e)[:200]}"
     if data == snap:
         return False
+    reverted: list[str] = []
+    failed: list[str] = []
     with pending.update() as current:
         merged = merge_sync(current, snap, data)
+        if closed is not None:
+            number, rejected = closed
+            now_by_uuid = {e["uuid"]: e for e in current["entries"]}
+            still = [e for e in rejected if now_by_uuid.get(e["uuid"]) == e]  # not recorded again since
+            reverted, failed = revert_live(still, run)
+            if merged["error"] == closed_error(number, []):
+                merged["error"] = closed_error(number, failed)
         changed = merged != current
         current.clear()
         current.update(merged)
+    if closed is not None:
+        number = closed[0]
+        alert(rejected_alert(number, reverted, failed))
+        log(f"panel PR #{number} closed unmerged; reverted {reverted} failed {failed}",
+            action="whitelist-pr", result="reverted")  # fmt: skip
     return changed
 
 
@@ -1191,12 +1213,16 @@ class Jobs:
         return job
 
     def _run(self, job: Job, work: Callable[[Job], str], skip_if_empty: bool) -> None:
+        """v1.5: the final state is reported after job.lock is released, so whoever acts on the report (mcctl,
+        the panel's next action) finds the lock free."""
         try:
             self._work(job, work, skip_if_empty)
         finally:
             self._release_file_lock()
+        self.report(job.public())
 
     def _work(self, job: Job, work: Callable[[Job], str], skip_if_empty: bool) -> None:
+        """The countdown and the work; the final state is set here and reported by `_run`."""
         try:
             job.players = self.players() if job.countdown else 0
             left = job.countdown if (job.players or not skip_if_empty) else 0
@@ -1215,7 +1241,6 @@ class Jobs:
                         "cancelled during the countdown",
                         self.clock(),
                     )
-                    self.report(job.public())
                     return
                 left = nxt
                 if left >= 10 and skip_if_empty and job.players and self.players() == 0:
@@ -1230,7 +1255,6 @@ class Jobs:
         except (OSError, subprocess.SubprocessError, mc_rcon.RconError, ValueError) as e:
             job.state, job.step = "failed", f"{job.step or job.action} failed: {type(e).__name__}"
         job.finished = self.clock()
-        self.report(job.public())
 
     def cancel(self, login: str) -> str:
         job = self.busy()

@@ -195,7 +195,83 @@
       "stats_dir": "/opt/minecraft/server/world/stats",
       "segment_days": 30,
       "segment_cap_mb": 200,
-      "backfill_window": "25:00-26:99",
+      "backfill_window": "",
+      "backfill_pause_s": 2.0,
+      "read_s": 5.0,
+      "segment_s": 300
+     }
+    }
+   },
+   {
+    "env": {
+     "BACKFILL_WINDOW": "22:00-24:00"
+    },
+    "out": {
+     "ok": {
+      "snap_dir": "/run/mc-telemetry",
+      "verdict_dir": "/run/mc-verdicts",
+      "segment_dir": "/var/lib/mc-telemetry/segments",
+      "stats_dir": "/opt/minecraft/server/world/stats",
+      "segment_days": 30,
+      "segment_cap_mb": 200,
+      "backfill_window": "",
+      "backfill_pause_s": 2.0,
+      "read_s": 5.0,
+      "segment_s": 300
+     }
+    }
+   },
+   {
+    "env": {
+     "BACKFILL_WINDOW": "10:60-11:00"
+    },
+    "out": {
+     "ok": {
+      "snap_dir": "/run/mc-telemetry",
+      "verdict_dir": "/run/mc-verdicts",
+      "segment_dir": "/var/lib/mc-telemetry/segments",
+      "stats_dir": "/opt/minecraft/server/world/stats",
+      "segment_days": 30,
+      "segment_cap_mb": 200,
+      "backfill_window": "",
+      "backfill_pause_s": 2.0,
+      "read_s": 5.0,
+      "segment_s": 300
+     }
+    }
+   },
+   {
+    "env": {
+     "BACKFILL_WINDOW": "23:59-00:00"
+    },
+    "out": {
+     "ok": {
+      "snap_dir": "/run/mc-telemetry",
+      "verdict_dir": "/run/mc-verdicts",
+      "segment_dir": "/var/lib/mc-telemetry/segments",
+      "stats_dir": "/opt/minecraft/server/world/stats",
+      "segment_days": 30,
+      "segment_cap_mb": 200,
+      "backfill_window": "23:59-00:00",
+      "backfill_pause_s": 2.0,
+      "read_s": 5.0,
+      "segment_s": 300
+     }
+    }
+   },
+   {
+    "env": {
+     "BACKFILL_WINDOW": "\u0661\u0660:00-11:00"
+    },
+    "out": {
+     "ok": {
+      "snap_dir": "/run/mc-telemetry",
+      "verdict_dir": "/run/mc-verdicts",
+      "segment_dir": "/var/lib/mc-telemetry/segments",
+      "stats_dir": "/opt/minecraft/server/world/stats",
+      "segment_days": 30,
+      "segment_cap_mb": 200,
+      "backfill_window": "",
       "backfill_pause_s": 2.0,
       "read_s": 5.0,
       "segment_s": 300

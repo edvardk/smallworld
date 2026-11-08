@@ -200,8 +200,8 @@ slowest wait for a 30 s segment flush).
   sizes aren't part of the contract), the `verdicts.tsv` header's time, a random installation id.
 - **Vectors**: `python scripts/telemetry_vectors.py` writes `tests/telemetry_parity/vectors/*.json` (text,
   snapshot, minute, overhead, segments, backfill, verdicts, identity) for `cargo test`;
-  `tests/telemetry_parity/test_telemetry_vectors.py` fails when they are stale. `python_raises` entries are
-  inputs on which Python raises (reported, not a contract).
+  `tests/telemetry_parity/test_telemetry_vectors.py` fails when they are stale. `bad_snapshot` entries are
+  inputs `parse_snapshot` refuses with `BadSnapshot` (v1.5: same field and text in both).
 - **Rust in CI**: ci.yml runs it for Python only for now; the port adds its scenarios to the rust job (a list
   beside `RUST_PARITY_SCENARIOS`) with `pytest tests/telemetry_parity --impl=rust --agent-bin=PATH`.
 

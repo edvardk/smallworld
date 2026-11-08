@@ -78,6 +78,22 @@ def test_bad_commands_are_rejected(msg: object, why: str, tmp_path: Path) -> Non
         mc_agent.verify(msg, KEY, mc_agent.Nonces(None), NOW)
 
 
+@pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity", "1e400", "1" + "0" * 400])
+def test_a_non_finite_iat_is_a_bad_field(literal: str) -> None:
+    """v1.5: `iat: NaN` used to pass the age check (every comparison with NaN is false)."""
+    payload = (
+        '{"id":"c1","action":"status","args":{},"login":"admin@x","nonce":"'
+        + "n" * 16
+        + '","iat":'
+        + literal
+        + "}"
+    )
+    with pytest.raises(mc_agent.Rejected, match="missing or bad field: iat"):
+        mc_agent.verify(
+            {"payload": payload, "sig": mc_agent.sign(KEY, payload)}, KEY, mc_agent.Nonces(None), NOW
+        )
+
+
 def test_missing_fields_are_rejected() -> None:
     payload = json.dumps({"id": "c1", "action": "status", "iat": int(NOW * 1000), "nonce": "n" * 16})
     with pytest.raises(mc_agent.Rejected, match="login"):
@@ -840,6 +856,48 @@ def test_websocket_handshake_ping_fragments_and_close() -> None:
     assert got["pong"] == (mc_agent.OP_PONG, b"p")
     assert got["reply"] == (mc_agent.OP_TEXT, b"x" * 200)
     assert got["close"][0] == mc_agent.OP_CLOSE
+
+
+def test_one_close_frame_per_session_and_a_close_we_start() -> None:
+    """v1.5: the echo of the Worker's close is the session's only close frame (close() sends no second one);
+    at shutdown the agent closes first (1000) and the Worker's answer ends recv() without an echo."""
+    ws, peer = ws_pair(timeout=2)
+    peer.sendall(server_frame(mc_agent.OP_CLOSE, struct.pack(">H", 1001)))
+    assert ws.recv() is None
+    ws.close()
+    peer.settimeout(2)
+    assert read_client_frame(peer) == (mc_agent.OP_CLOSE, struct.pack(">H", 1001))
+    assert peer.recv(100) == b""
+    ws, peer = ws_pair(timeout=2)
+    ws.send_close()
+    ws.send_close()
+    peer.settimeout(2)
+    assert read_client_frame(peer) == (mc_agent.OP_CLOSE, struct.pack(">H", 1000))
+    peer.sendall(server_frame(mc_agent.OP_CLOSE, struct.pack(">H", 1000)))
+    assert ws.recv() is None
+    ws.close()
+    assert peer.recv(100) == b""
+
+
+def test_shutdown_closes_the_websocket_and_waits_for_the_threads(settings) -> None:
+    """v1.5: SIGTERM -> Agent.shutdown: the live socket gets its 1000 close, then the control and telemetry
+    threads are given their bounded time."""
+    agent = mc_agent.Agent(settings)
+    ws, peer = ws_pair(timeout=2)
+    agent.ws = ws
+    joined: list[tuple[str, float]] = []
+
+    class T:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def join(self, timeout: float) -> None:
+            joined.append((self.name, timeout))
+
+    agent.shutdown({"control": T("control"), "telemetry": T("telemetry"), "logs": T("logs")})  # type: ignore[dict-item]
+    peer.settimeout(2)
+    assert read_client_frame(peer) == (mc_agent.OP_CLOSE, struct.pack(">H", 1000))
+    assert joined == [("control", mc_agent.WS_CLOSE_WAIT_S), ("telemetry", mc_agent.TELEMETRY_STOP_WAIT_S)]
 
 
 def test_websocket_refuses_a_bad_accept() -> None:

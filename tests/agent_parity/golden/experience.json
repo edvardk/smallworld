@@ -188,6 +188,51 @@
     }
    }
   ],
+  "POST /ingest/metrics": [
+   {
+    "auth": true,
+    "user_agent": "smallworld mc-agent",
+    "content_type": "application/json",
+    "body": {
+     "agent": "1",
+     "samples": [
+      {
+       "admin_stopped": false,
+       "cpuN_pct": "number|null",
+       "cpu_cores": "number",
+       "cpu_pct": "null",
+       "disk_pct": "number",
+       "disk_total_gb": "number",
+       "disk_used_gb": "number",
+       "gc_max_pause_ms": 12.3,
+       "heap_max_mb": 6656,
+       "heap_used_mb": 1200,
+       "jvm_mem_mb": 3072,
+       "load1": "number",
+       "load15": "number",
+       "load5": "number",
+       "max_players": 20,
+       "mem_pct": "number",
+       "mem_total_mb": "number",
+       "mem_used_mb": "number",
+       "mspt": 11.9,
+       "net_rx_bps": "null",
+       "net_tx_bps": "null",
+       "players": 0,
+       "players_online": [],
+       "steal_pct": "null",
+       "tps": 19.98,
+       "tps15": 20.0,
+       "tps5": 20.0,
+       "ts": "number",
+       "up": true,
+       "uptime_s": "number",
+       "ws": "bool"
+      }
+     ]
+    }
+   }
+  ],
   "POST /ingest/experience": [
    {
     "auth": true,
@@ -547,51 +592,6 @@
      ]
     }
    }
-  ],
-  "POST /ingest/metrics": [
-   {
-    "auth": true,
-    "user_agent": "smallworld mc-agent",
-    "content_type": "application/json",
-    "body": {
-     "agent": "1",
-     "samples": [
-      {
-       "admin_stopped": false,
-       "cpuN_pct": "number|null",
-       "cpu_cores": "number",
-       "cpu_pct": "null",
-       "disk_pct": "number",
-       "disk_total_gb": "number",
-       "disk_used_gb": "number",
-       "gc_max_pause_ms": 12.3,
-       "heap_max_mb": 6656,
-       "heap_used_mb": 1200,
-       "jvm_mem_mb": 3072,
-       "load1": "number",
-       "load15": "number",
-       "load5": "number",
-       "max_players": 20,
-       "mem_pct": "number",
-       "mem_total_mb": "number",
-       "mem_used_mb": "number",
-       "mspt": 11.9,
-       "net_rx_bps": "null",
-       "net_tx_bps": "null",
-       "players": 0,
-       "players_online": [],
-       "steal_pct": "null",
-       "tps": 19.98,
-       "tps15": 20.0,
-       "tps5": 20.0,
-       "ts": "number",
-       "up": true,
-       "uptime_s": "number",
-       "ws": "bool"
-      }
-     ]
-    }
-   }
   ]
  },
  "websocket": [
@@ -610,6 +610,12 @@
     "type": "hello",
     "agent": "1"
    }
+  },
+  {
+   "event": "ws-close",
+   "session": 0,
+   "code": "03e8",
+   "by": "agent"
   },
   {
    "event": "ws-ended",

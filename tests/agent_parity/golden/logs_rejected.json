@@ -721,6 +721,12 @@
    }
   },
   {
+   "event": "ws-close",
+   "session": 0,
+   "code": "03e8",
+   "by": "agent"
+  },
+  {
    "event": "ws-ended",
    "session": 0,
    "unmasked": 0

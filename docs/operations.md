@@ -87,6 +87,12 @@ deploy stays too (remove them in the panel). Ops always come from Git only.
 **Strict mode:** `minecraft.strict_whitelist: true` in `server.yml` makes `players.yml` the whole whitelist: a
 deploy removes every live player it doesn't list (pending panel adds still count until they merge or expire).
 
+**Before it happens (v1.5):** `mcctl publish` shows the same rule in its preview. It reads mc-agent's last
+inventory (the live whitelist and the panel's pending changes) from the watchdog's D1 with the admin token in
+`.env`, and warns about every live player the new `players.yml` doesn't list and the panel has no pending change
+for: "a deploy removes NAME" (`players.yml` had them on origin/main, or strict mode), or "NAME isn't in
+players.yml: the whitelist guard keeps them". Without the token or the panel it says the live whitelist is unknown.
+
 ### Switching the agent's implementation (v1.4)
 
 mc-agent comes in two implementations (reference.md "Two agent implementations"): `rust` (`smallworld-agent`, the

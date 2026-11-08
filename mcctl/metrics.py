@@ -65,17 +65,21 @@ class D1:
         return list(result[0].get("results") or [])
 
 
-def connect(token: str, zone: str, name: str, transport: http.Transport) -> D1:
-    """The deployment's TELEMETRY database: the account from the zone, the database by name."""
+def zone_account(token: str, zone: str, transport: http.Transport) -> str:
+    """The Cloudflare account that holds the deployment's zone."""
     headers = {"Authorization": f"Bearer {token}"}
     resp = http.get(transport, f"{API}/zones?{urllib.parse.urlencode({'name': zone})}", headers)
     zones = (resp.json() or {}).get("result") if resp.status == 200 else None
     if not zones:
         raise CloudflareError(f"zone {zone} not found with this token (HTTP {resp.status})")
-    account = zones[0]["account"]["id"]
+    return str(zones[0]["account"]["id"])
+
+
+def connect(token: str, zone: str, name: str, transport: http.Transport) -> D1:
+    """The deployment's TELEMETRY database: the account from the zone, the database by name."""
     return database(
         token,
-        account,
+        zone_account(token, zone, transport),
         f"{name}-telemetry",
         transport,
         "needs experience.enabled, panel.mode cloudflare, apply",

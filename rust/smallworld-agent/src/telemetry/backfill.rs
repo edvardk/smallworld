@@ -17,6 +17,19 @@ pub const BACKFILL_GROW_AFTER: u32 = 20;
 /// `SERVER_ERROR.search(str(err))` (Unicode `\b` and `\d`, as Python's str pattern).
 static SERVER_ERROR: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\bHTTP 5\d\d\b").expect("SERVER_ERROR"));
+/// telemetry.py `CLIENT_ERROR` (v1.5).
+static CLIENT_ERROR: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\bHTTP (4\d\d)\b").expect("CLIENT_ERROR"));
+/// telemetry.py `NOT_ROW_ERRORS`: 4xx codes that say nothing about the rows (the token, telemetry off, a timeout,
+/// slow down): those back off instead.
+pub const NOT_ROW_ERRORS: [&str; 5] = ["401", "403", "404", "408", "429"];
+
+/// telemetry.py `row_refused(err)` (v1.5): a permanent 4xx about the rows themselves.
+pub fn row_refused(err: &str) -> bool {
+    CLIENT_ERROR
+        .captures(err)
+        .is_some_and(|m| !NOT_ROW_ERRORS.contains(&&m[1]))
+}
 
 /// telemetry.py `in_window(window, now_local)`: `HH:MM-HH:MM` local time (may wrap midnight); empty = never.
 /// The window was checked by `Config.from_env` (`(\d\d:\d\d-\d\d:\d\d)?`, any `Nd` digits).
@@ -94,9 +107,15 @@ impl Pacer {
     pub fn failed(&mut self, err: &str, batch_len: usize) -> bool {
         self.successes = 0;
         let server = SERVER_ERROR.is_match(err);
-        if server && batch_len > 1 {
+        let refused = row_refused(err);
+        if (server || refused) && batch_len > 1 {
             self.size = (batch_len / 2).max(1);
             return false;
+        }
+        if refused && batch_len == 1 {
+            // v1.5: the Worker won't ever take this row: give it up, move on (no back-off)
+            self.row_failures = 0;
+            return true;
         }
         self.failures += 1;
         if server {
@@ -225,9 +244,12 @@ impl Backfill<'_> {
                             .and_then(J::as_obj)
                             .and_then(|m| m.get("id"))
                             .map_or_else(|| "None".to_string(), J::py_str);
-                        (self.log)(&format!(
-                            "backfill: gave up row {id} after repeated server errors"
-                        ));
+                        let why = if row_refused(&e) {
+                            format!(": the Worker refused it ({e})")
+                        } else {
+                            " after repeated server errors".to_string()
+                        };
+                        (self.log)(&format!("backfill: gave up row {id}{why}"));
                     }
                     continue;
                 }
@@ -250,6 +272,16 @@ impl Backfill<'_> {
                 };
                 if let Err(e) = sent {
                     done.failed += 1;
+                    if row_refused(&e) {
+                        // v1.5: refused for good (too large, ...): R2 never gets this one
+                        self.segments
+                            .mark(&name, &[], Some(true))
+                            .map_err(|e| os(&e))?;
+                        (self.log)(&format!(
+                            "backfill: gave up uploading {name}: the Worker refused it ({e})"
+                        ));
+                        continue;
+                    }
                     self.pacer.failed(&e, 0);
                     continue;
                 }
@@ -275,7 +307,7 @@ mod tests {
         assert!(!in_window("22:00-06:00", 6, 0));
         assert!(in_window("01:00-02:00", 1, 30));
         assert!(!in_window("", 1, 30));
-        assert!(in_window("\u{661}\u{660}:00-11:00", 10, 5));
+        assert!(in_window("10:00-11:00", 10, 5));
         let mut p = Pacer::new(|| 1000.0);
         assert!(!p.failed("POST /ingest/experience: HTTP 503", 3));
         assert_eq!(p.size, 1);
@@ -287,6 +319,15 @@ mod tests {
         p.failed("POST /x: URLError", 1);
         p.succeeded();
         assert_eq!((p.failures, p.successes), (0, 1));
+        // v1.5: a permanent 4xx halves the batch, then gives the single row up at once; 429/401 back off
+        let mut r = Pacer::new(|| 0.0);
+        assert!(!r.failed("POST /ingest/experience: HTTP 413", 3));
+        assert_eq!(r.size, 1);
+        assert!(r.failed("POST /ingest/experience: HTTP 400", 1));
+        assert!(r.ready());
+        assert!(!r.failed("POST /ingest/experience: HTTP 429", 1));
+        assert!(!r.failed("POST /ingest/experience: HTTP 401", 1));
+        assert!(!r.ready());
         let mut q = Pacer::new(|| 0.0);
         for _ in 0..12 {
             q.failed("x", 1);

@@ -284,7 +284,7 @@ fn snapshot_vectors() {
     let v = vector_file!("snapshot");
     for c in list(&v, "parse_snapshot")
         .iter()
-        .chain(list(&v, "python_raises"))
+        .chain(list(&v, "bad_snapshot"))
     {
         let label = text(get(c, "label"));
         let mut input = text(get(c, "json"));
@@ -302,7 +302,7 @@ fn snapshot_vectors() {
         let out = get(c, "out");
         let parsed = match parse_snapshot(input.as_bytes()) {
             Err(e) => {
-                // Python raises here too (a known issue kept for parity): the same exception
+                // BadSnapshot (v1.5): the same field and text
                 assert_eq!(
                     (e.class.as_str(), e.text.as_str()),
                     (
@@ -323,22 +323,7 @@ fn snapshot_vectors() {
         {
             pl.truncate(10);
         }
-        let want = get(out, "ok");
-        match label.as_str() {
-            // PORTING.md "Divergences": an int `ts` beyond 64 bits is refused (Python keeps the big int); a
-            // boolean `ts` reads as the int (Python echoes `true`).
-            "ts huge" => {
-                assert_eq!(got, J::Null, "{label}");
-                assert!(want.as_obj().is_some(), "{label}");
-            }
-            "ts true (bool is an int)" => {
-                let mut w = obj(want).clone();
-                assert_eq!(w.get("ts"), Some(&J::Bool(true)));
-                w.insert("ts", 1_i64);
-                same(&got, &J::Obj(w), &label);
-            }
-            _ => same(&got, want, &label),
-        }
+        same(&got, get(out, "ok"), &label);
     }
     for c in list(&v, "fps") {
         let input = get(c, "in");
@@ -346,7 +331,11 @@ fn snapshot_vectors() {
             Some(x) if input.as_obj().is_some() => J::Float(x),
             _ => input.clone(),
         };
-        same(&J::from(fps(Some(&parsed)).unwrap()), get(c, "out"), "_fps");
+        let out = get(c, "out");
+        match fps(Some(&parsed)) {
+            Ok(n) => same(&J::from(n), get(out, "ok"), "_fps"),
+            Err(e) => assert_eq!(e.text, text(get(out, "error")), "_fps {input:?}"),
+        }
     }
     for c in list(&v, "parse_hot") {
         let got = J::List(
@@ -395,6 +384,7 @@ fn snapshot_vectors() {
         int(k.get("TEXT_MAX").unwrap()),
         i64::try_from(super::snapshot::TEXT_MAX).unwrap()
     );
+    assert_eq!(int(k.get("MAX_TS_MS").unwrap()), super::snapshot::MAX_TS_MS);
 }
 
 /// scripts/telemetry_vectors.py `pl(UC, name, 1)`.
@@ -761,6 +751,14 @@ fn backfill_vectors() {
         int(k.get("BACKFILL_GROW_AFTER").unwrap()),
         i64::from(super::backfill::BACKFILL_GROW_AFTER)
     );
+    let not_row: Vec<String> = k
+        .get("NOT_ROW_ERRORS")
+        .and_then(J::as_list)
+        .unwrap()
+        .iter()
+        .map(text)
+        .collect();
+    assert_eq!(not_row, super::backfill::NOT_ROW_ERRORS);
     // the Pacer's decision trace (injected clock)
     let pv = group(&v, "pacer");
     set_clock(num(get(pv, "start")).unwrap());

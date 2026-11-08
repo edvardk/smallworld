@@ -261,10 +261,12 @@ impl Segments {
             .filter(|n| !smallworld_core::fsx::exists(&self.directory.join(n.as_str())))
             .cloned()
             .collect();
+        let forgotten = !gone.is_empty();
         for n in gone {
             state.remove(&n);
         }
-        if !dropped.is_empty() {
+        if !dropped.is_empty() || forgotten {
+            // v1.5: a forgotten entry is saved too
             self.save(state)?;
         }
         Ok(dropped)

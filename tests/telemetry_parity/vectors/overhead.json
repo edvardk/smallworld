@@ -13,7 +13,7 @@
        "CPUUsageNSec": 5000000000,
        "MemoryCurrent": 3221225472,
        "MemoryPeak": null,
-       "IOReadBytes": 18446744073709551615,
+       "IOReadBytes": null,
        "IOWriteBytes": 0
       },
       "mc-agent.service": {
@@ -32,7 +32,7 @@
        "Y": null,
        "Z": null,
        "W": 12,
-       "V": 99999999999999999999999
+       "V": null
       },
       "b.service": {}
      }

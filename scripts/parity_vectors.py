@@ -439,6 +439,18 @@ def verify_vectors() -> list[dict[str, Any]]:
                 }
             ],
         ),
+        (
+            "iat_infinity",
+            [
+                {
+                    "payload": (
+                        p := '{"id":"c","action":"s","args":{},"login":"l","iat":-Infinity,'
+                        '"nonce":"nonce-0001"}'
+                    ),
+                    "sig": sign(p),
+                }
+            ],
+        ),
         ("array", [{"payload": "[]", "sig": sign("[]")}]),
         ("missing_id", [{"payload": (p := cmd(id=...)), "sig": sign(p)}]),
         ("id_int", [{"payload": (p := cmd(id=5)), "sig": sign(p)}]),

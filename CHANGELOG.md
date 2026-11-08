@@ -32,7 +32,6 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   (`scripts/release.py ci-reuse`, read-only API calls with `GITHUB_TOKEN`; [ci: Releases](docs/ci.md#releases-no-repeat-ci-run)).
   Any doubt, an API error included, runs CI as before; a tag pushed by a person always runs it.
   `gh workflow run ci.yml --ref <branch>` gives a release PR the full run it needs.
-
 - The update button: the config repo's workflow gets task `product-update` and input `product_version`
   (`latest` or `vX.Y.Z`) under Actions > server > Run workflow
   ([operations: The update button](docs/operations.md#the-update-button-v15)). It pins that release now, without
@@ -49,6 +48,38 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   `update/product-vX.Y.Z` first: the push used to be rejected), and names the fix for a leftover branch without
   one; the weekly updater no longer opens a duplicate of an open `upgrade/product-vX.Y.Z` and resets a leftover
   `update/product-vX.Y.Z` branch instead of failing.
+- `mcctl publish`'s preview warns about players on the live whitelist (mc-agent's last inventory, read from the
+  watchdog's D1 with the admin token in `.env`) that the new `players.yml` doesn't list and the panel has no
+  pending change for: a deploy removes those `players.yml` had before (or every one with
+  `minecraft.strict_whitelist`); the rest are kept by the whitelist guard, outside Git.
+
+### Fixed
+
+- Whitelist revert race: when the panel's pull request was closed unmerged while the same player was changed
+  again in the panel, the revert came from a stale view and undid the newer change on the live server (pending
+  changes still had it). The revert now runs under the pending lock, which the panel's whitelist action holds
+  across its own RCON command, and only for entries nobody changed since.
+- Telemetry (both agents): `NaN`, an infinity or `1e400` in a snapshot no longer stops the read loop or reaches
+  the Worker as non-standard JSON (the snapshot is skipped and logged once); a bool is no longer read as a number;
+  snapshot times stay in order and in range; a row the Worker refuses for good (400, 413) is given up instead of
+  blocking the backfill forever; 75 s after the plugin goes quiet nobody is shown online any more and backfill
+  may run; a failure while closing a minute or writing a segment keeps the rows; rows still in memory are saved
+  to a segment on shutdown; plus the tick-weighted mean, `UINT64_MAX` from systemd, state of hand-deleted
+  segments, a median overflow and out-of-range `BACKFILL_WINDOW` times.
+- mc-agent (both agents): a command with a non-finite `iat` is refused; a job releases `job.lock` before it
+  reports its final state; SIGTERM closes the WebSocket gracefully (1000) before the agent exits.
+- A live restore of a 26.x world (every dimension under `<level>/dimensions/`) no longer leaves stale pre-26
+  `<level>_nether/` or `<level>_the_end/` folders with region files next to it, which the server would merge
+  into the restored world or refuse to start over ("already exists"): `restore.py` moves them (never deletes
+  them) to `<server dir>/.restore-staging/aside/<UTC time>/`, which backups exclude, and logs the move. Pre-26
+  snapshots and folders without region files are left as before.
+- `cargo test` no longer leaves `sw-rej-*`, `swagent-*` and `swcore-*` folders and lock files in TMPDIR: the
+  agent and core crates' tests use a std-only drop guard (`testutil::TmpDir`, compiled for tests alone, like
+  smallworld-map's), also on a failing test. The binaries in `rust/dist/` are unchanged.
+
+## [1.4.1] - 2026-11-08
+
+### Added
 
 - Which parts of the HUD players see: `name`, `players` (or `online`), `health`, `tps`, `mspt`, `ping`, `fps`
   (top bar and sidebar alike; the sidebar's title stays, and a top bar with every part hidden shows just the
@@ -91,14 +122,6 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   instead of every 4 ticks (5 times a second). It still costs nothing while nobody moves, and the boss bar is
   only resent when the line actually changed. The line is drawn by the server, so it trails a turn by the
   player's ping.
-- A live restore of a 26.x world (every dimension under `<level>/dimensions/`) no longer leaves stale pre-26
-  `<level>_nether/` or `<level>_the_end/` folders with region files next to it, which the server would merge
-  into the restored world or refuse to start over ("already exists"): `restore.py` moves them (never deletes
-  them) to `<server dir>/.restore-staging/aside/<UTC time>/`, which backups exclude, and logs the move. Pre-26
-  snapshots and folders without region files are left as before.
-- `cargo test` no longer leaves `sw-rej-*`, `swagent-*` and `swcore-*` folders and lock files in TMPDIR: the
-  agent and core crates' tests use a std-only drop guard (`testutil::TmpDir`, compiled for tests alone, like
-  smallworld-map's), also on a failing test. The binaries in `rust/dist/` are unchanged.
 
 ## [1.4.0] - 2026-11-08
 
