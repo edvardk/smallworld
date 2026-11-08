@@ -554,7 +554,15 @@
    "BACKFILL_BACKOFF_MAX_S": 3600.0,
    "BACKFILL_ROW_GIVE_UP": 5,
    "BACKFILL_GROW_AFTER": 20,
-   "SERVER_ERROR": "\\bHTTP 5\\d\\d\\b"
+   "SERVER_ERROR": "\\bHTTP 5\\d\\d\\b",
+   "CLIENT_ERROR": "\\bHTTP (4\\d\\d)\\b",
+   "NOT_ROW_ERRORS": [
+    "401",
+    "403",
+    "404",
+    "408",
+    "429"
+   ]
   },
   "pacer": {
    "start": 1000.0,
@@ -746,14 +754,98 @@
     {
      "op": "failed",
      "arg": [
+      "POST /ingest/experience: HTTP 401",
+      1
+     ],
+     "now": 1060.0,
+     "out": false,
+     "size": 1,
+     "failures": 10,
+     "row_failures": 1,
+     "successes": 0,
+     "retry_at": 4660.0
+    },
+    {
+     "op": "failed",
+     "arg": [
+      "POST /ingest/experience: HTTP 404",
+      1
+     ],
+     "now": 1060.0,
+     "out": false,
+     "size": 1,
+     "failures": 11,
+     "row_failures": 1,
+     "successes": 0,
+     "retry_at": 4660.0
+    },
+    {
+     "op": "failed",
+     "arg": [
+      "POST /ingest/experience: HTTP 413",
+      3
+     ],
+     "now": 1060.0,
+     "out": false,
+     "size": 1,
+     "failures": 11,
+     "row_failures": 1,
+     "successes": 0,
+     "retry_at": 4660.0
+    },
+    {
+     "op": "failed",
+     "arg": [
+      "POST /ingest/experience: HTTP 400",
+      1
+     ],
+     "now": 1060.0,
+     "out": true,
+     "size": 1,
+     "failures": 11,
+     "row_failures": 0,
+     "successes": 0,
+     "retry_at": 4660.0
+    },
+    {
+     "op": "failed",
+     "arg": [
+      "PUT /ingest/segment: HTTP 413",
+      0
+     ],
+     "now": 1060.0,
+     "out": false,
+     "size": 1,
+     "failures": 12,
+     "row_failures": 0,
+     "successes": 0,
+     "retry_at": 4660.0
+    },
+    {
+     "op": "failed",
+     "arg": [
+      "HTTP 4000",
+      1
+     ],
+     "now": 1060.0,
+     "out": false,
+     "size": 1,
+     "failures": 13,
+     "row_failures": 0,
+     "successes": 0,
+     "retry_at": 4660.0
+    },
+    {
+     "op": "failed",
+     "arg": [
       "POST /ingest/experience: HTTP 503",
       2
      ],
      "now": 1060.0,
      "out": false,
      "size": 1,
-     "failures": 9,
-     "row_failures": 1,
+     "failures": 13,
+     "row_failures": 0,
      "successes": 0,
      "retry_at": 4660.0
     },
@@ -1480,7 +1572,7 @@
     }
    },
    {
-    "label": "a 4xx never gives up (backs off forever)",
+    "label": "a permanent 4xx gives the row up at once (v1.5) and moves on",
     "segments": [
      [
       2,
@@ -1493,12 +1585,166 @@
     "rows": [
      "HTTP 400",
      "HTTP 400",
-     "HTTP 400",
-     "HTTP 400",
-     "HTTP 400",
-     "HTTP 400",
-     "HTTP 400",
      "HTTP 400"
+    ],
+    "puts": [],
+    "may_run": null,
+    "max_requests": 1000,
+    "names": [
+     "20260115T1000-0badc0de-0-1.ndjson.gz"
+    ],
+    "requests": [
+     {
+      "rows": [
+       "0badc0de:0",
+       "0badc0de:1"
+      ],
+      "backfill": true
+     },
+     {
+      "rows": [
+       "0badc0de:0"
+      ],
+      "backfill": true
+     },
+     {
+      "rows": [
+       "0badc0de:1"
+      ],
+      "backfill": true
+     }
+    ],
+    "rounds": [
+     {
+      "now": 5000.0,
+      "done": {
+       "rows": 0,
+       "segments": 1,
+       "requests": 3,
+       "stopped": 0,
+       "failed": 3,
+       "given_up": 2
+      },
+      "retry_at": 0.0,
+      "size": 1
+     }
+    ],
+    "log": [
+     "backfill: gave up row 0badc0de:0: the Worker refused it (HTTP 400)",
+     "backfill: gave up row 0badc0de:1: the Worker refused it (HTTP 400)"
+    ],
+    "state": {
+     "20260115T1000-0badc0de-0-1.ndjson.gz": {
+      "r2": true,
+      "rows": 2,
+      "todo": []
+     }
+    }
+   },
+   {
+    "label": "413 for a batch: halved down to the row, given up; the rest go",
+    "segments": [
+     [
+      4,
+      []
+     ]
+    ],
+    "r2": [
+     true
+    ],
+    "rows": [
+     "HTTP 413",
+     "HTTP 413",
+     null,
+     "HTTP 413"
+    ],
+    "puts": [],
+    "may_run": null,
+    "max_requests": 1000,
+    "names": [
+     "20260115T1000-0badc0de-0-3.ndjson.gz"
+    ],
+    "requests": [
+     {
+      "rows": [
+       "0badc0de:0",
+       "0badc0de:1",
+       "0badc0de:2"
+      ],
+      "backfill": true
+     },
+     {
+      "rows": [
+       "0badc0de:0"
+      ],
+      "backfill": true
+     },
+     {
+      "rows": [
+       "0badc0de:1"
+      ],
+      "backfill": true
+     },
+     {
+      "rows": [
+       "0badc0de:2"
+      ],
+      "backfill": true
+     },
+     {
+      "rows": [
+       "0badc0de:3"
+      ],
+      "backfill": true
+     }
+    ],
+    "rounds": [
+     {
+      "now": 5004.0,
+      "done": {
+       "rows": 2,
+       "segments": 1,
+       "requests": 5,
+       "stopped": 0,
+       "failed": 3,
+       "given_up": 2
+      },
+      "retry_at": 0.0,
+      "size": 1
+     }
+    ],
+    "log": [
+     "backfill: gave up row 0badc0de:0: the Worker refused it (HTTP 413)",
+     "backfill: gave up row 0badc0de:2: the Worker refused it (HTTP 413)"
+    ],
+    "state": {
+     "20260115T1000-0badc0de-0-3.ndjson.gz": {
+      "r2": true,
+      "rows": 4,
+      "todo": []
+     }
+    }
+   },
+   {
+    "label": "429 and 401 back off (never given up)",
+    "segments": [
+     [
+      2,
+      []
+     ]
+    ],
+    "r2": [
+     true
+    ],
+    "rows": [
+     "HTTP 429",
+     "HTTP 401",
+     "HTTP 429",
+     "HTTP 401",
+     "HTTP 429",
+     "HTTP 401",
+     "HTTP 429",
+     "HTTP 401"
     ],
     "puts": [],
     "may_run": null,
@@ -1866,6 +2112,64 @@
     "state": {
      "20260115T1000-0badc0de-0-0.ndjson.gz": {
       "r2": false,
+      "rows": 1,
+      "todo": []
+     }
+    }
+   },
+   {
+    "label": "segment PUT refused for good (413): given up (v1.5)",
+    "segments": [
+     [
+      1,
+      []
+     ]
+    ],
+    "r2": [
+     false
+    ],
+    "rows": [],
+    "puts": [
+     "PUT /ingest/segment: HTTP 413"
+    ],
+    "may_run": null,
+    "max_requests": 1000,
+    "names": [
+     "20260115T1000-0badc0de-0-0.ndjson.gz"
+    ],
+    "requests": [
+     {
+      "rows": [
+       "0badc0de:0"
+      ],
+      "backfill": true
+     },
+     {
+      "segment": "20260115T1000-0badc0de-0-0.ndjson.gz",
+      "rows": 1
+     }
+    ],
+    "rounds": [
+     {
+      "now": 5002.0,
+      "done": {
+       "rows": 1,
+       "segments": 0,
+       "requests": 2,
+       "stopped": 0,
+       "failed": 1,
+       "given_up": 0
+      },
+      "retry_at": 0.0,
+      "size": 3
+     }
+    ],
+    "log": [
+     "backfill: gave up uploading 20260115T1000-0badc0de-0-0.ndjson.gz: the Worker refused it (PUT /ingest/segment: HTTP 413)"
+    ],
+    "state": {
+     "20260115T1000-0badc0de-0-0.ndjson.gz": {
+      "r2": true,
       "rows": 1,
       "todo": []
      }

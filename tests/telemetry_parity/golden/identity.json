@@ -414,12 +414,12 @@
        }
       },
       "backlog": {
-       "segments": 0,
+       "segments": 1,
        "rows": 0,
-       "bytes": 0,
-       "oldest": null,
-       "stored_segments": 0,
-       "stored_bytes": 0
+       "bytes": "<bytes>",
+       "oldest": "20260115T1000",
+       "stored_segments": 1,
+       "stored_bytes": "<bytes>"
       },
       "stats": {}
      }
@@ -542,12 +542,12 @@
        }
       },
       "backlog": {
-       "segments": 0,
+       "segments": 1,
        "rows": 0,
-       "bytes": 0,
-       "oldest": null,
-       "stored_segments": 0,
-       "stored_bytes": 0
+       "bytes": "<bytes>",
+       "oldest": "20260115T1000",
+       "stored_segments": 1,
+       "stored_bytes": "<bytes>"
       }
      }
     ]
@@ -642,14 +642,50 @@
        }
       },
       "backlog": {
-       "segments": 0,
+       "segments": 2,
        "rows": 0,
-       "bytes": 0,
-       "oldest": null,
-       "stored_segments": 0,
-       "stored_bytes": 0
+       "bytes": "<bytes>",
+       "oldest": "20260115T1000",
+       "stored_segments": 2,
+       "stored_bytes": "<bytes>"
       },
       "stats": {}
+     }
+    ]
+   }
+  },
+  {
+   "route": "PUT /ingest/segment",
+   "status": 200,
+   "auth": true,
+   "user_agent": "smallworld mc-agent",
+   "content_type": "application/gzip",
+   "query": "name=20260115T1000-<src1>-0-1.ndjson.gz",
+   "body": {
+    "ndjson": [
+     {
+      "ref": "<src1>:0"
+     },
+     {
+      "ref": "<src1>:1"
+     }
+    ]
+   }
+  },
+  {
+   "route": "PUT /ingest/segment",
+   "status": 200,
+   "auth": true,
+   "user_agent": "smallworld mc-agent",
+   "content_type": "application/gzip",
+   "query": "name=20260115T1000-<src1>-2-3.ndjson.gz",
+   "body": {
+    "ndjson": [
+     {
+      "ref": "<src1>:2"
+     },
+     {
+      "ref": "<src1>:3"
      }
     ]
    }
@@ -678,6 +714,73 @@
    "content": {
     "json": {},
     "bytes": "{}"
+   }
+  },
+  "/var/lib/mc-telemetry/segments": {
+   "type": "dir",
+   "mode": "0o700"
+  },
+  "/var/lib/mc-telemetry/segments/20260115T1000-<src1>-0-1.ndjson.gz": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "ndjson": [
+     {
+      "ref": "<src1>:0"
+     },
+     {
+      "ref": "<src1>:1"
+     }
+    ]
+   }
+  },
+  "/var/lib/mc-telemetry/segments/20260115T1000-<src1>-2-3.ndjson.gz": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "ndjson": [
+     {
+      "ref": "<src1>:2"
+     },
+     {
+      "ref": "<src1>:3"
+     }
+    ]
+   }
+  },
+  "/var/lib/mc-telemetry/segments/20260115T1005-<src2>-0-0.ndjson.gz": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "ndjson": [
+     {
+      "ref": "<src2>:0"
+     }
+    ]
+   }
+  },
+  "/var/lib/mc-telemetry/segments/state.json": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "json": {
+     "20260115T1000-<src1>-0-1.ndjson.gz": {
+      "r2": true,
+      "rows": 2,
+      "todo": []
+     },
+     "20260115T1000-<src1>-2-3.ndjson.gz": {
+      "r2": true,
+      "rows": 2,
+      "todo": []
+     },
+     "20260115T1005-<src2>-0-0.ndjson.gz": {
+      "r2": false,
+      "rows": 1,
+      "todo": []
+     }
+    },
+    "bytes": "{\"20260115T1000-<src1>-0-1.ndjson.gz\": {\"r2\": true, \"rows\": 2, \"todo\": []}, \"20260115T1000-<src1>-2-3.ndjson.gz\": {\"r2\": true, \"rows\": 2, \"todo\": []}, \"20260115T1005-<src2>-0-0.ndjson.gz\": {\"r2\": false, \"rows\": 1, \"todo\": []}}"
    }
   }
  },
@@ -809,19 +912,22 @@
  "output": [
   {
    "stdout": [
-    "mc-telemetry <version>: pushing to 127.0.0.1"
+    "mc-telemetry <version>: pushing to 127.0.0.1",
+    "telemetry: saved 20260115T1000-<src1>-0-1.ndjson.gz at shutdown"
    ],
    "stderr": []
   },
   {
    "stdout": [
-    "mc-telemetry <version>: pushing to 127.0.0.1"
+    "mc-telemetry <version>: pushing to 127.0.0.1",
+    "telemetry: saved 20260115T1000-<src1>-2-3.ndjson.gz at shutdown"
    ],
    "stderr": []
   },
   {
    "stdout": [
-    "mc-telemetry <version>: pushing to 127.0.0.1"
+    "mc-telemetry <version>: pushing to 127.0.0.1",
+    "telemetry: saved 20260115T1005-<src2>-0-0.ndjson.gz at shutdown"
    ],
    "stderr": []
   }

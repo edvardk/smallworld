@@ -848,6 +848,20 @@
     ]
    }
   },
+  "/var/lib/mc-telemetry/segments/20260115T1005-0badc0de-5-6.ndjson.gz": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "ndjson": [
+     {
+      "ref": "0badc0de:5"
+     },
+     {
+      "ref": "0badc0de:6"
+     }
+    ]
+   }
+  },
   "/var/lib/mc-telemetry/segments/state.json": {
    "type": "file",
    "mode": "0o600",
@@ -860,9 +874,14 @@
        1,
        2
       ]
+     },
+     "20260115T1005-0badc0de-5-6.ndjson.gz": {
+      "r2": false,
+      "rows": 2,
+      "todo": []
      }
     },
-    "bytes": "{\"20260115T1000-0badc0de-0-4.ndjson.gz\": {\"r2\": false, \"rows\": 5, \"todo\": [1, 2]}}"
+    "bytes": "{\"20260115T1000-0badc0de-0-4.ndjson.gz\": {\"r2\": false, \"rows\": 5, \"todo\": [1, 2]}, \"20260115T1005-0badc0de-5-6.ndjson.gz\": {\"r2\": false, \"rows\": 2, \"todo\": []}}"
    }
   }
  },
@@ -1042,7 +1061,8 @@
  "output": [
   {
    "stdout": [
-    "mc-telemetry <version>: pushing to 127.0.0.1"
+    "mc-telemetry <version>: pushing to 127.0.0.1",
+    "telemetry: saved 20260115T1005-0badc0de-5-6.ndjson.gz at shutdown"
    ],
    "stderr": []
   }

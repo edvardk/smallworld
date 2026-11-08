@@ -645,6 +645,41 @@
     },
     "bytes": "{\"bbbbbbbb-2222-4222-8222-222222222222\": {\"join\": 1768471320000, \"n\": \"Bob\", \"tips\": true, \"u\": \"bbbbbbbb-2222-4222-8222-222222222222\"}}"
    }
+  },
+  "/var/lib/mc-telemetry/segments": {
+   "type": "dir",
+   "mode": "0o700"
+  },
+  "/var/lib/mc-telemetry/segments/20260115T1000-0badc0de-0-2.ndjson.gz": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "ndjson": [
+     {
+      "ref": "0badc0de:0"
+     },
+     {
+      "ref": "0badc0de:1"
+     },
+     {
+      "ref": "0badc0de:2"
+     }
+    ]
+   }
+  },
+  "/var/lib/mc-telemetry/segments/state.json": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "json": {
+     "20260115T1000-0badc0de-0-2.ndjson.gz": {
+      "r2": false,
+      "rows": 3,
+      "todo": []
+     }
+    },
+    "bytes": "{\"20260115T1000-0badc0de-0-2.ndjson.gz\": {\"r2\": false, \"rows\": 3, \"todo\": []}}"
+   }
   }
  },
  "systemd": {
@@ -727,7 +762,11 @@
  "output": [
   {
    "stdout": [
-    "mc-telemetry <version>: pushing to 127.0.0.1"
+    "mc-telemetry <version>: pushing to 127.0.0.1",
+    "telemetry: skipped snap-1.json: pl.ping is not a finite number",
+    "telemetry: skipped snap-2.json: srv.heap_used_mb is not a finite number",
+    "telemetry: skipped snap-3.json: srv.scanned is not a finite number",
+    "telemetry: saved 20260115T1000-0badc0de-0-2.ndjson.gz at shutdown"
    ],
    "stderr": []
   }

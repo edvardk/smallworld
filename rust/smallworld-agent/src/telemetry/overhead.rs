@@ -35,6 +35,9 @@ fn stat(u: &UnitStats, k: &str) -> Option<i128> {
     u.iter().find(|(name, _)| name == k).and_then(|(_, v)| *v)
 }
 
+/// telemetry.py `UINT64_MAX`.
+const UINT64_MAX: i128 = u64::MAX as i128;
+
 /// `str.isdigit()` then `int()`: decimal digits (any `Nd`). A value beyond i128 reads as None (it can't occur:
 /// systemd prints u64).
 fn digits_value(v: &str) -> Option<i128> {
@@ -72,7 +75,8 @@ pub fn parse_show(text: &str) -> Stats {
             let vals = props
                 .into_iter()
                 .map(|(k, v)| {
-                    let n = digits_value(&v);
+                    // v1.5: UINT64_MAX (and above) is systemd's "not set", not a reading
+                    let n = digits_value(&v).filter(|n| *n < UINT64_MAX);
                     (k, n)
                 })
                 .collect();
@@ -273,10 +277,8 @@ mod tests {
         );
         assert_eq!(s[0].0, "minecraft.service");
         assert_eq!(stat(&s[0].1, "MemoryCurrent"), None);
-        assert_eq!(
-            stat(&s[0].1, "MemoryPeak"),
-            Some(18_446_744_073_709_551_615)
-        );
+        // v1.5: UINT64_MAX is systemd's "not set"
+        assert_eq!(stat(&s[0].1, "MemoryPeak"), None);
         assert_eq!(
             consumed_cpu_ms("mc-backup.service: Consumed 1min 2.5s CPU time, 12.0M memory peak."),
             Some((62500.0, Some(12.0)))
@@ -300,7 +302,7 @@ mod tests {
         let second = o.sample(later, 160.0);
         assert_eq!(
             J::Obj(first).dumps_compact(),
-            r#"{"minecraft.service":{"mem_mb":null,"mem_peak_mb":17592186044416.0,"cpu_pct":null,"io_read_kb":null,"io_write_kb":null},"mc-agent.service":{"mem_mb":null,"mem_peak_mb":null,"cpu_pct":null,"io_read_kb":null,"io_write_kb":null},"mc-restore":{"cpu_ms":2250.0,"runs":1,"mem_peak_mb":0.0}}"#
+            r#"{"minecraft.service":{"mem_mb":null,"mem_peak_mb":null,"cpu_pct":null,"io_read_kb":null,"io_write_kb":null},"mc-agent.service":{"mem_mb":null,"mem_peak_mb":null,"cpu_pct":null,"io_read_kb":null,"io_write_kb":null},"mc-restore":{"cpu_ms":2250.0,"runs":1,"mem_peak_mb":0.0}}"#
         );
         assert_eq!(
             second

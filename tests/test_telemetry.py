@@ -774,3 +774,176 @@ def test_ci_gates_every_telemetry_scenario_on_the_rust_agent() -> None:
     listed = step["env"]["RUST_TELEMETRY_SCENARIOS"].split()
     golden = sorted(p.stem for p in (repo / "tests/telemetry_parity/golden").glob("*.json"))
     assert sorted(listed) == golden and len(listed) == len(set(listed))
+
+
+# --- v1.5: the Python issues kept for parity in v1.4, fixed in both implementations -------------------------
+
+
+def test_bad_numbers_skip_the_snapshot_and_are_logged_once(tmp_path: Path) -> None:
+    """NaN, an infinity or 1e400 in an integer field no longer crashes the read loop, and an infinity in a
+    float field is never sent as non-standard JSON: the snapshot is skipped (logged once) and reading goes on."""
+    logs: list[str] = []
+    r = telemetry.SnapshotReader(tmp_path, log=logs.append)
+    write_snap(tmp_path, snap(1, T0))
+    (tmp_path / "snap-2.json").write_text(
+        json.dumps(snap(2, T0 + 10000)).replace('"ticks": 200', '"ticks": NaN')
+    )
+    (tmp_path / "snap-3.json").write_text(
+        json.dumps(snap(3, T0 + 20000, [pl()])).replace('"ping": 40', '"ping": Infinity')
+    )
+    (tmp_path / "snap-4.json").write_text(
+        json.dumps(snap(4, T0 + 30000)).replace('"heap_used_mb": 900', '"heap_used_mb": 1e400')
+    )
+    write_snap(tmp_path, snap(5, T0 + 40000))
+    assert [s["seq"] for s in r.read()] == [1, 5]
+    assert logs == [
+        "telemetry: skipped snap-2.json: srv.ticks is not a finite number",
+        "telemetry: skipped snap-3.json: pl.ping is not a finite number",
+        "telemetry: skipped snap-4.json: srv.heap_used_mb is not a finite number",
+    ]
+    r.last_seq = 0  # read them again: no second log line
+    assert [s["seq"] for s in r.read()] == []
+    assert len(logs) == 3
+    (tmp_path / "snap-2.json").unlink()
+    r.read()
+    assert "snap-2.json" not in r.skipped
+
+
+def test_bools_are_not_ints_and_times_stay_in_range() -> None:
+    good = snap(1, T0, [pl()])
+    assert telemetry.parse_snapshot(json.dumps(good | {"v": True}).encode()) is None
+    assert telemetry.parse_snapshot(json.dumps(good | {"ts": True}).encode()) is None
+    assert telemetry.parse_snapshot(json.dumps(good | {"ts": telemetry.MAX_TS_MS + 1}).encode()) is None
+    assert telemetry.parse_snapshot(json.dumps(good | {"ts": -1}).encode()) is None
+    odd = good | {"srv": good["srv"] | {"spikes": [[True, 50.0], [T0, 60.0]],
+                                        "hot": [{"w": "w", "cx": False, "cz": 1}, {"w": "w", "cx": 2, "cz": 1}]}}  # fmt: skip
+    got = telemetry.parse_snapshot(json.dumps(odd).encode())
+    assert (
+        got is not None
+        and got["srv"]["spikes"] == [[T0, 60.0]]
+        and [c["cx"] for c in got["srv"]["hot"]] == [2]
+    )
+    with pytest.raises(telemetry.BadSnapshot, match=r"pl\.ping is out of range"):
+        telemetry.parse_snapshot(json.dumps(snap(1, T0, [pl(ping=1e19)])).encode())
+
+
+def test_a_snapshot_older_than_the_one_before_it_in_one_read_is_dropped(tmp_path: Path) -> None:
+    r = telemetry.SnapshotReader(tmp_path)
+    for seq, ts in ((1, T0), (2, T0 + 20000), (3, T0 + 10000), (4, T0 + 30000)):
+        write_snap(tmp_path, snap(seq, ts))
+    assert [s["ts"] for s in r.read()] == [T0, T0 + 20000, T0 + 30000]
+
+
+def test_a_permanent_4xx_gives_the_row_up_and_the_backfill_moves_on(tmp_path: Path) -> None:
+    """413/400 for a row: the batch halves down to it, it is given up at once (a gap, logged), the rest go; 429
+    and auth errors only back off."""
+    seg = backlog_of(tmp_path, 4)
+    w = FakeWorker()
+    sizes: list[int] = []
+
+    def post(rows: list[dict[str, Any]]) -> Any:
+        sizes.append(len(rows))
+        if any(r["id"] == "abcd0123:1" for r in rows):
+            raise mc_agent.IngestError("POST /ingest/experience: HTTP 413", 413)
+        return w.post("", {"rows": rows})
+
+    logs: list[str] = []
+    pacer = telemetry.Pacer(clock=lambda: 1000.0)
+    bf = telemetry.Backfill(seg, post, w.put, lambda: True, pause_s=0, sleep=lambda s: None, pacer=pacer,
+                            log=logs.append)  # fmt: skip
+    done = bf.run_once()
+    assert sorted(w.rows) == ["abcd0123:0", "abcd0123:2", "abcd0123:3"] and seg.pending() == []
+    assert done["given_up"] == 1 and pacer.ready() and sizes == [3, 1, 1, 1, 1]  # 3 -> halved to the row
+    assert logs == [
+        "backfill: gave up row abcd0123:1: the Worker refused it (POST /ingest/experience: HTTP 413)"
+    ]
+    for code in (429, 401, 403, 404, 408):
+        p = telemetry.Pacer(clock=lambda: 1000.0)
+        assert p.failed(mc_agent.IngestError(f"POST /ingest/experience: HTTP {code}"), 1) is False
+        assert not p.ready()
+
+
+def test_latest_is_cleared_once_the_plugin_goes_quiet(tmp_path: Path) -> None:
+    """75 s without a new snapshot: online() is empty (online.json, player_message) and backfill may run."""
+    w, clock = FakeWorker(), [T0 / 1000]
+    t = make(tmp_path, w, clock)
+    run_minutes(t, clock, T0, 1, [pl()])
+    assert list(t.online()) == [ED] and not t.may_backfill()
+    clock[0] += 70
+    t.poll()
+    assert list(t.online()) == [ED]
+    clock[0] += 10
+    t.poll()
+    assert t.online() == {} and t.may_backfill()
+
+
+def test_a_failed_close_or_flush_keeps_the_rows(tmp_path: Path) -> None:
+    """An exception while closing the minute keeps its snapshots (and the one that closed it) for the next
+    round; a failed segment write keeps the buffer."""
+    w, clock = FakeWorker(), [T0 / 1000]
+    t = make(tmp_path, w, clock)
+    calls = [0]
+
+    def stats() -> dict[str, Any]:
+        calls[0] += 1
+        if calls[0] == 1:
+            raise OSError("systemctl went away")
+        return {}
+
+    t.stats = stats
+    run_minutes(t, clock, T0, 1, [pl()])
+    write_snap(t.cfg.snap_dir, snap(t.reader.last_seq + 1, T0 + 60000, [pl()]))
+    with pytest.raises(OSError):
+        t.poll()
+    assert len(t.minute_snaps) == 6 and len(t.inbox) == 1 and t.buffer == [] and t.seq == 0
+    t.poll()
+    assert len(t.buffer) == 1 and len(t.buffer[0]["raw"]) == 6 and t.minute_snaps[0]["ts"] == T0 + 60000
+    real_write = t.segments.write
+    t.segments.write = lambda *a: (_ for _ in ()).throw(OSError("disk full"))  # type: ignore[method-assign]
+    with pytest.raises(OSError):
+        t.flush_segment()
+    assert len(t.buffer) == 1
+    t.segments.write = real_write  # type: ignore[method-assign]
+    assert t.flush_segment() and t.buffer == []
+
+
+def test_shutdown_saves_the_ram_buffer_to_a_segment(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Rows not delivered live and not yet in a segment survive SIGTERM: run() ends with shutdown(), which
+    writes them to a segment (no upload: the next start's backfill delivers them)."""
+    w, clock = FakeWorker(), [T0 / 1000]
+    t = make(tmp_path, w, clock)
+    w.down = True
+    run_minutes(t, clock, T0, 3, [pl()])
+    assert len(t.buffer) == 2 and not list((tmp_path / "seg").glob("*.ndjson.gz"))
+    t.stop.set()
+    t.run()
+    (name,) = [p.name for p in (tmp_path / "seg").glob("*.ndjson.gz")]
+    assert t.buffer == [] and t.segments.load()[name]["todo"] == [0, 1] and w.segments == []
+    assert f"telemetry: saved {name} at shutdown" in capsys.readouterr().out
+
+
+def test_low_priority_fixes() -> None:
+    """The weighted mean counts only windows with a mean; UINT64_MAX is "not set"; _median doesn't overflow;
+    BACKFILL_WINDOW takes real times only."""
+    s = telemetry.summarize_server(
+        [snap(1, T0, ticks=200, mean=None), snap(2, T0 + 10000, ticks=100, mean=20.0)]
+    )
+    assert s["mean"] == 20.0 and s["ticks"] == 300
+    shown = telemetry.parse_show("Id=a.service\nMemoryPeak=18446744073709551615\nMemoryCurrent=5\n")
+    assert shown == {"a.service": {"MemoryPeak": None, "MemoryCurrent": 5}}
+    assert telemetry._median([1.7e308, 1.7e308]) == 1.7e308
+    for window, ok in (("22:00-06:00", True), ("23:59-00:00", True), ("25:00-26:00", False), ("10:60-11:00", False),
+                       ("22:00-24:00", False), ("\u0661\u0660:00-11:00", False), ("", True)):  # fmt: skip
+        assert telemetry.valid_window(window) is ok, window
+        assert telemetry.Config.from_env({"BACKFILL_WINDOW": window}, Path("/x"), "w").backfill_window == (
+            window if ok else ""
+        )
+
+
+def test_prune_saves_the_state_of_segments_deleted_by_hand(tmp_path: Path) -> None:
+    seg = telemetry.Segments(tmp_path)
+    seg.save({"20250101T0000-0badc0de-9-9.ndjson.gz": {"todo": [0], "r2": False}})
+    assert seg.prune() == []
+    assert seg.load() == {}

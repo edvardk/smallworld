@@ -1993,6 +1993,8 @@ WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 OP_CONT, OP_TEXT, OP_BIN, OP_CLOSE, OP_PING, OP_PONG = 0x0, 0x1, 0x2, 0x8, 0x9, 0xA
 WS_MAX_MESSAGE = 1 << 20
 WS_RECV_TIMEOUT_S = 15.0
+# v1.5: at shutdown, the telemetry's last round + its segment (an HTTP call <= 20 s)
+TELEMETRY_STOP_WAIT_S = 30.0
 WS_PING_S = 45.0  # idle this long: ping
 WS_DEAD_S = 120.0  # nothing received this long (pings unanswered): reconnect
 
@@ -2610,6 +2612,14 @@ class Agent:
         for t in threads:
             t.start()
         self.stop.wait()
+        self.shutdown({t.name: t for t in threads})
+
+    def shutdown(self, threads: dict[str, threading.Thread]) -> None:
+        """v1.5, after SIGTERM (`stop` set): deterministic, not left to daemon threads racing the
+        interpreter's exit: the telemetry's RAM buffer goes to a segment (Telemetry.run ends with
+        shutdown()). The wait is bounded."""
+        if "telemetry" in threads:
+            threads["telemetry"].join(TELEMETRY_STOP_WAIT_S)
 
 
 # P10: job reports (the Worker keeps them in the Control object: no D1 rows) and the inventory pushes that
@@ -2902,6 +2912,7 @@ def telemetry_main() -> int:
     for th in threads:
         th.start()
     stop.wait()
+    threads[0].join(TELEMETRY_STOP_WAIT_S)  # v1.5: its shutdown() saves the RAM buffer to a segment
     return 0
 
 

@@ -25,7 +25,7 @@
       "srv": {
        "ticks": 597,
        "tps": 19.87,
-       "mean": 8.66,
+       "mean": 12.99,
        "p50": 11.0,
        "p95": 20.0,
        "p99": 48.25,
@@ -424,6 +424,38 @@
     },
     "bytes": "{\"bbbbbbbb-2222-4222-8222-222222222222\": {\"join\": 1768471202000, \"n\": \"Bob\", \"tips\": true, \"u\": \"bbbbbbbb-2222-4222-8222-222222222222\"}}"
    }
+  },
+  "/var/lib/mc-telemetry/segments": {
+   "type": "dir",
+   "mode": "0o700"
+  },
+  "/var/lib/mc-telemetry/segments/20260115T1000-0badc0de-40-41.ndjson.gz": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "ndjson": [
+     {
+      "ref": "0badc0de:40"
+     },
+     {
+      "ref": "0badc0de:41"
+     }
+    ]
+   }
+  },
+  "/var/lib/mc-telemetry/segments/state.json": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "json": {
+     "20260115T1000-0badc0de-40-41.ndjson.gz": {
+      "r2": false,
+      "rows": 2,
+      "todo": []
+     }
+    },
+    "bytes": "{\"20260115T1000-0badc0de-40-41.ndjson.gz\": {\"r2\": false, \"rows\": 2, \"todo\": []}}"
+   }
   }
  },
  "systemd": {
@@ -482,7 +514,8 @@
  "output": [
   {
    "stdout": [
-    "mc-telemetry <version>: pushing to 127.0.0.1"
+    "mc-telemetry <version>: pushing to 127.0.0.1",
+    "telemetry: saved 20260115T1000-0badc0de-40-41.ndjson.gz at shutdown"
    ],
    "stderr": []
   }

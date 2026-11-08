@@ -29,6 +29,7 @@ import contextlib
 import gzip
 import io
 import json
+import math
 import os
 import re
 import secrets
@@ -65,6 +66,19 @@ BACKFILL_BACKOFF_MAX_S = 3600.0
 BACKFILL_ROW_GIVE_UP = 5
 BACKFILL_GROW_AFTER = 20  # successful requests in a row before a halved batch grows by one row again
 SERVER_ERROR = re.compile(r"\bHTTP 5\d\d\b")
+# v1.5: a 4xx the Worker answers for the rows themselves (400 invalid, 413 too large, ...) is permanent: the
+# batch is halved down to the one row, which is then given up at once. Not 429 (slow down) and not the codes
+# that say nothing about the rows (401/403: the token, 404: telemetry off, 408: a timeout): those back off.
+CLIENT_ERROR = re.compile(r"\bHTTP (4\d\d)\b")
+NOT_ROW_ERRORS = frozenset({"401", "403", "404", "408", "429"})
+# v1.5: snapshot and row times stay where gmtime/strftime work (up to 9999-12-31T23:59:59.999Z)
+MAX_TS_MS = 253_402_300_799_999
+INT_MIN, INT_MAX = -(2**63), 2**63  # a snapshot's integer fields: 64-bit (as the Rust agent has them)
+# v1.5: the plugin went quiet (the server stopped): after QUIET_MS without a new snapshot the minute closes
+# and `latest` becomes QUIET_VIEW (nobody online, no readings), so online.json, player_message and backfill
+# stop acting on the last players seen.
+QUIET_MS = 75_000
+MAX_INBOX = 360  # snapshots read but not yet in a minute (a failing round keeps them): an hour at most
 OVERHEAD_UNITS = ("minecraft.service", "mc-agent.service")
 # Oneshot units: systemd logs "<unit>: Consumed 1.234s CPU time[, ...]" when each run ends (systemd >= 252).
 ONESHOT_UNITS = re.compile(r"^(mc-[a-z0-9@._-]+\.service)$")
@@ -84,8 +98,36 @@ def clean_text(text: object, limit: int = TEXT_MAX) -> str:
 # --- snapshots (plugin -> agent) ----------------------------------------------------------------------------
 
 
-def _num(v: object) -> float | None:
-    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+class BadSnapshot(ValueError):
+    """v1.5: a snapshot field holding a number no field can take (NaN, an infinity, beyond a float, an integer
+    field beyond 64 bits): the snapshot is skipped and logged (SnapshotReader), never half-read."""
+
+
+def _is_int(v: object) -> bool:
+    """A JSON integer (not a bool) within 64 bits."""
+    return isinstance(v, int) and not isinstance(v, bool) and INT_MIN <= v < INT_MAX
+
+
+def _num(v: object, what: str = "value") -> float | None:
+    """A float for an int or float (not a bool), None for anything else; BadSnapshot for a number that isn't
+    finite (`NaN`, `Infinity`, `1e400`, an integer beyond a float)."""
+    if not isinstance(v, (int, float)) or isinstance(v, bool):
+        return None
+    try:
+        x = float(v)
+    except OverflowError:
+        raise BadSnapshot(f"{what} is not a finite number") from None
+    if not math.isfinite(x):
+        raise BadSnapshot(f"{what} is not a finite number")
+    return x
+
+
+def _int(v: object, what: str) -> int:
+    """`int(_num(v) or 0)` for an integer field: BadSnapshot beyond 64 bits."""
+    x = int(_num(v, what) or 0)
+    if not INT_MIN <= x < INT_MAX:
+        raise BadSnapshot(f"{what} is out of range")
+    return x
 
 
 HOT_KEYS = ("ent", "tiles", "vil", "items")
@@ -98,10 +140,10 @@ def parse_hot(raw: object) -> list[dict[str, Any]]:
     for c in (raw if isinstance(raw, list) else [])[:MAX_HOT]:
         if not isinstance(c, dict) or not isinstance(c.get("w"), str):
             continue
-        if not all(isinstance(c.get(k), int) for k in ("cx", "cz")):
+        if not all(_is_int(c.get(k)) for k in ("cx", "cz")):
             continue
         out.append({"w": clean_text(c["w"], 64), "cx": c["cx"], "cz": c["cz"]}
-                   | {k: max(0, int(_num(c.get(k)) or 0)) for k in HOT_KEYS})  # fmt: skip
+                   | {k: max(0, _int(c.get(k), f"srv.hot.{k}")) for k in HOT_KEYS})  # fmt: skip
     return out
 
 
@@ -132,26 +174,28 @@ def parse_snapshot(data: bytes) -> dict[str, Any] | None:
         raw = json.loads(data)
     except ValueError:
         return None
-    if not isinstance(raw, dict) or raw.get("v") != 1 or not isinstance(raw.get("ts"), int):
+    if not isinstance(raw, dict) or not _is_int(raw.get("v")) or raw["v"] != 1:
+        return None
+    if not _is_int(raw.get("ts")) or not 0 <= raw["ts"] <= MAX_TS_MS:
         return None
     srv = raw.get("srv") if isinstance(raw.get("srv"), dict) else {}
     out_srv: dict[str, Any] = {}
     for k in ("tps", "ticks", "mean", "p50", "p95", "p99", "p999", "max", "self_p99_us", "self_max_us",
               "budget_skips", "lost_windows", "heap_used_mb", "heap_max_mb"):  # fmt: skip
-        out_srv[k] = _num(srv.get(k))
+        out_srv[k] = _num(srv.get(k), f"srv.{k}")
     spikes = srv.get("spikes") if isinstance(srv.get("spikes"), list) else []
     out_srv["spikes"] = [
         [int(s[0]), float(s[1])]
         for s in spikes[:32]
-        if isinstance(s, list) and len(s) == 2 and isinstance(s[0], int) and _num(s[1]) is not None
+        if isinstance(s, list) and len(s) == 2 and _is_int(s[0]) and _num(s[1], "srv.spikes") is not None
     ]
     worlds = []
     for w in (srv.get("worlds") if isinstance(srv.get("worlds"), list) else [])[:16]:
         if isinstance(w, dict) and isinstance(w.get("n"), str):
-            worlds.append({"n": clean_text(w["n"], 64)} | {k: int(_num(w.get(k)) or 0) for k in
+            worlds.append({"n": clean_text(w["n"], 64)} | {k: _int(w.get(k), f"srv.worlds.{k}") for k in
                           ("chunks", "entities", "tiles", "ticking", "players")})  # fmt: skip
     out_srv["worlds"] = worlds
-    out_srv["scanned"] = int(_num(srv.get("scanned")) or 0)
+    out_srv["scanned"] = _int(srv.get("scanned"), "srv.scanned")
     out_srv["hot"] = parse_hot(srv.get("hot"))
     players = []
     for p in (raw.get("pl") if isinstance(raw.get("pl"), list) else [])[:500]:
@@ -163,22 +207,22 @@ def parse_snapshot(data: bytes) -> dict[str, Any] | None:
             continue
         players.append({
             "u": p["u"], "n": p["n"],
-            "ping": int(_num(p.get("ping")) or 0), "brand": clean_text(p.get("brand"), 32),
-            "view": int(_num(p.get("view")) or 0), "send": int(_num(p.get("send")) or 0),
+            "ping": _int(p.get("ping"), "pl.ping"), "brand": clean_text(p.get("brand"), 32),
+            "view": _int(p.get("view"), "pl.view"), "send": _int(p.get("send"), "pl.send"),
             "loc": clean_text(p.get("loc"), 16), "w": clean_text(p.get("w"), 64),
-            "cx": int(_num(p.get("cx")) or 0), "cz": int(_num(p.get("cz")) or 0),
-            "ent": int(_num(p.get("ent")) or 0), "glide": p.get("glide") is True,
-            "tips": p.get("tips") is not False, "join": int(_num(p.get("join")) or 0),
+            "cx": _int(p.get("cx"), "pl.cx"), "cz": _int(p.get("cz"), "pl.cz"),
+            "ent": _int(p.get("ent"), "pl.ent"), "glide": p.get("glide") is True,
+            "tips": p.get("tips") is not False, "join": _int(p.get("join"), "pl.join"),
             "fps": _fps(p.get("fps")),
         })  # fmt: skip
-    seq, win = int(_num(raw.get("seq")) or 0), int(_num(raw.get("win_ms")) or 0)
+    seq, win = _int(raw.get("seq"), "seq"), _int(raw.get("win_ms"), "win_ms")
     return {"seq": seq, "ts": raw["ts"], "win_ms": win, "srv": out_srv, "pl": players}
 
 
 def _fps(v: object) -> int | None:
     """v1.2: the Smallworld client mod's FPS report (only players with the mod have one): 0..10 000 or
     None."""
-    n = _num(v)
+    n = _num(v, "pl.fps")
     return None if n is None or n < 0 else min(int(n), 10_000)
 
 
@@ -191,22 +235,32 @@ class SnapshotReader:
     directory: Path = SNAP_DIR
     last_seq: int = -1
     last_ts: int = 0
+    log: Callable[[str], None] = print
+    skipped: set[str] = field(default_factory=set)  # bad snapshots already logged (still in the directory)
 
     def read(self) -> list[dict[str, Any]]:
         try:
             names = [(int(m.group(1)), n) for n in os.listdir(self.directory) if (m := SNAP_NAME.match(n))]
         except OSError:
             return []
+        self.skipped &= {n for _, n in names}
         out = []
+        last_ts = self.last_ts
         for seq, name in sorted(names):
             if seq <= self.last_seq:
                 continue
             try:  # minecraft writes this directory: never block on a FIFO, never follow a link
                 snap = parse_snapshot(mc_rcon.read_untrusted(self.directory / name, MAX_SNAPSHOT_BYTES))
+            except BadSnapshot as e:  # v1.5: skipped (logged once), the next ones are still read
+                if name not in self.skipped:
+                    self.skipped.add(name)
+                    self.log(f"telemetry: skipped {name}: {e}")
+                continue
             except OSError:
                 continue
-            if snap and snap["ts"] > self.last_ts:
+            if snap and snap["ts"] > last_ts:  # v1.5: in time order, also within one read
                 out.append(snap)
+                last_ts = snap["ts"]
         if not out and names:
             newest = max(names)[0]
             if newest < self.last_seq:  # the plugin restarted: its sequence starts again at 0
@@ -225,7 +279,7 @@ def _median(values: list[float]) -> float | None:
         return None
     s = sorted(values)
     mid = len(s) // 2
-    return s[mid] if len(s) % 2 else (s[mid - 1] + s[mid]) / 2
+    return s[mid] if len(s) % 2 else s[mid - 1] / 2 + s[mid] / 2  # v1.5: no overflow near the float maximum
 
 
 def _r(v: float | None, nd: int = 2) -> float | None:
@@ -244,11 +298,14 @@ def summarize_server(snaps: list[dict[str, Any]]) -> dict[str, Any]:
         return [x[k] for x in srv if x.get(k) is not None]
 
     weighted = sum((x.get("mean") or 0) * (x.get("ticks") or 0) for x in srv)
+    mean_ticks = sum(
+        int(x.get("ticks") or 0) for x in srv if x.get("mean") is not None
+    )  # v1.5: windows with a mean
     last_worlds = srv[-1]["worlds"] if srv else []
     out = {
         "ticks": ticks,
         "tps": _r(min(vals("tps"), default=None)),
-        "mean": _r(weighted / ticks) if ticks else None,
+        "mean": _r(weighted / mean_ticks) if mean_ticks else None,
         "p50": _r(_median(vals("p50"))),
         "p95": _r(max(vals("p95"), default=None)),
         "p99": _r(max(vals("p99"), default=None)),
@@ -396,6 +453,14 @@ class Sessions:
 # --- product overhead (systemd cgroup accounting) ----------------------------------------------------------
 
 
+UINT64_MAX = 2**64 - 1  # systemd's "not set" for a counter (`systemctl show` prints it as a number)
+
+
+def _show_int(v: str) -> int | None:
+    n = int(v) if v.isdigit() else None
+    return None if n is None or n >= UINT64_MAX else n
+
+
 def parse_show(text: str) -> dict[str, dict[str, int | None]]:
     """`systemctl show -p Id -p CPUUsageNSec ... unit...` output (blocks separated by blank lines)."""
     out: dict[str, dict[str, int | None]] = {}
@@ -403,7 +468,7 @@ def parse_show(text: str) -> dict[str, dict[str, int | None]]:
         props = dict(line.split("=", 1) for line in block.splitlines() if "=" in line)
         unit = props.pop("Id", "")
         if unit:
-            out[unit] = {k: int(v) if v.isdigit() else None for k, v in props.items()}
+            out[unit] = {k: _show_int(v) for k, v in props.items()}
     return out
 
 
@@ -640,10 +705,12 @@ class Segments:
             p.unlink(missing_ok=True)
             dropped.append(p.name)
             state.pop(p.name, None)
+        forgotten = False
         for name in list(state):  # state of segments deleted by hand
             if not (self.directory / name).exists():
                 state.pop(name)
-        if dropped:
+                forgotten = True
+        if dropped or forgotten:  # v1.5: a forgotten entry is saved too
             self.save(state)
         return dropped
 
@@ -673,6 +740,14 @@ class Segments:
 # --- quiet time + backfill --------------------------------------------------------------------------------
 
 
+WINDOW = re.compile(r"([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d", re.ASCII)
+
+
+def valid_window(window: str) -> bool:
+    """BACKFILL_WINDOW: empty or `HH:MM-HH:MM` with real times (v1.5: `25:00` or `10:75` is refused)."""
+    return not window or bool(WINDOW.fullmatch(window))
+
+
 def in_window(window: str, now_local: time.struct_time) -> bool:
     """`HH:MM-HH:MM` local time (may wrap midnight); empty = never."""
     if not window:
@@ -697,6 +772,12 @@ def quiet(
     p99 = latest["srv"].get("p99")
     healthy = p99 is None or p99 < mspt_ok
     return healthy or in_window(window, now_local)
+
+
+def row_refused(err: BaseException | str) -> bool:
+    """A permanent 4xx about the rows themselves (CLIENT_ERROR, not NOT_ROW_ERRORS)."""
+    m = CLIENT_ERROR.search(str(err))
+    return bool(m) and m.group(1) not in NOT_ROW_ERRORS
 
 
 @dataclass
@@ -726,9 +807,13 @@ class Pacer:
         """Records a failed request; True when the (single) row should be given up."""
         self.successes = 0
         server = bool(SERVER_ERROR.search(str(err)))
-        if server and batch_len > 1:
+        refused = row_refused(err)
+        if (server or refused) and batch_len > 1:
             self.size = max(1, batch_len // 2)  # retry at once with half
             return False
+        if refused and batch_len == 1:  # v1.5: the Worker won't ever take this row: give it up, move on
+            self.row_failures = 0
+            return True
         self.failures += 1
         if server:
             self.row_failures += 1
@@ -788,9 +873,12 @@ class Backfill:
                         self.segments.mark(name, rows=batch)  # a row the Worker can't take: a gap
                         todo = todo[len(batch) :]
                         done["given_up"] += len(batch)
-                        self.log(
-                            f"backfill: gave up row {rows[batch[0]].get('id')} after repeated server errors"
+                        why = (
+                            f": the Worker refused it ({e})"
+                            if row_refused(e)
+                            else " after repeated server errors"
                         )
+                        self.log(f"backfill: gave up row {rows[batch[0]].get('id')}{why}")
                     continue
                 self.pacer.succeeded()
                 self.segments.mark(name, rows=batch)
@@ -805,6 +893,10 @@ class Backfill:
                     self.send_segment(name, path.read_bytes())
                 except Exception as e:
                     done["failed"] += 1
+                    if row_refused(e):  # v1.5: refused for good (too large, ...): R2 never gets this one
+                        self.segments.mark(name, r2=True)
+                        self.log(f"backfill: gave up uploading {name}: the Worker refused it ({e})")
+                        continue
                     self.pacer.failed(e, 0)  # never halves (one object); backs off
                     continue
                 self.segments.mark(name, r2=True)
@@ -922,7 +1014,7 @@ class Config:
             stats_dir=server_dir / level / "stats",
             segment_days=max(1, int(env.get("SEGMENT_DAYS") or 30)),
             segment_cap_mb=max(10, int(env.get("SEGMENT_CAP_MB") or 200)),
-            backfill_window=window if re.fullmatch(r"(\d\d:\d\d-\d\d:\d\d)?", window) else "",
+            backfill_window=window if valid_window(window) else "",
             backfill_pause_s=max(0.0, float(env.get("BACKFILL_PAUSE_S") or 2.0)),
             segment_s=max(30, int(env.get("SEGMENT_S") or SEGMENT_S)),
         )  # fmt: skip
@@ -938,6 +1030,9 @@ def load_identity(path: Path) -> tuple[str, int]:
     except (OSError, ValueError, KeyError, TypeError):
         pass
     return secrets.token_hex(4), 0
+
+
+QUIET_VIEW: dict[str, Any] = {"seq": 0, "ts": 0, "win_ms": 0, "srv": {}, "pl": []}  # see QUIET_MS
 
 
 def save_identity(path: Path, src: str, seq: int) -> None:
@@ -970,7 +1065,7 @@ class Telemetry:
         self.clock = clock
         self.stats = stats
         self.extra = extra
-        self.reader = SnapshotReader(cfg.snap_dir)
+        self.reader = SnapshotReader(cfg.snap_dir, log=lambda m: print(m, flush=True))
         self.sessions = Sessions()
         self.overhead = Overhead()
         self.stats_reader = StatsReader(cfg.stats_dir) if cfg.stats_dir else None
@@ -985,6 +1080,8 @@ class Telemetry:
         self.acked: set[str] = set()
         self.segment_start = clock()
         self.latest: dict[str, Any] | None = None
+        self.latest_at = 0.0  # when `latest` was read (clock)
+        self.inbox: list[dict[str, Any]] = []  # read, not yet in a minute (kept when a round fails)
         self.last_stats = 0.0
         self.stop = threading.Event()
         self.ok = True
@@ -1000,8 +1097,18 @@ class Telemetry:
     # one tick of the loop: read snapshots; when a minute closed, build + ship its row
     def poll(self) -> dict[str, Any] | None:
         snaps = self.reader.read()
+        if snaps:
+            self.latest_at = self.clock()
+        self.inbox += snaps
+        if len(self.inbox) > MAX_INBOX:  # rounds kept failing: the oldest go (a gap)
+            print(
+                f"telemetry: dropped {len(self.inbox) - MAX_INBOX} snapshot(s) after failed rounds",
+                flush=True,
+            )
+            del self.inbox[: len(self.inbox) - MAX_INBOX]
         row = None
-        for s in snaps:
+        while self.inbox:  # v1.5: a snapshot leaves the inbox only once it is in the minute
+            s = self.inbox[0]
             self.latest = s
             minute = s["ts"] // MINUTE_MS * MINUTE_MS
             if self.minute is not None and minute != self.minute and self.minute_snaps:
@@ -1009,14 +1116,23 @@ class Telemetry:
             self.minute = minute
             self.minute_snaps.append(s)
             self.pending_events += self.sessions.feed([s])
-        if row is None and self.minute_snaps and self.clock() * 1000 - self.minute >= MINUTE_MS + 15000:
+            self.inbox.pop(0)
+        if row is None and self.minute_snaps and self.clock() * 1000 - self.minute >= QUIET_MS:
             row = self.close_minute()  # the plugin went quiet (server stopped): close the minute anyway
+        if (
+            self.latest is not None
+            and self.latest is not QUIET_VIEW
+            and self.clock() - self.latest_at >= QUIET_MS / 1000
+        ):
+            self.latest = QUIET_VIEW  # v1.5: nobody is online any more by what we know
         if self.clock() - self.segment_start >= self.cfg.segment_s:
             self.flush_segment()
         return row
 
     def close_minute(self) -> dict[str, Any]:
-        snaps, self.minute_snaps = self.minute_snaps, []
+        """The minute's row, into the buffer and shipped live. v1.5: the minute's snapshots and events are
+        cleared only once the row is in the buffer (an exception before keeps them for the next round)."""
+        snaps = self.minute_snaps
         assert self.minute is not None
         running = self.running()
         row: dict[str, Any] = {
@@ -1029,15 +1145,15 @@ class Telemetry:
             "ovh": self.overhead.sample(self.stats(), self.clock()), "backlog": self.segments.backlog(),
         }  # fmt: skip
         row["srv"] |= self.extra()  # the agent's GC/heap readings
-        self.pending_events = []
         if self.stats_reader and (
             any(e["k"] == "leave" for e in row["ev"]) or self.clock() - self.last_stats > 3600
         ):
             self.last_stats = self.clock()
             row["stats"] = self.stats_reader.changed(self.online().keys() | {e["u"] for e in row["ev"]})
+        save_identity(self.id_file, self.src, self.seq + 1)
         self.seq += 1
-        save_identity(self.id_file, self.src, self.seq)
         self.buffer.append(row)
+        self.minute_snaps, self.pending_events = [], []
         self.ship_live(row)
         return row
 
@@ -1054,12 +1170,15 @@ class Telemetry:
             with contextlib.suppress(OSError):
                 write_verdicts(self.cfg.verdict_dir, verdicts, int(self.clock() * 1000))
 
-    def flush_segment(self) -> str | None:
-        rows, self.buffer = self.buffer, []
+    def flush_segment(self, upload: bool = True) -> str | None:
+        """The buffered rows as one segment (v1.5: removed from the buffer only once it is written), then its
+        upload unless `upload` is False or the Worker is failing (the backfill uploads it later)."""
+        rows = list(self.buffer)
         self.segment_start = self.clock()
         name = self.segments.write(rows, self.acked, self.src)
+        del self.buffer[: len(rows)]
         self.acked -= {r["id"] for r in rows}
-        if name and self.ok:
+        if name and self.ok and upload:
             try:
                 self.put(name, (self.segments.directory / name).read_bytes())
                 self.segments.mark(name, r2=True)
@@ -1092,7 +1211,7 @@ class Telemetry:
 
     def run(self) -> None:
         """The agent's telemetry thread: read snapshots every few seconds, ship minute rows and segments, and
-        backfill in quiet time while the Worker answers."""
+        backfill in quiet time while the Worker answers; on stop, `shutdown()`."""
         while not self.stop.is_set():
             try:
                 self.poll()  # no lock held: online() is lock-free, nothing else waits on this thread
@@ -1102,3 +1221,17 @@ class Telemetry:
                 self.ok = False
                 print(f"telemetry round failed: {type(e).__name__}: {e}", flush=True)
             self.stop.wait(self.cfg.read_s)
+        self.shutdown()
+
+    def shutdown(self) -> None:
+        """v1.5 (SIGTERM): the rows still in RAM (not delivered live, not yet in a segment) go to a segment on
+        disk, without an upload (the next start's backfill delivers them). The open minute stays open: its
+        snapshots are still in the plugin's directory and are read again after the restart."""
+        if not self.buffer:
+            return
+        try:
+            name = self.flush_segment(upload=False)
+        except Exception as e:
+            print(f"telemetry: rows lost at shutdown: {type(e).__name__}: {e}", flush=True)
+            return
+        print(f"telemetry: saved {name} at shutdown", flush=True)
