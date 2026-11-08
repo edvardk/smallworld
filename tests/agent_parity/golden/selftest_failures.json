@@ -20,6 +20,20 @@
     "error": "token: no GitHub token from the Worker: POST /agent/github-token: HTTP 502",
     "trigger": "panel"
    },
+   "last_panel": {
+    "ok": false,
+    "ts": "<time>",
+    "configured": true,
+    "steps": [
+     {
+      "step": "token",
+      "ok": false,
+      "detail": "no GitHub token from the Worker: POST /agent/github-token: HTTP 502"
+     }
+    ],
+    "error": "token: no GitHub token from the Worker: POST /agent/github-token: HTTP 502",
+    "trigger": "panel"
+   },
    "failures": 1,
    "alerted": false
   },
@@ -30,6 +44,20 @@
   },
   "no_token_state": {
    "last": {
+    "ok": false,
+    "ts": "<time>",
+    "configured": true,
+    "steps": [
+     {
+      "step": "token",
+      "ok": false,
+      "detail": "the Worker returned no usable GitHub token (no token in the reply (keys: error, expires_at): nothing)"
+     }
+    ],
+    "error": "token: the Worker returned no usable GitHub token (no token in the reply (keys: error, expires_at): nothing)",
+    "trigger": "panel"
+   },
+   "last_panel": {
     "ok": false,
     "ts": "<time>",
     "configured": true,
@@ -66,6 +94,20 @@
     "error": "token: the Worker returned no usable GitHub token (29 characters, unexpected '!é')",
     "trigger": "panel"
    },
+   "last_panel": {
+    "ok": false,
+    "ts": "<time>",
+    "configured": true,
+    "steps": [
+     {
+      "step": "token",
+      "ok": false,
+      "detail": "the Worker returned no usable GitHub token (29 characters, unexpected '!é')"
+     }
+    ],
+    "error": "token: the Worker returned no usable GitHub token (29 characters, unexpected '!é')",
+    "trigger": "panel"
+   },
    "failures": 1,
    "alerted": false
   },
@@ -76,6 +118,20 @@
   },
   "short_token_state": {
    "last": {
+    "ok": false,
+    "ts": "<time>",
+    "configured": true,
+    "steps": [
+     {
+      "step": "token",
+      "ok": false,
+      "detail": "the Worker returned no usable GitHub token (9 characters)"
+     }
+    ],
+    "error": "token: the Worker returned no usable GitHub token (9 characters)",
+    "trigger": "panel"
+   },
+   "last_panel": {
     "ok": false,
     "ts": "<time>",
     "configured": true,
@@ -112,6 +168,20 @@
     "error": "token: the Worker returned no usable GitHub token (reply is list)",
     "trigger": "panel"
    },
+   "last_panel": {
+    "ok": false,
+    "ts": "<time>",
+    "configured": true,
+    "steps": [
+     {
+      "step": "token",
+      "ok": false,
+      "detail": "the Worker returned no usable GitHub token (reply is list)"
+     }
+    ],
+    "error": "token: the Worker returned no usable GitHub token (reply is list)",
+    "trigger": "panel"
+   },
    "failures": 1,
    "alerted": false
   },
@@ -122,6 +192,40 @@
   },
   "long_token_state": {
    "last": {
+    "ok": true,
+    "ts": "<time>",
+    "configured": true,
+    "steps": [
+     {
+      "step": "token",
+      "ok": true,
+      "detail": "the Worker minted a token (390 characters), TokenCache accepted it"
+     },
+     {
+      "step": "permissions",
+      "ok": true,
+      "detail": "contents + pull_requests write"
+     },
+     {
+      "step": "repository",
+      "ok": true,
+      "detail": "parity-owner/parity-config readable, push allowed"
+     },
+     {
+      "step": "main",
+      "ok": true,
+      "detail": "main at a1b2c3d4a1b2, players.yml has 2 whitelisted"
+     },
+     {
+      "step": "pulls",
+      "ok": true,
+      "detail": "pull requests reachable (nothing was created)"
+     }
+    ],
+    "error": "",
+    "trigger": "panel"
+   },
+   "last_panel": {
     "ok": true,
     "ts": "<time>",
     "configured": true,
@@ -183,6 +287,25 @@
     "error": "permissions: the token lacks contents: write, pull_requests: write",
     "trigger": "panel"
    },
+   "last_panel": {
+    "ok": false,
+    "ts": "<time>",
+    "configured": true,
+    "steps": [
+     {
+      "step": "token",
+      "ok": true,
+      "detail": "the Worker minted a token (40 characters), TokenCache accepted it"
+     },
+     {
+      "step": "permissions",
+      "ok": false,
+      "detail": "the token lacks contents: write, pull_requests: write"
+     }
+    ],
+    "error": "permissions: the token lacks contents: write, pull_requests: write",
+    "trigger": "panel"
+   },
    "failures": 1,
    "alerted": false
   },
@@ -193,6 +316,40 @@
   },
   "no_perms_key_state": {
    "last": {
+    "ok": true,
+    "ts": "<time>",
+    "configured": true,
+    "steps": [
+     {
+      "step": "token",
+      "ok": true,
+      "detail": "the Worker minted a token (40 characters), TokenCache accepted it"
+     },
+     {
+      "step": "permissions",
+      "ok": true,
+      "detail": "not reported by this Worker (checked through the repository below)"
+     },
+     {
+      "step": "repository",
+      "ok": true,
+      "detail": "parity-owner/parity-config readable, push allowed"
+     },
+     {
+      "step": "main",
+      "ok": true,
+      "detail": "main at a1b2c3d4a1b2, players.yml has 2 whitelisted"
+     },
+     {
+      "step": "pulls",
+      "ok": true,
+      "detail": "pull requests reachable (nothing was created)"
+     }
+    ],
+    "error": "",
+    "trigger": "panel"
+   },
+   "last_panel": {
     "ok": true,
     "ts": "<time>",
     "configured": true,
@@ -259,6 +416,30 @@
     "error": "repository: parity-owner/parity-config: the token can't push (permissions.push is false)",
     "trigger": "panel"
    },
+   "last_panel": {
+    "ok": false,
+    "ts": "<time>",
+    "configured": true,
+    "steps": [
+     {
+      "step": "token",
+      "ok": true,
+      "detail": "the Worker minted a token (40 characters), TokenCache accepted it"
+     },
+     {
+      "step": "permissions",
+      "ok": true,
+      "detail": "contents + pull_requests write"
+     },
+     {
+      "step": "repository",
+      "ok": false,
+      "detail": "parity-owner/parity-config: the token can't push (permissions.push is false)"
+     }
+    ],
+    "error": "repository: parity-owner/parity-config: the token can't push (permissions.push is false)",
+    "trigger": "panel"
+   },
    "failures": 1,
    "alerted": false
   },
@@ -269,6 +450,40 @@
   },
   "push_unknown_state": {
    "last": {
+    "ok": true,
+    "ts": "<time>",
+    "configured": true,
+    "steps": [
+     {
+      "step": "token",
+      "ok": true,
+      "detail": "the Worker minted a token (40 characters), TokenCache accepted it"
+     },
+     {
+      "step": "permissions",
+      "ok": true,
+      "detail": "contents + pull_requests write"
+     },
+     {
+      "step": "repository",
+      "ok": true,
+      "detail": "parity-owner/parity-config readable"
+     },
+     {
+      "step": "main",
+      "ok": true,
+      "detail": "main at a1b2c3d4a1b2, players.yml has 2 whitelisted"
+     },
+     {
+      "step": "pulls",
+      "ok": true,
+      "detail": "pull requests reachable (nothing was created)"
+     }
+    ],
+    "error": "",
+    "trigger": "panel"
+   },
+   "last_panel": {
     "ok": true,
     "ts": "<time>",
     "configured": true,
@@ -325,6 +540,20 @@
     "error": "token: no GitHub token from the Worker: POST /agent/github-token: HTTP 502",
     "trigger": "panel"
    },
+   "last_panel": {
+    "ok": false,
+    "ts": "<time>",
+    "configured": true,
+    "steps": [
+     {
+      "step": "token",
+      "ok": false,
+      "detail": "no GitHub token from the Worker: POST /agent/github-token: HTTP 502"
+     }
+    ],
+    "error": "token: no GitHub token from the Worker: POST /agent/github-token: HTTP 502",
+    "trigger": "panel"
+   },
    "failures": 2,
    "alerted": true
   },
@@ -335,6 +564,40 @@
   },
   "recovered_state": {
    "last": {
+    "ok": true,
+    "ts": "<time>",
+    "configured": true,
+    "steps": [
+     {
+      "step": "token",
+      "ok": true,
+      "detail": "the Worker minted a token (40 characters), TokenCache accepted it"
+     },
+     {
+      "step": "permissions",
+      "ok": true,
+      "detail": "contents + pull_requests write"
+     },
+     {
+      "step": "repository",
+      "ok": true,
+      "detail": "parity-owner/parity-config readable, push allowed"
+     },
+     {
+      "step": "main",
+      "ok": true,
+      "detail": "main at a1b2c3d4a1b2, players.yml has 2 whitelisted"
+     },
+     {
+      "step": "pulls",
+      "ok": true,
+      "detail": "pull requests reachable (nothing was created)"
+     }
+    ],
+    "error": "",
+    "trigger": "panel"
+   },
+   "last_panel": {
     "ok": true,
     "ts": "<time>",
     "configured": true,
@@ -1889,6 +2152,40 @@
    "mode": "0o600",
    "content": {
     "last": {
+     "ok": true,
+     "ts": "<time>",
+     "configured": true,
+     "steps": [
+      {
+       "step": "token",
+       "ok": true,
+       "detail": "the Worker minted a token (40 characters), TokenCache accepted it"
+      },
+      {
+       "step": "permissions",
+       "ok": true,
+       "detail": "contents + pull_requests write"
+      },
+      {
+       "step": "repository",
+       "ok": true,
+       "detail": "parity-owner/parity-config readable, push allowed"
+      },
+      {
+       "step": "main",
+       "ok": true,
+       "detail": "main at a1b2c3d4a1b2, players.yml has 2 whitelisted"
+      },
+      {
+       "step": "pulls",
+       "ok": true,
+       "detail": "pull requests reachable (nothing was created)"
+      }
+     ],
+     "error": "",
+     "trigger": "panel"
+    },
+    "last_panel": {
      "ok": true,
      "ts": "<time>",
      "configured": true,
