@@ -701,6 +701,41 @@ def test_a_countdown_warns_players_at_the_announced_times_then_works() -> None:
     assert reports[0]["deadline"] == 1060000 and reports[0]["players"] == 3
 
 
+def test_the_final_report_comes_after_the_job_lock_is_released(tmp_path: Path) -> None:
+    """v1.5: whoever acts on the final report (mcctl, the panel's next action) finds job.lock free; the earlier
+    reports come while it is held. Cancelled and failed jobs alike."""
+    lock_path = tmp_path / "job.lock"
+
+    def free() -> bool:
+        fd = os.open(lock_path, os.O_RDWR)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return False
+        finally:
+            os.close(fd)
+        return True
+
+    for players, cancel_at, work, final in (
+        (0, None, lambda j: "ok", "done"),
+        (2, 1000.0 + 5, lambda j: "ok", "cancelled"),
+        (0, None, lambda j: (_ for _ in ()).throw(mc_panel.ActionError("no")), "failed"),
+    ):
+        clock = Clock()
+        clock.cancel_at = cancel_at
+        seen: list[tuple[str, bool]] = []
+        jobs = mc_panel.Jobs(
+            lambda r, seen=seen: seen.append((r["state"], free())),
+            lambda line, n=players: f"There are {n} of a max of 20 players online: a",
+            clock.now,
+            clock.wait,
+            lock_path=lock_path,
+        )
+        jobs.start("j", "restart", "Restart", "admin@x", 60, work, background=False)
+        assert seen[-1] == (final, True), seen
+        assert all(not f for _, f in seen[:-1]), seen
+
+
 def test_nobody_online_skips_the_countdown_and_a_cancel_stops_it() -> None:
     clock = Clock()
     jobs, said, _ = jobs_with(0, clock)

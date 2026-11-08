@@ -1191,12 +1191,16 @@ class Jobs:
         return job
 
     def _run(self, job: Job, work: Callable[[Job], str], skip_if_empty: bool) -> None:
+        """v1.5: the final state is reported after job.lock is released, so whoever acts on the report (mcctl,
+        the panel's next action) finds the lock free."""
         try:
             self._work(job, work, skip_if_empty)
         finally:
             self._release_file_lock()
+        self.report(job.public())
 
     def _work(self, job: Job, work: Callable[[Job], str], skip_if_empty: bool) -> None:
+        """The countdown and the work; the final state is set here and reported by `_run`."""
         try:
             job.players = self.players() if job.countdown else 0
             left = job.countdown if (job.players or not skip_if_empty) else 0
@@ -1215,7 +1219,6 @@ class Jobs:
                         "cancelled during the countdown",
                         self.clock(),
                     )
-                    self.report(job.public())
                     return
                 left = nxt
                 if left >= 10 and skip_if_empty and job.players and self.players() == 0:
@@ -1230,7 +1233,6 @@ class Jobs:
         except (OSError, subprocess.SubprocessError, mc_rcon.RconError, ValueError) as e:
             job.state, job.step = "failed", f"{job.step or job.action} failed: {type(e).__name__}"
         job.finished = self.clock()
-        self.report(job.public())
 
     def cancel(self, login: str) -> str:
         job = self.busy()
