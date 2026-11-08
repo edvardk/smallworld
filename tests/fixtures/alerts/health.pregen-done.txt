@@ -1,0 +1,4 @@
+ℹ️ **Chunk pre-generation is finished**
+**Impact:** Every dimension with a border is generated up to it, so exploring inside the border no longer generates terrain (no lag from new chunks). The next backup uploads the new region files once; later backups are small again.
+**What to do:** No action needed - informational.
+**Details:** chunks processed at the last look: world 390625, world_nether 24649, world_the_end 141376; frontier expansion goes on beyond players' farthest chunks

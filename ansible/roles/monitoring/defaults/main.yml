@@ -1,6 +1,11 @@
 # Self-heal leaves a server alone for this long after it started (world generation, first start), before "RCON
 # dead" counts as hung (health.py HEAL_STARTUP_GRACE_S). The e2e-mock run shortens it to exercise the heal.
 monitoring_heal_startup_grace_s: 900
-# Chunky pre-generation by health.py (PREGEN_WORLDS in health.env). The e2e-mock run turns it off: generating
-# thousands of blocks of radius would load the CI runner for hours under every other check.
+# Chunky pre-generation by health.py (PREGEN_WORLDS / PREGEN_FRONTIER in health.env), rendered from server.yml
+# world.pregenerate (mcctl render: enabled, frontier, margin, max_radius; these defaults = the schema's). The
+# e2e-mock run turns it off: generating thousands of blocks of radius would load the CI runner for hours under
+# every other check.
 monitoring_pregen_enabled: true
+monitoring_pregen_frontier: true
+monitoring_pregen_margin: 1024
+monitoring_pregen_max_radius: 10000

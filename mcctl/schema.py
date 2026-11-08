@@ -316,7 +316,37 @@ class WorldEntry:
     )
     border_radius: BorderRadius | None = opt(doc="This world's border (null = world.border_radius).")
     pregen: bool | None = opt(
-        doc="Chunky pre-generation inside the border (null = on when Chunky is locked)."
+        doc="Chunky pre-generation for this world (null = world.pregenerate.enabled; false = off for it)."
+    )
+
+
+@dataclass(frozen=True)
+class Pregenerate:
+    enabled: bool = opt(
+        True,
+        doc="v1.4: Chunky pre-generation while nobody is online (each bordered dimension up to its border, "
+        "then the frontier). false = off for the whole deployment; a library world's pregen: false turns it "
+        "off for that world alone.",
+    )
+    frontier: bool = opt(
+        True,
+        doc="v1.4: once the bordered passes are done (or for a dimension without a border), keep "
+        "pre-generating `margin` blocks beyond the farthest generated chunk, so exploring rarely generates "
+        "terrain under players.",
+    )
+    margin: int = opt(
+        1024,
+        doc="v1.4: blocks generated beyond the farthest generated chunk (view distance plus a few minutes of "
+        "travel; elytra flights, 30-60 blocks/s, can outrun any margin).",
+        minimum=0,
+        maximum=30000000,
+    )
+    max_radius: int = opt(
+        10000,
+        doc="v1.4: hard cap (blocks from 0,0) for frontier expansion, for dimensions without a border above "
+        "all; the world border is the real control of the world's size.",
+        minimum=0,
+        maximum=30000000,
     )
 
 
@@ -335,6 +365,10 @@ class World:
         factory=list,
         doc="v1.2: known worlds (the active one and the archived ones: restic snapshots tagged "
         "world:<name>); written by the panel, one canonical line per world.",
+    )
+    pregenerate: Pregenerate = opt(
+        factory=Pregenerate,
+        doc='v1.4: Chunky pre-generation (docs/operations.md "Pre-generation").',
     )
 
 

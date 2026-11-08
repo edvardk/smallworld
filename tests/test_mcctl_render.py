@@ -207,6 +207,11 @@ EXPECTED_GROUP_VARS = {
     "health_disk_alert_pct",
     "health_steal_alert_pct",
     "health_steal_alert_checks",
+    # v1.4: world.pregenerate (the monitoring role's defaults = the schema's)
+    "monitoring_pregen_enabled",
+    "monitoring_pregen_frontier",
+    "monitoring_pregen_margin",
+    "monitoring_pregen_max_radius",
     *P13_GROUP_VARS,
     *P16_GROUP_VARS,
     *PROFILE_GROUP_VARS,
@@ -446,6 +451,23 @@ def test_border_omits_null_dimensions() -> None:
     data["world"] = {"border_radius": {"overworld": None, "end": 300}}
     gv = render.group_vars(schema.load_server(data))
     assert gv["mc_world_border_radius"] == {"minecraft:the_nether": 1250, "minecraft:the_end": 300}
+
+
+def test_pregenerate_maps_onto_the_monitoring_role() -> None:
+    """v1.4: world.pregenerate sets the monitoring role's variables (one path: health.env's PREGEN_*); its
+    defaults are the role's, so a server.yml without it behaves as before (on)."""
+    gv = render.group_vars(schema.load_server(full_data()))
+    role = yaml.safe_load((REPO / "ansible/roles/monitoring/defaults/main.yml").read_text())
+    keys = ("monitoring_pregen_enabled", "monitoring_pregen_frontier", "monitoring_pregen_margin",
+            "monitoring_pregen_max_radius")  # fmt: skip
+    assert {k: gv[k] for k in keys} == {k: role[k] for k in keys} == {
+        "monitoring_pregen_enabled": True, "monitoring_pregen_frontier": True,
+        "monitoring_pregen_margin": 1024, "monitoring_pregen_max_radius": 10000,
+    }  # fmt: skip
+    data = full_data()
+    data["world"] = {"pregenerate": {"enabled": False, "frontier": False, "margin": 512, "max_radius": 4000}}
+    gv = render.group_vars(schema.load_server(data))
+    assert [gv[k] for k in keys] == [False, False, 512, 4000]
 
 
 def test_cli_render(config_repo, tmp_path) -> None:

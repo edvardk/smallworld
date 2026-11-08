@@ -39,7 +39,7 @@ product/config-repo split, GitHub settings and releasing. New here? Start with t
 | `template/` | The config-repo skeleton (`server.yml`, `players.yml`, lock files, `expiry.yml`, `.env.example`, the single pinned workflow). Its lock files are the product's reference pins |
 | `examples/config-repo/` | The template materialized with fake example.com values: CI fixture only (`scripts/sync_example.py`) |
 | `examples/full/server.yml` | A deployment with every feature on: the tests' reference `server.yml` |
-| `scripts/` | Python. On the server (stdlib only): `mc_rcon`, `backup`, `restore`, `health` (+ self-heal), `notify` (watchdog heartbeats, maintenance windows, Discord), `admin`, `mc_agent` (metrics, logs and signed commands to the Worker). Controller: lock/key tooling, smoke test |
+| `scripts/` | Python. On the server (stdlib only): `mc_rcon`, `backup`, `restore`, `health` (+ self-heal, Chunky pre-generation), `notify` (watchdog heartbeats, maintenance windows and the other markers, Discord), `admin`, `mc_agent` (metrics, logs and signed commands to the Worker). Controller: lock/key tooling, smoke test |
 | `mcctl/`, `schema/` | Product v1 CLI (P1–P6 so far): `server.yml` schema + validation, config-repo loading, `render`, `deploy`, `doctor` (token validators, `expiry.yml`), `status`, `plan`/`apply`, `bootstrap`, tailnet wrappers, state file, pinned-product cache; generated JSON Schema |
 | `.github/workflows/` | `server` (**reusable**: what every config repo runs: validate + gitleaks, deploy, backup-check), `ci` (lint, tests, gitleaks over the history, actionlint, the example config repo through `server`), `e2e-mock` (`mcctl init --mock` → validate → `terraform validate` → site.yml in a systemd Debian 13 container with the real Purpur, idempotent second run, then the P7 hardening checked live: `systemd-analyze security` gate, sysctls, sshd masked, admin-stopped, the firewall ruleset's limits in a network namespace), `release` (tags + source archive and `SHA256SUMS`), `update-lock` (manual, reference locks). `dependabot.yml`: weekly Actions + pip bumps |
 
@@ -664,6 +664,7 @@ Every "Where" below is a field of the config repo's `server.yml` (or its lock fi
 | `nerf-spawner-mobs` | `mc_nerf_spawner_mobs` | `false` (vanilla spawner mobs) |
 | Redstone implementation | `mc_redstone_implementation` | `ALTERNATE_CURRENT` |
 | World border radius | `mc_world_border_radius` | Overworld 5000, Nether 1250, End 3000 (the main island at 0,0 stays well inside) |
+| Chunk pre-generation | `world.pregenerate` (`enabled`, `frontier`, `margin`, `max_radius`; a library world's `pregen`) | **On** while nobody is online: each bordered dimension up to its border, then 1024 blocks beyond the farthest generated chunk, never past 10000 blocks from 0,0; paused around backups. `mcctl render` maps it onto the monitoring role's `monitoring_pregen_*` (health.env `PREGEN_*`) ([operations: Pre-generation](operations.md#pre-generation)) |
 | Your SSH public key (bootstrap only) | `deploy_authorized_keys` | empty |
 | Discord alerts / expected player count | config repo `.env` (`TF_VAR_discord_webhook_url`), `minecraft.max_players` | off / 20 |
 

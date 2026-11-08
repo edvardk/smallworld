@@ -471,7 +471,7 @@
                 "default": null
               },
               "pregen": {
-                "description": "Chunky pre-generation inside the border (null = on when Chunky is locked).",
+                "description": "Chunky pre-generation for this world (null = world.pregenerate.enabled; false = off for it).",
                 "anyOf": [
                   {
                     "type": "boolean"
@@ -488,6 +488,37 @@
             ]
           },
           "default": []
+        },
+        "pregenerate": {
+          "description": "v1.4: Chunky pre-generation (docs/operations.md \"Pre-generation\").",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "description": "v1.4: Chunky pre-generation while nobody is online (each bordered dimension up to its border, then the frontier). false = off for the whole deployment; a library world's pregen: false turns it off for that world alone.",
+              "type": "boolean",
+              "default": true
+            },
+            "frontier": {
+              "description": "v1.4: once the bordered passes are done (or for a dimension without a border), keep pre-generating `margin` blocks beyond the farthest generated chunk, so exploring rarely generates terrain under players.",
+              "type": "boolean",
+              "default": true
+            },
+            "margin": {
+              "description": "v1.4: blocks generated beyond the farthest generated chunk (view distance plus a few minutes of travel; elytra flights, 30-60 blocks/s, can outrun any margin).",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 30000000,
+              "default": 1024
+            },
+            "max_radius": {
+              "description": "v1.4: hard cap (blocks from 0,0) for frontier expansion, for dimensions without a border above all; the world border is the real control of the world's size.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 30000000,
+              "default": 10000
+            }
+          }
         }
       }
     },

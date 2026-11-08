@@ -99,6 +99,12 @@ def _health() -> dict[str, str]:
     out["watchdog-checking"] = health.evaluate_watchdog(
         State(watchdog_stale_alerted=True), True, {"last_run_age_s": 60}
     )[1][0]
+    worlds = ["world", "world_nether", "world_the_end"]
+    progress = {"world": {"pct": 100.0, "chunks": 390625.0}, "world_nether": {"pct": 100.0, "chunks": 24649.0},
+                "world_the_end": {"pct": 100.0, "chunks": 141376.0}}  # fmt: skip
+    before = State(pregen_done=worlds[:2], pregen_current="world_the_end", pregen_progress=progress)
+    after = State(pregen_done=worlds, pregen_progress=progress)
+    out["pregen-done"] = health.pregen_notice(before, after, worlds, frontier=True) or ""
     return out
 
 

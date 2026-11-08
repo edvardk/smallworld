@@ -127,3 +127,107 @@ def test_backup_reports_the_save_off_window(fake_server, tmp_path, monkeypatch, 
     backup.run_backup()
     assert order == ["backup after save-all flush", "forget after save-on"]
     assert "save-off window: " in capsys.readouterr().out
+
+
+# --- v1.4: Chunky paused around save-off, the pre-generation hold ---------------------------------------------
+
+
+class ChunkyServer:
+    """RCON replies of a server with Chunky 1.5.3 (lang/en.json) for backup.run_backup."""
+
+    def __init__(self, running: bool) -> None:
+        self.running = running
+
+    def __call__(self, cmd: str) -> str:
+        if cmd == "chunky progress":
+            return (
+                "[Chunky] Task running for world. Processed: 10 chunks (1.00%), ETA: 0:01:00, Rate: 5.0 cps, "
+                "Current: 0, 0"
+                if self.running
+                else "[Chunky] No tasks running."
+            )
+        if cmd == "chunky pause":
+            self.running = False
+            return "[Chunky] Task paused for world."
+        if cmd == "chunky continue":
+            self.running = True
+            return "[Chunky] Task continuing for world."
+        return ""
+
+
+@pytest.fixture
+def chunky_box(fake_server, tmp_path, monkeypatch):
+    import notify
+
+    (tmp_path / "world").mkdir()
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "Chunky-Bukkit-1.5.3.jar").write_bytes(b"")
+    monkeypatch.setattr(backup, "SERVER_DIR", str(tmp_path))
+    hold = tmp_path / "pregen-hold.json"
+    monkeypatch.setattr(notify, "PREGEN_HOLD_FILE", hold)
+
+    def make(running: bool, restic=None):
+        chunky = ChunkyServer(running)
+        srv = fake_server(chunky)
+        held: list[str | None] = []
+
+        def fake_restic(*args: str) -> None:
+            if args[0] == "backup":
+                held.append(notify.pregen_held())
+            if restic:
+                restic(*args)
+
+        monkeypatch.setattr(backup, "restic", fake_restic)
+        return srv, chunky, held, hold
+
+    return make
+
+
+def test_backup_pauses_running_pregen_around_save_off_and_continues_it(chunky_box) -> None:
+    srv, chunky, held, hold = chunky_box(running=True)
+    backup.run_backup()
+    assert srv.commands == ["chunky progress", "chunky pause", "save-off", "save-all flush", "save-on",
+                            "chunky continue"]  # fmt: skip
+    assert held == ["backup"]  # health.py sees the hold for the whole snapshot
+    assert not hold.exists() and chunky.running
+
+
+def test_backup_leaves_idle_pregen_alone(chunky_box) -> None:
+    srv, chunky, held, hold = chunky_box(running=False)
+    backup.run_backup()
+    assert srv.commands == ["chunky progress", "save-off", "save-all flush", "save-on"]
+    assert held == [None] and not hold.exists() and not chunky.running
+
+
+def test_backup_continues_pregen_and_ends_the_hold_even_when_it_fails(chunky_box) -> None:
+    def boom(*args: str) -> None:
+        raise subprocess.CalledProcessError(1, ["restic", *args])
+
+    srv, chunky, held, hold = chunky_box(running=True, restic=boom)
+    with pytest.raises(subprocess.CalledProcessError):
+        backup.run_backup()
+    assert srv.commands[-2:] == ["save-on", "chunky continue"] and chunky.running
+    assert held == ["backup"] and not hold.exists()
+
+
+def test_backup_without_chunky_sends_no_chunky_command(fake_server, tmp_path, monkeypatch) -> None:
+    srv = fake_server(lambda c: "")
+    (tmp_path / "world").mkdir()
+    monkeypatch.setattr(backup, "SERVER_DIR", str(tmp_path))
+    monkeypatch.setattr(backup, "restic", lambda *a: None)
+    backup.run_backup()
+    assert not any(c.startswith("chunky") for c in srv.commands)
+
+
+def test_backup_matches_healths_chunky_strings_and_the_hold_expires(tmp_path) -> None:
+    import health
+    import notify
+
+    assert backup.CHUNKY_RUNNING == health.CHUNKY_RUNNING
+    marker = tmp_path / "hold.json"
+    notify.pregen_hold("backup", now=1000.0, path=marker)
+    assert notify.pregen_held(1000.0 + 60, marker) == "backup"
+    assert notify.pregen_held(1000.0 + notify.PREGEN_HOLD_MAX_S + 1, marker) is None  # a killed backup
+    notify.pregen_release(marker)
+    assert notify.pregen_held(1000.0, marker) is None
+    notify.pregen_release(marker)  # idempotent

@@ -451,7 +451,9 @@ What the mc-telemetry plugin, mc-agent's telemetry and the Worker's experience s
   file only `mcops` can read is refused), accepted only if `fstat` says it's a regular file, read with a size cap
   (the GC log: its last 1 MiB). Only the last path component is checked: a directory under the server dir
   replaced by a symlink (e.g. the world's `stats/`) could still point the stats reader at other JSON `mcops` can
-  read, of which only three integer counters would be shipped. The telemetry thread holds no lock while it reads
+  read, of which only three integer counters would be shipped. v1.4: mc-health's frontier expansion lists the
+  region folders and reads each `r.X.Z.mca`'s 4 KiB header the same way, and refuses a region folder with a
+  symlink anywhere under the server dir; what it derives is one number (a radius, capped by `max_radius`). The telemetry thread holds no lock while it reads
   files or talks to the Worker, so a signed `player_message` (handled inline on the WebSocket) never waits on it.
 - **In-game messages are a signed command** (`player_message`, HMAC like every other): the Worker's verdict engine
   decides, the agent re-checks the shape and the rate limits with the live state (one per player per 30 min, none

@@ -407,6 +407,20 @@ def test_p13_helpers_priority_classes_and_the_jvm_wins() -> None:
     )
 
 
+def _health_env(borders: dict, plugins: list, **extra: object) -> list[str]:
+    defaults = yaml.safe_load((REPO / "ansible/roles/monitoring/defaults/main.yml").read_text())
+    return render(
+        REPO / "ansible/roles/monitoring/templates/health.env.j2",
+        **{**defaults,
+           "mc_watchdog_url": "https://w", "mc_secret_heartbeat_token": "t", "mc_secret_discord_webhook_url": "",
+           "health_mspt_alert": 45, "health_mspt_alert_checks": 3, "health_heap_alert_pct": 85,
+           "health_heap_alert_checks": 6, "health_gc_pause_alert_ms": 50, "health_alert_repeat_hours": 6,
+           "health_disk_alert_pct": 85, "health_steal_alert_pct": 10, "health_steal_alert_checks": 3,
+           "mc_resize_hint": "x", "mc_level_name": "survival", "mc_world_border_radius": borders,
+           "plugins_lock": {"plugins": [{"name": n} for n in plugins]}, **extra},
+    ).splitlines()  # fmt: skip
+
+
 @pytest.mark.parametrize(
     ("borders", "plugins", "want"),
     [
@@ -419,16 +433,25 @@ def test_p13_helpers_priority_classes_and_the_jvm_wins() -> None:
 def test_health_env_lists_the_pregen_worlds_in_order(borders: dict, plugins: list, want: str) -> None:
     """Chunky pre-generation covers every dimension with a border, overworld -> nether -> end, by Bukkit world
     name (level-name + _nether / _the_end), and is off without Chunky."""
-    text = render(
-        REPO / "ansible/roles/monitoring/templates/health.env.j2",
-        mc_watchdog_url="https://w", mc_secret_heartbeat_token="t", mc_secret_discord_webhook_url="",
-        health_mspt_alert=45, health_mspt_alert_checks=3, health_heap_alert_pct=85, health_heap_alert_checks=6,
-        health_gc_pause_alert_ms=50, health_alert_repeat_hours=6, health_disk_alert_pct=85, health_steal_alert_pct=10,
-        health_steal_alert_checks=3, mc_resize_hint="x", monitoring_heal_startup_grace_s=900,
-        mc_level_name="survival", mc_world_border_radius=borders,
-        plugins_lock={"plugins": [{"name": n} for n in plugins]}, monitoring_pregen_enabled=True,
-    )  # fmt: skip
-    assert f"PREGEN_WORLDS={want}" in text.splitlines()
+    assert f"PREGEN_WORLDS={want}" in _health_env(borders, plugins, monitoring_pregen_enabled=True)
+
+
+def test_health_env_frontier_lists_every_dimension_with_its_border() -> None:
+    """v1.4: frontier expansion covers every dimension (border empty = none); world.pregenerate.enabled false
+    (monitoring_pregen_enabled), frontier false or a world's pregen false turn it off."""
+    borders = {"minecraft:overworld": 5000, "minecraft:the_nether": 1250}
+    lines = _health_env(borders, ["Chunky"])
+    assert (
+        "PREGEN_FRONTIER=survival:overworld:5000,survival_nether:the_nether:1250,survival_the_end:the_end:"
+        in lines
+    )
+    assert "PREGEN_MARGIN=1024" in lines and "PREGEN_MAX_RADIUS=10000" in lines
+    for off in ({"monitoring_pregen_enabled": False}, {"mc_world_pregen": False}):
+        lines = _health_env(borders, ["Chunky"], **off)
+        assert "PREGEN_FRONTIER=" in lines and "PREGEN_WORLDS=" in lines, off
+    lines = _health_env(borders, ["Chunky"], monitoring_pregen_frontier=False)
+    assert "PREGEN_FRONTIER=" in lines and "PREGEN_WORLDS=survival,survival_nether" in lines
+    assert "PREGEN_FRONTIER=" in _health_env(borders, [])
 
 
 def test_p16_cpu_affinity_split_pins_the_jvm_off_the_helpers_cpu() -> None:

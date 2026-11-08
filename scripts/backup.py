@@ -12,6 +12,11 @@ systemd EnvironmentFile=/etc/minecraft/restic.env, as do WATCHDOG_URL / HEARTBEA
 start, success and failure to the watchdog's "backup" check; a prune reports only a failure (a successful
 prune says nothing about how fresh the last backup is). While restore.py holds its lock the backup is
 skipped (it would snapshot a half-restored world); the restore's maintenance window covers the gap.
+
+v1.4: chunk generation while saving is off piles the new chunks up in memory, so a running Chunky task
+(pre-generation, health.py) is paused before `save-off` and continued after `save-on`, only if it was running,
+and even when the backup fails. While it is paused the pre-generation hold (notify.py pregen-hold.json) keeps
+health.py from continuing it mid-backup.
 """
 
 from __future__ import annotations
@@ -26,7 +31,7 @@ from pathlib import Path
 from typing import Any
 
 import mc_rcon
-from notify import SNAPSHOTS_FILE, heartbeat, restore_running
+from notify import SNAPSHOTS_FILE, heartbeat, pregen_hold, pregen_release, restore_running
 
 SERVER_DIR = str(mc_rcon.SERVER_DIR)
 # The R2 bucket lock (server.yml backups.lock_days -> terraform var r2_lock_days, default 7) makes snapshot
@@ -88,6 +93,59 @@ def world_dir() -> str:
     return f"{SERVER_DIR}/{level}"
 
 
+# Chunky 1.5's lang/en.json task_update, the line `chunky progress` prints per running task (= health.py's
+# CHUNKY_RUNNING; tests/test_backup.py keeps them equal).
+CHUNKY_RUNNING = "Task running for"
+
+
+def chunky_installed() -> bool:
+    """Chunky is among the server's plugins (plugins.lock.yml installs Chunky-<platform>-<version>.jar)."""
+    try:
+        return any(
+            p.name.lower().startswith("chunky") and p.suffix == ".jar"
+            for p in (mc_rcon.SERVER_DIR / "plugins").iterdir()
+        )
+    except OSError:
+        return False
+
+
+def pause_pregen(rcon: mc_rcon.Rcon) -> bool:
+    """Before save-off: hold pre-generation and pause Chunky if a task runs. True = it ran (continue it
+    after). A failure here never fails the backup."""
+    if not chunky_installed():
+        return False
+    pregen_hold("backup")  # first, so health.py can't continue a task between our look and the pause
+    try:
+        running = CHUNKY_RUNNING in mc_rcon.strip_formatting(rcon.command("chunky progress"))
+    except (OSError, mc_rcon.RconError) as e:
+        print(f"pre-generation: `chunky progress` failed ({type(e).__name__}); not paused")
+        pregen_release()
+        return False
+    if not running:
+        pregen_release()
+        return False
+    try:
+        rcon.command("chunky pause")
+    except (OSError, mc_rcon.RconError) as e:
+        print(f"pre-generation: `chunky pause` failed ({type(e).__name__})")
+    print("pre-generation paused for the backup")
+    return True
+
+
+def resume_pregen(rcon: mc_rcon.Rcon, paused: bool) -> None:
+    """After save-on: continue what pause_pregen paused, and end the hold (always). Never raises: if the
+    continue fails, health.py continues the task at its next check (nobody online)."""
+    if not paused:
+        return
+    try:
+        rcon.command("chunky continue")
+        print("pre-generation continued after the backup")
+    except (OSError, mc_rcon.RconError) as e:
+        print(f"pre-generation: `chunky continue` failed ({type(e).__name__}); health.py continues it")
+    finally:
+        pregen_release()
+
+
 def run_backup(tag: str = "auto", forget: bool = True, extra_tags: list[str] | None = None) -> None:
     # Never snapshot a box without a world: an empty snapshot would become "latest" and a later
     # fresh-box restore would pick it over the real world.
@@ -101,8 +159,10 @@ def run_backup(tag: str = "auto", forget: bool = True, extra_tags: list[str] | N
         rcon = None
 
     save_off_at = 0.0
+    paused = False
     try:
         if rcon:
+            paused = pause_pregen(rcon)
             save_off_at = time.monotonic()
             rcon.command("save-off")
             rcon.command("save-all flush", timeout=120)  # synchronous; can take a while on a big world
@@ -117,7 +177,10 @@ def run_backup(tag: str = "auto", forget: bool = True, extra_tags: list[str] | N
             try:
                 rcon.command("save-on")
             finally:
-                rcon.__exit__(None, None, None)
+                try:
+                    resume_pregen(rcon, paused)
+                finally:
+                    rcon.__exit__(None, None, None)
             # P13 review M1: how long autosave was off (the crash-loss window); e2e bounds it under load.
             print(f"save-off window: {time.monotonic() - save_off_at:.1f} s")
 

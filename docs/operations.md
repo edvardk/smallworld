@@ -210,6 +210,77 @@ quoted seed, one-line description, the `https://` source, claims with `within` b
 **Cost:** R2 includes 10 GB of storage; the tab shows a note when the archives pass that. restic deduplicates, so
 an archive costs what changed since the snapshots it shares data with, not its full size.
 
+## Pre-generation
+
+**What it does.** With Chunky locked (a default plugin), `mc-health` (every 5 minutes) generates the world's
+terrain ahead of the players, so exploring doesn't make the server generate chunks while people play (chunk
+generation is the most common cause of lag spikes on a small server). It works **only while nobody is online**:
+when a player joins, the next check pauses it (`chunky pause`); when the server is empty again it continues. One
+Chunky task at a time:
+
+1. **Bordered pass:** every dimension with a border (`world.border_radius`, or the library world's own), in the
+   order overworld → nether → end, up to its border (`chunky world W`, `chunky worldborder`, `chunky start`).
+2. **Frontier** (v1.4, `world.pregenerate.frontier`, default on): once the bordered passes are done, and for a
+   dimension without a border (often the End, or a library world without one), it keeps generating
+   `world.pregenerate.margin` blocks (default 1024) beyond the farthest chunk generated so far: a square around
+   0,0 (where the border is centred), capped at the border and at `world.pregenerate.max_radius` (default
+   10000). The farthest chunk comes from the region files on disk (their names, then the 4 KiB header of the
+   outermost files): chunks are generated around players, so that is how far they have been. A new task starts
+   only when the target grew by at least 256 blocks (no new task every 5 minutes), and never while the disk is at
+   its alert threshold (`monitoring.alerts.disk_pct`). Chunky skips chunks that exist, so a bigger square only
+   generates the new ring.
+
+It doesn't run during a maintenance window (deploys, restores), while the server is stopped on purpose, or while
+a backup holds it: `mc-backup` pauses a running task before `save-off` (chunks generated while saving is off pile
+up in memory) and continues it after `save-on`, even when the backup fails; `/var/lib/mc-snapshots/pregen-hold.json`
+tells `mc-health` to leave it alone meanwhile (it expires by itself after 4 hours if a backup is killed). A
+restart needs nothing: Chunky's `continue-on-restart: true` resumes the task, and a check that finds it running
+with players online pauses it again (so for up to 5 minutes after a restart it may run with players on). A world
+switch cancels the old world's task and starts afresh.
+
+**The margin.** Each player generates the terrain within their view distance (`performance.view_distance`, 10-12
+chunks: 160-192 blocks) around them; 1024 blocks is that plus a few minutes of travel beyond the generated area
+(sprinting ~5.6 blocks/s, a horse ~14, a boat on ice far more). Elytra flights (30-60 blocks/s) cross 1024 blocks
+in well under a minute, so no margin fully covers them: the frontier catches up the next time the server is
+empty. Per-player areas (a task around each player's farthest point instead of one square) would cover far-off
+bases more cheaply; that is a possible later improvement.
+
+**Disk.** A fully generated overworld region file (512 x 512 blocks) is typically 5-10 MB, so a 5000-block border
+(10 000 x 10 000 blocks, about 380 region files) takes **roughly 2-4 GB**; the Nether at 1250 a few hundred MB at
+most, and the End, mostly void, little. These are estimates from Minecraft's typical region sizes; terrain,
+structures and later building change them. Frontier expansion in a dimension **without a border** grows the world
+as far as players go, up to `max_radius` (10 000 blocks around 0,0 is about 1500 region files: up to ~10-15 GB of
+overworld-like terrain). **The world border is the real control** of the world's size; `max_radius` is only a
+hard cap. Health's disk alert (`monitoring.alerts.disk_pct`) also stops new frontier rings.
+
+**Backups.** restic deduplicates, so only the **first backup after a pass** is big (it uploads the new region
+files); after that backups carry only what changed, as before. Expect the R2 bucket to grow by about the world's
+size once (R2 includes 10 GB of storage).
+
+**Trade-off.** Pre-generated terrain keeps the generation of the Minecraft version that made it: after an upgrade
+(`mcctl upgrade --minecraft-version`), new biomes and structures appear only in chunks generated afterwards,
+beyond the pre-generated area (and the frontier keeps moving that boundary outwards). If you plan an upgrade with
+new terrain soon, a smaller border or `frontier: false` keeps more of the world for it.
+
+**Watch it.**
+
+```bash
+mcctl status -C $C                         # pregen: world 63% · world_nether queued · world_the_end queued
+journalctl -u mc-health | grep pregen      # started / running / paused / continued / frontier / done, per check
+mcctl rcon -C $C chunky progress           # Chunky's own view of a running task
+```
+
+`mcctl status` shows `pregen: done` (with `· frontier <world> <radius>` once it has grown), `(paused)` while
+players are on and `(held: backup)` during a backup. Discord gets one note when every bordered pass is done. The
+state is in `/var/lib/mc-health/state.json` (`pregen_done`, `pregen_progress`, `pregen_frontier`) and the status
+line in `/var/lib/mc-health/pregen.json`.
+
+**Stop it or skip a world.** `mcctl config set world.pregenerate.enabled false` (or `world.pregenerate.frontier
+false` for the bordered passes only), push: the next check after the deploy cancels the task it started. A
+library world's `pregen: false` (the panel's New world option, `mcctl worlds create --no-pregen`) turns it off
+for that world alone. To skip one dimension's bordered pass, add its world (e.g. `world_the_end`) to
+`pregen_done` in the state file.
+
 ## Discord
 
 Alerts (optional, `alerts.discord`): the server down (and which of IPv4/IPv6), heartbeats late, a backup
@@ -267,7 +338,7 @@ The ones you will use (all take `-C $C`; the complete list is in [reference.md](
 |---|---|
 | `mcctl` | v1.3: on a terminal, the home screen: a status header and a menu of these commands ([reference](reference.md#the-home-screen-and-the-remembered-config-repo-v13)); remembers the config repo, so `-C` is optional |
 | `mcctl doctor` | checks tools, `.env`, every credential live (writes `expiry.yml`: commit it), the product pin, DNS, the tailnet, the watchdog; `--fix` repairs what it can (file mode, a stale product pin after a typed `yes`) |
-| `mcctl status [--json]` | server state, players, TPS/MSPT, last backup, last deploy run, drift (disabled plugins, open panel PRs) |
+| `mcctl status [--json]` | server state, players, TPS/MSPT, last backup, pre-generation (v1.4), last deploy run, drift (disabled plugins, open panel PRs) |
 | `mcctl deploy [--check] [--force-restart]` | deploy from your computer (the same playbook and secrets as CI; `--check` is a dry run with a diff; `--force-restart`: restart now even outside `maintenance.window`) |
 | `mcctl publish [--route pr\|main\|deploy] [--dry-run] [--revert] [--wait-empty]` | v1.3: preview what your config change does (roles, restart, Terraform, who is online), validate, then a pull request, its checks, your merge and the deploy ([reference](reference.md#publishing-a-config-change-v13)) |
 | `mcctl players list\|add\|remove\|op\|deop NAME` | edit `players.yml` (UUID from Mojang); v1.3: as a pull request you merge when green (`--push`: straight to main) |
@@ -297,6 +368,7 @@ the *target* release's schema migration and validation itself. When the checkout
 | Hourly backup | every hour (+ up to 5 min random delay) | restic to R2; the lock keeps every snapshot at least 7 days |
 | Prune | Sundays 03:30 | between backups |
 | Health check + self-heal | every 5 minutes | restarts a crashed server, dumps and restarts a frozen one; at most 3 restarts a day, then Discord |
+| Chunk pre-generation | every 5 minutes, only with nobody online | each bordered dimension up to its border, then the frontier ahead of the players; paused around backups ([Pre-generation](#pre-generation)) |
 | Watchdog | every 5 minutes, outside the box | status pings over IPv4 and IPv6 separately; heartbeat lateness; alerts on Discord |
 | Server build and plugin updates | weekly, `automation.update_day` (Tuesday) 04:17 UTC | the newest builds of the same Minecraft version are boot-tested in CI, then the updater App opens a pull request that merges itself once `server / gate` re-verified every hash |
 | Weekly deploy | the same slot | deploys `main` as it is; restarts only if something changed |
@@ -731,6 +803,7 @@ ever appear in an alert (a CI alert carries the run's link only). Every alert's 
 | ⚠️ The server's memory is nearly full / ✅ pressure is over | health.py | heap after GC above `heap_pct` for `heap_checks` checks | more `jvm.heap_mb` or a bigger box (`host.resize_hint`) |
 | 🔴 The server's disk is filling up / ✅ fine again | health.py | disk at `disk_pct` | `du -sh /opt/minecraft/server/*`, clean logs, grow the disk |
 | ⚠️ The hosting provider is short on CPU / ✅ the CPU is ours again | health.py | CPU steal above `steal_pct` for `steal_checks` checks | usually passes; the panel's CPU chart; dedicated cores if it lasts |
+| ℹ️ Chunk pre-generation is finished | health.py (v1.4) | every bordered dimension is generated up to its border (once per world) | - ([Pre-generation](#pre-generation)) |
 | ⚠️ The outside watchdog can't be reached / has stopped checking / ✅ again | health.py | heartbeats fail 3 checks in a row, or the Worker's cron is 15 min stale | cloudflarestatus.com, the Worker's cron trigger and logs |
 | ⚠️ Security updates are waiting for a reboot / ℹ️ rebooting / ✅ back | reboot gate | pending 3+ days because the window never found the server empty (daily reminder), or it reboots now | `sudo systemctl reboot` on the box when convenient |
 | ℹ️ The server restarts in N s for a config deploy | mc_rcon (deploy) | a deploy restart while players are online (they get an in-game countdown) | - |

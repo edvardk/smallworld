@@ -6,6 +6,37 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Added
+
+- **Pre-generation switch:** `server.yml` `world.pregenerate.enabled` (default `true`, today's behaviour) turns
+  Chunky pre-generation off for the whole deployment; `mcctl render` maps it onto the monitoring role's existing
+  `monitoring_pregen_enabled` (one path, health.env's `PREGEN_*`). A library world's `pregen` stays the per-world
+  override. Turning it off cancels the task `mc-health` started at its next check.
+- **Frontier expansion:** once the bordered passes are done, and for dimensions without a border, `mc-health`
+  keeps pre-generating ahead of where players have been, still only while nobody is online: a square around 0,0 of
+  the farthest generated chunk (from the region files' names and 4 KiB headers) + `world.pregenerate.margin`
+  (default 1024 blocks), capped at the border and at `world.pregenerate.max_radius` (default 10000); a new Chunky
+  task only when the target grew by 256 blocks, never while the disk is at its alert threshold.
+  `world.pregenerate.frontier: false` turns it off alone.
+- **Pre-generation progress:** `mcctl status` shows a `pregen` line (`world 63% · world_nether queued · ...`,
+  `done`, `(paused)`, `(held: backup)`), from `/var/lib/mc-health/pregen.json` (health.py records each task's
+  percentage from `chunky progress`), and Discord gets one note when every bordered pass is done.
+- docs/operations.md "Pre-generation": what runs when, disk use (estimates), backup growth, the
+  terrain-version trade-off, watching, stopping and skipping.
+
+### Changed
+
+- **Backups pause pre-generation:** `mc-backup` pauses a running Chunky task before `save-off` and continues it
+  after `save-on` (only if it was running, also when the backup fails); a pre-generation hold
+  (`/var/lib/mc-snapshots/pregen-hold.json`, expires after 4 h) keeps `mc-health` from continuing it mid-backup.
+
+### Fixed
+
+- A world switch now really cancels the old world's Chunky task: `chunky cancel` asks for `chunky confirm`
+  first, which was never sent, so the new world's pass could continue the old world's saved task.
+- A task Chunky resumed by itself after a restart (`continue-on-restart`) no longer stays marked as paused in
+  health's state (alerts named pre-generation as the likely cause again).
+
 ## [1.3.1] - 2026-11-07
 
 ### Added
