@@ -774,6 +774,12 @@ def holding_lock(lock: str, script: str, user: str | None = None) -> Iterator[su
         with contextlib.suppress(ProcessLookupError):
             os.killpg(holder.pid, signal.SIGKILL)
         holder.wait()
+        # wait() covers flock only: the rest of the group (sh, its sleep: they hold the locked fd too) is killed
+        # asynchronously, and the lock goes with the last of them, a moment later (the unit test saw it held right
+        # after the block, about 1 run in 300). The block's contract is "released", so wait for it.
+        deadline = time.monotonic() + 5
+        while lock_held(lock) and time.monotonic() < deadline:
+            time.sleep(0.02)
 
 
 def restore_guard_round() -> None:
@@ -1065,6 +1071,10 @@ def cli_round() -> None:
                   if e.get("MC_LOGIN") == CLI_LOGIN}  # fmt: skip
     expect({("moderate", "ok"), ("world_delete", "wor")} <= seen_audit,
            f"both in the audit journal with MC_VIA=mcctl and the login {CLI_LOGIN} ({sorted(seen_audit)})")  # fmt: skip
+    # v1.4: mc-run names these units mc-agent-cli-* (a product unit in mc-agent's D1 rows), not run-p…
+    units = {e.get("_SYSTEMD_UNIT", "") for e in cli_audit() if e.get("MC_LOGIN") == CLI_LOGIN}
+    expect(bool(units) and all(u.startswith("mc-agent-cli-") and u.endswith(".service") for u in units),
+           f"the cli's audit entries come from mc-agent-cli-* units ({sorted(units)[:4]})")  # fmt: skip
 
     with github_mock():
         main_before, ours_prs = GitHubMock.files["main"], []

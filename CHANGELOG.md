@@ -32,6 +32,9 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 - The Panel -> Git self-test's "at most once a minute on demand" now counts from the last on-demand run: a daily run
   in between no longer lets the next request through (`selftest.json` keeps the last on-demand result too).
+- mcctl's actions (`mc_agent.py cli` through `mc-run`) run in a unit named `mc-agent-cli-<pid>-<ns>`, so their audit
+  entries reach mc-agent's D1 rows under a product unit instead of an anonymous `run-p…` one; every other `mc-run`
+  command keeps its anonymous unit (nothing new is shipped).
 
 ## [1.3.1] - 2026-11-07
 
