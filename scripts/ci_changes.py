@@ -35,9 +35,14 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "code": (),  # computed: any path that is not docs
     # actionlint: every workflow it lints (the product's and the config-repo template's materialized example)
     "workflows": (".github/*", "template/.github/*", "examples/config-repo/.github/*"),
-    # ci.yml job plugin: build_plugin.py check + brand_art.py check + build_client_mod.py check
+    # ci.yml job plugin: build_plugin.py check + map_palette.py check (v1.4) + brand_art.py check +
+    # build_client_mod.py check
     "plugin": (
         "plugin/*",
+        "scripts/map_palette.py",
+        "scripts/map_palette/*",
+        "scripts/config_keys.py",
+        "server-config/keys/*/map-*",
         "client/mod/*",
         "scripts/build_plugin.py",
         "scripts/build_client_mod.py",

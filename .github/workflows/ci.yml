@@ -285,6 +285,7 @@ jobs:
   # P13/P17: the in-house plugins (mc-telemetry, mc-brand) are reproducible: rebuilt from source with the pinned JDK
   # against the API bundled in the pinned server jar (all downloads sha256-checked), each must equal the committed
   # jar and its group_vars pin; the branding art (icon, resource pack) too, and the pack's format is the jar's.
+  # v1.4: the world map's palette, re-dumped from the pinned jar's block registry (scripts/map_palette.py).
   # Runs when its inputs changed (scripts/ci_changes.py group `plugin`), and always on releases and dispatches.
   plugin:
     needs: changes
@@ -303,7 +304,8 @@ jobs:
           cache-dependency-path: requirements/validate.txt
 
       # Only the downloads build_plugin.py re-verifies on every use (the server jar against server.lock.yml,
-      # the compile-only jars by their file name = sha256); the JDK is downloaded and sha256-checked each run.
+      # the compile-only jars by their file name = sha256; map_palette.py's vanilla jar against the server jar's
+      # download-context); the JDK is downloaded and sha256-checked each run.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -317,6 +319,10 @@ jobs:
 
       - name: Rebuild the in-house plugins and compare
         run: python scripts/build_plugin.py check --cache "$RUNNER_TEMP/build-plugin"
+
+      # v1.4: the world map's block palette, dumped from the pinned jar's block registry (the same cached jars)
+      - name: Re-dump the map palette and compare
+        run: python scripts/map_palette.py check --cache "$RUNNER_TEMP/build-plugin"
 
       - name: Rebuild the branding art and compare
         run: python scripts/brand_art.py check
