@@ -27,8 +27,9 @@ import org.bukkit.plugin.messaging.PluginMessageListener;
  *       snapshots: mc-agent's minute rows, the Worker's "server fine / your PC" diagnosis).
  *   <li>v1.4.1: mc-brand listens to {@code smallworld:fps} too: the latest report per player is shown inside the
  *       HUD ({@link Hud}: the boss bar's line, a sidebar line) instead of the mod's own element, which sat on the
- *       boss bar's title (both at y = 3). For a player whose HUD shows (/hud top or side) the config's HUD flag is
- *       cleared ({@link #clientHud}); with /hud off the mod draws its own as before (client.fps.hud).
+ *       boss bar's title (both at y = 3). The config's HUD flag is always cleared ({@link #playerConfig}), /hud off
+ *       included: the mod never draws its own FPS (client.fps.hud is now the server's default for the HUD's fps
+ *       part, rendered into branding.hud.parts).
  * </ul>
  *
  * <p>Bukkit's Messenger calls listeners on the main thread. Per hello: one decode of a few bytes, one map put and
@@ -98,11 +99,12 @@ final class Smallworld implements PluginMessageListener {
     }
 
     /**
-     * v1.4.1: the HUD flag for one player: the mod draws its own FPS only where mc-brand's HUD doesn't show it
-     * (server.yml client.fps.hud on and the player's HUD off). Two FPS elements at the top overlapped.
+     * v1.4.1: the config every player with the mod gets: the HUD flag off, whatever their /hud mode. The mod's own
+     * FPS element sat on the boss bar's title; mc-brand's HUD shows the FPS instead (its fps part), and with /hud
+     * off there is no FPS at all.
      */
-    static boolean clientHud(boolean configured, boolean inHud) {
-        return configured && !inHud;
+    static byte[] playerConfig(int intervalSeconds) {
+        return config(intervalSeconds, false);
     }
 
     @Override
@@ -157,15 +159,7 @@ final class Smallworld implements PluginMessageListener {
      * goes through at the hello, and {@link #registered} sends it again if the registration came later.
      */
     void sendConfig(Player p) {
-        p.sendPluginMessage(plugin, CONFIG,
-                config(s.clientFpsInterval(), clientHud(s.clientFpsHud(), plugin.hudShowsFps(p))));
-    }
-
-    /** v1.4.1: /hud changed: a known client gets the HUD flag that goes with the new mode. */
-    void hudChanged(Player p) {
-        if (clients.containsKey(p.getUniqueId())) {
-            sendConfig(p);
-        }
+        p.sendPluginMessage(plugin, CONFIG, playerConfig(s.clientFpsInterval()));
     }
 
     /** PlayerRegisterChannelEvent: the client can take the config now (only after its hello: a known client). */
@@ -210,7 +204,7 @@ final class Smallworld implements PluginMessageListener {
                 && h.pack().equals("26.3-0123456789ab")) + ", pack " + status(packs, "medium", h.pack()) + "/"
                 + status(packs, "medium", "26.3-ffffffffffff") + "/" + status(packs, "medium", "") + "/"
                 + status(Map.of(), "medium", h.pack()) + ", config " + java.util.HexFormat.of().formatHex(config(5, true))
-                + ", client hud " + clientHud(true, false) + "/" + clientHud(true, true) + "/" + clientHud(false, false)
+                + ", player config " + java.util.HexFormat.of().formatHex(playerConfig(5))
                 + ", hellos " + hellos + " fps reports " + fpsReports + " malformed " + malformed;
     }
 }

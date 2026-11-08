@@ -938,6 +938,39 @@ class BrandingJoin:
     )
 
 
+# v1.4.1: the HUD's parts (mc-brand Hud.Part, in the order the top bar shows them; "online" = players).
+HUD_PARTS = ("name", "players", "health", "tps", "mspt", "ping", "fps")
+HUD_PART_ALIASES = {"online": "players"}
+HUD_PART_HINTS = {"speed": "tps", "tick": "mspt", "tick_time": "mspt", "latency": "ping", "frames": "fps"}
+
+
+def hud_parts(v: list[str]) -> list[str]:
+    """branding.hud.parts as mc-brand reads it: canonical names ("online" -> players), in Hud.Part order."""
+    wanted = {HUD_PART_ALIASES.get(x, x) for x in v}
+    return [p for p in HUD_PARTS if p in wanted]
+
+
+def _hud_parts(v: list[Any]) -> str | None:
+    seen: set[str] = set()
+    for x in v:
+        if not isinstance(x, str):
+            continue  # reported by the item type
+        name = HUD_PART_ALIASES.get(x, x)
+        if name not in HUD_PARTS:
+            hint = HUD_PART_HINTS.get(x.lower()) or next(
+                iter(difflib.get_close_matches(x.lower(), HUD_PARTS, n=1)), None
+            )
+            return (
+                f"unknown HUD part {x!r}"
+                + (f" (did you mean {hint!r}?)" if hint else "")
+                + f"; the parts are {', '.join(HUD_PARTS)} ('online' = players)"
+            )
+        if name in seen:
+            return f"{name!r} is listed twice" + (" ('online' is players)" if name == "players" else "")
+        seen.add(name)
+    return None
+
+
 @dataclass(frozen=True)
 class BrandingHud:
     enabled: bool = opt(
@@ -945,6 +978,18 @@ class BrandingHud:
         doc="Players may choose a HUD with /hud top|side|off: a one-line boss bar at the top (server "
         "health, speed, tick time, their connection) or the sidebar (players + ping as well). v1.4.1: each "
         "player may hide parts of it (/hud hide|show <part>, /hud parts, /hud reset).",
+    )
+    parts: list[str] = opt(
+        factory=lambda: list(HUD_PARTS),
+        doc="v1.4.1: the HUD parts every player sees until they change their own: any of name, players "
+        "(alias online), health, tps, mspt, ping, fps (the top bar shows them in that order; in the "
+        "sidebar players is the player list, ping the numbers next to the names). Default: all of them. "
+        "Players add to and take away from this (/hud show|hide <part>, /hud minimal, /hud full; "
+        "/hud reset goes back to it), and a later change here still reaches every part a player never "
+        "touched. The fps part also needs client.fps.hud (on by default) and the Smallworld client mod. "
+        "[] = the top bar shows just the server name.",
+        check=_hud_parts,
+        json={"items": {"enum": [*HUD_PARTS, *HUD_PART_ALIASES]}, "uniqueItems": True},
     )
     default_mode: Literal["top", "side", "off"] | None = opt(
         doc="v1.0.1: the HUD of players who never used /hud: top (boss bar), side (sidebar) or off.",
@@ -1262,10 +1307,11 @@ class ClientFps:
     )
     hud: bool = opt(
         True,
-        doc="v1.2: the client mod draws the FPS next to the top HUD bar (each player can still hide it in "
-        "config/smallworld.json). v1.4.1: for a player whose in-game HUD shows (/hud top or side), mc-brand "
-        "puts the reported FPS inside that HUD and tells the mod not to draw its own, whatever this says; "
-        "this applies only to players with /hud off or with branding.hud switched off.",
+        doc="Whether players see their FPS in the HUD by default. v1.2: the client mod drew it next to the "
+        "top HUD bar. v1.4.1: mc-brand shows the FPS the mod reports inside its own HUD (the fps part of "
+        "branding.hud.parts) and the mod never draws its own (it sat on the top bar's line, and /hud off "
+        "hides it too); false takes fps out of branding.hud.parts' server default, and each player can "
+        "still /hud show fps.",
     )
 
 

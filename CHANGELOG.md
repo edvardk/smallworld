@@ -8,10 +8,15 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ### Added
 
-- Players choose which parts of the HUD they see: `/hud hide <part>`, `/hud show <part>`, `/hud parts` (what's on)
-  and `/hud reset`, remembered per player. Parts: `name`, `players`, `health`, `tps`, `mspt`, `ping`, `fps`
+- Which parts of the HUD players see: `name`, `players` (or `online`), `health`, `tps`, `mspt`, `ping`, `fps`
   (top bar and sidebar alike; the sidebar's title stays, and a top bar with every part hidden shows just the
-  server name). Everyone starts with every part, as before.
+  server name). New `server.yml` field `branding.hud.parts` sets the server's default (default: every part, so
+  nothing changes unless you set it; an unknown part fails validation with the list of parts). Players add to it
+  and take away from it, remembered per player: `/hud hide <part>`, `/hud show <part>`, `/hud minimal` (just
+  `name`, `players` and `health`), `/hud full` (every part), `/hud parts` (what's on, `*` where it differs from
+  the server's default) and `/hud reset` (back to the server's default). Only a player's differences from the
+  default are kept, so a later change of `branding.hud.parts` still reaches every part they never touched.
+  `/mcbrand status` shows the server's default parts.
 
 ### Security
 
@@ -35,9 +40,11 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 - The client mod's FPS number no longer overlaps the top HUD: it was drawn as its own element at the boss bar
   title's height, just right of the bar, so it sat on mc-brand's `/hud top` line. mc-brand now shows the FPS the
   mod reports inside its HUD (the boss bar's line ends with "· 144 fps", the sidebar has a "Your FPS" line, coloured
-  at the panel's fair/poor thresholds) and tells the mod not to draw its own for players whose HUD shows;
-  `client.fps.hud` now only applies to players with `/hud off` (or with `branding.hud` off). The FPS refreshes
-  every `client.fps.interval_seconds` (default 5 s). No new client pack is needed.
+  at the panel's fair/poor thresholds) and tells the mod never to draw its own, `/hud off` included (with the
+  HUD off there is no FPS on screen). `client.fps.hud` is now the server's default for the HUD's `fps` part:
+  `false` takes `fps` out of `branding.hud.parts`, and players can still `/hud show fps`. mc-brand's
+  `config.yml` no longer has `client.fps_hud` (rendered into `hud.parts`). The FPS refreshes every
+  `client.fps.interval_seconds` (default 5 s). No new client pack is needed.
 - The friend compass turns smoothly: a player who turns is redrawn on the next tick (up to 20 times a second)
   instead of every 4 ticks (5 times a second). It still costs nothing while nobody moves, and the boss bar is
   only resent when the line actually changed. The line is drawn by the server, so it trails a turn by the

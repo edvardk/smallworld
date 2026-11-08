@@ -1404,6 +1404,32 @@
               "type": "boolean",
               "default": true
             },
+            "parts": {
+              "description": "v1.4.1: the HUD parts every player sees until they change their own: any of name, players (alias online), health, tps, mspt, ping, fps (the top bar shows them in that order; in the sidebar players is the player list, ping the numbers next to the names). Default: all of them. Players add to and take away from this (/hud show|hide <part>, /hud minimal, /hud full; /hud reset goes back to it), and a later change here still reaches every part a player never touched. The fps part also needs client.fps.hud (on by default) and the Smallworld client mod. [] = the top bar shows just the server name.",
+              "type": "array",
+              "items": {
+                "enum": [
+                  "name",
+                  "players",
+                  "health",
+                  "tps",
+                  "mspt",
+                  "ping",
+                  "fps",
+                  "online"
+                ]
+              },
+              "uniqueItems": true,
+              "default": [
+                "name",
+                "players",
+                "health",
+                "tps",
+                "mspt",
+                "ping",
+                "fps"
+              ]
+            },
             "default_mode": {
               "description": "v1.0.1: the HUD of players who never used /hud: top (boss bar), side (sidebar) or off. Default: side if default_on is true, else top.",
               "enum": [
@@ -1946,7 +1972,7 @@
               "default": 5
             },
             "hud": {
-              "description": "v1.2: the client mod draws the FPS next to the top HUD bar (each player can still hide it in config/smallworld.json). v1.4.1: for a player whose in-game HUD shows (/hud top or side), mc-brand puts the reported FPS inside that HUD and tells the mod not to draw its own, whatever this says; this applies only to players with /hud off or with branding.hud switched off.",
+              "description": "Whether players see their FPS in the HUD by default. v1.2: the client mod drew it next to the top HUD bar. v1.4.1: mc-brand shows the FPS the mod reports inside its own HUD (the fps part of branding.hud.parts) and the mod never draws its own (it sat on the top bar's line, and /hud off hides it too); false takes fps out of branding.hud.parts' server default, and each player can still /hud show fps.",
               "type": "boolean",
               "default": true
             }

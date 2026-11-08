@@ -53,12 +53,16 @@ tokens (`[A-Za-z0-9._+-]{1,64}`) leave the machine; anything else becomes the fa
   hello is the exact "has the pack" test: the join prompt (`/modpack`) goes to every player without one (v1.1
   guessed from the client brand). A pack version other than the server's current one for that tier (rendered
   from the config repo's client lock into mc-brand's `client.packs`) gets one "your pack is out of date" line.
-  The answer is `smallworld:config` with server.yml `client.fps` (`interval_seconds`, `hud`); Paper sends only on
-  a channel the client registered, so it goes again on the client's `minecraft:register` if that came later.
+  The answer is `smallworld:config` with server.yml `client.fps.interval_seconds` (v1.4.1: `flags` is always 0,
+  below); Paper sends only on a channel the client registered, so it goes again on the client's
+  `minecraft:register` if that came later.
 - **mc-brand** (v1.4.1) also listens to `smallworld:fps`: the latest report is shown inside its HUD (the boss
-  bar's line ends with "· N fps", the sidebar has a "Your FPS" line), and for a player whose HUD shows (/hud top
-  or side) the config's `flags` bit 0 is cleared whatever `client.fps.hud` says, so the mod's own element doesn't
-  sit on the boss bar's title (vanilla draws it at y = 3, the same row). `/hud` resends the config.
+  bar's line ends with "· N fps", the sidebar has a "Your FPS" line; the HUD's `fps` part), and the config's
+  `flags` bit 0 is always cleared, for every player with the mod and whatever their `/hud` mode (`/hud off`
+  included), so the mod's own element never appears: it sat on the boss bar's title (vanilla draws it at y = 3,
+  the same row). `client.fps.hud` no longer reaches the mod: it is the server's default for the HUD's `fps` part
+  (`false` takes `fps` out of `branding.hud.parts`; players can still `/hud show fps`). The mod's own FPS
+  element and its `smallworld.json` switch stay for servers without mc-brand v1.4.1.
 - **mc-telemetry** registers `smallworld:fps` itself (the reports are telemetry): the latest value per player is
   in each 10 s snapshot (`fps`, only for players with the mod), mc-agent's minute row has the average and the
   lowest (`fps`, `fps_min`), and the Worker's verdict says "Server fine, your PC: N FPS" (below 30 fair, below

@@ -42,6 +42,7 @@ from mcctl.schema import (
     BrandingHologram,
     Players,
     ServerConfig,
+    hud_parts,
     maintenance_timezone,
     map_radius,
     placeholders,
@@ -138,6 +139,9 @@ def brand_plugin(cfg: ServerConfig) -> dict[str, Any]:
             "tab_list": b.hud.tab_list,
             "tab_header": b.name,
             "settle_seconds": b.hud.settle_seconds,
+            # v1.4.1: the server default of the HUD parts (players keep deltas on top: Hud.Parts);
+            # client.fps.hud false takes fps out of it (the mod never draws its own FPS any more)
+            "parts": [p for p in hud_parts(b.hud.parts) if p != "fps" or cfg.client.fps.hud],
         },
         "drink": {
             "enabled": b.drink.enabled,
@@ -223,7 +227,6 @@ def brand_client(cfg: ServerConfig) -> dict[str, Any]:
             "prompt": c.prompt,
             "url": client_url(cfg),
             "fps_interval_seconds": c.fps.interval_seconds,  # v1.2: smallworld:config
-            "fps_hud": c.fps.hud,
         },
         "view": {"enabled": c.view.enabled, "max": c.view.max, "check_seconds": c.view.check_seconds},
         "map": {"players": c.map.players, "fair_play": c.map.fair_play},  # v1.2: Xaero's maps

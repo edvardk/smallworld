@@ -3,6 +3,7 @@ package io.github.edvardk.mcbrand;
 import io.papermc.paper.scoreboard.numbers.NumberFormat;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -51,13 +52,16 @@ import org.bukkit.scoreboard.ScoreboardManager;
  *   <li>v1.4.1: the viewer's own FPS, as the Smallworld client mod last reported it ({@link Smallworld#fps}, every
  *       client.fps.interval_seconds): "· 144 fps" at the end of the boss bar's line, and a "Your FPS" line in the
  *       sidebar in place of the "FPS: press F3" hint. Players without the mod see neither. The mod's own FPS
- *       element is then switched off for them ({@link Smallworld#clientHud}): it was drawn at the boss bar
- *       title's height, right of the 182-px bar, so it sat on this line's text.
- *   <li>v1.4.1: <b>parts</b>: each player may hide pieces of the line ({@code /hud hide|show <part>}, {@code /hud
- *       parts}, {@code /hud reset}; kept in their PDC like the mode): {@link Part} name, players, health, tps,
- *       mspt, ping, fps. In the sidebar, {@code players} is the player list, {@code ping} the numbers next to the
- *       names, and the title (the server name) stays. A top bar with every part hidden shows the server name alone
- *       (/hud off hides the bar). The join grace period's "Settling in…" bar and sidebar are unchanged.
+ *       element is always switched off ({@link Smallworld#playerConfig}, /hud off included): it was drawn at the
+ *       boss bar title's height, right of the 182-px bar, so it sat on this line's text.
+ *   <li>v1.4.1: <b>parts</b>: {@link Part} name, players, health, tps, mspt, ping, fps. The server's default is
+ *       branding.hud.parts ({@link Settings#hudParts}); each player adds to and takes away from it ({@code /hud
+ *       hide|show <part>}, {@code /hud minimal}, {@code /hud full}, {@code /hud parts}, {@code /hud reset}), kept
+ *       in their PDC as deltas ("+fps,-mspt", {@link #parseDeltas}): a part they never touched follows a later
+ *       change of the server's default. In the sidebar, {@code players} is the player list, {@code ping} the
+ *       numbers next to the names, and the title (the server name) stays. A top bar with every part hidden shows
+ *       the server name alone (/hud off hides the bar). The join grace period's "Settling in…" bar and sidebar
+ *       are unchanged.
  * </ul>
  *
  * <p>The {glyph} icon (resource pack font) is shown only to players whose client loaded the pack ({@code glyphs}).
@@ -103,28 +107,99 @@ final class Hud {
         }
     }
 
-    /** v1.4.1: the stored form of a player's hidden parts ("tps,mspt"); unknown names are dropped. */
-    static Set<Part> parseHidden(String stored) {
+    /** v1.4.1: /hud minimal: everything but these. */
+    static final Set<Part> MINIMAL = EnumSet.of(Part.NAME, Part.PLAYERS, Part.HEALTH);
+    private static final int MAX_STORED = 256; // a longer PDC value is not ours: ignored
+
+    /** v1.4.1: branding.hud.parts as rendered (unknown names dropped; no list at all: every part). */
+    static Set<Part> parseParts(List<String> names) {
         Set<Part> out = EnumSet.noneOf(Part.class);
-        if (stored != null) {
-            for (String w : stored.split(",")) {
-                Part p = Part.parse(w.strip());
-                if (p != null) {
-                    out.add(p);
-                }
+        for (String w : names) {
+            Part p = Part.parse(w == null ? null : w.strip());
+            if (p != null) {
+                out.add(p);
             }
         }
         return out;
     }
 
-    static String formatHidden(Set<Part> hidden) {
+    static String words(Set<Part> parts) {
         List<String> out = new ArrayList<>();
         for (Part p : Part.values()) {
-            if (hidden.contains(p)) {
+            if (parts.contains(p)) {
                 out.add(p.word());
             }
         }
+        return out.isEmpty() ? "none" : String.join(",", out);
+    }
+
+    /**
+     * v1.4.1: a player's stored choices, deltas on top of the server's default: "+fps,-mspt" (true = shown,
+     * false = hidden). Anything else (no sign, an unknown part, garbage, a value too long to be ours) is ignored;
+     * a part given twice: the last one counts.
+     */
+    static Map<Part, Boolean> parseDeltas(String stored) {
+        Map<Part, Boolean> out = new EnumMap<>(Part.class);
+        if (stored == null || stored.length() > MAX_STORED) {
+            return out;
+        }
+        for (String w : stored.split(",")) {
+            String t = w.strip();
+            if (t.length() < 2 || (t.charAt(0) != '+' && t.charAt(0) != '-')) {
+                continue;
+            }
+            Part p = Part.parse(t.substring(1));
+            if (p != null) {
+                out.put(p, t.charAt(0) == '+');
+            }
+        }
+        return out;
+    }
+
+    /** The stored form, in Part order ("" = no deltas: the key is removed). */
+    static String formatDeltas(Map<Part, Boolean> deltas) {
+        List<String> out = new ArrayList<>();
+        for (Part p : Part.values()) {
+            Boolean show = deltas.get(p);
+            if (show != null) {
+                out.add((show ? "+" : "-") + p.word());
+            }
+        }
         return String.join(",", out);
+    }
+
+    /** The parts a player sees: the server's default with their deltas applied. */
+    static Set<Part> effective(Set<Part> serverDefault, Map<Part, Boolean> deltas) {
+        Set<Part> out = EnumSet.noneOf(Part.class);
+        for (Part p : Part.values()) {
+            Boolean show = deltas.get(p);
+            if (show == null ? serverDefault.contains(p) : show) {
+                out.add(p);
+            }
+        }
+        return out;
+    }
+
+    /** The deltas that turn the server's default into {@code wanted}: a choice that matches the default is none. */
+    static Map<Part, Boolean> deltasFor(Set<Part> serverDefault, Set<Part> wanted) {
+        Map<Part, Boolean> out = new EnumMap<>(Part.class);
+        for (Part p : Part.values()) {
+            if (wanted.contains(p) != serverDefault.contains(p)) {
+                out.put(p, wanted.contains(p));
+            }
+        }
+        return out;
+    }
+
+    /** /hud show|hide &lt;part&gt;: the player's deltas with that choice (dropped where it matches the default). */
+    static Map<Part, Boolean> choose(Set<Part> serverDefault, Map<Part, Boolean> deltas, Part part, boolean show) {
+        Set<Part> wanted = effective(serverDefault, deltas);
+        if (show) {
+            wanted.add(part);
+        } else {
+            wanted.remove(part);
+        }
+        return deltasFor(serverDefault, wanted);
     }
 
     enum Mode {
@@ -155,8 +230,8 @@ final class Hud {
     long writeErrors;
     private final NamespacedKey modeKey;
     private final NamespacedKey legacyKey; // v1.0.0: BYTE 1 = sidebar on, 0 = off
-    private final NamespacedKey partsKey; // v1.4.1: STRING, the hidden parts ("tps,mspt"); absent = all shown
-    private final Map<UUID, Set<Part>> hiddenParts = new HashMap<>(); // cache of the PDC value, online players
+    private final NamespacedKey partsKey; // v1.4.1: STRING, deltas on the server's default ("+fps,-mspt")
+    private final Map<UUID, Set<Part>> hiddenParts = new HashMap<>(); // cache: what each online player hides
     private final Map<UUID, Board> boards = new HashMap<>();
     private final Map<UUID, BossBar> bars = new HashMap<>();
     // v1.1: players in their join grace period: {join time ms, previous ping sample} (Msg.settled)
@@ -193,7 +268,7 @@ final class Hud {
         this.fps = fps;
         this.modeKey = new NamespacedKey(plugin, "hud_mode");
         this.legacyKey = new NamespacedKey(plugin, "hud");
-        this.partsKey = new NamespacedKey(plugin, "hud_hidden_parts");
+        this.partsKey = new NamespacedKey(plugin, "hud_parts");
     }
 
     /** The player's mode: their /hud choice, else the server's default (OFF while the HUD is switched off). */
@@ -242,21 +317,44 @@ final class Hud {
         apply(p, m);
     }
 
-    /** v1.4.1: the parts this player hid (/hud hide), read once from their PDC. */
-    Set<Part> hidden(Player p) {
-        return hiddenParts.computeIfAbsent(p.getUniqueId(),
-                id -> parseHidden(p.getPersistentDataContainer().get(partsKey, PersistentDataType.STRING)));
+    /** v1.4.1: the player's deltas on the server's default parts, from their PDC. */
+    Map<Part, Boolean> deltas(Player p) {
+        return parseDeltas(p.getPersistentDataContainer().get(partsKey, PersistentDataType.STRING));
     }
 
-    /** v1.4.1: /hud hide|show|reset: stored in the PDC (no key = everything shown), the HUD redrawn at once. */
-    void setHidden(Player p, Set<Part> hidden) {
-        Set<Part> v = hidden.isEmpty() ? EnumSet.noneOf(Part.class) : EnumSet.copyOf(hidden);
+    /** v1.4.1: the parts this player sees (the server's default and their deltas). */
+    Set<Part> shownParts(Player p) {
+        return effective(s.hudParts(), deltas(p));
+    }
+
+    /** v1.4.1: the parts this player doesn't see, worked out once per join (and on every change). */
+    Set<Part> hidden(Player p) {
+        return hiddenParts.computeIfAbsent(p.getUniqueId(), id -> {
+            Set<Part> h = EnumSet.allOf(Part.class);
+            h.removeAll(shownParts(p));
+            return h;
+        });
+    }
+
+    /**
+     * v1.4.1: /hud hide|show|minimal|full|reset: the player wants to see {@code wanted}; stored as deltas on the
+     * server's default (none: the key is removed, the player follows the default), the HUD redrawn at once.
+     */
+    void setShown(Player p, Set<Part> wanted) {
+        String v = formatDeltas(deltasFor(s.hudParts(), wanted));
         if (v.isEmpty()) {
             p.getPersistentDataContainer().remove(partsKey);
         } else {
-            p.getPersistentDataContainer().set(partsKey, PersistentDataType.STRING, formatHidden(v));
+            p.getPersistentDataContainer().set(partsKey, PersistentDataType.STRING, v);
         }
-        hiddenParts.put(p.getUniqueId(), v);
+        hiddenParts.remove(p.getUniqueId());
+        refresh(p);
+    }
+
+    /** v1.4.1: /hud reset: no deltas, the server's default. */
+    void resetParts(Player p) {
+        p.getPersistentDataContainer().remove(partsKey);
+        hiddenParts.remove(p.getUniqueId());
         refresh(p);
     }
 
@@ -704,7 +802,8 @@ final class Hud {
 
     /**
      * v1.4.1, for /mcbrand selftest: hidden parts on the boss bar (fixed inputs), every part hidden (the name
-     * alone), the sidebar without them, the stored form and the parser.
+     * alone), the sidebar without them, the server's default with a player's deltas, the presets, a delta that
+     * matches the default dropped, the stored form (garbage ignored) and the parser.
      */
     String partsSelftest(Server server, Msg.Speed speed) {
         Set<Part> some = EnumSet.of(Part.TPS, Part.MSPT, Part.PING);
@@ -719,8 +818,23 @@ final class Hud {
                 && !side.contains(Msg.YOUR_FPS) && !side.contains(Msg.FPS_HINT);
         return "hud parts " + String.join(",", Part.words()) + ", hidden bar ["
                 + bar.substring(bar.indexOf(" · ")) + "], all hidden name only " + nameOnly + ", sidebar " + sideOk
-                + ", stored " + formatHidden(parseHidden("fps,TPS, bogus,tps")) + ", parse "
-                + Part.parse("Ping") + "/" + Part.parse("online") + "/" + Part.parse("speed");
+                + ", parse " + Part.parse("Ping") + "/" + Part.parse("online") + "/" + Part.parse("speed")
+                + "; " + deltaSelftest();
+    }
+
+    /** v1.4.1: the deltas on a fixed server default (no mspt, no ping) and the configured default. */
+    String deltaSelftest() {
+        Set<Part> def = EnumSet.of(Part.NAME, Part.PLAYERS, Part.HEALTH, Part.TPS, Part.FPS);
+        Map<Part, Boolean> stored = parseDeltas("+mspt,-fps, bogus,+speed,ping,-NAME,+fps,-");
+        Map<Part, Boolean> fps = choose(def, stored, Part.FPS, false); // differs from the default: kept
+        Map<Part, Boolean> back = choose(def, fps, Part.MSPT, false); // matches the default: dropped
+        Set<Part> later = EnumSet.of(Part.NAME, Part.PLAYERS, Part.PING); // the server's default changed
+        return "hud default " + words(s.hudParts()) + ", deltas " + formatDeltas(stored) + " -> "
+                + words(effective(def, stored)) + ", hide fps " + formatDeltas(fps) + ", hide mspt "
+                + formatDeltas(back) + ", later default " + words(effective(later, back)) + ", minimal "
+                + formatDeltas(deltasFor(def, MINIMAL)) + ", full " + formatDeltas(deltasFor(def,
+                        EnumSet.allOf(Part.class))) + ", reset " + words(effective(def, parseDeltas(null)))
+                + ", round trip " + parseDeltas(formatDeltas(back)).equals(back);
     }
 
     /**

@@ -18,7 +18,7 @@ commands:
     permission: mcbrand.drink
   hud:
     description: Where the HUD is (top bar, sidebar or off) and which parts it shows (players, ping, server speed, FPS).
-    usage: /hud [top|side|off] | /hud hide|show <part> | /hud parts | /hud reset
+    usage: /hud [top|side|off] | /hud hide|show <part> | /hud minimal | /hud full | /hud parts | /hud reset
     permission: mcbrand.hud
   modpack:
     description: Your personal link to the server's optional client (smoother FPS, further views).

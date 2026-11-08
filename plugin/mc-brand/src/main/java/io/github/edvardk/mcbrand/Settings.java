@@ -1,7 +1,9 @@
 package io.github.edvardk.mcbrand;
 
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import net.kyori.adventure.text.format.TextColor;
 import org.bukkit.configuration.ConfigurationSection;
@@ -33,6 +35,7 @@ record Settings(
         int hudSeconds,
         int hudMaxPlayers,
         int hudSettleSeconds,
+        Set<Hud.Part> hudParts,
         boolean tabList,
         String tabHeader,
         boolean drinkEnabled,
@@ -50,7 +53,6 @@ record Settings(
         String clientCodeFile,
         Map<String, String> clientPacks,
         int clientFpsInterval,
-        boolean clientFpsHud,
         boolean mapPlayers,
         boolean mapFairPlay,
         boolean viewEnabled,
@@ -104,6 +106,9 @@ record Settings(
                 clamp(hud.getInt("interval_seconds", 5), 2, 30),
                 clamp(hud.getInt("max_players", 8), 1, 10),
                 clamp(hud.getInt("settle_seconds", 10), 3, 30), // v1.1: the join grace period
+                // v1.4.1: the server's default HUD parts (branding.hud.parts; players keep deltas on top); a
+                // config from before it has none: every part
+                hud.isList("parts") ? Hud.parseParts(hud.getStringList("parts")) : EnumSet.allOf(Hud.Part.class),
                 hud.getBoolean("tab_list", true),
                 text(hud.getString("tab_header"), name),
                 drink.getBoolean("enabled", false),
@@ -121,10 +126,10 @@ record Settings(
                 path(client.getString("request_dir"), "/run/mc-telemetry/client"),
                 path(client.getString("code_file"), "/run/mc-verdicts/client-codes.tsv"),
                 // v1.2: the smallworld channels (Smallworld): the current pack version per tier (the config
-                // repo's client lock, rendered), the FPS report interval and HUD flag sent to the client mod
+                // repo's client lock, rendered) and the FPS report interval sent to the client mod (v1.4.1: the
+                // HUD flag is always off, mc-brand's HUD shows the FPS; client.fps.hud is rendered into hud.parts)
                 packs(client.getConfigurationSection("packs")),
                 clamp(client.getInt("fps_interval_seconds", 5), 2, 60),
-                client.getBoolean("fps_hud", true),
                 // v1.2: Xaero's maps (XaeroMap): friends on the map, the fair-play code
                 map.getBoolean("players", true),
                 map.getBoolean("fair_play", true),

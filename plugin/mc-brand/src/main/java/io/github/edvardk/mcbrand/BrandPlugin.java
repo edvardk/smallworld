@@ -401,14 +401,6 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
         compass.clientsChanged(p);
     }
 
-    /**
-     * v1.4.1: the player's HUD (their /hud choice or the server's default) shows their FPS, so the client mod
-     * mustn't draw its own on top of it.
-     */
-    boolean hudShowsFps(Player p) {
-        return hud.mode(p) != Hud.Mode.OFF;
-    }
-
     /** v1.3: the client has the Smallworld mod (it said hello, or registered one of our channels). */
     boolean hasOurMod(Player p) {
         return smallworld.client(p.getUniqueId()) != null
@@ -549,7 +541,7 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
             return List.of();
         }
         return switch (command.getName().toLowerCase(Locale.ROOT)) {
-            case "hud" -> List.of("top", "side", "off", "hide", "show", "parts", "reset");
+            case "hud" -> List.of("top", "side", "off", "hide", "show", "minimal", "full", "parts", "reset");
             case "mcbrand" -> List.of("status", "selftest");
             case "modpack" -> List.of("off", "on");
             case "view" -> List.of("8", "10", "12", "14", "16", "reset");
@@ -640,12 +632,11 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
         Hud.Mode m = args.length > 0 ? Hud.Mode.parse(args[0], null)
                 : hud.showing(p) == Hud.Mode.OFF ? Hud.Mode.TOP : Hud.Mode.OFF;
         if (m == null) {
-            p.sendMessage(Component.text("Usage: /hud [top|side|off], /hud hide|show <part>, /hud parts, /hud reset",
-                    s.subtle()));
+            p.sendMessage(Component.text("Usage: /hud [top|side|off], /hud hide|show <part>, /hud minimal, /hud full,"
+                    + " /hud parts, /hud reset", s.subtle()));
             return;
         }
         hud.set(p, m);
-        smallworld.hudChanged(p); // v1.4.1: the mod draws its own FPS only with the HUD off
         p.sendMessage(Component.text(switch (m) {
             case TOP -> "HUD at the top of the screen (/hud side for the sidebar, /hud off to hide it)";
             case SIDE -> "HUD in the sidebar (/hud top for the top of the screen, /hud off to hide it)";
@@ -654,25 +645,39 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
     }
 
     /**
-     * v1.4.1: /hud hide|show &lt;part&gt;, /hud parts, /hud reset (per player, {@link Hud.Part}). Returns false for
-     * anything else (a mode).
+     * v1.4.1: /hud hide|show &lt;part&gt;, /hud minimal, /hud full, /hud parts, /hud reset (per player, {@link
+     * Hud.Part}): the player's changes to the server's default parts (branding.hud.parts), stored as deltas
+     * ({@link Hud#setShown}). Returns false for anything else (a mode).
      */
     private boolean hudParts(Player p, String[] args) {
         String sub = args[0].toLowerCase(Locale.ROOT);
-        Set<Hud.Part> hidden = EnumSet.noneOf(Hud.Part.class);
-        hidden.addAll(hud.hidden(p));
+        Set<Hud.Part> def = s.hudParts();
+        Set<Hud.Part> shown = hud.shownParts(p);
+        String off = hud.mode(p) == Hud.Mode.OFF ? " The HUD itself is off: /hud top or /hud side shows it." : "";
         switch (sub) {
             case "parts" -> {
                 List<String> states = new ArrayList<>();
+                boolean changed = false;
                 for (Hud.Part part : Hud.Part.values()) {
-                    states.add(part.word() + (hidden.contains(part) ? " off" : " on"));
+                    boolean mine = shown.contains(part) != def.contains(part);
+                    changed |= mine;
+                    states.add(part.word() + (shown.contains(part) ? " on" : " off") + (mine ? "*" : ""));
                 }
                 p.sendMessage(Component.text("HUD parts: " + String.join(", ", states)
-                        + " (/hud hide <part>, /hud show <part>, /hud reset)", s.subtle()));
+                        + (changed ? " (* = your change; /hud reset goes back to the server's default)"
+                                : " (the server's default)")
+                        + ". /hud hide|show <part>, /hud minimal, /hud full." + off, s.subtle()));
             }
             case "reset" -> {
-                hud.setHidden(p, EnumSet.noneOf(Hud.Part.class));
-                p.sendMessage(Component.text("Every HUD part is shown again.", s.subtle()));
+                hud.resetParts(p);
+                p.sendMessage(Component.text("HUD parts back to the server's default: " + Hud.words(def) + "."
+                        + off, s.subtle()));
+            }
+            case "minimal", "full" -> {
+                hud.setShown(p, sub.equals("full") ? EnumSet.allOf(Hud.Part.class) : Hud.MINIMAL);
+                p.sendMessage(Component.text((sub.equals("full") ? "HUD: every part shown"
+                        : "HUD: just the name, players and health") + " (/hud reset for the server's default)."
+                        + off, s.subtle()));
             }
             case "hide", "show" -> {
                 Hud.Part part = args.length > 1 ? Hud.Part.parse(args[1]) : null;
@@ -682,16 +687,12 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
                             + " (/hud parts shows yours).", s.subtle()));
                     return true;
                 }
-                if (sub.equals("hide")) {
-                    hidden.add(part);
-                } else {
-                    hidden.remove(part);
-                }
-                hud.setHidden(p, hidden);
+                Set<Hud.Part> wanted = Hud.effective(def, Hud.choose(def, hud.deltas(p), part, sub.equals("show")));
+                hud.setShown(p, wanted);
                 p.sendMessage(Component.text("HUD: " + part.word() + (sub.equals("hide") ? " hidden" : " shown")
-                        + (hidden.size() == Hud.Part.values().length
+                        + (wanted.isEmpty()
                                 ? " (every part is hidden: the top bar shows the server name; /hud off hides it)"
-                                : "") + ".", s.subtle()));
+                                : "") + "." + off, s.subtle()));
             }
             default -> {
                 return false;
@@ -739,12 +740,14 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
         }
         Msg.Speed sp = Msg.Speed.of(Bukkit.getServer()); // for ops: the technical numbers
         to.sendMessage(Component.text(String.format(Locale.ROOT,
-                "mc-brand %s: hud task runs=%d last=%dus max=%dus, hud write errors=%d, drinks=%d, glasses removed=%d;"
+                "mc-brand %s: hud task runs=%d last=%dus max=%dus, hud write errors=%d, hud parts default=%s;"
+                        + " drinks=%d, glasses removed=%d;"
                         + " TPS %.1f, MSPT %.1f (p95 %.1f) = %s; modpack requests=%d codes=%d failures=%d;"
                         + " view checks=%d raised=%d (now %d) lowered=%d; smallworld hellos=%d"
                         + " fps reports=%d malformed=%d outdated=%d; xaero handshakes=%d updates=%d fair play=%d;"
                         + " compass showing=%d renders=%d updates=%d; pocket maps given=%d removed=%d recentres=%d",
-                s.name(), hud.runs, hud.lastNs / 1000, hud.maxNs / 1000, hud.writeErrors, glass.drinks, glass.removed,
+                s.name(), hud.runs, hud.lastNs / 1000, hud.maxNs / 1000, hud.writeErrors, Hud.words(s.hudParts()),
+                glass.drinks, glass.removed,
                 sp.tps(), sp.mspt(), sp.p95(), sp.health().word, modpack.requests, modpack.codes, modpack.failures,
                 view.checks, view.raisedCount, view.raisedNow(), view.lowered, smallworld.hellos,
                 smallworld.fpsReports, smallworld.malformed, smallworld.outdatedPrompts, xaero.handshakes, xaero.updates,

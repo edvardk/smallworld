@@ -44,7 +44,8 @@ final class Help {
                     false));
         }
         if (s.hudEnabled()) {
-            out.add(new Entry("hud", "[top|side|off|parts]", "server speed and your ping", "mcbrand.hud", false));
+            out.add(new Entry("hud", "[top|side|off|minimal|full|parts]", "server speed and your ping", "mcbrand.hud",
+                    false));
         }
         if (s.viewEnabled()) {
             out.add(new Entry("view", "[number|reset]", "your own view distance", "mcbrand.view", false));
