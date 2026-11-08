@@ -5,6 +5,8 @@
 //! smallworld-agent                                  # the daemon (mc-agent.service): Worker link, data plane
 //! smallworld-agent cli mcctl:USER ACTION [ARGS_JSON] # one action for mcctl over SSH (restart, plugin, moderate,
 //!                                                   # world_create|switch|delete) or a list (worlds, plugins)
+//! smallworld-agent telemetry                        # the experience telemetry alone (mc_agent.py telemetry; the
+//!                                                   # daemon runs it in-process, no unit runs this)
 //! ```
 //!
 //! Same command line as `mc_agent.py` (its `__main__`: `cli` as the first argument selects `cli_main(argv[2:])`,

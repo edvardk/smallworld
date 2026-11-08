@@ -2,7 +2,7 @@
 
 `smallworld-agent` (v1.4, `rust/smallworld-agent`) is the Rust port of the on-box agent: `scripts/mc_agent.py`
 plus the agent half of `scripts/mc_panel.py`, and the helpers they run in-process (`notify.py`, `worlds.py`,
-`health.py`, `alerts.py`, `mc_rcon.py`). It is behind a switch, `server.yml` `agent.implementation: python | rust`
+`health.py`, `alerts.py`, `mc_rcon.py`, and the player-experience telemetry, `telemetry.py`). It is behind a switch, `server.yml` `agent.implementation: python | rust`
 (default `python`; the default becomes `rust` in a later release, after a soak).
 
 This page is the map for someone who wants to learn the code. The contract the port was built against (which
@@ -14,7 +14,7 @@ Rust for Python programmers is [smallworld-rcon.md](smallworld-rcon.md). Read th
 
 - [What it does](#what-it-does)
 - [On the box](#on-the-box)
-- [The telemetry sidecar](#the-telemetry-sidecar)
+- [The experience telemetry](#the-experience-telemetry)
 - [How the crate is laid out](#how-the-crate-is-laid-out)
 - [Python is the spec: how parity is proved](#python-is-the-spec-how-parity-is-proved)
 - [Dependencies and the supply chain](#dependencies-and-the-supply-chain)
@@ -32,10 +32,12 @@ Everything mc-agent does (docs/reference.md "mc-agent"), byte for byte where byt
   texts, the self-test and the Mojang lookup;
 - the **data plane**: metrics with one persistent RCON connection, journal shipping (the archive, D1 rows and the
   scrubber), the inventory, the console tail, `/modpack` codes, the rejected-logins feed;
+- the **experience telemetry** (`scripts/telemetry.py`, below): the mc-telemetry plugin's snapshots -> minute
+  rows, segments, backfill, verdicts for the plugin, in-game messages;
 - `cli`, the entry point `mcctl`'s actions run over SSH (`mc-agent cli mcctl:USER ACTION [ARGS_JSON]`).
 
-Not ported (it stays Python): the experience telemetry (`scripts/telemetry.py`, below), and everything that runs
-behind its own systemd unit (`worlds.py`, `restore.py`, `backup.py`, `mc_panel.py apply-plugins`).
+Not ported (it stays Python): everything that runs behind its own systemd unit (`worlds.py`, `restore.py`,
+`backup.py`, `mc_panel.py apply-plugins`).
 
 ## On the box
 
@@ -43,27 +45,31 @@ behind its own systemd unit (`worlds.py`, `restore.py`, `backup.py`, `mc_panel.p
 |---|---|
 | `/opt/minecraft/bin/smallworld-agent` | the binary for the box's architecture (root, 0755), on every box whichever implementation runs; the base role checks it against `mc_smallworld_agent_sha256` before copying it |
 | `/opt/minecraft/bin/mc-agent` | a symlink to `smallworld-agent` or `mc_agent.py` (agent.implementation): what `mcctl` runs, and what `mc-run` names `mc-agent-cli-*` |
-| `mc-agent.service` | `ExecStart=/opt/minecraft/bin/smallworld-agent run` in rust mode (`mc_agent.py` in python mode); the same user (`mcops`), groups, sandbox, limits and writable paths either way |
-| `mc-telemetry.service` | rust mode with experience telemetry on: `mc_agent.py telemetry` |
+| `mc-agent.service` | `ExecStart=/opt/minecraft/bin/smallworld-agent run` in rust mode (`mc_agent.py` in python mode); the same user (`mcops`), groups, sandbox, limits, state directories (`mc-agent mc-telemetry`) and writable paths either way; the telemetry runs inside it in both |
 | `/opt/minecraft/product-version.json` | `agent: {implementation, sha256}` |
 
 Both implementations read and write the same state files (`/var/lib/mc-agent/*`, `pending.json`, `job.lock`,
-the markers), so switching either way is a deploy (docs/operations.md "Switching the agent's implementation").
+the markers, `telemetry-id.json` and `/var/lib/mc-telemetry/segments`), so switching either way is a deploy (docs/operations.md "Switching the agent's implementation").
 The parity scenario `state_roundtrip` proves the files written by one are read by the other.
 
-## The telemetry sidecar
+## The experience telemetry
 
-`telemetry.py` is 1,100 lines of float aggregation, backfill pacing and segments: the hardest part to prove and
-on by default, so v1.4 keeps it in Python. In python mode it runs inside the agent, as before. In rust mode it runs
-as `mc-telemetry.service` (`mc_agent.py telemetry`, `make_telemetry` + `telemetry_main`), with the same inputs and
-outputs, and three couplings cut:
+`telemetry.py` is 1,100 lines of float aggregation, sessions, segments and backfill pacing. Like the Python agent,
+the Rust one runs it **in-process**: `daemon::run` starts the `telemetry` thread when `EXPERIENCE=1`
+(`telemetry/mod.rs` `Telemetry::run`), `player_message` reads who is online from the latest snapshot it holds (an
+`Arc` swapped under a short lock, never held across I/O, as Python's lock-free `online()`), and the logs loop feeds
+systemd's end-of-run lines into its overhead card (`ship_logs`' `observe_all`). No unit of its own, no hand-off
+file: one process fewer than v1.4's pre-releases, which ran it beside the Rust agent as `mc-telemetry.service`.
 
-1. **Who is online** (`player_message`): the sidecar writes `/var/lib/mc-telemetry/online.json`
-   (`{uuid: {u, n, tips, join}}`, after every poll, atomic, 0640); the Rust agent reads it and treats a file older
-   than 30 s as "nobody online" (`actions/telemetry.rs`). The per-player and broadcast limits stay in the agent.
-2. **systemd's per-run resource lines** (the overhead card's oneshot units): the Python agent's logs loop fed
-   them to the telemetry; the sidecar reads them itself (`journalctl SYSLOG_IDENTIFIER=systemd`, its own cursor).
-3. **The overhead card** measures `mc-telemetry.service` too.
+Where Python's bytes matter the port keeps them: a dict's insertion order (segments are `json.dumps(row,
+separators=(",", ":"))`, verdicts.tsv lists the Worker's players in its reply's order: `telemetry/json.rs`, an
+insertion-ordered value with Python's `json.loads`/`dumps`), `round()` (data's `py_round`), `sum()` as CPython >=
+3.12 computes it (compensated for floats: `minute::py_sum`), `min`/`max` keeping the first of equal values.
+
+`smallworld-agent telemetry` (`telemetry/sidecar.rs`) is `mc_agent.py telemetry`: the same module alone in a
+process, plus what a separate process needs (`online.json`, its own reader of systemd's journal, itself in the
+overhead card). Nothing installs a unit for it; it is the entry point the telemetry parity harness drives on both
+sides, so the module the daemon runs is proven against Python's goldens.
 
 ## How the crate is laid out
 
@@ -73,10 +79,12 @@ rust/
                         pyjson), atomic files (fsx), flock, the audit journal entry, paths
   smallworld-agent/src/
     main.rs             argv: `cli` -> cli.rs, anything else -> daemon.rs (like mc_agent.py's __main__)
-    daemon.rs           Settings, the threads (metrics, logs, control, inventory, panel, selftest, client),
-                        each round under catch_unwind, signals
+    daemon.rs           Settings, the threads (metrics, logs, control, inventory, panel, selftest, telemetry,
+                        client), each round under catch_unwind, signals
     link/               Worker HTTP + WebSocket (rustls), verify + nonces, handle_command, the control loop
-    actions/            every do_<action>, the console allowlist, the sidecar's online map (telemetry.rs)
+    actions/            every do_<action>, the console allowlist
+    telemetry/          telemetry.py: snapshots, minute rows, sessions, overhead, stats, segments, backfill,
+                        verdicts, Messages, identity, the loop; `smallworld-agent telemetry` (sidecar.rs)
     jobs.rs, panel/     the job runner, pending.json, plugins, rejected logins
     sync/               players.yml, the GitHub client, the whitelist/world pull requests, alerts
     data/               metrics, health parsers, persistent RCON, inventory, console tail, client codes
@@ -96,9 +104,14 @@ type), RCON lines, systemctl argv, Worker requests and Discord texts match. Thre
 
 - **Vectors** (`tests/agent_parity/vectors/*.json`, generated from the Python functions by
   `scripts/parity_vectors.py`): every pure function, loaded by `cargo test`.
-- **Scenarios** (`tests/agent_parity`): 25 black-box runs of the whole daemon or the cli inside `unshare -rm`, with
-  a fake Worker, GitHub, RCON server, systemctl and journal, compared with golden traces recorded from Python.
-  CI runs every one against the committed release binary (ci.yml job `rust`, `RUST_PARITY_SCENARIOS`).
+- **Scenarios** (`tests/agent_parity`): 26 black-box runs of the whole daemon or the cli inside `unshare -rm`, with
+  a fake Worker, GitHub, RCON server, systemctl and journal, compared with golden traces recorded from Python
+  (`experience`: the in-process telemetry and `player_message`). CI runs every one against the committed release
+  binary (ci.yml job `rust`, `RUST_PARITY_SCENARIOS`).
+- **Telemetry** (`tests/telemetry_parity`): 13 black-box runs of `<bin> telemetry` (snapshots, minute rows,
+  sessions, lag, bad snapshots, identity, segments, backfill, overhead, online.json, state carried across the two
+  implementations) and the vectors of `scripts/telemetry_vectors.py`, replayed in `cargo test`
+  (`telemetry/vectors.rs`). CI runs every scenario against the release binary (`RUST_TELEMETRY_SCENARIOS`).
 - **Differential tests and fuzzing**: `tests/test_rust_agent_cli.py` (the cli side by side),
   `tests/test_rust_agent_console.py` and `tests/test_rust_scrub_fuzz.py` (Hypothesis against the hidden, pure
   `selftest-console` / `selftest-scrub` subcommands).
@@ -123,7 +136,7 @@ cargo fmt --all --check && cargo clippy --locked --all-targets -- -D warnings &&
 cargo build --locked -p smallworld-agent            # target/debug/smallworld-agent
 cd ..
 # the parity scenarios against your build (or the committed rust/dist binary)
-pytest tests/agent_parity --impl=rust --agent-bin=rust/target/debug/smallworld-agent
+pytest tests/agent_parity tests/telemetry_parity --impl=rust --agent-bin=rust/target/debug/smallworld-agent
 # the differential tests and the fuzzing with your build instead of the committed binary
 SMALLWORLD_AGENT_BIN=$PWD/rust/target/debug/smallworld-agent pytest -q tests/test_rust_agent_cli.py \
   tests/test_rust_agent_console.py tests/test_rust_scrub_fuzz.py

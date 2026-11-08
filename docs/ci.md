@@ -41,7 +41,7 @@ answer is "everything changed".
   | `agent-b` | `agent_check.py --rounds b`: mc-agent's pushes and first commands, then the rounds backup/restore, world library | always | ~10 min |
   | `telemetry-brand` | experience telemetry, then branding | heavy half | ~11 min |
   | `migrate-p16` | migrate container -> container, then the P16 knobs on the migrated box | heavy half | ~10 min |
-  | `agent-a, rust`, `agent-b, rust`, `telemetry-brand, rust` | v1.4: the same shards with `agent.implementation: rust` (`mcctl config set` before the render): the Rust mc-agent, `mc-agent cli` and the `mc-telemetry` sidecar through the same black-box rounds; `agent-a, rust` also scores the agent's units live (`hardening_check.py --agent`); `telemetry-brand, rust` runs the telemetry half only | like their Python shard | in parallel: no extra wall time |
+  | `agent-a, rust`, `agent-b, rust`, `telemetry-brand, rust` | v1.4: the same shards with `agent.implementation: rust` (`mcctl config set` before the render): the Rust mc-agent (its telemetry in-process) and `mc-agent cli` through the same black-box rounds; `agent-a, rust` also scores the agent's units live (`hardening_check.py --agent`); `telemetry-brand, rust` runs the telemetry half only | like their Python shard | in parallel: no extra wall time |
 
   The times are a measured full run (v1.2.2: core 10, the one `agent` shard 16, telemetry-brand 11, migrate-p16
   9.5); v1.3 cut `agent` in two by its rounds. Each agent shard repeats the shared part (the agent's sandbox, the
@@ -135,9 +135,9 @@ run in parallel threads.
 ## The telemetry parity harness
 
 `tests/telemetry_parity/` is the same bar for the player-experience telemetry (`scripts/telemetry.py`, ported to
-Rust in v1.4.0): it runs an implementation as `<bin> telemetry`, the `mc-telemetry.service` sidecar's entry
-point (Python: `scripts/mc_agent.py telemetry`), and compares what it does with golden traces from the Python
-sidecar. Part of the normal `pytest -q` on Linux, about 55 s (the scenarios run in parallel threads; the
+Rust in v1.4.0): it runs an implementation as `<bin> telemetry`, the telemetry alone in a process (Python:
+`scripts/mc_agent.py telemetry`; both agents run the same code in-process, and no unit runs this entry point), and
+compares what it does with golden traces from Python. Part of the normal `pytest -q` on Linux, about 55 s (the scenarios run in parallel threads; the
 slowest wait for a 30 s segment flush).
 
 - **Reuses the agent harness** (`tests/agent_parity`): the namespace box (`nsinit.py`; plus
@@ -160,7 +160,11 @@ slowest wait for a 30 s segment flush).
   (`MAX_SNAPSHOT_BYTES`, the name pattern, an older timestamp, symlink, FIFO, junk fields, a plugin restart),
   `identity`, `online` (`online.json`), `state_roundtrip` (Python -> implementation -> Python: identity,
   backlog, segments) and `startup_errors`. `Messages` (player_message's rate limits) isn't reachable from the
-  sidecar (player_message runs in the agent): vectors only.
+  telemetry alone (player_message runs in the agent): vectors here, and the agent harness's `experience`
+  scenario (the daemon with its in-process telemetry).
+- **The Rust gate**: ci.yml's `rust` job runs every scenario against the committed release binary
+  (`RUST_TELEMETRY_SCENARIOS`, kept equal to the goldens by `tests/test_telemetry.py`); `cargo test` replays the
+  vectors (`rust/smallworld-agent/src/telemetry/vectors.rs`).
 - **Traces**: every Worker request (status, auth, user agent, body; a row in full the first time, then
   `{"ref": id}` when an equal copy is backfilled or archived), the files the runs changed (mode; segments as
   decompressed NDJSON, JSON parsed and byte-exact), the fake systemctl/journalctl calls, stdout/stderr and exit
