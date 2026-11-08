@@ -469,15 +469,29 @@ class FakeGitHub:
 
 
 def make_cert(directory: Path) -> tuple[Path, Path]:
-    """A throw-away self-signed certificate for 127.0.0.1 (openssl), valid for two days."""
+    """A throw-away CA and a leaf certificate for 127.0.0.1 it signed (openssl), valid for two days. cert.pem is
+    the chain (leaf, then CA): the fake server sends it, and the agent trusts it as its CA bundle
+    (SSL_CERT_FILE). A leaf, not a self-signed CA certificate, because rustls (the Rust agent) refuses a CA
+    certificate used as the server's (webpki `CaUsedAsEndEntity`), as it should; OpenSSL accepts either."""
     cert, key = directory / "cert.pem", directory / "key.pem"
     if not cert.exists():
-        subprocess.run(
-            ["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1",
-             "-nodes", "-keyout", str(key), "-out", str(cert), "-days", "2", "-subj", "/CN=127.0.0.1",
-             "-addext", "subjectAltName=IP:127.0.0.1,DNS:localhost"],
-            check=True, capture_output=True, timeout=60,
-        )  # fmt: skip
+        ca, ca_key = directory / "ca.pem", directory / "ca-key.pem"
+        csr, leaf, ext = directory / "leaf.csr", directory / "leaf.pem", directory / "leaf.ext"
+        ec = ["-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes"]
+
+        def ssl(*args: str) -> None:
+            subprocess.run(["openssl", *args], check=True, capture_output=True, timeout=60)
+
+        ssl("req", "-x509", *ec, "-keyout", str(ca_key), "-out", str(ca), "-days", "2", "-subj", "/CN=parity CA",
+            "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign")  # fmt: skip
+        ssl("req", "-new", *ec, "-keyout", str(key), "-out", str(csr), "-subj", "/CN=127.0.0.1")
+        ext.write_text(
+            "subjectAltName=IP:127.0.0.1,DNS:localhost\nbasicConstraints=critical,CA:FALSE\n"
+            "keyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\n"
+        )
+        ssl("x509", "-req", "-in", str(csr), "-CA", str(ca), "-CAkey", str(ca_key), "-CAcreateserial",
+            "-days", "2", "-out", str(leaf), "-extfile", str(ext))  # fmt: skip
+        cert.write_bytes(leaf.read_bytes() + ca.read_bytes())
     return cert, key
 
 
