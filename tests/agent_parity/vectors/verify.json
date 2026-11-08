@@ -268,16 +268,25 @@
    ],
    "results": [
     {
-     "ok": {
-      "id": "c",
-      "action": "s",
-      "args": {},
-      "login": "l",
-      "iat": {
-       "float": "NaN"
-      },
-      "nonce": "nonce-0001"
-     }
+     "error": "missing or bad field: iat",
+     "type": "Rejected"
+    }
+   ]
+  },
+  {
+   "case": "iat_infinity",
+   "key": "CommandKeyParity-0123456789abcdefABCDEF",
+   "now": 1794100000.0,
+   "messages": [
+    {
+     "payload": "{\"id\":\"c\",\"action\":\"s\",\"args\":{},\"login\":\"l\",\"iat\":-Infinity,\"nonce\":\"nonce-0001\"}",
+     "sig": "93ab0a0f1c83ee2936281d8cf39e268f64819fb8153f9603e05002ae47bed575"
+    }
+   ],
+   "results": [
+    {
+     "error": "missing or bad field: iat",
+     "type": "Rejected"
     }
    ]
   },

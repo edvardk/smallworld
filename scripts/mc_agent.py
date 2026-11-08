@@ -64,6 +64,7 @@ import hmac
 import io
 import ipaddress
 import json
+import math
 import os
 import re
 import secrets
@@ -1174,6 +1175,13 @@ def sign(key: bytes, payload: str) -> str:
     return hmac.new(key, payload.encode(), hashlib.sha256).hexdigest()
 
 
+def _finite(x: float) -> bool:
+    try:
+        return math.isfinite(x)
+    except OverflowError:  # an int beyond a float
+        return False
+
+
 def verify(message: object, key: bytes, nonces: Nonces, now: float | None = None) -> dict[str, Any]:
     """Check signature, age and nonce of {"payload", "sig"}; returns the command. Raises Rejected."""
     now = time.time() if now is None else now
@@ -1194,8 +1202,8 @@ def verify(message: object, key: bytes, nonces: Nonces, now: float | None = None
         if not isinstance(cmd.get(name), kind):
             raise Rejected(f"missing or bad field: {name}")
     iat = cmd.get("iat")
-    if not isinstance(iat, int | float) or isinstance(iat, bool):
-        raise Rejected("missing or bad field: iat")
+    if not isinstance(iat, int | float) or isinstance(iat, bool) or not _finite(iat):
+        raise Rejected("missing or bad field: iat")  # v1.5: NaN, an infinity or beyond a float too
     if abs(now - iat / 1000) > MAX_AGE_S:  # iat in ms, like the Worker's Date.now()
         raise Rejected("too old (or from the future)")
     if not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", cmd["nonce"]) or not re.fullmatch(

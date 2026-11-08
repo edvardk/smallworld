@@ -78,6 +78,22 @@ def test_bad_commands_are_rejected(msg: object, why: str, tmp_path: Path) -> Non
         mc_agent.verify(msg, KEY, mc_agent.Nonces(None), NOW)
 
 
+@pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity", "1e400", "1" + "0" * 400])
+def test_a_non_finite_iat_is_a_bad_field(literal: str) -> None:
+    """v1.5: `iat: NaN` used to pass the age check (every comparison with NaN is false)."""
+    payload = (
+        '{"id":"c1","action":"status","args":{},"login":"admin@x","nonce":"'
+        + "n" * 16
+        + '","iat":'
+        + literal
+        + "}"
+    )
+    with pytest.raises(mc_agent.Rejected, match="missing or bad field: iat"):
+        mc_agent.verify(
+            {"payload": payload, "sig": mc_agent.sign(KEY, payload)}, KEY, mc_agent.Nonces(None), NOW
+        )
+
+
 def test_missing_fields_are_rejected() -> None:
     payload = json.dumps({"id": "c1", "action": "status", "iat": int(NOW * 1000), "nonce": "n" * 16})
     with pytest.raises(mc_agent.Rejected, match="login"):

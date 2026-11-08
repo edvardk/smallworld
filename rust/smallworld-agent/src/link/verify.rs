@@ -6,9 +6,9 @@
 //! - Field shapes; `iat` (ms, int or float, not bool) within ±60 s; id `[A-Za-z0-9_-]{1,64}`; nonce
 //!   `[A-Za-z0-9_-]{8,64}`; payload ≤ 8192 code points.
 //! - `json.loads` accepts the bare literals `NaN`, `Infinity` and `-Infinity`; serde_json doesn't. A payload that
-//!   only parses with them is accepted when they stand for the top-level `iat` (`NaN` passes the age check, as in
-//!   Python, where every comparison with NaN is false; the infinities are too old); anywhere else it reads as
-//!   "payload isn't JSON" (PORTING.md "Divergences").
+//!   only parses with them reaches the field checks when they stand for the top-level `iat`, which then refuses
+//!   it as a bad field (v1.5: a non-finite `iat`, `NaN` included, is "missing or bad field: iat" in both); anywhere
+//!   else it reads as "payload isn't JSON" (PORTING.md "Divergences").
 //! - Nonces: 10 min TTL, persisted (`nonces.json`, `tmp.write_text` + `os.replace`, insertion order like the
 //!   Python dict); an unreadable store refuses everything for 600 s and audits `fail-closed`; an unwritable one
 //!   refuses the command.
@@ -295,7 +295,9 @@ pub fn verify(message: &Value, key: &[u8], nonces: &mut Nonces, now: f64) -> ARe
         (None, Some(Value::Number(n))) => n.as_f64().unwrap_or(f64::NAN),
         _ => return Err(rejected("missing or bad field: iat")),
     };
-    // `abs(now - iat / 1000) > MAX_AGE_S`: false for NaN, like Python's comparison.
+    if !iat.is_finite() {
+        return Err(rejected("missing or bad field: iat")); // v1.5: NaN, an infinity, beyond a float
+    }
     if (now - iat / 1000.0).abs() > MAX_AGE_S {
         return Err(rejected("too old (or from the future)"));
     }
@@ -357,14 +359,15 @@ mod tests {
     }
 
     #[test]
-    fn nan_iat_keeps_parity_and_infinities_are_too_old() {
+    fn non_finite_iat_is_a_bad_field() {
         let key = b"k".repeat(32);
         let mut n = Nonces::new(None, 1000.0);
         let msg = |p: &str| json!({"payload": p, "sig": sign(&key, p)});
         let base = r#"{"id":"c","action":"s","args":{},"login":"l","nonce":"nonce-0001","iat":"#;
-        assert!(verify(&msg(&format!("{base}NaN}}")), &key, &mut n, 1000.0).is_ok());
-        let inf = verify(&msg(&format!("{base}-Infinity}}")), &key, &mut n, 1000.0);
-        assert_eq!(inf, Err(rejected("too old (or from the future)")));
+        for lit in ["NaN", "Infinity", "-Infinity"] {
+            let r = verify(&msg(&format!("{base}{lit}}}")), &key, &mut n, 1000.0);
+            assert_eq!(r, Err(rejected("missing or bad field: iat")), "{lit}");
+        }
         let elsewhere = r#"{"id":"c","action":"s","args":{"x":NaN},"login":"l","nonce":"nonce-0002","iat":1000000}"#;
         let r = verify(&msg(elsewhere), &key, &mut n, 1000.0);
         assert_eq!(r, Err(rejected("payload isn't JSON")));
