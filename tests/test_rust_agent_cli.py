@@ -270,9 +270,23 @@ def argv_for(impl: str, args: list[str]) -> list[str]:
     return [str(BINARY), "cli", *args]
 
 
+def _host_opt_entries(box_opt: Path) -> str:
+    """Bind the machine's own /opt entries (e.g. CI's /opt/hostedtoolcache, which holds the interpreter) into the
+    box's /opt before it covers the real one, as tests/agent_parity/nsinit.py does; the box's own entries win."""
+    binds = []
+    for entry in sorted(Path("/opt").iterdir()) if Path("/opt").is_dir() else []:
+        target = box_opt / entry.name
+        if target.exists() or not entry.is_dir():
+            continue
+        target.mkdir()
+        binds.append(f"mount --rbind {entry} {target} && ")
+    return "".join(binds)
+
+
 def namespaced(box: Box, argv: list[str]) -> list[str]:
     mounts = (
-        f"mount --bind {box.root / 'varlib'} /var/lib && mount --bind {box.root / 'opt'} /opt && "
+        f"{_host_opt_entries(box.root / 'opt')}"
+        f"mount --bind {box.root / 'varlib'} /var/lib && mount --rbind {box.root / 'opt'} /opt && "
         f'mount --bind {box.root / "run"} /run && exec "$@"'
     )
     return ["unshare", "-rm", "sh", "-c", mounts, "sh", *argv]
