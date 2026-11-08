@@ -10,7 +10,8 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 - Hardening from a CodeQL review (no vulnerability found): mc-agent's WebSocket and mcctl's HTTPS client set
   TLS 1.2 as the minimum explicitly (Python's default since 3.10, as the Rust agent already does); the panel
-  looks up views and loaders only in null-prototype maps and only by an own key, on top of the `TABS` check.
+  selects views and loaders from Maps and builds the view element without interpolating the tab id, on top of
+  the `TABS` check.
 
 ## [1.4.0] - 2026-11-08
 

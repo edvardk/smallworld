@@ -519,7 +519,7 @@ async function runAction(action, args, what = LABELS[action] || action) {
 
 // Fresh data after an action: the agent pushes its inventory right away; reload what the open tab shows.
 function afterAction() {
-  for (const id of Object.keys(loaded)) loaded[id] = 0;
+  for (const id of loaded.keys()) loaded.set(id, 0);
   pollJob();
   setTimeout(() => refresh().catch(() => {}), 1500);
   setTimeout(() => refresh().catch(() => {}), 6000);
@@ -777,7 +777,7 @@ function go(id, focus = false) {
 
 // --- views -------------------------------------------------------------------------------------------------------
 
-// Null-prototype maps, read only with a tab id from TABS: no inherited names can be looked up or called.
+// Each tab's view and loader, defined below; read through VIEWS / LOADS (Maps), never by indexing with a tab id.
 const V = Object.create(null);
 const LOADERS = Object.create(null);
 
@@ -2159,13 +2159,17 @@ V.audit = () => {
   </section>`;
 };
 
+// A tab id (from the URL fragment, checked against TABS) only ever selects an entry of these Maps.
+const VIEWS = new Map(Object.entries(V));
+const LOADS = new Map(Object.entries(LOADERS));
+
 // --- render + data flow -------------------------------------------------------------------------------------------
 
 // A tab switch builds the view afresh (and plays its rise animation); every later update of the same tab is a
 // patch in the next animation frame (update()).
 function render() {
   paintView(true);
-  if (LOADERS[current] && !loading.has(current) && needsLoad(current)) load(current);
+  if (LOADS.has(current) && !loading.has(current) && needsLoad(current)) load(current);
 }
 function update() {
   onFrame("view", () => paintView(false));
@@ -2176,9 +2180,14 @@ function paintView(full) {
   main.setAttribute("aria-labelledby", `tab-${current}`);
   const view = main.firstElementChild;
   const fresh = full || !view || view.dataset.tab !== current;
-  const paint = Object.hasOwn(V, current) ? V[current] : V.overview;
-  if (fresh) main.innerHTML = `<div class="view" data-tab="${current}">${paint()}</div>`;
-  else patch(view, paint());
+  const paint = VIEWS.get(current) ?? VIEWS.get("overview");
+  if (fresh) {
+    const div = document.createElement("div");
+    div.className = "view";
+    div.dataset.tab = current;
+    div.innerHTML = paint();
+    main.replaceChildren(div);
+  } else patch(view, paint());
   applyDyn(main);
   watchCharts(main, fresh);
   if (current === "overview") paintOverview();
@@ -2193,18 +2202,19 @@ function once(el) {
   WIRED.add(el);
   return true;
 }
-const loaded = Object.create(null);
+const loaded = new Map(); // tab id -> when its loader last finished
 const loading = new Set();
-const needsLoad = (id) => !loaded[id] || Date.now() - loaded[id] > POLL_MS;
+const needsLoad = (id) => !loaded.get(id) || Date.now() - loaded.get(id) > POLL_MS;
 async function load(id) {
-  if (!Object.hasOwn(LOADERS, id)) return;
+  const loader = LOADS.get(id);
+  if (!loader) return;
   loading.add(id);
   try {
-    await LOADERS[id]();
-    loaded[id] = Date.now();
+    await loader();
+    loaded.set(id, Date.now());
   } catch (e) {
     if (!(e instanceof ApiError && e.message === "forbidden")) toast(`Couldn't load ${id}: ${e.message}`);
-    loaded[id] = Date.now();
+    loaded.set(id, Date.now());
   } finally {
     loading.delete(id);
   }
@@ -2219,7 +2229,7 @@ async function refresh() {
   });
   if (current === "overview") {
     update();
-  } else if (current !== "console" && LOADERS[current] && needsLoad(current) && !(current === "players" && $("#wlName")?.value)) {
+  } else if (current !== "console" && LOADS.has(current) && needsLoad(current) && !(current === "players" && $("#wlName")?.value)) {
     load(current);
   } else if (current === "health" && $("#h-hc")) {
     update();
