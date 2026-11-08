@@ -162,6 +162,51 @@ def test_worker_reads_fps_and_builds_the_diagnosis() -> None:
     assert "'server fine, your PC' with the measured frame rate" in mjs
 
 
+def test_fps_is_shown_inside_the_hud_not_on_top_of_it() -> None:
+    """v1.4.1: the mod drew its FPS at the boss bar title's height (y = 3), right of the 182-px bar, so it sat on
+    mc-brand's long "/hud top" line. mc-brand listens to the reports itself, shows them inside the HUD (boss bar
+    and sidebar) and clears the config's HUD flag for players whose HUD shows; /hud resends the config."""
+    sw = (BRAND / "Smallworld.java").read_text()
+    hud = (BRAND / "Hud.java").read_text()
+    msg = (BRAND / "Msg.java").read_text()
+    plugin = (BRAND / "BrandPlugin.java").read_text()
+    assert 'FPS = "smallworld:fps"' in sw
+    assert "registerIncomingPluginChannel(plugin, FPS, this)" in sw
+    assert "unregisterIncomingPluginChannel(plugin, FPS, this)" in sw
+    assert "report(player, Wire.decodeFps(message).fps())" in sw
+    assert "value < 0 || value > Wire.MAX_FPS" in sw  # WIRE.md's range; anything else is malformed
+    assert "fps.remove(p.getUniqueId())" in sw  # nothing kept beyond the session
+    # the mod draws its own only where the HUD doesn't show the FPS
+    assert "return configured && !inHud;" in sw
+    assert "clientHud(s.clientFpsHud(), plugin.hudShowsFps(p))" in sw
+    assert "return hud.mode(p) != Hud.Mode.OFF;" in plugin
+    assert "smallworld.hudChanged(p);" in plugin
+    assert "p -> smallworld.fps(p.getUniqueId())" in plugin
+    # boss bar: last, only with a report; sidebar: the hint line becomes the viewer's FPS
+    assert (
+        "if (fps >= 0) {\n            b.append(sep).append(Component.text(Msg.fps(fps), Msg.fpsColor(fps)));"
+        in hud
+    )
+    assert "barText(online, speed, health, p.getPing(), fps.applyAsInt(p), glyphs.test(p))" in hud
+    assert "withFps(lines, fps.applyAsInt(p))" in hud
+    assert "new Line(Component.text(Msg.YOUR_FPS, s.subtle())" in hud
+    # the colours are the Worker's fair/poor thresholds
+    worker = (REPO / "watchdog/worker.js").read_text()
+    fair = re.search(r"fps_fair: (\d+),", worker)
+    poor = re.search(r"fps_poor: (\d+),", worker)
+    assert fair and poor
+    assert f"FPS_FAIR = {fair.group(1)};" in msg and f"FPS_POOR = {poor.group(1)};" in msg
+    # the server.yml doc says the HUD overrides client.fps.hud
+    assert "tells the mod not to draw its own" in schema.ClientFps.__dataclass_fields__["hud"].metadata["doc"]
+    assert "`flags` bit 0 is cleared" in WIRE_MD
+    e2e = (REPO / "tests/e2e/brand_check.py").read_text()
+    for needle in (
+        "client hud true/false/false",
+        "fps bar true/true, fps line Your FPS 24 fps hint true, fps colours green/yellow/red",
+    ):
+        assert needle in e2e
+
+
 def test_wire_doc_says_the_server_side_is_built() -> None:
     assert "Not built yet" not in WIRE_MD
     assert (

@@ -1628,7 +1628,7 @@ const MESSAGES = {
   // and mc-telemetry FPS_TIP (tests/test_brand.py)
   fps: () => ({ text: "The server and your connection look fine, so stutter is likely your PC's frame rate. Press F3 to see your FPS (top-left). Lowering render distance or installing Sodium usually helps.", hover: "F3 shows your FPS at the top left (Fn+F3 on some laptops)." }),
   // v1.2: the diagnosis "server fine / your PC" with the client mod's measured FPS
-  client_fps: (c) => ({ text: `The server and your connection are fine: your PC is drawing ${c.fps} FPS. Lower render distance or shaders (or close other programs) to smooth it out.`, hover: "Measured by the server's client mod (the number next to the top bar)." }),
+  client_fps: (c) => ({ text: `The server and your connection are fine: your PC is drawing ${c.fps} FPS. Lower render distance or shaders (or close other programs) to smooth it out.`, hover: "Measured by the server's client mod (the FPS in the top HUD bar)." }),
   join_summary: (c) => ({ text: `Welcome back! Last time you had some lag (${c.why}). Type /lag anytime to see why.`, hover: "Type /lag tips off to stop these messages." }),
 };
 

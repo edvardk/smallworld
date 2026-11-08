@@ -101,7 +101,7 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
     @Override
     public void onEnable() {
         s = Settings.load(YamlConfiguration.loadConfiguration(new File(getDataFolder(), "config.yml")));
-        hud = new Hud(this, s, BrandPlugin::glyphs);
+        hud = new Hud(this, s, BrandPlugin::glyphs, p -> smallworld.fps(p.getUniqueId())); // v1.4.1: FPS in the HUD
         glass = new Drink(this, s);
         modpack = new Modpack(this, s);
         view = new View(this, s);
@@ -399,6 +399,14 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
         compass.clientsChanged(p);
     }
 
+    /**
+     * v1.4.1: the player's HUD (their /hud choice or the server's default) shows their FPS, so the client mod
+     * mustn't draw its own on top of it.
+     */
+    boolean hudShowsFps(Player p) {
+        return hud.mode(p) != Hud.Mode.OFF;
+    }
+
     /** v1.3: the client has the Smallworld mod (it said hello, or registered one of our channels). */
     boolean hasOurMod(Player p) {
         return smallworld.client(p.getUniqueId()) != null
@@ -627,6 +635,7 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
             return;
         }
         hud.set(p, m);
+        smallworld.hudChanged(p); // v1.4.1: the mod draws its own FPS only with the HUD off
         p.sendMessage(Component.text(switch (m) {
             case TOP -> "HUD at the top of the screen (/hud side for the sidebar, /hud off to hide it)";
             case SIDE -> "HUD in the sidebar (/hud top for the top of the screen, /hud off to hide it)";
@@ -676,12 +685,12 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
                 "mc-brand %s: hud task runs=%d last=%dus max=%dus, hud write errors=%d, drinks=%d, glasses removed=%d;"
                         + " TPS %.1f, MSPT %.1f (p95 %.1f) = %s; modpack requests=%d codes=%d failures=%d;"
                         + " view checks=%d raised=%d (now %d) lowered=%d; smallworld hellos=%d"
-                        + " malformed=%d outdated=%d; xaero handshakes=%d updates=%d fair play=%d;"
+                        + " fps reports=%d malformed=%d outdated=%d; xaero handshakes=%d updates=%d fair play=%d;"
                         + " compass showing=%d renders=%d updates=%d; pocket maps given=%d removed=%d recentres=%d",
                 s.name(), hud.runs, hud.lastNs / 1000, hud.maxNs / 1000, hud.writeErrors, glass.drinks, glass.removed,
                 sp.tps(), sp.mspt(), sp.p95(), sp.health().word, modpack.requests, modpack.codes, modpack.failures,
                 view.checks, view.raisedCount, view.raisedNow(), view.lowered, smallworld.hellos,
-                smallworld.malformed, smallworld.outdatedPrompts, xaero.handshakes, xaero.updates,
+                smallworld.fpsReports, smallworld.malformed, smallworld.outdatedPrompts, xaero.handshakes, xaero.updates,
                 xaero.fairPlay, compass.showing(), compass.renders, compass.updates, pocketMap.given,
                 pocketMap.removed, pocketMap.recentres)));
     }

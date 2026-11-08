@@ -12,11 +12,13 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
+import java.util.function.ToIntFunction;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TextComponent;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Server;
@@ -45,6 +47,11 @@ import org.bukkit.scoreboard.ScoreboardManager;
  *       format or blank. Entries are "mcb.N": vanilla hides score holders starting with '#'
  *       (Scoreboard.HIDDEN_SCORE_PREFIX; the v1.0.0 HUD showed its title and no line because of it), and '.'
  *       can't be in a player name.
+ *   <li>v1.4.1: the viewer's own FPS, as the Smallworld client mod last reported it ({@link Smallworld#fps}, every
+ *       client.fps.interval_seconds): "· 144 fps" at the end of the boss bar's line, and a "Your FPS" line in the
+ *       sidebar in place of the "FPS: press F3" hint. Players without the mod see neither. The mod's own FPS
+ *       element is then switched off for them ({@link Smallworld#clientHud}): it was drawn at the boss bar
+ *       title's height, right of the 182-px bar, so it sat on this line's text.
  * </ul>
  *
  * <p>The {glyph} icon (resource pack font) is shown only to players whose client loaded the pack ({@code glyphs}).
@@ -79,6 +86,7 @@ final class Hud {
     private final Settings s;
     private final Logger log;
     private final Predicate<Player> glyphs;
+    private final ToIntFunction<Player> fps; // v1.4.1: the client mod's latest report, -1 none
     private long lastLogNs = -LOG_EVERY_NS;
     long writeErrors;
     private final NamespacedKey modeKey;
@@ -107,10 +115,11 @@ final class Hud {
         }
     }
 
-    Hud(BrandPlugin plugin, Settings settings, Predicate<Player> glyphs) {
+    Hud(BrandPlugin plugin, Settings settings, Predicate<Player> glyphs, ToIntFunction<Player> fps) {
         this.s = settings;
         this.log = plugin.getLogger();
         this.glyphs = glyphs;
+        this.fps = fps;
         this.modeKey = new NamespacedKey(plugin, "hud_mode");
         this.legacyKey = new NamespacedKey(plugin, "hud");
     }
@@ -174,7 +183,8 @@ final class Hud {
             Board b = newBoard(glyphs.test(p));
             boards.put(p.getUniqueId(), b);
             p.setScoreboard(b.sb);
-            update(b, lines(Bukkit.getServer(), speed, smoother.current(), settling.keySet(), unsettled));
+            update(b, withFps(lines(Bukkit.getServer(), speed, smoother.current(), settling.keySet(), unsettled),
+                    fps.applyAsInt(p)));
         }
     }
 
@@ -284,7 +294,7 @@ final class Hud {
                     if (mine && settlingLines == null) {
                         settlingLines = lines(server, speed, health, unsettled, true);
                     }
-                    update(b, mine ? settlingLines : lines);
+                    update(b, mine ? settlingLines : withFps(lines, fps.applyAsInt(p)));
                 }
                 BossBar bar = bars.get(id);
                 if (bar != null) {
@@ -381,6 +391,11 @@ final class Hud {
 
     /** The boss bar's one line: name · online · health · speed · tick time · the viewer's ping. */
     Component barText(int online, Msg.Speed speed, Msg.Health health, int ping, boolean glyph) {
+        return barText(online, speed, health, ping, -1, glyph);
+    }
+
+    /** v1.4.1: ... · the viewer's ping · the viewer's FPS (the client mod's report; {@code fps < 0}: none). */
+    Component barText(int online, Msg.Speed speed, Msg.Health health, int ping, int fps, boolean glyph) {
         Component sep = Component.text(" · ", s.secondary());
         TextComponent.Builder b = Component.text()
                 .append(Texts.withGlyph(Texts.bold(s.name(), s.accent()), glyph))
@@ -395,6 +410,9 @@ final class Hud {
         if (ping >= 0) {
             b.append(sep).append(Component.text("you " + ping + " ms", Texts.pingColor(ping)));
         }
+        if (fps >= 0) {
+            b.append(sep).append(Component.text(Msg.fps(fps), Msg.fpsColor(fps)));
+        }
         return b.build();
     }
 
@@ -406,7 +424,7 @@ final class Hud {
                 bar.color(BossBar.Color.WHITE);
                 return;
             }
-            bar.name(barText(online, speed, health, p.getPing(), glyphs.test(p)));
+            bar.name(barText(online, speed, health, p.getPing(), fps.applyAsInt(p), glyphs.test(p)));
             bar.progress(speed.load());
             bar.color(health.bar);
         } catch (RuntimeException e) {
@@ -456,6 +474,26 @@ final class Hud {
                 Component.text(Msg.tick(speed.mspt(), true), Msg.tickColor(speed.mspt()))));
         out.add(new Line(Component.text(Msg.FPS_HINT, s.subtle()), null));
         return out.subList(0, Math.min(out.size(), MAX_LINES));
+    }
+
+    /**
+     * v1.4.1: one viewer's sidebar: the shared lines with the "FPS: press F3" hint replaced by their reported FPS
+     * ({@code fps < 0}, or no hint line (settling, cut at MAX_LINES): the shared list itself).
+     */
+    List<Line> withFps(List<Line> lines, int fps) {
+        if (fps < 0) {
+            return lines;
+        }
+        Component hint = Component.text(Msg.FPS_HINT, s.subtle());
+        for (int i = lines.size() - 1; i >= 0; i--) {
+            if (hint.equals(lines.get(i).text())) {
+                List<Line> out = new ArrayList<>(lines);
+                out.set(i, new Line(Component.text(Msg.YOUR_FPS, s.subtle()),
+                        Component.text(Msg.fps(fps), Msg.fpsColor(fps))));
+                return out;
+            }
+        }
+        return lines;
     }
 
     /** Writes the lines that changed. Each line on its own: one that fails is logged (rate-limited) and retried
@@ -517,6 +555,29 @@ final class Hud {
                 + "; boss bar: " + Texts.flat(bar.name()) + " (fill " + String.format(Locale.ROOT, "%.2f", bar.progress())
                 + ", " + bar.color() + "); default mode " + Mode.parse(s.hudDefaultMode(), Mode.TOP).word() + "; "
                 + legacySelftest() + "; " + Msg.selftest() + ", settle " + s.hudSettleSeconds() + " s; settling bar: "
-                + Texts.flat(barTextSettling(1, false));
+                + Texts.flat(barTextSettling(1, false)) + "; " + fpsSelftest(server, speed);
+    }
+
+    /**
+     * v1.4.1, for /mcbrand selftest: the FPS in the boss bar's line (last, only with a report), the sidebar's FPS
+     * line in place of the hint, and the colours at the Worker's thresholds.
+     */
+    String fpsSelftest(Server server, Msg.Speed speed) {
+        String with = Texts.flat(barText(1, speed, speed.health(), 23, 144, false));
+        String without = Texts.flat(barText(1, speed, speed.health(), 23, -1, false));
+        List<Line> base = lines(server, speed);
+        List<Line> mine = withFps(base, 24);
+        Line last = null;
+        for (Line l : mine) {
+            if (Texts.flat(l.text()).equals(Msg.YOUR_FPS)) {
+                last = l;
+            }
+        }
+        return "fps bar " + with.endsWith(" · you 23 ms · 144 fps") + "/" + !without.contains("fps")
+                + ", fps line " + (last == null ? "-" : Texts.flat(last.text()) + " " + Texts.flat(last.number()))
+                + " hint " + (withFps(base, -1) == base) + ", fps colours "
+                + NamedTextColor.NAMES.key(Msg.fpsColor(Msg.FPS_FAIR)) + "/"
+                + NamedTextColor.NAMES.key(Msg.fpsColor(Msg.FPS_FAIR - 1)) + "/"
+                + NamedTextColor.NAMES.key(Msg.fpsColor(Msg.FPS_POOR - 1));
     }
 }

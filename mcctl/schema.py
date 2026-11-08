@@ -1262,7 +1262,9 @@ class ClientFps:
     hud: bool = opt(
         True,
         doc="v1.2: the client mod draws the FPS next to the top HUD bar (each player can still hide it in "
-        "config/smallworld.json).",
+        "config/smallworld.json). v1.4.1: for a player whose in-game HUD shows (/hud top or side), mc-brand "
+        "puts the reported FPS inside that HUD and tells the mod not to draw its own, whatever this says; "
+        "this applies only to players with /hud off or with branding.hud switched off.",
     )
 
 

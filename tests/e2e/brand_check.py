@@ -161,6 +161,14 @@ def main() -> int:
             "smallworld hello true, pack CURRENT/OUTDATED/NONE/UNKNOWN, config 010501",
             "v1.2: WIRE.md's worked example decodes, the outdated-pack rule, the config payload",
         ),
+        (
+            "client hud true/false/false",
+            "v1.4.1: the mod draws its own FPS only where the HUD doesn't show it (client.fps.hud on, /hud off)",
+        ),
+        (
+            "fps bar true/true, fps line Your FPS 24 fps hint true, fps colours green/yellow/red",
+            "v1.4.1: the reported FPS inside the HUD (boss bar line, sidebar line), the Worker's thresholds",
+        ),
         ("pack is out of date", "v1.2: the outdated-pack line"),
         (
             "xaero tracked 020a01000172000b000169000000040123456789abcdeffedcba9876543210060001783ff8000000000000"

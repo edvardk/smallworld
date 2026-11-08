@@ -713,10 +713,12 @@ Smallworld mod; `xaerominimap:main` / `xaeroworldmap:main`, or any `xaero*` name
 
 - **top**: a bar at the top centre of the screen, one line: `My Server · 3 online · Smooth · 20/20 TPS · 8 of
   50 ms · you 23 ms` (the last number is the player's own connection). The bar fills with the share of the 50 ms
-  tick budget the server uses, and its colour is the server's health.
+  tick budget the server uses, and its colour is the server's health. v1.4.1: with the Smallworld client mod the
+  line ends with the player's own frame rate, `· 144 fps` (green from 30, yellow from 20, red below; refreshed
+  every `client.fps.interval_seconds`), and the mod then draws no FPS of its own (it sat on this line).
 - **side**: the sidebar (the client always puts it at the right): every player with a coloured dot and their ping
   (green under 80 ms, yellow under 200 ms, red above), then `Server Smooth`, `Speed 20.0/20 TPS`, `Tick time 8.3
-  of 50 ms` and `FPS: press F3`.
+  of 50 ms` and `FPS: press F3` (v1.4.1: `Your FPS 144 fps` instead for players with the Smallworld client mod).
 
 **What the words and numbers mean** (the same wording in the HUD, the tab list, `/lag` and the hover texts in chat):
 

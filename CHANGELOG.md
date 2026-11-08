@@ -25,6 +25,12 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 - The world map render (`mc-map.service`) has its 4 h cap again: `RuntimeMaxSec=` has no effect in a
   `Type=oneshot` unit (systemd ignored it, logging so), so the unit now uses `TimeoutStartSec=4h`; a test refuses
   `RuntimeMaxSec=` in any oneshot unit the product installs.
+- The client mod's FPS number no longer overlaps the top HUD: it was drawn as its own element at the boss bar
+  title's height, just right of the bar, so it sat on mc-brand's `/hud top` line. mc-brand now shows the FPS the
+  mod reports inside its HUD (the boss bar's line ends with "· 144 fps", the sidebar has a "Your FPS" line, coloured
+  at the panel's fair/poor thresholds) and tells the mod not to draw its own for players whose HUD shows;
+  `client.fps.hud` now only applies to players with `/hud off` (or with `branding.hud` off). The FPS refreshes
+  every `client.fps.interval_seconds` (default 5 s). No new client pack is needed.
 
 ## [1.4.0] - 2026-11-08
 
