@@ -17,7 +17,11 @@
    - whether Terraform changes (the tfvars, or the rendered watchdog files differ): then `mcctl apply` (its
      plan and its typed confirmation) runs before anything is merged or deployed; a changed state backend
      is refused (migrate the state by hand);
-   - who is online now (`remote.STATUS_SCRIPT` over the tailnet, 20 s; "unknown" when it fails).
+   - who is online now (`remote.STATUS_SCRIPT` over the tailnet, 20 s; "unknown" when it fails);
+   - v1.5, the whitelist guard's warning: players on the live whitelist (mc-agent's inventory, read from the
+     watchdog's D1 with the admin token in .env, as `mcctl doctor` does; panel.mode cloudflare) that the new
+     players.yml doesn't list and the panel has no pending change for. A deploy removes those players.yml had
+     before (and, with minecraft.strict_whitelist, all of them); the rest are kept, but not in Git.
 2. **Validate** (as `mcctl validate`: the config repo loads and renders).
 3. **Route.** `pr` (default): commit (a message that summarises the change) on `publish/<UTC timestamp>`,
    push, open the pull request, show its checks live (`gh pr checks`, polled, bounded), offer the admin's
@@ -61,7 +65,8 @@ from typing import Any
 
 import yaml
 
-from mcctl import configrepo, init, remote, render, schema, upgrade
+from mcctl import configrepo, envfile, http, init, metrics, remote, render, schema, upgrade
+from mcctl.providers.cloudflare import CloudflareError
 from mcctl.schema import ServerConfig
 
 ROUTES = ("pr", "main", "deploy")
@@ -94,6 +99,64 @@ WORD = re.compile(r"[A-Za-z_]\w*")
 Online = Callable[[ServerConfig], remote.Status]
 
 
+@dataclass
+class LiveWhitelist:
+    """The live whitelist as mc-agent last reported it (its inventory in the watchdog's D1): `players` is None
+    when unknown (`error` says why); `pending` holds the UUIDs with a pending panel change."""
+
+    players: list[dict[str, Any]] | None = None
+    pending: set[str] = field(default_factory=set)
+    error: str = ""
+
+
+def live_whitelist(ctx: init.Ctx, cfg: ServerConfig) -> LiveWhitelist:
+    """mc-agent's inventory (whitelist + pending panel changes) from the watchdog's D1, read-only, with the
+    admin token from .env (never printed). Unknown without the panel or the token, or when the read fails."""
+    if cfg.panel.mode != "cloudflare":
+        return LiveWhitelist(error="no panel (panel.mode isn't cloudflare)")
+    try:
+        token = envfile.merged(ctx.root).get("CLOUDFLARE_API_TOKEN", "")
+    except envfile.EnvFileError as e:
+        return LiveWhitelist(error=str(e))
+    if not token:
+        return LiveWhitelist(error="needs CLOUDFLARE_API_TOKEN (.env)")
+    try:
+        account = metrics.zone_account(token, cfg.dns.zone, ctx.deps.transport)
+        db = metrics.database(token, account, f"{cfg.name}-watchdog", ctx.deps.transport)
+        rows = db.query("SELECT value FROM watchdog WHERE key = 'inventory'")
+        inv = json.loads(str(rows[0].get("value") or "null")) if rows else None
+    except (http.HttpError, CloudflareError, ValueError, KeyError, TypeError) as e:
+        return LiveWhitelist(error=f"couldn't read the watchdog's D1: {_first(e)}")
+    if not isinstance(inv, dict) or not isinstance(inv.get("whitelist"), list):
+        return LiveWhitelist(error="mc-agent hasn't reported the whitelist yet")
+    players = [p for p in inv["whitelist"] if isinstance(p, dict) and isinstance(p.get("uuid"), str)]
+    pending = {
+        str(e["uuid"]).lower()
+        for e in inv.get("pending") or []
+        if isinstance(e, dict) and isinstance(e.get("uuid"), str)
+    }
+    return LiveWhitelist(players=players, pending=pending)
+
+
+def whitelist_gaps(
+    live: LiveWhitelist, new: schema.Players, old: schema.Players | None, strict: bool
+) -> tuple[list[str], list[str]]:
+    """(removed, kept): live players the new players.yml (whitelist + ops) doesn't list and the panel has no
+    pending change for. A deploy removes them if players.yml listed them before (`old`: origin/main, the
+    whitelist guard's "Git had them") or with strict_whitelist; it keeps the others (never in Git)."""
+    git_new = {p.uuid.lower() for p in new.whitelist} | {o.uuid.lower() for o in new.ops}
+    git_old = {p.uuid.lower() for p in old.whitelist} | {o.uuid.lower() for o in old.ops} if old else set()
+    removed: list[str] = []
+    kept: list[str] = []
+    for p in live.players or []:
+        uuid = str(p["uuid"]).lower()
+        if uuid in git_new or uuid in live.pending:
+            continue
+        name = str(p.get("name") or uuid)
+        (removed if strict or uuid in git_old else kept).append(name)
+    return sorted(removed, key=str.lower), sorted(kept, key=str.lower)
+
+
 def probe_status(cfg: ServerConfig) -> remote.Status:
     """The server's status over the tailnet (players online), bounded; never reads the terminal."""
     argv = remote.ssh_argv(cfg, remote.STATUS_SCRIPT)
@@ -123,6 +186,7 @@ class Tools:
 
     online: Online = probe_status
     product: upgrade.ProductRunner = upgrade.run_in_product
+    whitelist: Callable[[init.Ctx, ServerConfig], LiveWhitelist] = live_whitelist
     max_wait_minutes: int = WAIT_EMPTY_MINUTES
 
 
@@ -256,6 +320,7 @@ class Consequences:
     terraform: list[str] = field(default_factory=list)  # tfvars keys (or watchdog files) that changed
     backend: bool = False
     unknown: str = ""  # why the consequences couldn't be judged
+    old_players: schema.Players | None = None  # players.yml on origin/main (v1.5: the whitelist warning)
     deferred: str = (
         ""  # v1.3: "HH:MM-HH:MM <tz>" when a restart now would wait for server.yml maintenance.window
     )
@@ -270,6 +335,7 @@ def judge(old: Rendered, new: Rendered, idx: Index) -> Consequences:
         settings=_changed(flatten(old.server), flatten(new.server)),
         players=players_diff(old.players, new.players),
         variables=_changed(old.group_vars, new.group_vars),
+        old_players=old.players,
     )
     for var in c.variables:
         names = idx.closure(var)
@@ -414,6 +480,31 @@ def online_text(st: remote.Status | None) -> str:
         return f"unknown ({st.error or 'no answer'})"
     who = f" ({', '.join(st.players)})" if st.players else ""
     return f"{st.players_online}{who}"
+
+
+def show_whitelist(ctx: init.Ctx, live: LiveWhitelist | None, gaps: tuple[list[str], list[str]]) -> None:
+    """v1.5: the whitelist guard's warning in the preview (see the module docstring)."""
+    ui = ctx.ui
+    if live is None:
+        return
+    if live.players is None:
+        ui.say(f"  live whitelist: unknown ({live.error})")
+        return
+    removed, kept = gaps
+    if removed:
+        ui.warn(
+            f"live whitelist: a deploy removes {', '.join(removed)}: on the live whitelist, not in "
+            "players.yml and no pending panel change. Keep them: `mcctl players add NAME` (or put them back "
+            "in players.yml)"
+        )
+    if kept:
+        ui.warn(
+            f"live whitelist: {', '.join(kept)} aren't in players.yml (and no pending panel change): the "
+            "whitelist guard keeps them, but Git doesn't have them. Keep them: `mcctl players add NAME`; "
+            "don't want them: remove them in the panel"
+        )
+    if not removed and not kept:
+        ui.say(f"  live whitelist: {len(live.players)} player(s), all in players.yml or pending in the panel")
 
 
 def show_preview(ctx: init.Ctx, ch: Changes, c: Consequences, st: remote.Status | None) -> None:
@@ -862,13 +953,19 @@ def _publish(
     ui = ctx.ui
     c = consequences(ctx, ch.base, idx)
     st: remote.Status | None = None
+    live: LiveWhitelist | None = None
+    gaps: tuple[list[str], list[str]] = ([], [])
     try:
-        cfg = configrepo.load(ctx.root).server
+        loaded = configrepo.load(ctx.root)
+        cfg = loaded.server
         c.deferred = schema.restart_deferred(cfg, ctx.deps.now()) or ""  # the window the change deploys with
         st = tools.online(cfg)
+        live = tools.whitelist(ctx, cfg)
+        gaps = whitelist_gaps(live, loaded.players, c.old_players, cfg.minecraft.strict_whitelist)
     except configrepo.ConfigError:
         st = None
     show_preview(ctx, ch, c, st)
+    show_whitelist(ctx, live, gaps)
     ui.section("Validate")
     repo = validate(ctx)
     if c.backend:

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from conftest import REPO, make_config_repo
+from conftest import REPO, Replay, make_config_repo
 
 from mcctl import cli, configrepo, init, players, publish, remote, schema, yamledit
 from mcctl.mock import GIT_IDENTITY
@@ -181,7 +181,12 @@ def make(
     # tests run unattended; most stand for `--merge` (the unattended default leaves the pull request unmerged)
     answers = {"publish_merge": True} | (answers or {}) if merge else (answers or {})
     ctx = init.Ctx(root=env["root"], ui=UI(answers=answers, out=out), deps=deps, opts=init.Options())
-    tools = publish.Tools(online=Online(online or [0]), product=Product(product_rc), max_wait_minutes=10)
+    tools = publish.Tools(
+        online=Online(online or [0]),
+        product=Product(product_rc),
+        max_wait_minutes=10,
+        whitelist=lambda ctx, cfg: publish.LiveWhitelist(error="not asked (test)"),
+    )
     return ctx, fake, tools, out
 
 
@@ -216,6 +221,85 @@ def test_dry_run_previews_a_restart_and_changes_nothing(env: dict[str, Any]) -> 
     assert git(root, "rev-parse", "HEAD") == head and git(root, "status", "--porcelain") == "M server.yml"
     assert not fake.gh_calls() and not any("push" in c for c in fake.calls)
     assert git(root, "worktree", "list").count("\n") == 0  # the base worktree is gone
+
+
+# --- v1.5: the whitelist guard's warning in the preview -------------------------------------------------------
+
+
+GUEST, GONE, PANEL = (
+    "00000000-0000-4000-8000-0000000000a2",
+    "00000000-0000-4000-8000-0000000000a4",
+    "00000000-0000-4000-8000-0000000000a3",
+)
+
+
+def write_env(root: Path, text: str) -> None:
+    (root / ".env").write_text(text)
+    (root / ".env").chmod(0o600)
+
+
+def test_live_whitelist_reads_the_agents_inventory_from_d1(env: dict[str, Any]) -> None:
+    root = env["root"]
+    ctx, _, _, _ = make(env)
+    write_env(root, "CLOUDFLARE_API_TOKEN=cf-token-for-tests\n")
+    replay = Replay("cloudflare_d1_watchdog_whitelist.json")
+    ctx.deps.transport = replay
+    live = publish.live_whitelist(ctx, configrepo.load(root).server)
+    assert [p["name"] for p in live.players or []] == ["Alex", "Kept_Guest", "PanelAdd", "Removed"]
+    assert live.pending == {PANEL} and live.error == ""
+    assert all(r.headers.get("Authorization") == "Bearer cf-token-for-tests" for r in replay.requests)
+    write_env(root, "")
+    no_token = publish.live_whitelist(ctx, configrepo.load(root).server)
+    assert no_token.players is None and "CLOUDFLARE_API_TOKEN" in no_token.error
+
+
+def test_whitelist_gaps_removed_kept_pending_and_strict() -> None:
+    live = publish.LiveWhitelist(
+        players=[
+            {"name": "Alex", "uuid": "00000000-0000-4000-8000-0000000000A1"},
+            {"name": "Kept_Guest", "uuid": GUEST},
+            {"name": "PanelAdd", "uuid": PANEL},
+            {"name": "Removed", "uuid": GONE},
+        ],
+        pending={PANEL},
+    )
+    alex = schema.Player("Alex", "00000000-0000-4000-8000-0000000000a1")
+    old = schema.Players(whitelist=[alex, schema.Player("Removed", GONE)])
+    new = schema.Players(whitelist=[alex])
+    assert publish.whitelist_gaps(live, new, old, strict=False) == (["Removed"], ["Kept_Guest"])
+    assert publish.whitelist_gaps(live, new, old, strict=True) == (["Kept_Guest", "Removed"], [])
+    assert publish.whitelist_gaps(live, old, old, strict=False) == ([], ["Kept_Guest"])
+
+
+def test_preview_warns_about_live_players_missing_from_git(env: dict[str, Any]) -> None:
+    """A player on the live whitelist, not in the new players.yml and not pending in the panel: a deploy would
+    remove them (players.yml had them) or keep them without Git (never in Git)."""
+    root = env["root"]
+    alex = schema.Player("Alex", "00000000-0000-4000-8000-0000000000a1")
+    (root / configrepo.PLAYERS_YML).write_text(
+        schema.dump_players(schema.Players(whitelist=[alex, schema.Player("Removed", GONE)]))
+    )
+    git(root, "commit", "-q", "-am", "players")
+    git(root, "push", "-q", "origin", "main")
+    (root / configrepo.PLAYERS_YML).write_text(schema.dump_players(schema.Players(whitelist=[alex])))
+    ctx, _, tools, out = make(env)
+    write_env(root, "CLOUDFLARE_API_TOKEN=cf-token-for-tests\n")
+    tools.whitelist = publish.live_whitelist
+    ctx.deps.transport = Replay("cloudflare_d1_watchdog_whitelist.json")
+    assert go(ctx, tools, dry_run=True) == 0
+    text = out.getvalue()
+    assert "players.yml: - Removed" in text
+    assert "live whitelist: a deploy removes Removed: on the live whitelist, not in players.yml" in text
+    assert "live whitelist: Kept_Guest aren't in players.yml" in text
+    assert "PanelAdd" not in text  # pending in the panel: the deploy honours it
+    assert "cf-token-for-tests" not in text
+
+
+def test_preview_says_when_the_live_whitelist_is_unknown(env: dict[str, Any]) -> None:
+    ctx, _, tools, out = make(env)
+    edit(env["root"], {"performance.view_distance": 8})
+    assert go(ctx, tools, dry_run=True) == 0
+    assert "live whitelist: unknown (not asked (test))" in out.getvalue()
 
 
 def test_consequences_players_only_no_restart_no_terraform(env: dict[str, Any]) -> None:
