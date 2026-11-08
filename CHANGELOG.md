@@ -13,6 +13,11 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   selects views and loaders from Maps and builds the view element without interpolating the tab id, on top of
   the `TABS` check.
 
+### Fixed
+
+- The panel showed a whitelist add (or any action's result) only after a page reload when the agent's inventory
+  arrived later than 6 s: it now reloads the open tab four times over about 20 s after an action.
+
 ## [1.4.0] - 2026-11-08
 
 ### Added

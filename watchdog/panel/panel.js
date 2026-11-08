@@ -517,12 +517,18 @@ async function runAction(action, args, what = LABELS[action] || action) {
   return null;
 }
 
-// Fresh data after an action: the agent pushes its inventory right away; reload what the open tab shows.
+// Fresh data after an action: the agent pushes its inventory on a state change, but at most every 5 s
+// (INVENTORY_MIN_GAP_S), so the new state can land later than 6 s; reload the open tab a few times over ~20 s.
+const AFTER_ACTION_MS = [1500, 6000, 12000, 20000];
 function afterAction() {
+  for (const ms of AFTER_ACTION_MS) {
+    setTimeout(() => {
+      for (const id of loaded.keys()) loaded.set(id, 0);
+      refresh().catch(() => {});
+    }, ms);
+  }
   for (const id of loaded.keys()) loaded.set(id, 0);
   pollJob();
-  setTimeout(() => refresh().catch(() => {}), 1500);
-  setTimeout(() => refresh().catch(() => {}), 6000);
 }
 
 const JOB = { job: null, skew: 0, fast: null, announced: new Set() };
