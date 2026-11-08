@@ -1,0 +1,41 @@
+[package]
+name = "smallworld-map"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+description = "Smallworld's world map pre-renderer: region files to vanilla map colour tiles (docs/rust/smallworld-map.md)"
+license = "MIT"
+publish = false
+
+# No dependencies: std only (CLAUDE.md "Rust workspace"; tests/test_rust_rcon.py enforces it). Inflate (zlib,
+# gzip) and the LZ4 block decoder are in src/compress.rs; every stream's checksum is verified.
+[dependencies]
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+doc_markdown = "allow"
+# Region/pixel arithmetic converts between i32/u32/usize all the time; every conversion is range-checked by
+# construction (coordinates inside a 512-block region, palette indices checked against the palette).
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cast_lossless = "allow"
+too_many_lines = "allow"
+module_name_repetitions = "allow"
+# The pixel and column loops index several parallel arrays at once and mirror MapItem.update's Java loops.
+needless_range_loop = "allow"
+comparison_chain = "allow"
+# The brightness thresholds read as vanilla's if/else chain; keep them that way.
+bool_to_int_with_if = "allow"
+similar_names = "allow"
+struct_field_names = "allow"
+single_match_else = "allow"
+map_unwrap_or = "allow"
+# The only panics are invariants (expect on a lock or on a tile the writer itself counted).
+missing_panics_doc = "allow"
+# Tile files are named by this program (always lower case).
+case_sensitive_file_extension_comparisons = "allow"

@@ -1,0 +1,126 @@
+{
+ "meta": {
+  "generator": "scripts/parity_vectors.py",
+  "doc": "ws_accept and encode_frame with a fixed mask"
+ },
+ "vectors": {
+  "guid": "258EAFA5-E914-47DA-95CA-C5AB0DC85B11",
+  "accept": [
+   {
+    "nonce_b64": "dGhlIHNhbXBsZSBub25jZQ==",
+    "accept": "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+   },
+   {
+    "nonce_b64": "AAAAAAAAAAAAAAAAAAAAAA==",
+    "accept": "ICX+Yqv66kxgM0FcWaLWlFLwTAI="
+   }
+  ],
+  "encode_frame": [
+   {
+    "opcode": 1,
+    "payload_len": 0,
+    "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "mask": "37fa213d",
+    "frame_head": "818037fa213d",
+    "frame_sha256": "5a3bd2d407beb8b42f21ee1c13d54c7eb4bd3a45013404b88f729d99b78f420f",
+    "frame_len": 6
+   },
+   {
+    "opcode": 1,
+    "payload_len": 5,
+    "payload_sha256": "185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969",
+    "mask": "37fa213d",
+    "frame_head": "818537fa213d7f9f4d5158",
+    "frame_sha256": "714a02da61d7702b92f361a4e63542278287582f92f84a83bbe86875932065b4",
+    "frame_len": 11
+   },
+   {
+    "opcode": 1,
+    "payload_len": 125,
+    "payload_sha256": "102be737ac85a61677e72a0a2d641cd4c15dcb3545822ec92f12be002bca5c6b",
+    "mask": "37fa213d",
+    "frame_head": "81fd37fa213d4f8259454f825945",
+    "frame_sha256": "00b115947999eb86fc224e3bcdeb5c0e554cfd8fa7963fde0612284af89fff2b",
+    "frame_len": 131
+   },
+   {
+    "opcode": 1,
+    "payload_len": 126,
+    "payload_sha256": "19981abaa977c9ab097c239adda74b220f06b1eb938bfec39c8361b1a1adcbbf",
+    "mask": "37fa213d",
+    "frame_head": "81fe007e37fa213d4f8259454f82",
+    "frame_sha256": "d8a66f74bed419f1f1fd597a1b8d8b425fee1b136f7db3fd17c132d462d73ff5",
+    "frame_len": 134
+   },
+   {
+    "opcode": 1,
+    "payload_len": 65535,
+    "payload_sha256": "09ab7495d3e61a76f0deb12cb0306f0696cbb17ffc12131368c7a939f12f56d3",
+    "mask": "37fa213d",
+    "frame_head": "81feffff37fa213d4f8259454f82",
+    "frame_sha256": "2d3abec6f5af6156e957c61054ef1066dad9c7a47abaffc40d01bd4eecf18779",
+    "frame_len": 65543
+   },
+   {
+    "opcode": 1,
+    "payload_len": 65536,
+    "payload_sha256": "1f8745f0d2d1387ec1af2211a3cf417b2e9e885e853472649c1d979d0e9370e3",
+    "mask": "37fa213d",
+    "frame_head": "81ff000000000001000037fa213d",
+    "frame_sha256": "bb0a57e3dc718d0c3406e03c6f082fb68ff62f208f6881f082b0f97ef245f847",
+    "frame_len": 65550
+   },
+   {
+    "opcode": 1,
+    "payload_len": 5,
+    "payload_sha256": "850f7dc43910ff890f8879c0ed26fe697c93a067ad93a7d50f466a7028a9bf4e",
+    "mask": "37fa213d",
+    "frame_head": "818537fa213d549b47fe9e",
+    "frame_sha256": "c91fc1707a26080798efe169b4822de8de12fe3ee06990eaa11345c544a693e9",
+    "frame_len": 11
+   },
+   {
+    "opcode": 9,
+    "payload_len": 0,
+    "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "mask": "37fa213d",
+    "frame_head": "898037fa213d",
+    "frame_sha256": "3a23d164d0572491bd93ae56be9ec0f149028be0ac0c1fff49750ee00c6ff7c2",
+    "frame_len": 6
+   },
+   {
+    "opcode": 9,
+    "payload_len": 5,
+    "payload_sha256": "185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969",
+    "mask": "37fa213d",
+    "frame_head": "898537fa213d7f9f4d5158",
+    "frame_sha256": "2db718c22da6390cf8ac1c9b49460fc4d3a0e8a316397ff3aec691f6755998b6",
+    "frame_len": 11
+   },
+   {
+    "opcode": 9,
+    "payload_len": 125,
+    "payload_sha256": "102be737ac85a61677e72a0a2d641cd4c15dcb3545822ec92f12be002bca5c6b",
+    "mask": "37fa213d",
+    "frame_head": "89fd37fa213d4f8259454f825945",
+    "frame_sha256": "1d0bb4c81fce1b6ffabb0e8f80cdb9bb80f1fc943cefad2fbee789c4e5797d01",
+    "frame_len": 131
+   },
+   {
+    "opcode": 9,
+    "payload_len": 5,
+    "payload_sha256": "850f7dc43910ff890f8879c0ed26fe697c93a067ad93a7d50f466a7028a9bf4e",
+    "mask": "37fa213d",
+    "frame_head": "898537fa213d549b47fe9e",
+    "frame_sha256": "8974017be24ce311dbbe2fb5da60179c66f4048760603372d4d2aa1a50b84659",
+    "frame_len": 11
+   }
+  ],
+  "limits": {
+   "max_message": 1048576,
+   "recv_timeout_s": 15.0,
+   "ping_s": 45.0,
+   "dead_s": 120.0
+  }
+ }
+}

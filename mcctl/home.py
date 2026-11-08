@@ -1,235 +1,40 @@
-"""v1.3: plain `mcctl` on an interactive terminal opens a home screen: a status header, an arrow-key menu.
+"""Plain `mcctl` on an interactive terminal: when the dashboard opens, and the status it shows.
 
-The header is cheap and never blocks: the deployment, the config repo, the pinned product against this mcctl,
-then the server (online, players, TPS/MSPT, the deployed product version against the pin (v1.3), last deploy,
-open panel PRs) from `remote.status` in a background thread with a time budget, cached for `StatusProbe.ttl`
-seconds. Whatever fails reads "unknown (why)".
+v1.3 opened a questionary menu here; now it opens the dashboard (mcctl/dashboard.py, Textual). This module
+keeps what decides and feeds it:
 
-Every menu item runs an existing command through `cli.run` (the same parser, the same `cmd_*` function, `-C`
-added), so subcommands, scripts, CI and tests are unchanged; then the menu comes back. Esc, Ctrl-C or "Quit"
-leave with exit code 0. Items marked "(v1.3, coming)" are shown disabled until their phase lands.
-
-An item's questions (`Ask`: a name, a countdown...) become the command's arguments; a destructive item then
-asks for the typed confirmation its command requires (`worlds switch NAME` -> "switch to NAME") and passes
-it as `--confirm`: empty or Esc changes nothing, a wrong one is refused by the command (`restore` asks
-its own).
-
-v1.3: when a newer Smallworld minor/major release than the pin is out, the header says so ("Update" row,
-mcctl/notice.py: cached a day, silent on failure; `MCCTL_NO_UPDATE_NOTICE=1` turns it off).
-
-Anything non-interactive keeps today's behaviour (an argparse usage error, exit code 2): `--plain`,
-MCCTL_PLAIN, NO_COLOR, CI, TERM=dumb, stdin or stdout not a terminal, or questionary not importable.
+- `wanted`: `mcctl` or `mcctl -C DIR` (nothing else) on an interactive terminal. Anything non-interactive
+  keeps today's behaviour (an argparse usage error, exit code 2): `--plain`, MCCTL_PLAIN, NO_COLOR, CI,
+  TERM=dumb, stdin or stdout not a terminal, or Textual not importable;
+- `_initial`: the config repo it opens (`-C`, else the current directory if it is one, else the remembered
+  one: mcctl/homecfg.py);
+- `fetch_status` / `quiet_run`: `remote.status` bounded per call and never reading the terminal (the dashboard
+  owns it), and `StatusProbe` (a time budget and a cache, for callers that must not wait long);
+- `server_summary`, `deploy_summary`, `_pin_text`: one-line texts of the status and the pin.
 """
 
 from __future__ import annotations
 
-import os
-import shlex
 import subprocess
 import sys
 import threading
 import time
-import traceback
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TextIO
+from typing import TextIO
 
-from mcctl import __version__, actions, configrepo, homecfg, remote, ui
+from mcctl import configrepo, homecfg, remote, ui
 from mcctl.schema import ServerConfig
 
 try:  # a controller dependency (requirements/validate.in); without it `mcctl` alone stays a usage error
-    import questionary
-    from prompt_toolkit.key_binding import KeyBindings, merge_key_bindings
+    import textual  # noqa: F401
 
-    HAVE_QUESTIONARY = True
+    HAVE_TEXTUAL = True
 except ImportError:  # pragma: no cover - the pinned requirements always have it
-    HAVE_QUESTIONARY = False
+    HAVE_TEXTUAL = False
 
-COMING = "v1.3, coming"
-STATUS_TIMEOUT = 20  # seconds per ssh/gh call of the header's background probe (ssh: ConnectTimeout=10)
-SWITCH_PATH, SWITCH_BACK = "\x00path", "\x00back"
-
-
-@dataclass(frozen=True)
-class Ask:
-    """One question of an item: its answer becomes a positional argument, or `flag VALUE`."""
-
-    prompt: str
-    flag: str = ""  # "": positional
-    optional: bool = False  # an empty answer leaves the argument out (else it cancels the item)
-    choices: tuple[str, ...] = ()  # a pick list instead of free text
-    default: str = ""
-
-
-@dataclass(frozen=True)
-class Item:
-    key: str
-    title: str
-    argv: tuple[str, ...] = ()  # the command (the home screen adds `-C <repo>`)
-    coming: bool = False
-    ask: str = ""  # a question whose answer is appended to argv (`config get PATH`)
-    asks: tuple[Ask, ...] = ()
-    confirm: str = ""  # the typed confirmation, formatted with the positional answers ("switch to {0}")
-
-
-def _coming(key: str, title: str) -> Item:
-    return Item(key, title, coming=True)
-
-
-COUNTDOWN = Ask(
-    "Countdown in seconds (skipped when nobody is online)",
-    "--countdown",
-    choices=("60", "10", "300", "0"),
-    default="60",
-)
-PLAYER = Ask("Player name")
-REASON = Ask("Reason (optional, shown to the player)", "--reason", optional=True)
-WORLD = Ask("World name (`Worlds: list` shows them)")
-PLUGIN = Ask("Plugin name (`Plugins: list` shows them)")
-NEW_WORLD = (
-    Ask("New world name (lowercase letters, digits, _ or -)"),
-    Ask("World type", "--type", choices=actions.WORLD_TYPES, default="default"),
-    Ask("Preset", "--preset", choices=actions.WORLD_PRESETS, default="survival_smp"),
-    Ask("Seed (empty: random)", "--seed", optional=True),
-    COUNTDOWN,
-)
-
-# Phase 1: read-only items; phase 2: server, player, world and plugin actions; Part B: publish and
-# players.yml; the rest are shown disabled.
-MENU: tuple[tuple[str, tuple[Item, ...]], ...] = (
-    (
-        "Server",
-        (
-            Item("status", "Status: server, players, TPS/MSPT, backups, deploys", ("status",)),
-            Item("logs", "Logs: the last 100 lines", ("logs",)),
-            Item("logs-follow", "Live logs (Ctrl-C returns here)", ("logs", "--follow")),
-            Item("console", "Console (RCON; `exit` returns here)", ("console",)),
-            Item("restart", "Restart (in-game countdown)", ("restart",), asks=(COUNTDOWN,)),
-            Item("stop", "Stop on purpose (stays down until Start)", ("stop",), asks=(REASON,)),
-            Item("start", "Start (after a stop)", ("start",)),
-            Item("backup-now", "Back up now", ("backup", "now")),
-            Item("backups", "Backups: list snapshots", ("backup", "list")),
-            Item(
-                "restore",
-                "Restore a snapshot (typed; safety snapshot first)",
-                ("restore", "--live"),
-                asks=(Ask("Snapshot id (`Backups: list snapshots` shows them)"),),
-            ),
-        ),
-    ),
-    (
-        "Players",
-        (
-            Item("players", "Whitelist and operators", ("players", "list")),
-            Item("kick", "Kick a player", ("players", "kick"), asks=(PLAYER, REASON)),
-            Item("ban", "Ban a player", ("players", "ban"), asks=(PLAYER, REASON)),
-            Item("pardon", "Pardon (unban) a player", ("players", "pardon"), asks=(PLAYER,)),
-            Item("player-add", "Whitelist a player (players.yml, a PR)", ("players", "add"), asks=(PLAYER,)),
-            Item(
-                "player-remove",
-                "Remove from the whitelist (players.yml, pull request)",
-                ("players", "remove"),
-                asks=(PLAYER,),
-            ),
-            Item(
-                "player-op",
-                "Make operator (players.yml, pull request)",
-                ("players", "op"),
-                asks=(PLAYER, Ask("Level", "--level", choices=("4", "3", "2", "1"), default="4")),
-            ),
-            Item("player-deop", "Remove operator (players.yml, a PR)", ("players", "deop"), asks=(PLAYER,)),
-        ),
-    ),
-    (
-        "Worlds",
-        (
-            Item("worlds", "Worlds: list", ("worlds", "list")),
-            Item(
-                "world-create",
-                "Create a world (typed)",
-                ("worlds", "create"),
-                asks=NEW_WORLD,
-                confirm="create {0}",
-            ),
-            Item(
-                "world-switch",
-                "Switch world (typed)",
-                ("worlds", "switch"),
-                asks=(WORLD, COUNTDOWN),
-                confirm="switch to {0}",
-            ),
-            Item(
-                "world-delete",
-                "Delete an archived world (typed)",
-                ("worlds", "delete"),
-                asks=(WORLD,),
-                confirm="delete {0}",
-            ),
-        ),
-    ),
-    (
-        "Config",
-        (
-            Item("plugins", "Plugins: list", ("plugins", "list")),
-            Item(
-                "plugin-enable",
-                "Enable a plugin (typed; restart)",
-                ("plugins", "enable"),
-                asks=(PLUGIN, COUNTDOWN),
-                confirm="enable {0}",
-            ),
-            Item(
-                "plugin-disable",
-                "Disable a plugin (typed; restart)",
-                ("plugins", "disable"),
-                asks=(PLUGIN, COUNTDOWN),
-                confirm="disable {0}",
-            ),
-            Item("validate", "Validate the config repo", ("validate",)),
-            Item(
-                "config-get",
-                "Show a setting (config get)",
-                ("config", "get"),
-                ask="Setting (e.g. minecraft.motd)",
-            ),
-            _coming("settings", "Edit settings"),
-            Item("switch", "Switch config repo"),
-        ),
-    ),
-    (
-        "Publish",
-        (
-            Item("publish-preview", "Preview changes (restart? Terraform?)", ("publish", "--dry-run")),
-            Item("publish", "Publish changes (preview, pull request, your merge)", ("publish",)),
-            Item(
-                "publish-wait",
-                "Publish, restart only when the server is empty",
-                ("publish", "--wait-empty"),
-            ),
-            Item("publish-revert", "Undo the last deploy (a revert pull request)", ("publish", "--revert")),
-        ),
-    ),
-    ("Health", (Item("doctor", "Doctor: tools, credentials, DNS, tailnet, watchdog", ("doctor",)),)),
-    (
-        "Updates",
-        (
-            Item("upgrade-preview", "Product update: preview (dry run)", ("upgrade", "--dry-run")),
-            Item("lock-preview", "Mod lock update: preview (dry run)", ("lock", "update", "--dry-run")),
-            _coming("minecraft", "Minecraft version"),
-        ),
-    ),
-    (
-        "Secrets",
-        (
-            Item("dashlane", "Dashlane items (show)", ("secrets", "dashlane")),
-            _coming("rotate", "Rotate a secret"),
-        ),
-    ),
-    ("Metrics", (Item("metrics", "Player experience: last 7 days", ("metrics", "summary")),)),
-)
-EXTRA = (Item("refresh", "Refresh status"), Item("quit", "Quit"))
-ITEMS = {item.key: item for _, items in MENU for item in items} | {item.key: item for item in EXTRA}
+STATUS_TIMEOUT = 20  # seconds per ssh/gh call of the background probe (ssh: ConnectTimeout=10)
 
 
 # --- when ------------------------------------------------------------------------------------------------
@@ -237,14 +42,14 @@ ITEMS = {item.key: item for _, items in MENU for item in items} | {item.key: ite
 
 @dataclass(frozen=True)
 class Launch:
-    config_dir: Path | None  # `mcctl -C DIR` opens the home screen on DIR
+    config_dir: Path | None  # `mcctl -C DIR` opens the dashboard on DIR
 
 
 def interactive(
     environ: Mapping[str, str] | None = None, stdin: TextIO | None = None, stdout: TextIO | None = None
 ) -> bool:
-    """A person at a terminal, with rich and questionary (else: today's plain behaviour)."""
-    if not HAVE_QUESTIONARY or not ui.rich_wanted(stdout or sys.stdout, environ):
+    """A person at a terminal, with rich and Textual (else: today's plain behaviour)."""
+    if not HAVE_TEXTUAL or not ui.rich_wanted(stdout or sys.stdout, environ):
         return False
     try:
         return bool((stdin or sys.stdin).isatty())
@@ -265,11 +70,11 @@ def wanted(argv: Sequence[str], *, is_interactive: Callable[[], bool] | None = N
     return launch if (is_interactive or interactive)() else None
 
 
-# --- the status header -----------------------------------------------------------------------------------
+# --- the status -----------------------------------------------------------------------------------
 
 
 def quiet_run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
-    """remote.Runner for the background probe: never reads the terminal (the menu owns it), bounded."""
+    """remote.Runner for the background probe: never reads the terminal (the dashboard owns it), bounded."""
     try:
         return subprocess.run(
             list(argv),
@@ -299,13 +104,13 @@ class _Job:
     def _run(self, fn: Callable[[], remote.Status]) -> None:
         try:
             self.result = fn()
-        except Exception as e:  # shown as "unknown (why)", never raised into the menu
+        except Exception as e:  # shown as "unknown (why)", never raised into the caller
             self.error = e
 
 
 class StatusProbe:
     """`remote.status` in a background thread: waits at most `budget` seconds, caches for `ttl` seconds. A
-    probe still running after the budget keeps going; the next header (Refresh status) picks it up."""
+    probe still running after the budget keeps going; the next `get` picks it up."""
 
     def __init__(
         self,
@@ -328,7 +133,7 @@ class StatusProbe:
             job = self._jobs[root] = _Job(lambda: self.fetch(cfg))
         job.thread.join(self.budget)
         if job.thread.is_alive():
-            return f"no answer within {self.budget:g} s; still asking (Refresh status)"
+            return f"no answer within {self.budget:g} s; still asking"
         del self._jobs[root]
         if job.error is not None or job.result is None:
             return f"{type(job.error).__name__}: {job.error}" if job.error else "no result"
@@ -376,107 +181,6 @@ def _pin_text(root: Path) -> tuple[configrepo.Pin | None, str]:
     return pin, pin.version or pin.sha[:12]
 
 
-def header_rows(
-    root: Path | None,
-    source: str,
-    probe: StatusProbe,
-    out: ui.Out,
-    *,
-    force: bool = False,
-    update: Callable[[configrepo.Pin | None], str | None] | None = None,
-) -> list[tuple[str, str]]:
-    if root is None:
-        return [
-            ("Config repo", "none: “Switch config repo”, or create one with `mcctl init`"),
-            ("mcctl", __version__),
-        ]
-    rows: list[tuple[str, str]] = []
-    cfg: ServerConfig | None = None
-    try:
-        cfg = configrepo.load(root).server
-        rows.append(("Deployment", cfg.name))
-    except configrepo.ConfigError as e:
-        rows.append(("Deployment", f"unknown ({len(e.errors)} error(s): “Validate the config repo”)"))
-    except (OSError, ValueError) as e:
-        rows.append(("Deployment", f"unknown ({e})"))
-    rows.append(("Config repo", f"{root} ({source})"))
-    pin, shown = _pin_text(root)
-    product = f"pinned {shown} · this mcctl {__version__}"
-    if pin is not None and pin.version and pin.version.lstrip("v") != __version__:
-        product += " (commands that deploy run the pinned version)"
-    rows.append(("Product", product))
-    if update is not None and (newer := update(pin)):  # v1.3: a newer minor/major release (mcctl/notice.py)
-        rows.append(("Update", newer))
-    if cfg is None:
-        rows.append(("Server", "unknown (the config repo doesn't load)"))
-        return rows
-    with out.spinner(f"asking {cfg.host.tailscale_name} over the tailnet, and GitHub"):
-        st = probe.get(root, cfg, force=force)
-    rows.append(("Server", server_summary(st)))
-    if isinstance(st, remote.Status) and st.product:
-        # v1.3: what the last deploy installed against the pin (the panel's Versions row shows the Worker too)
-        drift = remote.product_drift(st.product, pin)
-        note = f" · {drift}" if drift else " · as pinned"
-        rows.append(("Deployed", remote.product_text(st.product) + note))
-    if isinstance(st, remote.Status):
-        rows.append(("Last deploy", deploy_summary(st)))
-        prs = len(st.pending_panel_prs)
-        rows.append(("Panel PRs", f"{prs} open" if prs else "none open"))
-    return rows
-
-
-# --- prompts (questionary; tests pass prompt_toolkit's pipe input and DummyOutput) -------------------------
-
-
-def _choices(items: Sequence[tuple[str, Sequence[Item]]], extra: Sequence[Item]) -> list[Any]:
-    out: list[Any] = []
-    for group, group_items in items:
-        out.append(questionary.Separator(f"── {group} "))
-        for item in group_items:
-            disabled = COMING if item.coming else None
-            out.append(questionary.Choice(item.title, value=item.key, disabled=disabled))
-    out.append(questionary.Separator("──"))
-    out += [questionary.Choice(item.title, value=item.key) for item in extra]
-    return out
-
-
-def _esc_quits(question: Any) -> Any:  # noqa: ANN401 - a questionary Question
-    keys = KeyBindings()
-
-    @keys.add("escape", eager=True)
-    def _(event: Any) -> None:  # noqa: ANN401
-        event.app.exit(result=None)
-
-    app = question.application
-    app.key_bindings = merge_key_bindings([app.key_bindings, keys])
-    return question
-
-
-@dataclass
-class Prompter:
-    """questionary with optional prompt_toolkit input/output (tests)."""
-
-    io: dict[str, Any] = field(default_factory=dict)
-
-    def select(self, message: str, choices: list[Any], default: str | None = None) -> str | None:
-        q = questionary.select(
-            message, choices=choices, default=default, instruction="(arrows, Enter; Esc quits)", **self.io
-        )
-        try:
-            return _esc_quits(q).unsafe_ask()
-        except KeyboardInterrupt:
-            return None
-
-    def text(self, message: str) -> str | None:
-        try:
-            return _esc_quits(questionary.text(message, **self.io)).unsafe_ask()
-        except KeyboardInterrupt:
-            return None
-
-
-# --- the loop ----------------------------------------------------------------------------------------------
-
-
 def _initial(launch: Launch, cwd: Path) -> tuple[Path | None, str]:
     if launch.config_dir is not None:
         return launch.config_dir.expanduser().resolve(), "-C"
@@ -487,141 +191,7 @@ def _initial(launch: Launch, cwd: Path) -> tuple[Path | None, str]:
     return None, ""
 
 
-class Home:
-    def __init__(
-        self,
-        launch: Launch,
-        *,
-        out: ui.Out | None = None,
-        prompter: Prompter | None = None,
-        runner: Callable[[list[str]], int] | None = None,
-        probe: StatusProbe | None = None,
-        cwd: Path | None = None,
-        update: Callable[[configrepo.Pin | None], str | None] | None = None,
-    ) -> None:
-        if runner is None:
-            from mcctl import cli
-
-            runner = cli.run
-        self.out = out or ui.stdout()
-        self.prompter = prompter or Prompter()
-        self.runner = runner
-        self.probe = probe or StatusProbe()
-        self.update = update  # None: no "Update" row (tests); main() passes notice.for_pin
-        self.root, self.source = _initial(launch, cwd or Path.cwd())
-
-    def show_header(self, *, force: bool = False) -> None:
-        rows = header_rows(self.root, self.source, self.probe, self.out, force=force, update=self.update)
-        self.out.say()
-        self.out.kv(rows, title=f"mcctl {__version__}: home")
-        self.out.say()
-
-    def loop(self) -> int:
-        self.show_header()
-        last = "status"
-        choices = _choices(MENU, EXTRA)
-        while True:
-            key = self.prompter.select("What next?", choices, default=last)
-            if key is None or key == "quit":
-                return 0
-            last = key
-            if key == "refresh":
-                self.show_header(force=True)
-            elif key == "switch":
-                if self.switch():
-                    self.show_header()
-            else:
-                self.run_item(ITEMS[key])
-
-    def run_item(self, item: Item) -> int | None:
-        if self.root is None:
-            self.out.warn("no config repo yet: “Switch config repo”, or create one with `mcctl init`")
-            return None
-        argv = list(item.argv)
-        if item.ask:
-            answer = self.prompter.text(item.ask)
-            if not answer or not answer.strip():
-                return None
-            argv.append(answer.strip())
-        positional: list[str] = []
-        for ask in item.asks:
-            if ask.choices:
-                choices = [questionary.Choice(c, value=c) for c in ask.choices]
-                answer = self.prompter.select(ask.prompt, choices, default=ask.default or None)
-            else:
-                answer = self.prompter.text(ask.prompt)
-            if answer is None or (not answer.strip() and not ask.optional):
-                return None  # Esc / Ctrl-C / nothing typed: back to the menu
-            if not answer.strip():
-                continue
-            argv += [ask.flag, answer.strip()] if ask.flag else [answer.strip()]
-            if not ask.flag:
-                positional.append(answer.strip())
-        if item.confirm:
-            want = item.confirm.format(*positional)
-            typed = self.prompter.text(f"Type `{want}` to confirm (Esc: back)")
-            if not typed or not typed.strip():
-                self.out.warn("not confirmed: nothing was changed")
-                return None
-            argv += ["--confirm", typed.strip()]
-        shown = "mcctl " + shlex.join(argv)
-        self.out.dim(f"$ {shown}")
-        try:
-            code = self.runner([*argv, "-C", str(self.root)])
-        except SystemExit as e:  # argparse and _repo() exit; the menu stays
-            code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
-        except KeyboardInterrupt:
-            code = 130
-        except Exception:  # a crash in one command must not end the session; show it
-            traceback.print_exc()
-            code = 1
-        self.out.dim(f"{shown}: exit {code}")
-        return code
-
-    def switch(self) -> bool:
-        """Pick a remembered config repo, or enter a path; remembered as the current one."""
-        settings = homecfg.load()
-        if settings.problem:
-            self.out.warn(f"ignoring {settings.problem}")
-        choices: list[Any] = []
-        for repo in settings.repos:
-            ok = homecfg.looks_like_config_repo(repo)
-            mark = " (current)" if repo == self.root else ""
-            choices.append(
-                questionary.Choice(f"{repo}{mark}", value=str(repo), disabled=None if ok else "not found")
-            )
-        choices += [
-            questionary.Choice("Enter a path…", value=SWITCH_PATH),
-            questionary.Choice("Back", value=SWITCH_BACK),
-        ]
-        picked = self.prompter.select("Config repo", choices, default=SWITCH_PATH)
-        if picked is None or picked == SWITCH_BACK:
-            return False
-        if picked == SWITCH_PATH:
-            typed = self.prompter.text("Path of the config repo")
-            if not typed or not typed.strip():
-                return False
-            picked = typed.strip()
-        path = Path(picked).expanduser().resolve()
-        if not homecfg.looks_like_config_repo(path):
-            self.out.warn(f"{path} isn't a config repo (no server.yml and .github/workflows/server.yml)")
-            return False
-        try:
-            homecfg.remember(path)
-        except OSError as e:
-            self.out.warn(f"couldn't remember {path}: {e}")
-        self.root, self.source = path, "remembered"
-        return True
-
-
 def main(launch: Launch) -> int:
-    from mcctl import notice
+    from mcctl import dashboard
 
-    # v1.3: the header's "Update" row (unless turned off); the items' commands, and pinned mcctls they
-    # re-execute, stay quiet
-    update = None if os.environ.get(notice.OPT_OUT_ENV) else notice.for_pin
-    os.environ[notice.OPT_OUT_ENV] = "1"
-    try:
-        return Home(launch, update=update).loop()
-    except (KeyboardInterrupt, EOFError):
-        return 0
+    return dashboard.main(launch)

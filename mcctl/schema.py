@@ -316,7 +316,37 @@ class WorldEntry:
     )
     border_radius: BorderRadius | None = opt(doc="This world's border (null = world.border_radius).")
     pregen: bool | None = opt(
-        doc="Chunky pre-generation inside the border (null = on when Chunky is locked)."
+        doc="Chunky pre-generation for this world (null = world.pregenerate.enabled; false = off for it)."
+    )
+
+
+@dataclass(frozen=True)
+class Pregenerate:
+    enabled: bool = opt(
+        True,
+        doc="v1.4: Chunky pre-generation while nobody is online (each bordered dimension up to its border, "
+        "then the frontier). false = off for the whole deployment; a library world's pregen: false turns it "
+        "off for that world alone.",
+    )
+    frontier: bool = opt(
+        True,
+        doc="v1.4: once the bordered passes are done (or for a dimension without a border), keep "
+        "pre-generating `margin` blocks beyond the farthest generated chunk, so exploring rarely generates "
+        "terrain under players.",
+    )
+    margin: int = opt(
+        1024,
+        doc="v1.4: blocks generated beyond the farthest generated chunk (view distance plus a few minutes of "
+        "travel; elytra flights, 30-60 blocks/s, can outrun any margin).",
+        minimum=0,
+        maximum=30000000,
+    )
+    max_radius: int = opt(
+        10000,
+        doc="v1.4: hard cap (blocks from 0,0) for frontier expansion, for dimensions without a border above "
+        "all; the world border is the real control of the world's size.",
+        minimum=0,
+        maximum=30000000,
     )
 
 
@@ -335,6 +365,10 @@ class World:
         factory=list,
         doc="v1.2: known worlds (the active one and the archived ones: restic snapshots tagged "
         "world:<name>); written by the panel, one canonical line per world.",
+    )
+    pregenerate: Pregenerate = opt(
+        factory=Pregenerate,
+        doc='v1.4: Chunky pre-generation (docs/operations.md "Pre-generation").',
     )
 
 
@@ -581,6 +615,17 @@ class Panel:
 
 
 @dataclass(frozen=True)
+class Agent:
+    implementation: Literal["python", "rust"] = opt(
+        "python",
+        doc="v1.4: which mc-agent runs on the box (panel mode cloudflare) and answers mcctl's actions: "
+        "python (scripts/mc_agent.py) or rust (smallworld-agent, the port; the experience telemetry then "
+        "runs in its own unit, mc-telemetry.service). Both read and write the same state, so switching back "
+        "is a deploy. The default becomes rust in a later release, after a soak.",
+    )
+
+
+@dataclass(frozen=True)
 class Logs:
     d1_days: int = opt(14, doc="Days of searchable logs in D1.", minimum=1)
     r2_days: int = opt(30, doc="Days of raw journal archives in R2.", minimum=1)
@@ -764,6 +809,47 @@ class Maintenance:
         "occupied); in the window's last this-many minutes it restarts anyway, with the in-game countdown. "
         "Shorter than the window; 0 = never forced (the next window tries again).",
         minimum=0,
+    )
+
+
+def _map_dimensions(v: list[str]) -> str | None:
+    if not v:
+        return "needs at least one dimension"
+    return "duplicate dimensions" if len(set(v)) != len(v) else None
+
+
+@dataclass(frozen=True)
+class WorldMap:
+    enabled: bool = opt(
+        True,
+        doc="v1.4: the nightly world map pre-render (smallworld-map, its own user, no network, read-only on "
+        "the world): tiles of the exact colours vanilla maps draw, for the pocket map "
+        "(branding.pocket_map.prerender) and the spawn map room (branding.map_room). false = no timer, "
+        "and the output is removed.",
+    )
+    schedule: str = opt(
+        "*-*-* 04:23",
+        doc="When it runs (systemd OnCalendar, host time zone; Persistent, up to 10 minutes' random delay). "
+        "Pick quiet hours away from maintenance.window: a run reads only what changed since the last one.",
+        pattern=CALENDAR,
+    )
+    dimensions: list[Literal["overworld", "end"]] = opt(
+        factory=lambda: ["overworld", "end"],
+        doc="Dimensions to render. Never the Nether (vanilla draws Nether maps as noise).",
+        check=_map_dimensions,
+    )
+    radius: int | None = opt(
+        doc="Render chunks within this many blocks of 0,0 (a square); null = each dimension's world border "
+        "(the active world's, else world.border_radius; no border = everything generated).",
+        minimum=16,
+        maximum=30000000,
+    )
+    threads: int = opt(
+        1,
+        doc="Worker threads. The render runs at idle priority (it only gets CPU the server doesn't use); "
+        "more threads only shorten the first full render.",
+        minimum=1,
+        maximum=8,
     )
 
 
@@ -1003,6 +1089,52 @@ class BrandingPocketMap:
         "Terrain fills in as the player explores (vanilla's map rendering). Free to re-get, can't be copied. "
         "Players without client mods get a one-line tip at join.",
     )
+    prerender: bool = opt(
+        True,
+        doc="v1.4: show the nightly pre-rendered terrain (map.enabled) where the player hasn't been yet; "
+        "vanilla's live colours take over where they have. Never in the Nether.",
+    )
+
+
+def _room_offset(v: list[int]) -> str | None:
+    return None if len(v) == 3 and all(abs(i) <= 64 for i in v) else "three numbers, each -64..64"
+
+
+@dataclass(frozen=True)
+class BrandingMapRoom:
+    enabled: bool = opt(
+        False,
+        doc="v1.4: a wall of item frames with maps of the pre-rendered world (map.enabled) at spawn, "
+        "refreshed after each nightly render. The frames are fixed and invulnerable, their maps can't be "
+        "taken; changing this section moves the wall (the old frames are removed), false removes it. It "
+        "places entities in the live world: build a wall behind it first if you want one (fixed frames "
+        "also hang in the air).",
+    )
+    world: Literal["overworld", "end"] = opt("overworld", doc="The dimension (one of map.dimensions).")
+    at: Literal["spawn"] | None = opt(
+        doc="`spawn`: the wall's bottom centre is the dimension's world spawn + offset (found when the "
+        "plugin starts). Else give x, y and z.",
+    )
+    offset: list[int] = opt(
+        factory=lambda: [0, 0, -6],
+        doc="With at: spawn: [x, y, z] blocks from the spawn block to the wall's bottom centre frame.",
+        check=_room_offset,
+    )
+    x: int | None = opt(doc="Block x of the wall's bottom centre frame.", minimum=-29999984, maximum=29999984)
+    y: int | None = opt(doc="Block y of the wall's bottom row.", minimum=-64, maximum=319)
+    z: int | None = opt(doc="Block z of the wall's bottom centre frame.", minimum=-29999984, maximum=29999984)
+    facing: Literal["north", "south", "east", "west"] = opt(
+        "south", doc="The way the maps face (towards the viewer): south = seen by a player looking north."
+    )
+    width: int = opt(3, doc="Frames across.", minimum=1, maximum=8)
+    height: int = opt(3, doc="Frames high.", minimum=1, maximum=6)
+    view: Literal["border", "spawn"] = opt(
+        "border",
+        doc="border: the whole world border (centred on 0,0) fitted to the wall; spawn: the vanilla map grid "
+        "at `scale` around the spawn, one map per frame.",
+    )
+    scale: int = opt(3, doc="With view: spawn, blocks per pixel = 2^scale (0..4).", minimum=0, maximum=4)
+    cursors: bool = opt(False, doc="Show online players in that dimension as cursors on the wall.")
 
 
 @dataclass(frozen=True)
@@ -1084,6 +1216,9 @@ class Branding:
     )
     compass: BrandingCompass = opt(factory=BrandingCompass, doc="v1.3: the friend compass (a boss bar).")
     pocket_map: BrandingPocketMap = opt(factory=BrandingPocketMap, doc="v1.3: /map, the pocket map.")
+    map_room: BrandingMapRoom = opt(
+        factory=BrandingMapRoom, doc="v1.4: the spawn map room, a wall of pre-rendered maps."
+    )
 
 
 CLIENT_TIERS = ("low", "medium", "high", "maximum")
@@ -1201,6 +1336,7 @@ class ServerConfig:
     backups: Backups = opt(factory=Backups, doc="restic backups to R2.")
     plugins: list[Plugin] = opt(factory=_default_plugins, doc="Plugins (the lock tool pins them).")
     panel: Panel = opt(factory=Panel, doc="Admin panel.")
+    agent: Agent = opt(factory=Agent, doc="v1.4: the on-box agent's implementation.")
     monitoring: Monitoring = opt(factory=Monitoring, doc="Metrics, logs and alert thresholds.")
     experience: Experience = opt(factory=Experience, doc="Player-experience analytics (P13).")
     branding: Branding = opt(
@@ -1211,6 +1347,7 @@ class ServerConfig:
     alerts: AlertChannels = opt(factory=AlertChannels, doc="Alert channels.")
     discord: Discord = opt(factory=Discord, doc="Discord slash commands (P14).")
     automation: Automation = opt(factory=Automation, doc="Unattended updates and reboots.")
+    map: WorldMap = opt(factory=WorldMap, doc="v1.4: the world map pre-render (pocket map, map room).")
     maintenance: Maintenance = opt(
         factory=Maintenance, doc="v1.3: the window in which deploys may restart Minecraft."
     )
@@ -1754,6 +1891,19 @@ def _cross_validate(cfg: ServerConfig, product_root: Path, i_know: bool, errors:
             errors.append(f"branding.holograms[{i}]: needs x, y and z, or at: spawn")
         elif h.at is not None and coords != [None, None, None]:
             errors.append(f"branding.holograms[{i}]: at: {h.at} and x/y/z both given (use one)")
+    room = cfg.branding.map_room
+    if room.enabled:
+        coords = [room.x, room.y, room.z]
+        if room.at is None and None in coords:
+            errors.append("branding.map_room: needs x, y and z, or at: spawn")
+        elif room.at is not None and coords != [None, None, None]:
+            errors.append(f"branding.map_room: at: {room.at} and x/y/z both given (use one)")
+        if not cfg.map.enabled or room.world not in cfg.map.dimensions:
+            errors.append(f"branding.map_room: needs map.enabled with {room.world} in map.dimensions")
+        if room.view == "border" and map_radius(cfg, room.world) is None:
+            errors.append(
+                f"branding.map_room.view: border needs a world border (or map.radius) for {room.world}"
+            )
     names = [p.name for p in cfg.plugins]
     if len(set(names)) != len(names):
         errors.append("plugins: duplicate names")
@@ -2001,3 +2151,13 @@ def json_schema() -> dict[str, Any]:
         "description": "Generated by `mcctl schema` from mcctl/schema.py; mcctl validate is authoritative.",
         **_js_object(ServerConfig),
     }
+
+
+def map_radius(cfg: ServerConfig, dim: str) -> int | None:
+    """v1.4: the render radius of a map dimension ("overworld" / "end"): map.radius, else the active world's
+    border (world.library), else world.border_radius; None = no limit."""
+    if cfg.map.radius is not None:
+        return cfg.map.radius
+    active = next((e for e in cfg.world.library if e.name == cfg.world.active), None)
+    border = active.border_radius if active and active.border_radius else cfg.world.border_radius
+    return getattr(border, dim)

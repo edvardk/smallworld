@@ -1,0 +1,46 @@
+# {{ ansible_managed }}
+# v1.4: the world map pre-render (rust/smallworld-map, docs/reference.md "World map"). Reads the world's region files
+# (read-only: the sandbox makes every path but its StateDirectory read-only, and it runs as {{ mc_map_user }}, group
+# minecraft) and writes tiles to {{ mc_map_dir }} (0750 {{ mc_map_user }}:minecraft, files 0640: mc-brand, as
+# minecraft, reads them). Incremental: a run reads only regions that changed since the last one. No network, no
+# credentials. Started by mc-map.timer; `systemctl start mc-map.service` renders now.
+[Unit]
+Description=World map pre-render (smallworld-map)
+After=minecraft.service
+# Never on a box `mcctl migrate` fenced (another box owns the world), nor without a world (a fresh box, a switch).
+ConditionPathExists=!{{ mc_state_dir }}/fenced
+ConditionPathIsDirectory={{ mc_server_dir }}/{{ mc_level_name }}
+
+[Service]
+Type=oneshot
+User={{ mc_map_user }}
+Group=minecraft
+UMask=0027
+StateDirectory=mc-map
+StateDirectoryMode=0750
+# One run per dimension, each with its radius (server.yml map.radius or the dimension's world border).
+{% for d in mc_map_dimensions %}
+ExecStart={{ mc_bin_dir }}/smallworld-map render --world {{ mc_server_dir }}/{{ mc_level_name }} --out {{ mc_map_dir }} --palette {{ mc_map_palette }} --dimensions {{ d.id }} --threads {{ mc_map_threads }}{{ (' --radius ' ~ d.radius) if d.radius else '' }}
+{% endfor %}
+# The design budget (docs/reference.md "World map"): < 64 MB per thread; state is saved per region, so a run cut
+# short resumes the next night.
+MemoryMax=512M
+RuntimeMaxSec=4h
+OOMScoreAdjust=800
+# P13: idle priority (never competes with the tick), see mc_helper_priority.
+{{ mc_helper_priority | join('\n') }}
+{% if mc_helper_cpus %}
+AllowedCPUs={{ mc_helper_cpus }}
+{% endif %}
+# Sandbox (design §7): the shared set, see ansible/group_vars/all/main.yml; then no network at all.
+{{ mc_systemd_sandbox | join('\n') }}
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=
+RestrictAddressFamilies=AF_UNIX
+PrivateNetwork=true
+IPAddressDeny=any
+PrivateIPC=true
+RemoveIPC=true
+ProcSubset=pid
+SystemCallFilter=~@privileged @resources
+InaccessiblePaths={{ map_inaccessible_paths | default([]) | join(' ') }}

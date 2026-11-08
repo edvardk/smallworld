@@ -1,0 +1,61 @@
+{
+  "comment": "tests/map_reference.py golden: sha256 of every tile the reference renders from this fixture (rendered_at 0, FIXTURE_DIMENSIONS, full chunks only). The Rust renderer must match.",
+  "palette_sha256": "f05a8d2de16ed8f47feb7a3ba486e6a623a85918479942f56d5448dd79f31b4e",
+  "rendered_at": 0,
+  "summary": {
+    "minecraft/overworld": {
+      "chunks": 50,
+      "skipped": {
+        "status": 20
+      },
+      "tiles": 13
+    },
+    "minecraft/the_end": {
+      "chunks": 1,
+      "skipped": {
+        "status": 4
+      },
+      "tiles": 5
+    },
+    "smallworld/synthetic": {
+      "chunks": 6,
+      "skipped": {
+        "data_version": 1,
+        "status": 1,
+        "unreadable": 1
+      },
+      "tiles": 10
+    },
+    "unknown_states": []
+  },
+  "tiles": {
+    "minecraft/overworld/s0/0.-1.swt": "2153e0ef7c33b01aaae979144f557879570a23b4395a15ae49ca9d284ac0b04e",
+    "minecraft/overworld/s0/0.0.swt": "b66df85e90f5c75410c84b1ba34e1ce5023d9c974e086a419b8f3a9a955a13e2",
+    "minecraft/overworld/s0/0.1.swt": "bcf295d917be71a2720ff722db8fbd2882109785418d788e0271a9afa5d41cb1",
+    "minecraft/overworld/s0/1.0.swt": "3fa42ee651088ed3e743ff954381c9286d82b5e76271f393e50c577524d73b94",
+    "minecraft/overworld/s0/1.1.swt": "a137f7d593c94c56915b3be99629b82c74f902f1a28ee55bcac9c0a68e1edcba",
+    "minecraft/overworld/s1/0.-1.swt": "135ccfa96355e4cb5472bcd5362e3a1060d7812622d36d68d7dea0c44a24af0b",
+    "minecraft/overworld/s1/0.0.swt": "11d10b4f8f7d65dd099bfc134dcaa3991c13850e08c46f7f02db05d4174af819",
+    "minecraft/overworld/s2/0.-1.swt": "236dfe0166918e2fb87374138fe9760d66bc0331aaaa73c291fb2f11717469ec",
+    "minecraft/overworld/s2/0.0.swt": "49d54d0fc9070a6e1e4bf97d8d3ab5bfcf6f8ca15def992aef63d91f8e418f48",
+    "minecraft/overworld/s3/0.-1.swt": "a42cabca017b759cd39674e1bac207a45523ab6dfe3c0588ea79f9a50305e6d3",
+    "minecraft/overworld/s3/0.0.swt": "0f28eee10bd1595a58e9796170b812569a385424281dfd715e8f92176a18ec39",
+    "minecraft/overworld/s4/0.-1.swt": "82115411ed9707c7569aade992bac3afb5fad4fa9596bd0fc26deb736bae10ed",
+    "minecraft/overworld/s4/0.0.swt": "eff0b20a5fb382da1df2d093397ae98c3c56013d9a93fc3527249cfa9fd3d10d",
+    "minecraft/the_end/s0/0.0.swt": "fce9c7dc5dec90f4c193f584caacc527034c2bba5c43ca913eb3779daa4a14a3",
+    "minecraft/the_end/s1/0.0.swt": "6952015be59b7e7f862f18bcc7cdc054062cb47e9f60492cb44228decdec7971",
+    "minecraft/the_end/s2/0.0.swt": "fc66a27c63a956282e6a992231fb9a3c229b82baeb3de6c959a0c33328d09f93",
+    "minecraft/the_end/s3/0.0.swt": "0c8dea7a99edc9718d5fb81292ebc65cde37187fc3ce10ad1bf802f09262f6ec",
+    "minecraft/the_end/s4/0.0.swt": "713c3485ee7f9f763c0dbe047c1d5a9718f42f0d031c9757346cfca1e769f935",
+    "smallworld/synthetic/s0/0.-1.swt": "b297edbc1b949afa58c06a3d2b89c1e8cc13ed849dc0f7c7711a1d8c919e0041",
+    "smallworld/synthetic/s0/0.0.swt": "fab095b9684900e93f4279415673e0ceac599ba3283e023944b0ee20f72ed0e0",
+    "smallworld/synthetic/s1/0.-1.swt": "b8703c7419c9d6a8c89d19fd9d38e973d7c04051bfd3efb5cac99bcddf0d5541",
+    "smallworld/synthetic/s1/0.0.swt": "a8f09a9b27dca5609c5362824a5af62d3670db4fbf513cea73be9e23413e44d4",
+    "smallworld/synthetic/s2/0.-1.swt": "1c046e800cb3b6032854fc98548c29813c2ad85be2f5d34ae8a7b6219d3c5999",
+    "smallworld/synthetic/s2/0.0.swt": "9840ae33489d90186bfcbeb6496c7c00f4b99c0c60d24311b5014370e8cc5169",
+    "smallworld/synthetic/s3/0.-1.swt": "5d011a0724536754ac1df5438a282a01a7517d31ac40859969e4bf2f8d46a9ec",
+    "smallworld/synthetic/s3/0.0.swt": "1a2440d2f023aaf69f1dadce0d23581d4a388770e5b1013d15bdf8fc250bdce7",
+    "smallworld/synthetic/s4/0.-1.swt": "84afb153f6eb354d94c7ea432974462c70cb7f77f3754e58e698e89c0181efa0",
+    "smallworld/synthetic/s4/0.0.swt": "54bb1c83df5290ff2f96d0fb76d8f77cc59e4feadaf1270850ddaf71c5ff2e0a"
+  }
+}

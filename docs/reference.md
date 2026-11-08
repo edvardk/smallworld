@@ -10,6 +10,7 @@ product/config-repo split, GitHub settings and releasing. New here? Start with t
 - [Secrets inventory](#secrets-inventory) ([running Terraform](#running-terraform), [Tailscale OAuth client](#tailscale-oauth-client-for-terraform))
 - [Setup by hand](#setup-by-hand)
 - [mcctl commands](#mcctl-commands)
+- [World map](#world-map) (v1.4: the tile format and how mc-brand reads it)
 - [Bumping versions](#bumping-versions)
 - [Move to a new VPS](#move-to-a-new-vps)
 - [Product and config repos](#product-and-config-repos) ([automation](#automation-p11), [GitHub settings](#github-settings), [releasing](#releasing))
@@ -39,7 +40,8 @@ product/config-repo split, GitHub settings and releasing. New here? Start with t
 | `template/` | The config-repo skeleton (`server.yml`, `players.yml`, lock files, `expiry.yml`, `.env.example`, the single pinned workflow). Its lock files are the product's reference pins |
 | `examples/config-repo/` | The template materialized with fake example.com values: CI fixture only (`scripts/sync_example.py`) |
 | `examples/full/server.yml` | A deployment with every feature on: the tests' reference `server.yml` |
-| `scripts/` | Python. On the server (stdlib only): `mc_rcon`, `backup`, `restore`, `health` (+ self-heal), `notify` (watchdog heartbeats, maintenance windows, Discord), `admin`, `mc_agent` (metrics, logs and signed commands to the Worker). Controller: lock/key tooling, smoke test |
+| `scripts/` | Python. On the server (stdlib only): `mc_rcon`, `backup`, `restore`, `health` (+ self-heal, Chunky pre-generation), `notify` (watchdog heartbeats, maintenance windows and the other markers, Discord), `admin`, `mc_agent` (metrics, logs and signed commands to the Worker). Controller: lock/key tooling, smoke test |
+| `rust/` | Rust (v1.4). `smallworld-rcon`: the drop-in for `mc_rcon.py`'s command line, called by `ExecStop`, the deploy's countdown, world borders and game rules, and `mc`. Pinned toolchain, std only, static musl binaries for x86_64/aarch64 committed in `rust/dist/` (rebuilt byte for byte by `scripts/build_rust.py check`); walkthrough: [rust/smallworld-rcon.md](rust/smallworld-rcon.md). `smallworld-map`: the nightly world map pre-renderer (std only; [rust/smallworld-map.md](rust/smallworld-map.md)). `smallworld-agent`: the port of mc-agent, behind `agent.implementation` (below; [rust/smallworld-agent.md](rust/smallworld-agent.md)) |
 | `mcctl/`, `schema/` | Product v1 CLI (P1–P6 so far): `server.yml` schema + validation, config-repo loading, `render`, `deploy`, `doctor` (token validators, `expiry.yml`), `status`, `plan`/`apply`, `bootstrap`, tailnet wrappers, state file, pinned-product cache; generated JSON Schema |
 | `.github/workflows/` | `server` (**reusable**: what every config repo runs: validate + gitleaks, deploy, backup-check), `ci` (lint, tests, gitleaks over the history, actionlint, the example config repo through `server`), `e2e-mock` (`mcctl init --mock` → validate → `terraform validate` → site.yml in a systemd Debian 13 container with the real Purpur, idempotent second run, then the P7 hardening checked live: `systemd-analyze security` gate, sysctls, sshd masked, admin-stopped, the firewall ruleset's limits in a network namespace), `release` (tags + source archive and `SHA256SUMS`), `update-lock` (manual, reference locks). `dependabot.yml`: weekly Actions + pip bumps |
 
@@ -50,7 +52,23 @@ product/config-repo split, GitHub settings and releasing. New here? Start with t
   deploy. `mc_config` compares parsed values and writes only when a managed key differs. Overlays are applied
   while the server is **stopped** (in the restart handler), so it can't overwrite them on shutdown.
 - **Restarts only on real change** (jar, plugin, JRE, unit or overlay): 60/30/10 s in-game countdown (skipped
-  when nobody is online), Discord notice, then `ExecStop` does `save-all flush` + `stop` over RCON.
+  when nobody is online), Discord notice, then `ExecStop` does `save-all flush` + `stop` over RCON. v1.4: these run
+  `smallworld-rcon` (Rust, `rust/`), identical to `mc_rcon.py`'s command line; `ExecStop` falls back to
+  `mc_rcon.py stop` only if the binary gives no answer at all ([the stop path](rust/smallworld-rcon.md#the-stop-path)).
+- **Two agent implementations (v1.4).** `server.yml` `agent.implementation` picks what runs as mc-agent:
+  `python` (default; `scripts/mc_agent.py`, the experience telemetry in the same process) or `rust`
+  (`smallworld-agent`, the complete port, proved against the Python agent by the parity harness; the default
+  flips in a later release, after a soak). Every box gets the pinned binary (`/opt/minecraft/bin/smallworld-agent`,
+  root 0755) and `/opt/minecraft/bin/mc-agent`, a symlink to the chosen implementation that mcctl's actions run
+  (`mc-agent cli`; `mc_agent.py cli` on a box older than v1.4). `mc-agent.service` runs the chosen one directly,
+  in the same sandbox, as the same user. In rust mode with experience on, the telemetry (`scripts/telemetry.py`,
+  not ported) runs beside it as **`mc-telemetry.service`** (`mc_agent.py telemetry`, as `mcops`, same sandbox):
+  the same snapshots in, minute rows, segments and verdicts out, plus `/var/lib/mc-telemetry/online.json`
+  (`{uuid: {u, n, tips, join}}`, rewritten after every poll; older than 30 s = nobody online) that the Rust agent
+  reads for in-game messages, and its own reader of systemd's resource lines for the overhead card. Both
+  implementations share every state file, so a switch either way is a deploy; a new binary, a switch or a new
+  product version restarts the agent (and the sidecar). `product-version.json` records
+  `agent: {implementation, sha256}`. Operations: [operations.md](operations.md#switching-the-agents-implementation-v14).
 - **Verified keys.** `scripts/config_keys.py` rebuilds the pinned Purpur jar from the vanilla jar and Purpur's
   patch (hash-checked), then lists every config key via `javap`. No server code is run. `pytest` fails if an
   overlay uses a key that doesn't exist in the pinned version. spark is bundled with Paper, so it isn't a plugin.
@@ -309,34 +327,67 @@ rejected (you aren't the admin), mcctl shows how to open a pull request instead.
 release tag only when that commit is tagged; otherwise `vX.Y.Z-N-g<sha>` (N commits after vX.Y.Z, or
 `v0.0.0-N-g<sha>` before the first release), which never auto-merges and is upgraded like vX.Y.Z.
 
-### The home screen and the remembered config repo (v1.3)
+### The dashboard and the remembered config repo
 
-`mcctl` with no command, on an interactive terminal, opens the home screen (`mcctl/home.py`); `mcctl -C DIR`
-opens it on DIR. A status header comes first: the deployment, the config repo (and where it came from: `-C`,
-the current directory, or remembered), the pinned product against the installed mcctl, then the server (online,
-players, TPS/MSPT), the last deploy and open panel PRs. The server part is `mcctl status`'s probe (Tailscale SSH
-and `gh`) run in the background with an 8 s budget and cached for 30 s; whatever fails or is slow reads
-"unknown (why)" and never holds up the menu ("Refresh status" asks again). Then an arrow-key menu (questionary)
-grouped Server, Players, Worlds, Config, Publish, Health, Updates, Secrets, Metrics. Each item runs the existing
-command with `-C` added (status, logs, live logs, console, restart, stop, start, backup now/list, restore, players
-list/kick/ban/pardon, worlds list/create/switch/delete, plugins list/enable/disable, validate, config get, doctor,
-the upgrade and lock update dry runs, secrets dashlane, metrics summary), then the menu comes back; items still to
-come in v1.3 are shown disabled ("v1.3, coming"). An item's questions (a name, a countdown, a world type) become
-the command's arguments; a destructive item then asks for the command's typed confirmation and passes it as
-`--confirm` (empty or Esc changes nothing; `restore` asks its own). Esc, Ctrl-C or Quit leave with exit code 0. Without a terminal
-(stdin or stdout), with `--plain`, `MCCTL_PLAIN`, `NO_COLOR`, `CI` or `TERM=dumb`, `mcctl` alone is the usage
-error it always was (exit code 2); every subcommand is unchanged.
+`mcctl` with no command, on an interactive terminal, opens the dashboard (`mcctl/dashboard.py`, Textual; v1.3
+had a questionary menu here); `mcctl -C DIR` opens it on DIR. It is the web panel's layout in the terminal:
+
+![The dashboard's Overview tab](images/mcctl-dashboard-overview.svg)
+
+- **Header:** the deployment, "Smallworld <pin> · Purpur <version> (build N) · mcctl <version>", the config repo
+  (and where it came from: `-C`, the current directory, or remembered) and a badge: ONLINE, STOPPED (by an
+  admin), UNREACHABLE or the unit's state.
+- **Tabs** (keys 1-9; alt+1-9 from anywhere, the console's prompt too; or a click): **Overview** (server state and who is online; TPS and MSPT with sparklines of
+  the last ten minutes; last backup; last deploy and its result; versions: the pin, the deployed product, the
+  Worker's stamp from the last doctor run, this mcctl, a mismatch flagged with its fix; "needs attention": open
+  panel PRs, disabled plugins, credentials that expire within 30 days (expiry.yml), the update notice; and the
+  server controls restart (countdown, backup first), stop (reason), start, back up now), **Players** (whitelist,
+  operators and who is online in one table; whitelist add/remove and op/deop open a players.yml pull request as
+  `mcctl players` does; kick, ban and pardon act live), **Worlds** (the active world, archives, the library;
+  create, switch, delete), **Plugins** (enable, disable: a countdown restart), **Backups** (restic's snapshots
+  newest first; back up now; restore), **Logs** (`mcctl logs --follow`, Stop ends it), **Console** (an RCON
+  prompt: each line is `mcctl rcon …`; alt+1-9, or Esc and then 1-9, switch tabs), **Publish** (the preview
+  of uncommitted and unpushed changes, run when the tab opens; validate; publish as a pull request, publish
+  restarting only on an empty server, revert the last deploy) and **Health** (`mcctl doctor` as a table, ok /
+  warn / fail coloured like the panel).
+- **Footer:** the focused tab's keys; **ctrl+p**, the command palette, lists every action (fuzzy search, "Go to:
+  <tab>", the theme: smallworld-dark or smallworld-light); ctrl+r refreshes the status, ctrl+o switches the
+  config repo (a remembered one, or a path), q quits.
+
+The status is `mcctl status`'s probe (Tailscale SSH and `gh`, each call bounded) in a background thread every
+10 s, never two at once; until it answers, or when it fails, the header and the cards say so ("checking",
+"unknown (why)") and the dashboard never waits for it. The worlds, plugins and snapshot lists and doctor run in
+background threads too.
+
+Every action runs the existing command as a child of the same mcctl (`python -m mcctl … -C DIR`, stdin
+closed, `MCCTL_PLAIN=1`, `MCCTL_NO_UPDATE_NOTICE=1`) and streams its output, line by line, into the tab's output
+panel (commands without a tab, such as metrics or the update previews, into a window): a spinner while it runs,
+then "✓ done" or "✗ failed (exit N)", and the output stays until the next action on that tab or Clear. A
+command's questions are asked first, in a dialog, and passed as flags: a destructive action asks for the very
+typed confirmation the command checks (`create NAME`, `switch to NAME`, `delete NAME`, `enable NAME` /
+`disable NAME`, `restore <first 8 hex>`), compared exactly before anything runs and passed as `--confirm`
+(the command and the server check it again; Esc or Cancel changes nothing); publish and players get
+`--merge`/`--no-merge` (merge when the checks pass, or leave the pull request to you) and `--restart
+now|wait|cancel` (what to do when the deploy restarts Minecraft with players online). A Terraform change
+needs `mcctl apply`'s typed confirmation, which a child without a terminal can't give: it is not applied and
+the publish stops; use **Terminal: publish interactively**. The palette's **Terminal:** actions (ssh, console
+prompt, `secrets rotate`, `secrets show-restic`, `doctor --fix`, interactive `publish`) suspend the dashboard
+and run in the terminal itself, so a credential only ever goes through getpass there, never into argv, a log or
+a widget. Without a terminal (stdin or stdout), with `--plain`, `MCCTL_PLAIN`, `NO_COLOR`, `CI` or `TERM=dumb`,
+`mcctl` alone is the usage error it always was (exit code 2); every subcommand is unchanged. Screenshots:
+`docs/images/mcctl-dashboard-{overview,confirm,palette}.svg` (`scripts/screenshots.py --only dashboard`;
+every tab on demand: `scripts/dashboard_screenshot.py --all -o DIR`).
 
 mcctl remembers config repos in `~/.config/mcctl/config.toml` (`$XDG_CONFIG_HOME/mcctl/` when set; Windows:
 `%APPDATA%\mcctl\`; `mcctl/homecfg.py`): absolute paths only (`current` and up to 10 `repos`), never a
 credential. A command run with an explicit `-C` naming a config repo makes it the current one once it succeeds
-(not under `CI`); so does the home screen's "Switch config repo" (a picker of the remembered repos, or a path).
+(not under `CI`); so does the dashboard's "Config repo: switch" (ctrl+o: a remembered repo, or a path).
 Without `-C`, a command uses the current directory when it is a config repo (server.yml and
 `.github/workflows/server.yml`), else the remembered one (it says so on stderr, and passes `-C` on to a
 re-executed pinned mcctl). A missing or corrupt file means nothing is remembered; the next write replaces it.
 
 ```bash
-mcctl                                 # v1.3: the home screen (terminal only; -C DIR to open it on DIR)
+mcctl                                 # the dashboard (terminal only; -C DIR to open it on DIR)
 mcctl setup -C $C [--seed F] # = init: the onboarding wizard (Quick start); resumable, --from STEP, --reconfigure STEP
 mcctl product-setup [--check] # the product repo's GitHub settings (owner; GH_TOKEN or `gh auth token`)
 mcctl config get|set PATH [VALUE] -C $C             # one server.yml value: schema-checked, comments kept,
@@ -370,10 +421,11 @@ mcctl secrets rotate -C $C NAME [--dry-run]             # apply -replace (typed)
 mcctl secrets dashlane -C $C [--convert]            # P14: Dashlane items for .env; --convert: values -> dl:// refs
 mcctl secrets show-restic -C $C                   # the restic password, once, to a terminal only
 mcctl discord sync -C $C [--endpoint-only]            # P14: register the slash commands, point them at the Worker
-mcctl players -C $C add|remove|op|deop|list NAME [--push|--no-push] [--no-follow]  # players.yml: a PR (v1.3)
+mcctl players -C $C add|remove|op|deop|list NAME [--push|--no-push] [--no-follow] [--merge|--no-merge]  # a PR
 mcctl publish -C $C [--route pr|main|deploy] [--dry-run] [--revert] [--wait-empty] [--no-follow]  # v1.3
+              [--merge|--no-merge] [--restart now|wait|cancel]  # answer its questions up front (scripts, dashboard)
 mcctl players -C $C kick|ban|pardon NAME [--reason T]        # v1.3: live over RCON, never players.yml
-mcctl restore -C $C --list | --to DIR | --live ID            # live: typed, safety snapshot first
+mcctl restore -C $C --list | --to DIR | --live ID [--confirm "restore <8 hex>"]  # live: typed, safety snapshot
 mcctl schema                          # regenerate ./schema/server.schema.json after editing mcctl/schema.py
 mcctl --version
 ```
@@ -394,14 +446,14 @@ there (no AAAA record). It writes
 
 ### The update notice (v1.3)
 
-On a terminal, every mcctl command (and the home screen's header, row "Update") says when the product has a
+On a terminal, every mcctl command (and the dashboard's "Needs attention" card) says when the product has a
 newer **minor or major** release than the config repo's pin: `Smallworld v1.4.0 is out (this config repo pins
 v1.3.2): `mcctl upgrade` opens the pull request`. Patch releases stay quiet: the weekly update task moves the pin
 for them. `mcctl/notice.py`: GitHub's `releases/latest` of the pinned repository (`updates.latest_tag`, the
 lookup `mcctl upgrade` starts from), anonymous, 3 s timeout, in a background thread while the command runs, cached
 for 24 hours in `${XDG_CACHE_HOME:-~/.cache}/mcctl/update-notice.json` (failures too: a private product asks
 once a day and says nothing). Never with `--plain`/`MCCTL_PLAIN`, `NO_COLOR`, `CI`, `TERM=dumb` or without a
-terminal (the home screen's rule), never for `update-prs`, `expiry-check`, `panel-pr-check`, `pr-gate`,
+terminal (the dashboard's rule), never for `update-prs`, `expiry-check`, `panel-pr-check`, `pr-gate`,
 `client-publish`, `schema`, `schema-migrate`, `render` and `upgrade`, never in a re-executed pinned mcctl.
 `MCCTL_NO_UPDATE_NOTICE=1` turns it off.
 
@@ -438,8 +490,10 @@ terminal (the home screen's rule), never for `update-prs`, `expiry-check`, `pane
 4. **Restart awareness:** when the deploy restarts Minecraft and players are online (or nobody knows), mcctl
    asks: deploy now (the deploy's own in-game countdown), wait until the server is empty (checked every minute,
    at most `--max-wait` minutes, default 120), or cancel. `--wait-empty` answers "wait". Without a terminal
-   on stdin every question takes its default: wait (a wait that times out cancels), merge when green, no
-   Terraform apply. Unattended, mcctl never restarts a server with players on it.
+   on stdin every question takes its default: wait (a wait that times out cancels), **don't merge** (the pull
+   request is opened, its checks followed, and left for you), no Terraform apply. Unattended, mcctl never
+   merges, deploys or restarts a server with players on it by default. `--merge`/`--no-merge` and `--restart
+   now|wait|cancel` answer the merge and players-online questions up front (scripts, the dashboard).
 5. `--revert` opens a pull request (`publish/revert-<timestamp>`) reverting the last deploy: the first-parent
    commits between the two newest workflow runs on main whose deploy job succeeded (`gh run list`/`gh run
    view`), newest first, merge commits with `-m 1`. A conflict aborts the revert and leaves main alone.
@@ -451,15 +505,17 @@ preview), no `gh` for the pull request routes, a state-backend change, and (`--r
 `mcctl players add|remove|op|deop` goes the same way: the edited `players.yml` alone on `players/<action>-<name>-
 <timestamp>`, a pull request, its checks, the admin's merge when green, the deploy (a whitelist change never
 restarts). `server / gate` is unchanged: it merges whitelist-only changes by itself only from `panel/*` by the
-panel App; a person's whitelist change waits for the admin's merge, which mcctl offers. `--push` keeps the old
-behaviour (commit and push to main), `--no-push` only commits.
+panel App; a person's whitelist change waits for the admin's merge, which mcctl offers (without a terminal:
+not merged unless `--merge`). `--push` keeps the old behaviour (commit and push to main), `--no-push` only
+commits.
 
 ### Server actions over Tailscale SSH (v1.3)
 
 `restart`, `worlds`, `plugins` and `players kick|ban|pardon` run the panel's own actions on the server
 (`mcctl/actions.py`): over Tailscale SSH as the deploy user, `sudo mc-run -/etc/minecraft/notify.env
-/opt/minecraft/bin/mc_agent.py cli mcctl:<local user> ACTION ARGS_JSON` runs mc-agent's Executor once, as the ops
-user in mc-run's sandbox, so every systemd action is one of the fixed units `50-mc-ops.rules` allows (never a
+/opt/minecraft/bin/mc-agent cli mcctl:<local user> ACTION ARGS_JSON` (v1.4: the symlink to the implementation
+`agent.implementation` chose; `mc_agent.py cli` on a box deployed before v1.4, which mcctl detects with
+`sudo test -x`) runs mc-agent's Executor once, as the ops user in mc-run's sandbox, so every systemd action is one of the fixed units `50-mc-ops.rules` allows (never a
 generic `systemctl` as root). The checks are the agent's (a known archived world, the DataVersion, a plugin in the
 deployed lock, the console shapes for moderation), the long ones run as `mc_panel.Jobs` in the foreground (the
 in-game countdown at 5/4/3/2/1 min, 30, 10, 5..1 s, skipped when nobody is online unless `--wait`; progress lines
@@ -484,6 +540,212 @@ validated but not rendered yet. `mcctl validate` warns about placeholders (RFC 2
 `example.com` in logins, emails and `dns.zone`; the template's `example-*` GitHub names) and `render`/`deploy`
 refuse them: they would end up in the tailnet ACL, Cloudflare Access, DNS or the wrong repository's secrets.
 
+## World map
+
+v1.4 pre-renders the world into map tiles: the pocket map (`/map`) shows terrain the player has never visited, and
+the spawn map room shows the whole world. The renderer (`smallworld-map`, Rust, a nightly systemd timer as its
+own user) writes tiles; mc-brand reads them. This section is the contract between the two: both follow it, and
+both are tested against the Python reference renderer `tests/map_reference.py`, which is normative where this text
+is ambiguous. The Overworld and the End are rendered; the Nether never is (vanilla draws Nether maps as noise).
+
+### Inputs
+
+- **The world:** `<level-name>/dimensions/<ns>/<dim>/region/r.<X>.<Z>.mca` (26.x keeps every dimension under
+  one folder), plus external chunks `c.<chunkX>.<chunkZ>.mcc` in the same folder. Region header: 1024 big-endian
+  locations (`sector << 8 | count`) and 1024 timestamps; payload `u32 length`, `u8 compression` (1 gzip, 2 zlib,
+  3 none; bit `0x80`: the stream is in the `.mcc` file; 4 LZ4Block and 127 custom are counted and skipped). Never
+  `mmap` (the server truncates region files); read, check the chunk's `xPos`/`zPos` against its slot.
+- **Which chunks:** `DataVersion` equal to the palette's `data_version` and `Status` `minecraft:full` (vanilla
+  draws only loaded, full chunks). `--provisional` also draws `features`, `initialize_light`, `light` and
+  `spawn` chunks (tile flag bit 0). Any other chunk is skipped and counted: an older chunk is drawn once the
+  server has loaded and re-saved it.
+- **Chunk NBT used:** `yPos` (minimum Y = `yPos * 16`), `Heightmaps.WORLD_SURFACE` (`ceillog2(height + 1)` bits
+  per entry, index `x + z * 16`, value = first free y − minimum Y; the long count gives the bit count except 11
+  vs 12 bits, where the dimension's height decides), `sections[].Y` and `sections[].block_states`
+  (`{palette, data?}`, `max(4, ceillog2(palette size))` bits, values never span longs, index
+  `((y & 15) * 16 + z) * 16 + x`). Sections without `block_states` (26.x light-only sections) are air. A palette
+  entry is a bare block id (its default state; `{"": id}` inside a list that mixes forms) or `{id, properties?}`
+  whose missing properties take the default state's values.
+- **The palette:** `server-config/keys/<minecraft_version>/map-palette.tsv` and `map-colors.tsv`, dumped from the
+  pinned server jar by `scripts/map_palette.py` (the build-time registry dump, CLAUDE.md "Config keys"; CI
+  re-dumps and compares). Tab-separated records: `M key value` (metadata: `format` 1, `minecraft_version`,
+  `data_version`, `server`, `blocks`, `states`), `D block properties colour fluid surface` (each block's default
+  state, registry order) and `S ...` (a state of the block above whose last three fields differ from its `D`
+  line; any other state has the `D` values). `properties` is `k=v` sorted by name, comma-separated, `-` for none.
+  `colour` is the MapColor id (0 = NONE: the map looks through it), `fluid` 1 if the state has a fluid, `surface`
+  the colour recorded when the walk stops on it (a fluid state without a sturdy top face counts as its fluid's
+  block). `map-colors.tsv`: `id rrggbb`. An unknown block or property set counts as NONE and is reported.
+
+### The algorithm (vanilla's `MapItem.update`, 26.3 bytecode)
+
+Per block column: start at `w` = WORLD_SURFACE value + minimum Y. If `w <= minY + 1`, the column is bedrock
+(STONE grey; empty End void columns included). Else step down (`w -= 1`, read the state) while the state's colour
+is NONE and `w > minY`. If then `w > minY` and the state has a fluid, count the depth (from `w - 1` down, one per
+block, while the block is fluid and above minY; the first is always counted) and record `surface`, else
+`colour`. At scale `s` (0..4, `i = 2^s` blocks per pixel, pixel `gx = floor(x / i)`): the footprint's most
+frequent colour (a tie goes to the colour seen first, footprint order x outer, z inner), `d1` = Σ `w / (i*i)` and
+depth = Σ depth `// (i*i)`. Brightness, with parity `p = (gx + gz) & 1`, in IEEE doubles exactly as written (so
+`7 * 0.1 + 0.2 > 0.9`):
+
+- WATER (colour 12): `d2 = depth * 0.1 + p * 0.2`; HIGH (2) if `< 0.5`, LOW (0) if `> 0.9`, else NORMAL (1).
+- Else `d3 = (d1 - d0) * 4.0 / (i + 4) + (p - 0.5) * 0.4`, `d0` = the northern pixel's `d1` at the same scale
+  (across chunk, region and tile borders); HIGH if `> 0.6`, LOW if `< -0.6`, else NORMAL. A missing northern
+  pixel (chunk not drawn) gives `d0 = d1`.
+
+The pixel's value is `colour * 4 + brightness`; NONE and missing pixels are 0. Footprints never cross a chunk
+(i ≤ 16), so a pixel depends only on its own chunk and the chunk north of it.
+
+### Tile file
+
+A tile is 512 × 512 pixels at every scale, so a scale-`s` tile covers `512 << s` blocks (scale 0: one region,
+scale 4: 16 × 16 regions). `tx = floor(gx / 512)`, the pixel's offset in it `gx mod 512` (floor), the same for z.
+
+| Offset | Size | Field (little-endian) |
+|---|---|---|
+| 0 | 8 | magic `SWMAPT\x00\x01` (the last byte is the format version) |
+| 8 | 1 | scale, 0..4 |
+| 9 | 1 | flags: bit 0 = provisional chunks drawn; other bits 0 |
+| 10 | 2 | reserved, 0 |
+| 12 | 4 | `tx`, i32 |
+| 16 | 4 | `tz`, i32 |
+| 20 | 4 | DataVersion of the chunks drawn (= the palette's), u32 |
+| 24 | 8 | `rendered_at`: unix seconds of the run that wrote the tile, i64 (tests: fixed, 0 for the goldens) |
+| 32 | 262144 | one byte per pixel, rows north to south (z), columns west to east (x); 0 = no data |
+
+A reader rejects a tile whose size isn't exactly 262176 bytes, whose magic, scale or reserved field differ, or
+whose `tx`/`tz`/scale don't match its file name, and treats it as missing. An all-zero tile is not written (and
+is deleted when a render empties it). Files are written to a temporary name in the same directory and renamed.
+
+### Directory layout
+
+```
+/var/lib/mc-map/                        mc_map_dir (StateDirectory, 0750 mcmap:minecraft, files 0640)
+  <ns>/<dim>/meta.json                  {"format": 1, "dimension": "minecraft:overworld", "generation": N,
+                                         "world": {"dev": D, "ino": I}, "minecraft_version": "26.3",
+                                         "data_version": 5023, "palette_sha256": "...", "rendered_at": T,
+                                         "radius": R|null, "regions": n, "scales": [0..4], "tiles": {"0": n0, ...}}
+  <ns>/<dim>/s<scale>/<tx>.<tz>.swt     the tiles, e.g. minecraft/overworld/s0/-1.0.swt
+  .work/<ns>/<dim>/dimension.state      the renderer's own state: fingerprint (palette, renderer version, radius),
+  .work/<ns>/<dim>/r.<x>.<z>.state        world identity, generation; per region: mtime, size, chunk timestamps,
+                                         complete flag, edge rows (binary, versioned); .work/lock (one run at a time)
+```
+
+`<ns>/<dim>` is the dimension's key (`minecraft:the_end` → `minecraft/the_end`). `world` is the world folder's
+`st_dev`/`st_ino` when the render ran.
+
+### Incremental updates
+
+A run must leave exactly the tiles a full render of the same world would write (only `rendered_at` of tiles it
+didn't touch may be older, and a chunk that can't be read right now keeps its previous pixels). The rule:
+
+1. A full render when there is no state, the world identity, the palette's sha256 or the renderer's format
+   changed: the dimension's tiles and state are deleted first.
+2. Otherwise a region file is looked at only when its size or mtime changed, and read again only when one of its
+   1024 header timestamps changed too (a region file that appeared or disappeared counts as changed; its state
+   is `.work/<ns>/<dim>/r.<x>.<z>.state`). A changed region is read whole: every chunk is re-decoded (≈ 0.3 s per
+   region), which gives the same pixels as re-reading only the dirty chunks. A chunk that can't be read now (torn
+   write, wrong slot, unreadable stream) keeps its previous pixels and leaves the region incomplete, so the next
+   run reads it again.
+3. A changed region's pixels are recomputed at every scale (0 where nothing is drawable any more); the top pixel
+   row of the region south of it is re-shaded when this region's bottom row heights changed (its `d0`), from that
+   region's saved top-row aggregates, without reading it.
+4. Touched tiles are written (renamed into place), then `meta.json` with `generation + 1`, then the state. A run
+   that touched nothing leaves `meta.json` alone.
+
+### How mc-brand reads the tiles
+
+- **Where:** `<mc_map_dir>/<ns>/<dim>/` for the player's world; never for the Nether (`the_nether`), and never
+  when `meta.json` is missing, its `format` isn't 1, or its `world` differs from the world folder's
+  `unix:dev`/`unix:ino` (a world switch: no stale map until the next render).
+- **A window:** for a map centred on `(cx, cz)` at scale `s` (`cx`, `cz` multiples of `2i`, below), pixel
+  `(k1, l1)` of the 128 × 128 canvas is tile pixel `gx = cx / i + k1 - 64`, `gz = cz / i + l1 - 64`; it touches at
+  most 2 × 2 tiles. A value `v > 0` is painted as base colour `v >> 2` shaded by `v & 3`
+  (`channel * {180, 220, 255, 135}[v & 3] / 255`, from `map-colors.tsv`) with `setPixelColor`; 0 leaves the
+  pixel to vanilla. Pixels vanilla has drawn are released to vanilla's live colour as today (PocketMap).
+- **Caching:** decoded tiles in a small LRU (16 tiles, 4 MB); the cache is dropped when `meta.json`'s
+  `generation` changes (checked at most once a minute, only when a window is wanted); file reads off the main
+  thread, the map falls back to today's behaviour until the tile is loaded.
+- **The spawn map room** (1.4.0): a wall of item frames, one `MapView` per frame on vanilla's map grid (centre
+  `floor((x + 64) / w) * w + w / 2 - 64`, `w = 128 * i`, which is always a multiple of `2i`), each painted from the
+  same tiles by a non-contextual renderer and repainted when `generation` changes.
+
+### The pocket map's centre snap
+
+The stored pixels are computed with parity `(gx + gz) & 1`; vanilla dithers with `(k1 + l1) & 1`, and the two
+agree only when `cx / i + cz / i` is even. So pocket maps are centred on multiples of `2i` blocks:
+`Wayfinding.snap(coord, scale + 1)` instead of `snap(coord, scale)`, at creation and on every re-centre
+(`RECENTRE_PX` = 4 is already even). Vanilla-grid maps already have even centres. The reference is
+`map_reference.pocket_centre`; `tests/test_map_reference.py` shows that the tiles equal vanilla's own pixels for
+even centres and differ for odd ones.
+
+### The renderer, its unit and server.yml
+
+```
+smallworld-map render --world DIR --out DIR [--palette FILE] [--dimensions overworld,end] [--radius N]
+                      [--threads N] [--full] [--rendered-at UNIX_SECONDS]
+smallworld-map stats  [--world DIR] [--out DIR] [--dimensions overworld,end]
+```
+
+`render` prints one JSON line per dimension (`regions`, `regions_rendered`, `regions_removed`, `chunks`,
+`chunks_full`, `chunks_not_full`, `chunks_failed`, `chunks_unsupported` (LZ4 is read; 127 custom isn't),
+`chunks_other_version`, `unknown_states`, `tiles_written`, `tiles_empty`, `generation`, `radius`, `seconds`); exit 0 when
+every dimension was rendered, 1 on an error (palette, output, another run holding `.work/lock`), 2 on a usage
+error. `--radius` keeps chunks within N blocks of 0,0 (a square); `--threads` workers take regions north to south
+(`std::thread::scope`), the main thread writes tiles as soon as every region they wait for is done. The Rust is
+walked through in [rust/smallworld-map.md](rust/smallworld-map.md).
+
+Role `map` (`ansible/roles/map`, after `agent` in `site.yml`; its own role: own user, binary, units and life cycle,
+and it never touches the server): user `mcmap` (`mc_map_user`, group `minecraft`), `/opt/minecraft/bin/smallworld-map`
+(pin `mc_smallworld_map_sha256`, root 0755), `mc_map_palette` / `mc_map_colors` (`/opt/minecraft/share/`, from
+`server-config/keys/<minecraft_version>/`), `mc-map.service` (one `ExecStart` per dimension with its radius;
+sandbox in [SECURITY.md](../SECURITY.md#the-world-map-v14)) and `mc-map.timer` (`OnCalendar=map.schedule`,
+`Persistent`, `RandomizedDelaySec=10m`). `map.enabled: false` removes all of it and the output.
+
+server.yml (`mcctl/schema.py`):
+
+```yaml
+map:
+  enabled: true                    # the nightly pre-render; false removes it
+  schedule: "*-*-* 04:23"          # systemd OnCalendar, host time zone; keep it out of maintenance.window
+  dimensions: [overworld, end]     # never the Nether
+  radius: null                     # null = the active world's border, else world.border_radius (none: everything)
+  threads: 1
+branding:
+  pocket_map: {enabled: true, prerender: true}
+  map_room:                        # off by default; places entities in the live world
+    enabled: true
+    world: overworld               # one of map.dimensions
+    at: spawn                      # or x/y/z of the bottom centre frame
+    offset: [0, 0, -6]             # with at: spawn
+    facing: south                  # the maps face the viewer
+    width: 4                       # 1..8 frames
+    height: 3                      # 1..6 frames
+    view: border                   # border: the world border fitted to the wall; spawn: vanilla's grid at `scale`
+    scale: 3
+    cursors: false                 # online players as cursors
+```
+
+### The spawn map room
+
+`MapRoom.java`: `width × height` item frames; slot `i` is column `i % width` (the viewer's left to right) and row
+`i / width` (top to bottom); the bottom centre frame (`(width - 1) / 2`, the bottom row) is at the spawn + offset or
+x/y/z, and "right" is +x facing south, −x north, −z east, +z west. The wall reads like a map whatever it faces:
+north at the top, west on the viewer's left. `view: spawn` gives each frame the vanilla map centred on spawn's grid
+cell at `scale` plus `(column − (width − 1) / 2, row − (height − 1) / 2)` cells, painted from the tiles pixel for
+pixel; `view: border` fits the square `[−radius, radius]` to the wall at `bpp = ceil(2 · radius / (128 ·
+min(width, height)))` blocks per pixel, sampled from tile scale `min(4, floor(log2 bpp))`. The frames are fixed,
+invulnerable, silent and non-persistent (respawned when their chunk's entities load; a sweep removes any of ours
+that isn't the current wall); the MapViews are created once, their ids kept in the world's PDC
+(`mcbrand:map_room_maps`), locked, with one non-contextual renderer each that repaints when `generation` changes.
+`tests/test_wayfinding.py` recomputes this geometry from `WayfindingFixtures`' output.
+
+### Golden tests
+
+`tests/fixtures/world-26.3/` holds real chunks of a 26.3 world and generated edge cases (its README says where
+they come from and how to regenerate them); `golden.json` has the sha256 of every tile `tests/map_reference.py`
+renders from it with `rendered_at` 0. The Rust renderer must produce the same files, byte for byte.
+`scripts/map_preview.py` turns a tile (or a fixture render) into a PNG.
+
 ## Bumping versions
 
 - **Server build / plugins (same MC version):** automatic in config repos (P11, see [Automation](#automation-p11)); by
@@ -504,6 +766,8 @@ refuse them: they would end up in the tailnet ACL, Cloudflare Access, DNS or the
   `mcctl lock update -C $C` does the same for the newest builds of the current version. Adding X to the product:
   - `python scripts/update_lock.py --minecraft-version X`, set `minecraft.version` in `template/server.yml`, run `python scripts/sync_example.py`.
   - Run `python scripts/config_keys.py --javap <jdk>/bin/javap` to list the new keys, and `pytest` to check the overlays still validate.
+  - Run `python scripts/map_palette.py dump` (the world map's palette) and regenerate the map fixture
+    (`tests/fixtures/world-26.3/README.md`).
   - If `java_major` changed, bump `temurin_version`.
 - **Tailscale / Temurin / restic:** bump the pins in `ansible/group_vars/all/main.yml`. For restic and Tailscale, also bump `.github/workflows/server.yml` (backup-check / deploy jobs; `pytest` checks they match); the Tailscale upgrade runs detached on the server and Ansible reconnects, since the deploy itself goes over Tailscale SSH.
   Tailscale is held at its pin, so **security fixes need this manual bump**.
@@ -513,6 +777,9 @@ refuse them: they would end up in the tailnet ACL, Cloudflare Access, DNS or the
   the `uses:` line changed, `auto_merge: builds+patch`) goes on `update/product-vX.Y.Z` with auto-merge on, where
   `server / gate` checks the release tag and merges it; anything else (minor/major, or server.yml migrated) is on
   `upgrade/product-vX.Y.Z` and **you merge it**. No downgrades.
+- **Rust toolchain:** set the exact version in `rust/rust-toolchain.toml` (a stable release at least two weeks
+  old), then `python scripts/build_rust.py build` and pin the printed sha256s as `mc_smallworld_rcon_sha256` in
+  `ansible/group_vars/all/main.yml` (a new compiler changes the binaries); CI's `rust` job checks the rebuild.
 - **GitHub Actions / Python tooling:** Dependabot opens weekly PRs (SHA pins and `requirements/`).
 - **Python dependencies:** `requirements/{validate,deploy,dev}.in` hold the direct pins (validate: PyYAML and
   rich (mcctl's terminal UI), for the workflow's validate job; deploy: + ansible-core and mcstatus; dev: +
@@ -664,6 +931,7 @@ Every "Where" below is a field of the config repo's `server.yml` (or its lock fi
 | `nerf-spawner-mobs` | `mc_nerf_spawner_mobs` | `false` (vanilla spawner mobs) |
 | Redstone implementation | `mc_redstone_implementation` | `ALTERNATE_CURRENT` |
 | World border radius | `mc_world_border_radius` | Overworld 5000, Nether 1250, End 3000 (the main island at 0,0 stays well inside) |
+| Chunk pre-generation | `world.pregenerate` (`enabled`, `frontier`, `margin`, `max_radius`; a library world's `pregen`) | **On** while nobody is online: each bordered dimension up to its border, then 1024 blocks beyond the farthest generated chunk, never past 10000 blocks from 0,0; paused around backups. `mcctl render` maps it onto the monitoring role's `monitoring_pregen_*` (health.env `PREGEN_*`) ([operations: Pre-generation](operations.md#pre-generation)) |
 | Your SSH public key (bootstrap only) | `deploy_authorized_keys` | empty |
 | Discord alerts / expected player count | config repo `.env` (`TF_VAR_discord_webhook_url`), `minecraft.max_players` | off / 20 |
 
@@ -706,6 +974,14 @@ terraform -chdir=terraform init -backend=false && terraform -chdir=terraform val
 node --import ./watchdog/test/register.mjs --test watchdog/test/worker.test.mjs watchdog/test/monitoring.test.mjs watchdog/test/panel.test.mjs watchdog/test/actions.test.mjs
 # The panel UI in Chromium against a local mock API (needs Playwright; pytest skips it without): screenshots
 node --import ./watchdog/test/register.mjs watchdog/test/ui.smoke.mjs /tmp/shots
+```
+
+The Rust workspace (`rust/`, rustup installs the pinned toolchain on first use; walkthrough in
+[rust/smallworld-rcon.md](rust/smallworld-rcon.md)):
+
+```bash
+(cd rust && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test)
+python scripts/build_rust.py check   # the committed binaries are the source's, byte for byte, and their pins
 ```
 
 CI also runs actionlint (built from source with `go install`) and the example config repo through the reusable

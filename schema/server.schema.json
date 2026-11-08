@@ -471,7 +471,7 @@
                 "default": null
               },
               "pregen": {
-                "description": "Chunky pre-generation inside the border (null = on when Chunky is locked).",
+                "description": "Chunky pre-generation for this world (null = world.pregenerate.enabled; false = off for it).",
                 "anyOf": [
                   {
                     "type": "boolean"
@@ -488,6 +488,37 @@
             ]
           },
           "default": []
+        },
+        "pregenerate": {
+          "description": "v1.4: Chunky pre-generation (docs/operations.md \"Pre-generation\").",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "description": "v1.4: Chunky pre-generation while nobody is online (each bordered dimension up to its border, then the frontier). false = off for the whole deployment; a library world's pregen: false turns it off for that world alone.",
+              "type": "boolean",
+              "default": true
+            },
+            "frontier": {
+              "description": "v1.4: once the bordered passes are done (or for a dimension without a border), keep pre-generating `margin` blocks beyond the farthest generated chunk, so exploring rarely generates terrain under players.",
+              "type": "boolean",
+              "default": true
+            },
+            "margin": {
+              "description": "v1.4: blocks generated beyond the farthest generated chunk (view distance plus a few minutes of travel; elytra flights, 30-60 blocks/s, can outrun any margin).",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 30000000,
+              "default": 1024
+            },
+            "max_radius": {
+              "description": "v1.4: hard cap (blocks from 0,0) for frontier expansion, for dimensions without a border above all; the world border is the real control of the world's size.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 30000000,
+              "default": 10000
+            }
+          }
         }
       }
     },
@@ -933,6 +964,21 @@
               "default": 10
             }
           }
+        }
+      }
+    },
+    "agent": {
+      "description": "v1.4: the on-box agent's implementation.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "implementation": {
+          "description": "v1.4: which mc-agent runs on the box (panel mode cloudflare) and answers mcctl's actions: python (scripts/mc_agent.py) or rust (smallworld-agent, the port; the experience telemetry then runs in its own unit, mc-telemetry.service). Both read and write the same state, so switching back is a deploy. The default becomes rust in a later release, after a soak.",
+          "enum": [
+            "python",
+            "rust"
+          ],
+          "default": "python"
         }
       }
     },
@@ -1666,6 +1712,143 @@
               "description": "v1.3: /map gives each player a personal map item that re-centres on them while held (the off hand makes it a minimap), with every online player as a named cursor; /map zoom cycles the scale. Terrain fills in as the player explores (vanilla's map rendering). Free to re-get, can't be copied. Players without client mods get a one-line tip at join.",
               "type": "boolean",
               "default": true
+            },
+            "prerender": {
+              "description": "v1.4: show the nightly pre-rendered terrain (map.enabled) where the player hasn't been yet; vanilla's live colours take over where they have. Never in the Nether.",
+              "type": "boolean",
+              "default": true
+            }
+          }
+        },
+        "map_room": {
+          "description": "v1.4: the spawn map room, a wall of pre-rendered maps.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "description": "v1.4: a wall of item frames with maps of the pre-rendered world (map.enabled) at spawn, refreshed after each nightly render. The frames are fixed and invulnerable, their maps can't be taken; changing this section moves the wall (the old frames are removed), false removes it. It places entities in the live world: build a wall behind it first if you want one (fixed frames also hang in the air).",
+              "type": "boolean",
+              "default": false
+            },
+            "world": {
+              "description": "The dimension (one of map.dimensions).",
+              "enum": [
+                "overworld",
+                "end"
+              ],
+              "default": "overworld"
+            },
+            "at": {
+              "description": "`spawn`: the wall's bottom centre is the dimension's world spawn + offset (found when the plugin starts). Else give x, y and z.",
+              "anyOf": [
+                {
+                  "enum": [
+                    "spawn"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "offset": {
+              "description": "With at: spawn: [x, y, z] blocks from the spawn block to the wall's bottom centre frame.",
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [
+                0,
+                0,
+                -6
+              ]
+            },
+            "x": {
+              "description": "Block x of the wall's bottom centre frame.",
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": -29999984,
+                  "maximum": 29999984
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "y": {
+              "description": "Block y of the wall's bottom row.",
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": -64,
+                  "maximum": 319
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "z": {
+              "description": "Block z of the wall's bottom centre frame.",
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": -29999984,
+                  "maximum": 29999984
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "facing": {
+              "description": "The way the maps face (towards the viewer): south = seen by a player looking north.",
+              "enum": [
+                "north",
+                "south",
+                "east",
+                "west"
+              ],
+              "default": "south"
+            },
+            "width": {
+              "description": "Frames across.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8,
+              "default": 3
+            },
+            "height": {
+              "description": "Frames high.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 6,
+              "default": 3
+            },
+            "view": {
+              "description": "border: the whole world border (centred on 0,0) fitted to the wall; spawn: the vanilla map grid at `scale` around the spawn, one map per frame.",
+              "enum": [
+                "border",
+                "spawn"
+              ],
+              "default": "border"
+            },
+            "scale": {
+              "description": "With view: spawn, blocks per pixel = 2^scale (0..4).",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4,
+              "default": 3
+            },
+            "cursors": {
+              "description": "Show online players in that dimension as cursors on the wall.",
+              "type": "boolean",
+              "default": false
             }
           }
         }
@@ -1928,6 +2111,59 @@
             "builds+patch"
           ],
           "default": "builds+patch"
+        }
+      }
+    },
+    "map": {
+      "description": "v1.4: the world map pre-render (pocket map, map room).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "description": "v1.4: the nightly world map pre-render (smallworld-map, its own user, no network, read-only on the world): tiles of the exact colours vanilla maps draw, for the pocket map (branding.pocket_map.prerender) and the spawn map room (branding.map_room). false = no timer, and the output is removed.",
+          "type": "boolean",
+          "default": true
+        },
+        "schedule": {
+          "description": "When it runs (systemd OnCalendar, host time zone; Persistent, up to 10 minutes' random delay). Pick quiet hours away from maintenance.window: a run reads only what changed since the last one.",
+          "type": "string",
+          "pattern": "^[^\\x00-\\x20\\x7f-][^\\x00-\\x1f\\x7f]{0,99}$",
+          "default": "*-*-* 04:23"
+        },
+        "dimensions": {
+          "description": "Dimensions to render. Never the Nether (vanilla draws Nether maps as noise).",
+          "type": "array",
+          "items": {
+            "enum": [
+              "overworld",
+              "end"
+            ]
+          },
+          "default": [
+            "overworld",
+            "end"
+          ]
+        },
+        "radius": {
+          "description": "Render chunks within this many blocks of 0,0 (a square); null = each dimension's world border (the active world's, else world.border_radius; no border = everything generated).",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 16,
+              "maximum": 30000000
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "threads": {
+          "description": "Worker threads. The render runs at idle priority (it only gets CPU the server doesn't use); more threads only shorten the first full render.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8,
+          "default": 1
         }
       }
     },

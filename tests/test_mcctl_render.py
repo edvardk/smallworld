@@ -123,11 +123,16 @@ P6_GROUP_VARS = {
     "mc_watchdog_url",
     "firewall_mc_max_concurrent",
     "mc_panel_mode",
+    "mc_agent_implementation",  # v1.4: python or rust
     "mc_config_repo",  # P10 (the agent's whitelist pull requests)
     "mc_metrics_interval_s",
     "mc_logs_max_rows_per_day",
     "mc_reboot_window",  # P11
     "mc_maintenance_window",  # v1.3
+    "mc_map_enabled",  # v1.4: the world map pre-render (role map)
+    "mc_map_schedule",
+    "mc_map_dimensions",
+    "mc_map_threads",
     "mc_maintenance_timezone",
     "mc_maintenance_force_minutes",
 }
@@ -192,11 +197,16 @@ EXPECTED_GROUP_VARS = {
     "mc_watchdog_url",
     "firewall_mc_max_concurrent",
     "mc_panel_mode",
+    "mc_agent_implementation",  # v1.4
     "mc_config_repo",
     "mc_metrics_interval_s",
     "mc_logs_max_rows_per_day",
     "mc_reboot_window",
     "mc_maintenance_window",  # v1.3: deploys restart only inside it
+    "mc_map_enabled",  # v1.4: role map
+    "mc_map_schedule",
+    "mc_map_dimensions",
+    "mc_map_threads",
     "mc_maintenance_timezone",
     "mc_maintenance_force_minutes",
     "health_mspt_alert",
@@ -207,6 +217,11 @@ EXPECTED_GROUP_VARS = {
     "health_disk_alert_pct",
     "health_steal_alert_pct",
     "health_steal_alert_checks",
+    # v1.4: world.pregenerate (the monitoring role's defaults = the schema's)
+    "monitoring_pregen_enabled",
+    "monitoring_pregen_frontier",
+    "monitoring_pregen_margin",
+    "monitoring_pregen_max_radius",
     *P13_GROUP_VARS,
     *P16_GROUP_VARS,
     *PROFILE_GROUP_VARS,
@@ -245,6 +260,13 @@ GROUP_VARS_CONSTANTS = {
     "mc_deploy_maintenance_minutes",
     "mc_telemetry_jar_sha256",  # P13
     "mc_brand_jar_sha256",  # P17
+    "mc_smallworld_rcon_sha256",  # v1.4: rust/dist/ binaries (scripts/build_rust.py)
+    "mc_smallworld_map_sha256",  # v1.4: the world map pre-renderer (role map)
+    "mc_map_user",
+    "mc_map_dir",
+    "mc_map_palette",
+    "mc_map_colors",
+    "mc_smallworld_agent_sha256",  # v1.4: the agent port (installed by the integration step)
     "mc_brand_icon_sha256",
     "mc_helper_priority",
     "mc_timely_priority",  # P13 review M1
@@ -444,8 +466,75 @@ def test_auto_heap_formula(ram_mb: int, reserve: int, heap: int, tmp_path) -> No
 def test_border_omits_null_dimensions() -> None:
     data = full_data()
     data["world"] = {"border_radius": {"overworld": None, "end": 300}}
+    data["branding"]["map_room"]["view"] = "spawn"  # view: border needs an overworld border
     gv = render.group_vars(schema.load_server(data))
     assert gv["mc_world_border_radius"] == {"minecraft:the_nether": 1250, "minecraft:the_end": 300}
+    # v1.4: the map renders without a radius where there is no border
+    assert gv["mc_map_dimensions"] == [
+        {"id": "minecraft:overworld", "radius": None},
+        {"id": "minecraft:the_end", "radius": 300},
+    ]
+
+
+def test_world_map_settings() -> None:
+    """v1.4: map.* -> the map role's variables (radius: map.radius, else the active world's border, else
+    world.border_radius); branding.map_room -> mc-brand's map_room; the checks on the map room."""
+    data = full_data()
+    gv = render.group_vars(schema.load_server(data))
+    assert (gv["mc_map_enabled"], gv["mc_map_schedule"], gv["mc_map_threads"]) == (True, "*-*-* 02:41", 1)
+    room = gv["mc_brand"]["map_room"]
+    assert room["enabled"] and room["at"] == "spawn" and room["offset"] == [0, 0, -6] and "x" not in room
+    assert gv["mc_brand"]["pocket_map"] == {"enabled": True, "prerender": True}
+    data["world"] = {
+        "active": "world",
+        "library": [{"name": "world", "border_radius": {"overworld": 700, "nether": None, "end": None}}],
+    }
+    gv = render.group_vars(schema.load_server(data))
+    assert gv["mc_map_dimensions"][0] == {"id": "minecraft:overworld", "radius": 700}
+    assert gv["mc_brand"]["map_room"]["radius"] == 700
+    data["map"]["radius"] = 2000
+    assert render.group_vars(schema.load_server(data))["mc_map_dimensions"][1]["radius"] == 2000
+    # Off: no pre-render in the pocket map, no map room.
+    data["map"]["enabled"] = False
+    data["branding"]["map_room"]["enabled"] = False
+    gv = render.group_vars(schema.load_server(data))
+    assert gv["mc_brand"]["pocket_map"]["prerender"] is False and gv["mc_map_enabled"] is False
+    for change, message in [
+        ({"enabled": True}, "needs map.enabled"),
+        ({"enabled": True, "x": 1}, "both given"),
+        ({"enabled": True, "at": None}, "needs x, y and z"),
+        ({"enabled": True, "offset": [0, 0, 99]}, "-64..64"),
+        ({"enabled": True, "width": 9}, "width"),
+    ]:
+        d = full_data()
+        d["branding"]["map_room"].update(change)
+        if change != {"enabled": True}:
+            d["map"]["enabled"] = True
+        else:
+            d["map"]["enabled"] = False
+        with pytest.raises(schema.SchemaError, match=message):
+            schema.load_server(d)
+    d = full_data()
+    d["map"]["dimensions"] = ["overworld", "nether"]
+    with pytest.raises(schema.SchemaError, match=r"map\.dimensions"):
+        schema.load_server(d)
+
+
+def test_pregenerate_maps_onto_the_monitoring_role() -> None:
+    """v1.4: world.pregenerate sets the monitoring role's variables (one path: health.env's PREGEN_*); its
+    defaults are the role's, so a server.yml without it behaves as before (on)."""
+    gv = render.group_vars(schema.load_server(full_data()))
+    role = yaml.safe_load((REPO / "ansible/roles/monitoring/defaults/main.yml").read_text())
+    keys = ("monitoring_pregen_enabled", "monitoring_pregen_frontier", "monitoring_pregen_margin",
+            "monitoring_pregen_max_radius")  # fmt: skip
+    assert {k: gv[k] for k in keys} == {k: role[k] for k in keys} == {
+        "monitoring_pregen_enabled": True, "monitoring_pregen_frontier": True,
+        "monitoring_pregen_margin": 1024, "monitoring_pregen_max_radius": 10000,
+    }  # fmt: skip
+    data = full_data()
+    data["world"] = {"pregenerate": {"enabled": False, "frontier": False, "margin": 512, "max_radius": 4000}}
+    gv = render.group_vars(schema.load_server(data))
+    assert [gv[k] for k in keys] == [False, False, 512, 4000]
 
 
 def test_cli_render(config_repo, tmp_path) -> None:

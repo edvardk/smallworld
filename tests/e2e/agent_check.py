@@ -774,6 +774,12 @@ def holding_lock(lock: str, script: str, user: str | None = None) -> Iterator[su
         with contextlib.suppress(ProcessLookupError):
             os.killpg(holder.pid, signal.SIGKILL)
         holder.wait()
+        # wait() covers flock only: the rest of the group (sh, its sleep: they hold the locked fd too) is killed
+        # asynchronously, and the lock goes with the last of them, a moment later (the unit test saw it held right
+        # after the block, about 1 run in 300). The block's contract is "released", so wait for it.
+        deadline = time.monotonic() + 5
+        while lock_held(lock) and time.monotonic() < deadline:
+            time.sleep(0.02)
 
 
 def restore_guard_round() -> None:
@@ -838,8 +844,12 @@ def _world_round() -> None:
     world is archived first (restic, tags world-archive + world:<name>, as mcops) -> mc-world-apply.service swaps the
     folders as minecraft -> the server generates the new world (the seed matches over RCON, server.properties has
     the type) -> pending.json -> a deploy honours it (worlds-library.json) -> a server.yml pull request -> merged;
-    switch back -> the old world (a marker file in it) is back; delete the archived world; refusals."""
+    switch back -> the old world (a marker file in it, and every dimension's region files: 26.x keeps them all in
+    world/dimensions/) is back; delete the archived world; refusals."""
     marker = SERVER / "world" / "e2e-world-marker.txt"
+    dims = SERVER / "world" / "dimensions"
+    regions = sorted(f.relative_to(dims).as_posix() for f in dims.glob("*/*/region/r.*.mca"))
+    expect(bool(regions), f"the 26.x world keeps its region files in world/dimensions/ ({len(regions)})")
     marker.write_text("the original world")
     pw = pwd.getpwnam("minecraft")
     os.chown(marker, pw.pw_uid, pw.pw_gid)
@@ -858,6 +868,8 @@ def _world_round() -> None:
     archives = restic_snapshots("--tag", "world-archive,world:world")
     expect(bool(archives), f"the old world was archived first (world-archive + world:world: {len(archives)})")
     expect(not marker.exists(), "the new world doesn't have the old world's files")
+    expect(not any((SERVER / f"world{s}").exists() for s in ("_nether", "_the_end")),
+           "26.x: no world_nether/ or world_the_end/ next to the new world")  # fmt: skip
     expect(server_answers(), "the new world's server accepts connections")
     expect("8675309" in rcon_safe("seed"), f"the new world has the seed ({rcon_safe('seed')})")
     props = (SERVER / "server.properties").read_text()
@@ -898,6 +910,8 @@ def _world_round() -> None:
         marker.exists() and marker.read_text() == "the original world",
         "the archived world is back, files and all",
     )
+    missing = [r for r in regions if not (dims / r).is_file()]
+    expect(not missing, f"every dimension's region files are back ({len(regions)}; missing {missing[:5]})")
     expect(world_state().get("active") == "world", "worlds.json: world is active again")
     expect(server_answers(), "the server accepts connections after switching back")
     expect(
@@ -936,6 +950,15 @@ def versions_round() -> None:
     data = json.loads(path.read_text()) if st else {}
     expect(bool(want) and data.get("version") == want.group(1), f"it names the product version ({data})")  # type: ignore[union-attr]
     expect(as_minecraft_read(str(path)) == 0, "anyone may read it (nothing secret)")
+    # v1.4: which agent runs, and for rust the binary's pin (= the installed binary's sha256)
+    agent = data.get("agent") or {}
+    if agent.get("implementation") == "rust":
+        digest = hashlib.sha256(AGENT_BIN.read_bytes()).hexdigest() if AGENT_BIN.exists() else ""
+        expect(
+            agent.get("sha256") == digest, f"it records the Rust agent's sha256 ({agent}, installed {digest})"
+        )
+    else:
+        expect(agent == {"implementation": "python"}, f"it records the Python agent ({agent})")
     inv = wait_for("an inventory push with the product version",
                    lambda: next((i for i in reversed(seen["inventory"]) if (i.get("product") or {}).get("version")), None), 120)  # fmt: skip
     prod = (inv or {}).get("product") or {}
@@ -978,8 +1001,9 @@ def versions_round() -> None:
     expect(INSTALLATION_TOKEN not in audit, "the token never reaches the journal")
 
 
-# v1.3: mcctl's actions over SSH run `mc_agent.py cli` on the box (mcctl/actions.py agent_command); here the shell
-# is local (no Tailscale), the command line the same (tests/test_agent.py compares the two).
+# v1.3: mcctl's actions over SSH run `mc-agent cli` on the box (mcctl/actions.py agent_command; v1.4: the symlink to
+# the chosen implementation); here the shell is local (no Tailscale), the command line the same (tests/test_agent.py
+# compares the two).
 CLI_LOGIN = "mcctl:e2e"
 CLI_UUID_PREFIX = "e2ec0000-0000-4000-8000-"  # the made-up players the cli round's writers record
 PENDING_FILE = Path("/var/lib/mc-agent/pending.json")
@@ -1011,8 +1035,9 @@ with mc_panel.Pending(Path("/var/lib/mc-agent/pending.json")).update() as d:
 
 
 def cli_argv(action: str, args: dict[str, Any] | None = None) -> list[str]:
-    """= mcctl.actions.agent_command(CLI_LOGIN, action, args), split."""
-    argv = ["sudo", "/usr/local/bin/mc-run", "-/etc/minecraft/notify.env", "/opt/minecraft/bin/mc_agent.py",
+    """= mcctl.actions.agent_argv(CLI_LOGIN, action, args): v1.4's entry point, the symlink to whichever
+    implementation the deploy chose (agent.implementation; the rust shards run the Rust cli this way)."""
+    argv = ["sudo", "/usr/local/bin/mc-run", "-/etc/minecraft/notify.env", "/opt/minecraft/bin/mc-agent",
             "cli", CLI_LOGIN, action]  # fmt: skip
     if args is not None:
         argv.append(json.dumps(args, sort_keys=True, separators=(",", ":")))
@@ -1065,6 +1090,10 @@ def cli_round() -> None:
                   if e.get("MC_LOGIN") == CLI_LOGIN}  # fmt: skip
     expect({("moderate", "ok"), ("world_delete", "wor")} <= seen_audit,
            f"both in the audit journal with MC_VIA=mcctl and the login {CLI_LOGIN} ({sorted(seen_audit)})")  # fmt: skip
+    # v1.4: mc-run names these units mc-agent-cli-* (a product unit in mc-agent's D1 rows), not run-p…
+    units = {e.get("_SYSTEMD_UNIT", "") for e in cli_audit() if e.get("MC_LOGIN") == CLI_LOGIN}
+    expect(bool(units) and all(u.startswith("mc-agent-cli-") and u.endswith(".service") for u in units),
+           f"the cli's audit entries come from mc-agent-cli-* units ({sorted(units)[:4]})")  # fmt: skip
 
     with github_mock():
         main_before, ours_prs = GitHubMock.files["main"], []
@@ -1231,6 +1260,43 @@ def checks(rounds: list[str]) -> int:
 MOCK: list[http.server.ThreadingHTTPServer] = []
 
 
+PRODUCT_VERSION = Path("/opt/minecraft/product-version.json")
+AGENT_BIN = Path("/opt/minecraft/bin/smallworld-agent")
+
+
+def implementation() -> str:
+    """v1.4: what the deploy chose (server.yml agent.implementation, recorded in the version file)."""
+    with contextlib.suppress(OSError, ValueError, AttributeError):
+        return str(json.loads(PRODUCT_VERSION.read_text()).get("agent", {}).get("implementation") or "python")
+    return "python"
+
+
+def implementation_checks() -> None:
+    """v1.4: the unit, the entry point and the telemetry sidecar match agent.implementation. The rounds are the
+    same for both implementations (black box); the e2e's rust shards deploy with agent.implementation: rust."""
+    impl = implementation()
+    print(f"agent.implementation: {impl}")
+    want = "smallworld-agent" if impl == "rust" else "mc_agent.py"
+    exec_start = show("mc-agent.service", "ExecStart").get("ExecStart", "")
+    expect(f"/opt/minecraft/bin/{want} " in exec_start or f"path=/opt/minecraft/bin/{want} " in exec_start,
+           f"mc-agent.service runs {want} ({exec_start[:120]})")  # fmt: skip
+    link = Path("/opt/minecraft/bin/mc-agent")
+    expect(link.is_symlink() and os.readlink(link) == want, f"/opt/minecraft/bin/mc-agent -> {want}")
+    st = AGENT_BIN.stat() if AGENT_BIN.exists() else None
+    expect(st is not None and st.st_uid == 0 and st.st_mode & 0o777 == 0o755,
+           f"smallworld-agent is installed (root, 0755) whichever runs: {oct(st.st_mode) if st else 'missing'}")  # fmt: skip
+    sidecar = show("mc-telemetry.service", "LoadState", "ActiveState", "User", "MainPID")
+    if impl == "rust":
+        expect(sidecar.get("ActiveState") == "active" and sidecar.get("User") == "mcops",
+               f"the telemetry sidecar runs as mcops ({sidecar})")  # fmt: skip
+        spid = sidecar.get("MainPID", "0")
+        expect(
+            as_minecraft_read(f"/proc/{spid}/environ") == 13, "minecraft can't read the sidecar's environment"
+        )
+    else:
+        expect(sidecar.get("LoadState") == "not-found", f"no telemetry sidecar in python mode ({sidecar})")
+
+
 def setup() -> None:
     """The agent's sandbox and its buffer, then the mock Worker, until the first pushes and commands arrived."""
     props = show("mc-agent.service", "ActiveState", "User", "MainPID")
@@ -1240,6 +1306,7 @@ def setup() -> None:
     )
     pid = props.get("MainPID", "0")
     expect(as_minecraft_read(f"/proc/{pid}/environ") == 13, "minecraft can't read mc-agent's environment")
+    implementation_checks()
     expect(as_minecraft_read("/etc/minecraft/agent.env") == 13, "minecraft can't read agent.env")
     spool = Path("/var/lib/mc-agent/spool.jsonl")
     # the agent buffers its first sample as soon as it starts; in its own e2e shard this check may begin right

@@ -32,7 +32,18 @@
   again -> `chunky continue`. A task Chunky has nothing left to continue for is done; then the next world
   starts. Chunky's own `continue-on-restart: true` resumes a task after a restart (and the next check pauses
   it if players are on). Progress lives in the state file; the replies matched are Chunky 1.5's lang/en.json
-  strings.
+  strings. v1.4: each check records the running task's percentage from `chunky progress` and writes one line
+  for `mcctl status` to pregen.json next to state.json; one Discord note when every bordered pass is done.
+  While backup.py holds pre-generation (notify.py pregen-hold.json: it paused Chunky for its save-off window
+  and continues it itself) nothing is done. Restarts need nothing: RCON is down (nothing is done) and Chunky's
+  continue-on-restart resumes the task; a check that finds it running with players online pauses it again.
+- v1.4 frontier expansion (PREGEN_FRONTIER: every dimension, "world:overworld:5000,world_the_end:the_end:",
+  border empty = none; empty = off): once the bordered passes are done, the same idle-only loop keeps
+  generating ahead of where players have been. Target radius (square, around 0,0 where the border is centred)
+  = the farthest generated chunk, read from the region files' names and 4 KiB headers, + PREGEN_MARGIN, capped
+  at the border and PREGEN_MAX_RADIUS; a new task (`chunky start W square 0 0 R`: Chunky skips chunks that
+  exist, so only the new ring is generated) only when the target grew by FRONTIER_STEP blocks or reaches the
+  cap, and never while the disk is at DISK_ALERT_PCT.
 
 - Alerts (docs/operations.md "Alerts"): one plain-English template (scripts/alerts.py: headline, impact,
   likely cause, what to do, details) with what we know right now (players online, pre-generation running, the
@@ -46,6 +57,7 @@ Env: WATCHDOG_URL, HEARTBEAT_TOKEN, DISCORD_WEBHOOK_URL, MSPT_ALERT (45), MSPT_A
      HEAP_ALERT_PCT (85), HEAP_ALERT_CHECKS (6), GC_PAUSE_ALERT_MS (50), REPEAT_HOURS (6),
      DISK_ALERT_PCT (85),
      STEAL_ALERT_PCT (10), STEAL_ALERT_CHECKS (3), HEAL_STARTUP_GRACE_S (900), PREGEN_WORLDS (empty = off),
+     PREGEN_FRONTIER (empty = off), PREGEN_MARGIN (1024), PREGEN_MAX_RADIUS (10000),
      STATE_DIRECTORY (set by systemd).
 """
 
@@ -72,6 +84,7 @@ from notify import (
     fenced,
     heartbeat_reply,
     maintenance_active,
+    pregen_held,
     restore_running,
 )
 
@@ -156,6 +169,13 @@ class State:
     pregen_current: str | None = None
     pregen_paused: bool = False
     pregen_for: str = ""  # v1.2 world library: the world (name@since) the progress above belongs to
+    # v1.4: each bordered pass's last progress ({pct, chunks} from `chunky progress`), frontier expansion: the
+    # radius generated around 0,0 per world, and the ring task running now (world, its radius, percent)
+    pregen_progress: dict[str, dict[str, float]] = field(default_factory=dict)
+    pregen_frontier: dict[str, int] = field(default_factory=dict)
+    pregen_frontier_current: str | None = None
+    pregen_frontier_target: int = 0
+    pregen_frontier_pct: float | None = None
     # alerts.Gate: key -> when it started, was last sent, ... (one message, reminders, one recovery)
     alerts: dict[str, dict[str, object]] = field(default_factory=dict)
     down_since: float | None = None
@@ -1066,6 +1086,7 @@ def evaluate_watchdog(
 
 
 PLAYERS = re.compile(r"There are (\d+)")
+# Chunky 1.5.3's lang/en.json (checked in the pinned jar), each reply with Chunky's "[Chunky] " prefix:
 CHUNKY_RUNNING = "Task running for"  # task_update / `chunky progress` with a task
 CHUNKY_STARTED = "Task started in"  # format_start
 CHUNKY_CONTINUING = "Task continuing for"  # format_continue
@@ -1074,39 +1095,242 @@ CHUNKY_ALREADY = (
     "A task was already started",
     "Task already started",
 )  # format_start_confirm/_started_already
+# format_start_confirm (a saved, unfinished task for that world): `chunky confirm` runs the pending start
+CHUNKY_CONFIRM = "A task was already started for this world"
+# format_cancel_confirm: `chunky cancel` always asks first (CancelCommand sets a pending action, keyed by the
+# sender's name); `chunky confirm` cancels the running and saved tasks
+CHUNKY_CANCEL_CONFIRM = "Cancelled tasks cannot be continued"
+# task_update: "Task running for %s. Processed: %s chunks (%s%%), ETA: %s:%s:%s, Rate: %s cps, Current:
+# %s, %s", the percentage String.format("%.2f") in the JVM's locale (12.34, or 12,34); `chunky progress`
+# prints one line per running task (GenerationTask$Progress.sendUpdate) and "No tasks running." without one.
+# A paused task isn't listed: its last percentage stays in the state file.
+CHUNKY_PROGRESS = re.compile(
+    r"Task running for (?P<world>[A-Za-z0-9_.-]+?)\. Processed: (?P<chunks>\d+) chunks "
+    r"\((?P<pct>\d+(?:[.,]\d+)?)%\)"
+)
+# v1.4 frontier expansion: a new ring only when the target grew by this much (no thrashing every 5 minutes).
+FRONTIER_STEP = 256
+FRONTIER_MARGIN = 1024  # = schema world.pregenerate.margin's default
+FRONTIER_MAX_RADIUS = 10000  # = schema world.pregenerate.max_radius's default
+# Region folders per dimension. Since 26.x every dimension lives under the one world folder (level-name):
+# <level>/dimensions/minecraft/<dimension>/region, the overworld included (seen in a world written by the
+# pinned Purpur 26.3; Paper's WorldFolderMigration moves older worlds there at start-up). The Bukkit world
+# names Chunky takes are unchanged (PaperWorldLoader.defaultWorldName: <level>, <level>_nether,
+# <level>_the_end). Fallback for a pre-26 world, in the Bukkit world's own folder: the overworld's
+# <level>/region, <level>_nether/DIM-1/region, <level>_the_end/DIM1/region.
+REGION_DIRS = {
+    "overworld": "region",
+    "the_nether": "DIM-1/region",
+    "the_end": "DIM1/region",
+}
+REGION_FILE = re.compile(r"r\.(-?\d+)\.(-?\d+)\.mca")
+REGION_HEADER = 4096  # 1024 chunk locations x 4 bytes (3-byte sector offset, 1-byte length; 0 = no chunk)
 
 
 def pregen_worlds() -> list[str]:
     return [w for w in os.environ.get("PREGEN_WORLDS", "").split(",") if re.fullmatch(r"[A-Za-z0-9_.-]+", w)]
 
 
+def parse_chunky_progress(text: str) -> dict[str, tuple[float, int]]:
+    """`chunky progress` -> {world: (percent, chunks processed)} for every running task."""
+    return {
+        m["world"]: (float(m["pct"].replace(",", ".")), int(m["chunks"]))
+        for m in CHUNKY_PROGRESS.finditer(mc_rcon.strip_formatting(text))
+    }
+
+
+@dataclass(frozen=True)
+class FrontierDim:
+    """A dimension frontier expansion may grow: its Bukkit world, which dimension it is, its border (None)."""
+
+    world: str
+    dimension: str  # overworld | the_nether | the_end (REGION_DIRS)
+    border: int | None = None
+
+
+@dataclass
+class Frontier:
+    """v1.4 frontier expansion (PREGEN_FRONTIER): keep pre-generating `margin` blocks beyond the farthest
+    generated chunk, capped at the border and at `max_radius`. `explored` measures a dimension (blocks from
+    0,0, square distance; None = unknown); `allowed` is False while the disk is at its alert threshold."""
+
+    dims: list[FrontierDim]
+    margin: int = FRONTIER_MARGIN
+    max_radius: int = FRONTIER_MAX_RADIUS
+    step: int = FRONTIER_STEP
+    explored: Callable[[FrontierDim], int | None] = field(default=lambda d: None)
+    allowed: bool = True
+
+
+def chunk_reach(cx: int, cz: int) -> int:
+    """How far the chunk's outer edge is from 0,0, in blocks (square distance, like the border and Chunky's
+    square shape)."""
+    return max(cx * 16 + 16 if cx >= 0 else -cx * 16, cz * 16 + 16 if cz >= 0 else -cz * 16)
+
+
+BUKKIT_SUFFIX = {"overworld": "", "the_nether": "_nether", "the_end": "_the_end"}
+
+
+def region_dir(server_dir: Path, d: FrontierDim, level: str | None = None) -> Path | None:
+    """The dimension's region folder (26.x layout first, then the pre-26 one), refused if any part of it
+    under the server dir is a symlink (the JVM can write there: never list a folder elsewhere). `level`:
+    level-name (else derived from the Bukkit world name)."""
+    suffix = BUKKIT_SUFFIX[d.dimension]
+    if not level:
+        level = d.world[: len(d.world) - len(suffix)] if suffix and d.world.endswith(suffix) else d.world
+    for rel in (
+        f"{level}/dimensions/minecraft/{d.dimension}/region",
+        f"{d.world}/{REGION_DIRS[d.dimension]}",
+    ):
+        path = server_dir / rel
+        try:
+            if path.is_dir() and path.resolve() == server_dir.resolve() / rel:
+                return path
+        except OSError:
+            continue
+    return None
+
+
+def level_name(server_dir: Path) -> str | None:
+    """server.properties' level-name (the one world folder since 26.x), None if unreadable."""
+    try:
+        return mc_rcon.read_properties(server_dir / "server.properties").get("level-name") or None
+    except (OSError, ValueError):
+        return None
+
+
+def read_region_header(path: Path) -> bytes:
+    """A region file's location table (the JVM writes the folder: read_untrusted, no symlinks or FIFOs)."""
+    return mc_rcon.read_untrusted(path, REGION_HEADER)
+
+
+def explored_radius(directory: Path | None, read: Callable[[Path], bytes] = read_region_header) -> int | None:
+    """The farthest generated chunk's outer edge (blocks from 0,0) in a region folder; 0 without chunks, None
+    without the folder. Chunks are generated around players, so this is how far they have been. Cheap:
+    region names give each file's farthest possible chunk, only the 4 KiB headers are read, outermost files
+    first, and it stops once no remaining file can beat the best chunk found."""
+    if directory is None:
+        return None
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return None
+    regions = [(int(m[1]), int(m[2]), n) for n in names if (m := REGION_FILE.fullmatch(n))]
+
+    def outer(r: tuple[int, int, str]) -> int:
+        rx, rz, _ = r
+        return chunk_reach(rx * 32 + 31 if rx >= 0 else rx * 32, rz * 32 + 31 if rz >= 0 else rz * 32)
+
+    best = 0
+    for r in sorted(regions, key=outer, reverse=True):
+        if outer(r) <= best:
+            break
+        try:
+            header = read(directory / r[2])
+        except OSError:
+            continue
+        for i in range(min(len(header), REGION_HEADER) // 4):
+            if header[4 * i : 4 * i + 4] != b"\0\0\0\0":
+                best = max(best, chunk_reach(r[0] * 32 + i % 32, r[1] * 32 + i // 32))
+    return best
+
+
+def frontier_env(disk_ok: bool = True, server_dir: Path | None = None) -> Frontier | None:
+    """PREGEN_FRONTIER ("world:overworld:5000,world_the_end:the_end:", border empty = none; empty = off),
+    PREGEN_MARGIN, PREGEN_MAX_RADIUS (health.env, server.yml world.pregenerate)."""
+    dims = []
+    for item in os.environ.get("PREGEN_FRONTIER", "").split(","):
+        parts = item.split(":")
+        if len(parts) != 3:
+            continue
+        world, dim, border = parts
+        ok_border = not border or border.isdigit()
+        if re.fullmatch(r"[A-Za-z0-9_.-]+", world) and dim in REGION_DIRS and ok_border:
+            dims.append(FrontierDim(world, dim, int(border) if border else None))
+    if not dims:
+        return None
+    root = server_dir or mc_rcon.SERVER_DIR
+    return Frontier(
+        dims,
+        margin=int(env_float("PREGEN_MARGIN", FRONTIER_MARGIN)),
+        max_radius=int(env_float("PREGEN_MAX_RADIUS", FRONTIER_MAX_RADIUS)),
+        explored=lambda d: explored_radius(region_dir(root, d, level_name(root))),
+        allowed=disk_ok,
+    )
+
+
+def frontier_plan(state: State, worlds: list[str], f: Frontier) -> tuple[FrontierDim, int] | None:
+    """The next ring to generate (pure): per dimension, target = farthest generated chunk + margin (whole
+    chunks), capped at the border and max_radius; a dimension qualifies once its bordered pass is done (or
+    it has no border) and its target is at least a step beyond what is generated (or reaches the cap). The
+    biggest gap wins."""
+    best: tuple[FrontierDim, int, int] | None = None
+    for d in f.dims:
+        if d.world in worlds and d.world not in state.pregen_done:
+            continue  # its bordered pass comes first
+        limit = min(f.max_radius, d.border) if d.border is not None else f.max_radius
+        have = state.pregen_frontier.get(d.world)
+        if have is None:
+            have = d.border if d.border is not None and d.world in state.pregen_done else 0
+        if have >= limit:
+            continue
+        reach = f.explored(d)
+        if reach is None:
+            continue
+        target = min(-(-(reach + f.margin) // 16) * 16, limit)
+        if target <= have or (target < have + f.step and target < limit):
+            continue
+        if best is None or target - have > best[2]:
+            best = (d, target, target - have)
+    return (best[0], best[1]) if best else None
+
+
 def pregen_step(
-    state: State, worlds: list[str], command: Callable[[str], str], world_id: str | None = None
+    state: State,
+    worlds: list[str],
+    command: Callable[[str], str],
+    world_id: str | None = None,
+    frontier: Frontier | None = None,
 ) -> tuple[State, str]:
     """One check's worth of pre-generation (see the module doc). Returns the new state and what it did.
     v1.2: `world_id` names the active world of the library (name@switched-at, scripts/worlds.py); after a
-    switch the folders hold another world, so Chunky's tasks are cancelled and everything starts afresh."""
+    switch the folders hold another world, so Chunky's tasks are cancelled and everything starts afresh.
+    v1.4: records each task's progress; with `frontier`, once the bordered passes are done, grows the
+    generated area ahead of where players have been (one Chunky task at a time, like the bordered passes)."""
     new = State(**asdict(state))
     if world_id is not None and world_id != new.pregen_for:
-        if new.pregen_for or new.pregen_done or new.pregen_current:
-            command("chunky cancel")
+        if new.pregen_for or new.pregen_done or new.pregen_current or new.pregen_frontier_current:
+            # v1.4: without the confirmation the old world's saved task survived the switch (and `chunky
+            # start` then continued it on the new world's folders)
+            cancel_chunky(command)
         new.pregen_done, new.pregen_current, new.pregen_paused = [], None, False
+        new.pregen_progress, new.pregen_frontier = {}, {}
+        new.pregen_frontier_current, new.pregen_frontier_target, new.pregen_frontier_pct = None, 0, None
         new.pregen_for = world_id
     todo = [w for w in worlds if w not in new.pregen_done]
-    if not todo:
+    if not todo and frontier is None and not new.pregen_frontier_current:
         return new, "done" if worlds else ""
     m = PLAYERS.search(mc_rcon.strip_formatting(command("list")))
     players = int(m.group(1)) if m else None
     progress = mc_rcon.strip_formatting(command("chunky progress"))
+    for world, (pct, chunks) in parse_chunky_progress(progress).items():
+        if world == new.pregen_current:
+            new.pregen_progress[world] = {"pct": pct, "chunks": chunks}
+        elif world == new.pregen_frontier_current:
+            new.pregen_frontier_pct = pct
     running = CHUNKY_RUNNING in progress
+    task = new.pregen_current or (
+        f"frontier {new.pregen_frontier_current}" if new.pregen_frontier_current else None
+    )
     if players is None or players > 0:  # unknown counts as "someone": never generate under players
         if running:
             command("chunky pause")
             new.pregen_paused = True
-            return new, f"paused ({new.pregen_current}: players online)"
+            return new, f"paused ({task}: players online)"
         return new, "waiting for an empty server"
     if running:
-        return new, f"running ({new.pregen_current})"
+        new.pregen_paused = False  # e.g. Chunky's continue-on-restart resumed a task paused for players
+        return new, f"running ({task})"
     if new.pregen_current:
         reply = mc_rcon.strip_formatting(command("chunky continue"))
         if CHUNKY_CONTINUING in reply:
@@ -1114,21 +1338,121 @@ def pregen_step(
             return new, f"continued ({new.pregen_current})"
         if CHUNKY_NOTHING_TO_CONTINUE not in reply:
             return new, f"unexpected reply to `chunky continue`: {reply[:120]}"
-        new.pregen_done.append(new.pregen_current)
+        done = new.pregen_current
+        new.pregen_done.append(done)
+        new.pregen_progress[done] = {**new.pregen_progress.get(done, {}), "pct": 100.0}
         new.pregen_current, new.pregen_paused = None, False
-        todo = [w for w in worlds if w not in new.pregen_done]
-        if not todo:
-            return new, "done"
-    world = todo[0]
-    command(f"chunky world {world}")
-    command("chunky worldborder")
-    reply = mc_rcon.strip_formatting(command("chunky start"))
-    if CHUNKY_STARTED in reply or any(a in reply for a in CHUNKY_ALREADY):
-        if CHUNKY_STARTED not in reply:
-            command("chunky continue")
-        new.pregen_current, new.pregen_paused = world, False
-        return new, f"started ({world})"
-    return new, f"unexpected reply to `chunky start`: {reply[:120]}"
+    elif new.pregen_frontier_current:
+        reply = mc_rcon.strip_formatting(command("chunky continue"))
+        if CHUNKY_CONTINUING in reply:
+            new.pregen_paused = False
+            return new, f"continued (frontier {new.pregen_frontier_current})"
+        if CHUNKY_NOTHING_TO_CONTINUE not in reply:
+            return new, f"unexpected reply to `chunky continue`: {reply[:120]}"
+        new.pregen_frontier[new.pregen_frontier_current] = new.pregen_frontier_target
+        new.pregen_frontier_current, new.pregen_frontier_target, new.pregen_frontier_pct = None, 0, None
+        new.pregen_paused = False
+    todo = [w for w in worlds if w not in new.pregen_done]
+    if todo:
+        world = todo[0]
+        command(f"chunky world {world}")
+        command("chunky worldborder")
+        reply = mc_rcon.strip_formatting(command("chunky start"))
+        if CHUNKY_STARTED in reply or any(a in reply for a in CHUNKY_ALREADY):
+            if CHUNKY_STARTED not in reply:
+                command("chunky continue")
+            new.pregen_current, new.pregen_paused = world, False
+            return new, f"started ({world})"
+        return new, f"unexpected reply to `chunky start`: {reply[:120]}"
+    status = "done" if worlds else ""
+    if frontier is None:
+        return new, status
+    if not frontier.allowed:
+        return new, " ".join(x for x in (status, "(frontier held: the disk is at its alert threshold)") if x)
+    plan = frontier_plan(new, worlds, frontier)
+    if plan is None:
+        return new, " ".join(x for x in (status, "(frontier: nothing to grow)") if x)
+    d, target = plan
+    reply = mc_rcon.strip_formatting(command(f"chunky start {d.world} square 0 0 {target}"))
+    if CHUNKY_CONFIRM in reply:  # an older saved task for this world: replace it with the bigger square
+        reply = mc_rcon.strip_formatting(command("chunky confirm"))
+    if CHUNKY_STARTED in reply:
+        new.pregen_frontier_current, new.pregen_frontier_target = d.world, target
+        new.pregen_frontier_pct, new.pregen_paused = 0.0, False
+        return new, f"frontier started ({d.world} to radius {target})"
+    return new, f"unexpected reply to frontier `chunky start`: {reply[:120]}"
+
+
+def all_done(state: State, worlds: list[str]) -> bool:
+    return bool(worlds) and all(w in state.pregen_done for w in worlds)
+
+
+def pregen_done_alert(worlds: list[str], state: State, frontier: bool) -> str:
+    chunks = [
+        f"{w} {int(state.pregen_progress[w]['chunks'])}"
+        for w in worlds
+        if "chunks" in state.pregen_progress.get(w, {})
+    ]
+    return render(
+        Alert(
+            "info",
+            "Chunk pre-generation is finished",
+            impact="Every dimension with a border is generated up to it, so exploring inside the border no "
+            "longer generates terrain (no lag from new chunks). The next backup uploads the new region files "
+            "once; later backups are small again.",
+            details=(
+                f"chunks processed at the last look: {', '.join(chunks)}"
+                if chunks
+                else f"pre-generated: {', '.join(worlds)}"
+            )
+            + ("; frontier expansion goes on beyond players' farthest chunks" if frontier else ""),
+        )
+    )
+
+
+def pregen_notice(before: State, after: State, worlds: list[str], frontier: bool) -> str | None:
+    """The one Discord note when the bordered passes finish (a transition: never repeated, never on an upgrade
+    of a box that was already done)."""
+    if all_done(after, worlds) and not all_done(before, worlds):
+        return pregen_done_alert(worlds, after, frontier)
+    return None
+
+
+def pregen_summary(
+    state: State, worlds: list[str], frontier: Frontier | None, held: str | None = None
+) -> str:
+    """One short line for `mcctl status` (health.py writes it to pregen.json), e.g.
+    "world 63% · world_nether queued · world_the_end queued", "done", "done · frontier world_the_end 41%"."""
+    if not worlds and frontier is None:
+        return "off"
+    parts: list[str] = []
+    if all_done(state, worlds):
+        parts.append("done")
+    for w in worlds if not all_done(state, worlds) else []:
+        if w in state.pregen_done:
+            parts.append(f"{w} done")
+        elif w == state.pregen_current:
+            pct = state.pregen_progress.get(w, {}).get("pct")
+            parts.append(f"{w} {pct:.0f}%" if pct is not None else f"{w} started")
+            if state.pregen_paused:
+                parts[-1] += " (paused)"
+        else:
+            parts.append(f"{w} queued")
+    if frontier is not None:
+        if state.pregen_frontier_current:
+            pct = state.pregen_frontier_pct
+            parts.append(
+                f"frontier {state.pregen_frontier_current} to {state.pregen_frontier_target}"
+                + (f" {pct:.0f}%" if pct is not None else "")
+                + (" (paused)" if state.pregen_paused else "")
+            )
+        elif state.pregen_frontier:
+            reached = sorted(state.pregen_frontier.items())
+            parts.append("frontier " + ", ".join(f"{w} {r}" for w, r in reached))
+        elif not worlds:
+            parts.append("frontier on")
+    line = " · ".join(parts)
+    return f"{line} (held: {held})" if held else line
 
 
 def active_world_id() -> str | None:
@@ -1142,19 +1466,71 @@ def active_world_id() -> str | None:
     return f"{st['active']}@{st['since']}" if st["active"] and st["since"] else None
 
 
-def run_pregen(state: State, alive: bool | None) -> State:
-    worlds = pregen_worlds()
-    if not worlds or alive is not True or admin_stopped(ADMIN_STOPPED) or maintenance_active(time.time()):
+def run_pregen(state: State, alive: bool | None, disk_ok: bool = True) -> State:
+    worlds, frontier = pregen_worlds(), frontier_env(disk_ok)
+    now = time.time()
+    if alive is not True or admin_stopped(ADMIN_STOPPED):
+        return state
+    if not worlds and frontier is None:
+        return stop_pregen(state) if state.pregen_current or state.pregen_frontier_current else state
+    if maintenance_active(now):
+        return state
+    if held := pregen_held(now):  # backup.py paused Chunky for its save-off window: it continues it
+        print(f"pregen: held ({held})")
         return state
     try:
         with mc_rcon.connect(None, timeout=10.0) as r:
-            new, what = pregen_step(state, worlds, r.command, active_world_id())
+            new, what = pregen_step(state, worlds, r.command, active_world_id(), frontier)
     except (OSError, KeyError, ValueError, mc_rcon.RconError) as e:
         print(f"warning: pregen: {type(e).__name__}: {e}", file=sys.stderr)
         return state
     if what:
         print(f"pregen: {what}")
+    if note := pregen_notice(state, new, worlds, frontier is not None):
+        discord(note)
     return new
+
+
+def cancel_chunky(command: Callable[[str], str]) -> None:
+    if CHUNKY_CANCEL_CONFIRM in mc_rcon.strip_formatting(command("chunky cancel")):
+        command("chunky confirm")
+
+
+def stop_pregen(state: State) -> State:
+    """Pre-generation was turned off (world.pregenerate.enabled: false, or the world's pregen: false) while a
+    task it started was still saved: cancel it, or Chunky would go on (and continue-on-restart resume it)."""
+    try:
+        with mc_rcon.connect(None, timeout=10.0) as r:
+            cancel_chunky(r.command)
+    except (OSError, KeyError, ValueError, mc_rcon.RconError) as e:
+        print(f"warning: pregen: {type(e).__name__}: {e}", file=sys.stderr)
+        return state
+    print("pregen: turned off: Chunky's task cancelled")
+    new = State(**asdict(state))
+    new.pregen_current, new.pregen_paused = None, False
+    new.pregen_frontier_current, new.pregen_frontier_target, new.pregen_frontier_pct = None, 0, None
+    return new
+
+
+def write_pregen_status(path: Path, state: State, now: float) -> None:
+    """pregen.json in health.py's StateDirectory: the line `mcctl status` shows (read over SSH)."""
+    worlds, frontier = pregen_worlds(), frontier_env()
+    line = pregen_summary(state, worlds, frontier, pregen_held(now))
+    try:
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps({"line": line, "at": int(now)}))
+        os.replace(tmp, path)
+    except OSError as e:
+        print(f"warning: {path}: {e}", file=sys.stderr)
+
+
+def pregen_task(state: State) -> str | None:
+    """What pre-generation is running right now (not paused), for alerts' likely cause."""
+    if state.pregen_paused:
+        return None
+    if state.pregen_current:
+        return state.pregen_current
+    return f"frontier {state.pregen_frontier_current}" if state.pregen_frontier_current else None
 
 
 def unit_active(unit: str) -> bool:
@@ -1202,7 +1578,7 @@ def main() -> int:
     ctx = Ctx(
         now=now,
         players=probe.players,
-        pregen=state.pregen_current if state.pregen_current and not state.pregen_paused else None,
+        pregen=pregen_task(state),
         backup=unit_active("mc-backup.service"),
         repeat_s=env_float("REPEAT_HOURS", 6) * 3600,
         log_hint=last_log_error(mc_rcon.SERVER_DIR) if probe.alive is False else "",
@@ -1236,10 +1612,11 @@ def main() -> int:
     msgs += wd_msgs
     for m in msgs:
         discord(m)
-    new = run_pregen(new, probe.alive)
+    new = run_pregen(new, probe.alive, host.disk_pct is None or host.disk_pct < cfg["disk_pct"])
 
     state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(json.dumps(asdict(new)))
+    write_pregen_status(state_path.with_name("pregen.json"), new, now)
     return 0
 
 

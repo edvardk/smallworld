@@ -62,7 +62,11 @@ record Settings(
         int compassMaxRange,
         int compassRounding,
         int compassHeight,
-        boolean pocketMapEnabled) {
+        boolean pocketMapEnabled,
+        boolean pocketMapPrerender,
+        String prerenderDir,
+        String colorsFile,
+        MapRoom.Spec mapRoom) {
 
     static final int MAX_RULES = 20;
     static final int MAX_TEXT = 256;
@@ -134,7 +138,37 @@ record Settings(
                 clamp(compass.getInt("max_range", 1000), 16, 100_000),
                 clamp(compass.getInt("distance_rounding", 5), 1, 100),
                 clamp(compass.getInt("height_threshold", 8), 2, 64),
-                pocketMap.getBoolean("enabled", true));
+                pocketMap.getBoolean("enabled", true),
+                // v1.4: the world map pre-render (PreRender) and the spawn map room (MapRoom)
+                pocketMap.getBoolean("prerender", true),
+                file(pocketMap.getString("prerender_dir"), "/var/lib/"),
+                file(pocketMap.getString("colors_file"), "/opt/minecraft/"),
+                mapRoom(section(cfg, "map_room")));
+    }
+
+    /** v1.4: branding.map_room, clamped (sizes, offsets, scale); anything malformed disables the room. */
+    static MapRoom.Spec mapRoom(ConfigurationSection room) {
+        boolean spawn = "spawn".equals(room.getString("at"));
+        boolean coords = room.isInt("x") && room.isInt("y") && room.isInt("z");
+        List<Integer> off = room.getIntegerList("offset");
+        int[] o = off.size() == 3 ? new int[] {clamp(off.get(0), -64, 64), clamp(off.get(1), -64, 64),
+            clamp(off.get(2), -64, 64)} : new int[] {0, 0, -6};
+        String world = text(room.getString("world"), "minecraft:overworld");
+        String facing = text(room.getString("facing"), "south");
+        String view = text(room.getString("view"), "border");
+        return new MapRoom.Spec(
+                room.getBoolean("enabled", false) && (spawn || coords) && world.matches("minecraft:(overworld|the_end)"),
+                world, spawn, o[0], o[1], o[2],
+                clamp(room.getInt("x", 0), -29_999_984, 29_999_984),
+                clamp(room.getInt("y", 64), -64, 319),
+                clamp(room.getInt("z", 0), -29_999_984, 29_999_984),
+                facing.matches("north|south|east|west") ? facing : "south",
+                clamp(room.getInt("width", 3), 1, 8),
+                clamp(room.getInt("height", 3), 1, 6),
+                view.equals("spawn") ? "spawn" : "border",
+                clamp(room.getInt("scale", 3), 0, 4),
+                clamp(room.getInt("radius", 0), 16, 30_000_000),
+                room.getBoolean("cursors", false));
     }
 
     private static ConfigurationSection section(YamlConfiguration cfg, String key) {
@@ -220,6 +254,12 @@ record Settings(
             }
         }
         return Map.copyOf(out);
+    }
+
+    /** v1.4: an absolute path under {@code prefix} (product constants from the template), else "" (off). */
+    private static String file(String s, String prefix) {
+        String v = text(s, "");
+        return v.startsWith(prefix) && !v.contains("..") && v.indexOf(' ') < 0 ? v : "";
     }
 
     /** An absolute path under /run (the tmpfs hand-off), else the default. */

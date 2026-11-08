@@ -1,0 +1,903 @@
+{
+ "notes": {
+  "inventory_rejected": [
+   {
+    "name": "Trudy",
+    "uuid": null,
+    "count": 1,
+    "first": 1794009485000,
+    "last": 1794009485000,
+    "ip": "2001:db8:1::/48"
+   },
+   {
+    "name": "Mallory",
+    "uuid": "66666666-6666-4666-8666-666666666666",
+    "count": 1,
+    "first": 1794009482000,
+    "last": 1794009482000,
+    "ip": "203.0.113.x"
+   }
+  ],
+  "dismiss": {
+   "id": "cmd001",
+   "ok": true,
+   "output": "mallory dismissed"
+  },
+  "dismiss_again": {
+   "id": "cmd002",
+   "ok": true,
+   "output": "Mallory wasn't in the list"
+  },
+  "dismiss_bad": {
+   "id": "cmd003",
+   "ok": false,
+   "error": "rejected_dismiss: needs a Java name"
+  }
+ },
+ "exits": [
+  {
+   "daemon": 0
+  }
+ ],
+ "worker": {
+  "POST /ingest/inventory": [
+   {
+    "auth": true,
+    "user_agent": "smallworld mc-agent",
+    "content_type": "application/json",
+    "body": {
+     "agent": "1",
+     "inventory": {
+      "ts": "<time>",
+      "whitelist": [
+       {
+        "name": "Alice_Op",
+        "uuid": "11111111-1111-4111-8111-111111111111"
+       },
+       {
+        "name": "Bob",
+        "uuid": "22222222-2222-4222-8222-222222222222"
+       }
+      ],
+      "ops": [
+       {
+        "name": "Alice_Op",
+        "uuid": "11111111-1111-4111-8111-111111111111",
+        "level": 4
+       }
+      ],
+      "bans": [
+       {
+        "name": "Griefer",
+        "uuid": "55555555-5555-4555-8555-555555555555",
+        "created": "<time>",
+        "source": "Server",
+        "expires": "forever",
+        "reason": "griefing"
+       }
+      ],
+      "ip_bans": [],
+      "plugins": [
+       {
+        "file": "Chunky-1.4.40.jar",
+        "name": "Chunky-1.4.40",
+        "enabled": true
+       },
+       {
+        "file": "spark-1.10.jar",
+        "name": "spark-1.10",
+        "enabled": true
+       }
+      ],
+      "pending": [],
+      "whitelist_sync": {
+       "configured": true,
+       "pr": null,
+       "error": "",
+       "expired": []
+      },
+      "rejected": [],
+      "plugins_lock": [
+       {
+        "name": "chunky",
+        "filename": "Chunky-1.4.40.jar",
+        "version": "1.4.40"
+       },
+       {
+        "name": "spark",
+        "filename": "spark-1.10.jar",
+        "version": "1.10"
+       }
+      ],
+      "plugins_disabled": [],
+      "snapshots": [
+       {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "short_id": "aaaaaaaa",
+        "time": "<iso>",
+        "tags": "daily",
+        "host": "mc",
+        "size": 1234
+       },
+       {
+        "id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "short_id": "cccccccc",
+        "time": "<iso>",
+        "tags": "world-archive,world:creative,dv:4671",
+        "host": "mc",
+        "size": 1234
+       }
+      ],
+      "job": null,
+      "worlds": {
+       "active": "main",
+       "since": "<time>",
+       "data_version": 4671,
+       "archives": [
+        {
+         "name": "creative",
+         "short_id": "cccccccc",
+         "time": "<iso>",
+         "size": 1000,
+         "data_version": 4671,
+         "count": 1
+        },
+        {
+         "name": "future",
+         "short_id": "ffffffff",
+         "time": "<iso>",
+         "size": 1000,
+         "data_version": 9999,
+         "count": 1
+        }
+       ],
+       "library": [
+        {
+         "name": "main",
+         "seed": "42",
+         "type": "default",
+         "preset": "survival_smp",
+         "border_radius": null,
+         "pregen": null
+        },
+        {
+         "name": "creative",
+         "seed": "",
+         "type": "flat_classic",
+         "preset": null,
+         "border_radius": null,
+         "pregen": null
+        }
+       ],
+       "deleted": [
+        "gone"
+       ],
+       "archive_bytes": 2000,
+       "storage_note": false,
+       "pending": null
+      },
+      "product": {
+       "version": "1.3.1",
+       "commit": "e786b14000000000000000000000000000000000",
+       "running": "1.3.1",
+       "running_commit": "e786b14000000000000000000000000000000000"
+      },
+      "selftest": null
+     }
+    }
+   }
+  ],
+  "POST /ingest/metrics": [
+   {
+    "auth": true,
+    "user_agent": "smallworld mc-agent",
+    "content_type": "application/json",
+    "body": {
+     "agent": "1",
+     "samples": [
+      {
+       "admin_stopped": false,
+       "cpuN_pct": "number|null",
+       "cpu_cores": "number",
+       "cpu_pct": "null",
+       "disk_pct": "number",
+       "disk_total_gb": "number",
+       "disk_used_gb": "number",
+       "gc_max_pause_ms": 12.3,
+       "heap_max_mb": 6656,
+       "heap_used_mb": 1200,
+       "jvm_mem_mb": 3072,
+       "load1": "number",
+       "load15": "number",
+       "load5": "number",
+       "max_players": 20,
+       "mem_pct": "number",
+       "mem_total_mb": "number",
+       "mem_used_mb": "number",
+       "mspt": 11.9,
+       "net_rx_bps": "null",
+       "net_tx_bps": "null",
+       "players": 0,
+       "players_online": [],
+       "steal_pct": "null",
+       "tps": 19.98,
+       "tps15": 20.0,
+       "tps5": 20.0,
+       "ts": "number",
+       "up": true,
+       "uptime_s": "number",
+       "ws": "bool"
+      }
+     ]
+    }
+   }
+  ],
+  "POST /ingest/archive": [
+   {
+    "auth": true,
+    "user_agent": "smallworld mc-agent",
+    "content_type": "application/gzip",
+    "query": "batch=02126aa6e00e744a98e81fe304917fd3",
+    "body": {
+     "count": 4997,
+     "sha256": "4e3e0237240c72a076917319a46f9d6e584a1ae04709fcf3272ecd5dc0ce3bb2",
+     "head": [
+      {
+       "ts": 1794009481000,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "[23:58:01 INFO]: UUID of player Mallory is 66666666-6666-4666-8666-666666666666",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009482000,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "[23:58:01 INFO]: Disconnecting Mallory (/203.0.113.7:51234): You are not whitelisted on this server!",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009483000,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "[23:58:02 INFO]: Mallory (/203.0.113.7:51234) lost connection: You are not whitelisted on this server!",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009484000,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "[23:58:03 INFO]: <Eve> [23:58:03 INFO]: Disconnecting Bob (/192.0.2.4:5): not whitelisted",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009485000,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "\u001b[0m[23:58:04 INFO]: Disconnecting Trudy (/[2001:db8:1:2::5]:4444): You are not white-listed on this server!",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009486000,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "agent token <redacted> in a line",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009487000,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "rcon.password=<redacted>",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009488000,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "hmac <redacted>",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009489000,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "Authorization: Bearer <redacted>",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009490000,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "auth basic <redacted>",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009491000,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "RESTIC_PASSWORD=<redacted> and HEARTBEAT_TOKEN=<redacted> ok",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009492000,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "json {\"api_key\": <redacted>, \"x_secret\":<redacted>} end",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009493000,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "my.db.pass: <redacted>",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009494000,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "aws <redacted> and ASIA0189QRST0189UVWXX stays",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009495000,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "gh <redacted> and <redacted>",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009496000,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "ts <redacted>",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009497000,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "hook <redacted> rest",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009498000,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "url https://<redacted>@example.com/x and ftp://<redacted>@h/",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009499000,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "token_bucket=5 tokenizer=no",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009500000,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "x_key= <redacted>",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009501000,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "été Bearer <redacted> ok",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009503000,
+       "unit": "kernel",
+       "ident": "kernel",
+       "prio": 4,
+       "msg": "mc-setfull: IN=eth0 SRC=198.51.100.9 DST=10.0.0.1 PROTO=TCP DPT=25565",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009505000,
+       "unit": "mc-agent.service",
+       "ident": "mc-agent",
+       "prio": 5,
+       "msg": "agent action=status ok=True login=admin",
+       "audit": 1,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009506000,
+       "unit": "mc-backup.service",
+       "ident": "mc-backup",
+       "prio": 6,
+       "msg": "hi ��!",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009507000,
+       "unit": "mc-backup.service",
+       "ident": "mc-backup",
+       "prio": 6,
+       "msg": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+       "audit": 0,
+       "sd_unit": ""
+      }
+     ],
+     "tail": [
+      {
+       "ts": 1794009654160,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "[00:00:08 INFO]: after midnight 8",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009659160,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "[00:00:09 INFO]: after midnight 9",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009664160,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "[00:00:10 INFO]: after midnight 10",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009669160,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "[00:00:11 INFO]: after midnight 11",
+       "audit": 0,
+       "sd_unit": ""
+      },
+      {
+       "ts": 1794009674160,
+       "unit": "minecraft.service",
+       "ident": "minecraft",
+       "prio": 6,
+       "msg": "[00:00:12 INFO]: after midnight 12",
+       "audit": 0,
+       "sd_unit": ""
+      }
+     ]
+    }
+   },
+   {
+    "auth": true,
+    "user_agent": "smallworld mc-agent",
+    "content_type": "application/gzip",
+    "query": "batch=ad9576496264ef49a6be772a349fea42",
+    "body": [
+     {
+      "ts": 1794009679160,
+      "unit": "minecraft.service",
+      "ident": "minecraft",
+      "prio": 6,
+      "msg": "[00:00:13 INFO]: after midnight 13",
+      "audit": 0,
+      "sd_unit": ""
+     },
+     {
+      "ts": 1794009684160,
+      "unit": "minecraft.service",
+      "ident": "minecraft",
+      "prio": 6,
+      "msg": "[00:00:14 INFO]: after midnight 14",
+      "audit": 0,
+      "sd_unit": ""
+     },
+     {
+      "ts": 1794009689160,
+      "unit": "minecraft.service",
+      "ident": "minecraft",
+      "prio": 6,
+      "msg": "[00:00:15 INFO]: after midnight 15",
+      "audit": 0,
+      "sd_unit": ""
+     },
+     {
+      "ts": 1794009694160,
+      "unit": "minecraft.service",
+      "ident": "minecraft",
+      "prio": 6,
+      "msg": "[00:00:16 INFO]: after midnight 16",
+      "audit": 0,
+      "sd_unit": ""
+     },
+     {
+      "ts": 1794009699160,
+      "unit": "minecraft.service",
+      "ident": "minecraft",
+      "prio": 6,
+      "msg": "[00:00:17 INFO]: after midnight 17",
+      "audit": 0,
+      "sd_unit": ""
+     },
+     {
+      "ts": 1794009704160,
+      "unit": "minecraft.service",
+      "ident": "minecraft",
+      "prio": 6,
+      "msg": "[00:00:18 INFO]: after midnight 18",
+      "audit": 0,
+      "sd_unit": ""
+     },
+     {
+      "ts": 1794009709160,
+      "unit": "minecraft.service",
+      "ident": "minecraft",
+      "prio": 6,
+      "msg": "[00:00:19 INFO]: after midnight 19",
+      "audit": 0,
+      "sd_unit": ""
+     },
+     {
+      "ts": 1794009714160,
+      "unit": "minecraft.service",
+      "ident": "minecraft",
+      "prio": 6,
+      "msg": "[00:00:20 INFO]: after midnight 20",
+      "audit": 0,
+      "sd_unit": ""
+     },
+     {
+      "ts": 1794009719160,
+      "unit": "minecraft.service",
+      "ident": "minecraft",
+      "prio": 6,
+      "msg": "[00:00:21 INFO]: after midnight 21",
+      "audit": 0,
+      "sd_unit": ""
+     },
+     {
+      "ts": 1794009724160,
+      "unit": "minecraft.service",
+      "ident": "minecraft",
+      "prio": 6,
+      "msg": "[00:00:22 INFO]: after midnight 22",
+      "audit": 0,
+      "sd_unit": ""
+     },
+     {
+      "ts": 1794009729160,
+      "unit": "minecraft.service",
+      "ident": "minecraft",
+      "prio": 6,
+      "msg": "[00:00:23 INFO]: after midnight 23",
+      "audit": 0,
+      "sd_unit": ""
+     },
+     {
+      "ts": 1794009734160,
+      "unit": "minecraft.service",
+      "ident": "minecraft",
+      "prio": 6,
+      "msg": "[00:00:24 INFO]: after midnight 24",
+      "audit": 0,
+      "sd_unit": ""
+     }
+    ]
+   }
+  ],
+  "POST /ingest/logs": [
+   {
+    "auth": true,
+    "user_agent": "smallworld mc-agent",
+    "content_type": "application/json",
+    "body": {
+     "agent": "1",
+     "rows": [
+      {
+       "ts": 1794009481000,
+       "unit": "minecraft.service",
+       "prio": 6,
+       "audit": 0,
+       "msg": "[23:58:01 INFO]: UUID of player Mallory is 66666666-6666-4666-8666-666666666666"
+      },
+      {
+       "ts": 1794009482000,
+       "unit": "minecraft.service",
+       "prio": 6,
+       "audit": 0,
+       "msg": "[23:58:01 INFO]: Disconnecting Mallory (/203.0.113.7:51234): You are not whitelisted on this server!"
+      },
+      {
+       "ts": 1794009483000,
+       "unit": "minecraft.service",
+       "prio": 6,
+       "audit": 0,
+       "msg": "[23:58:02 INFO]: Mallory (/203.0.113.7:51234) lost connection: You are not whitelisted on this server!"
+      },
+      {
+       "ts": 1794009484000,
+       "unit": "minecraft.service",
+       "prio": 6,
+       "audit": 0,
+       "msg": "[23:58:03 INFO]: <Eve> [23:58:03 INFO]: Disconnecting Bob (/192.0.2.4:5): not whitelisted"
+      },
+      {
+       "ts": 1794009600000,
+       "unit": "minecraft.service",
+       "prio": 6,
+       "audit": 0,
+       "msg": "[23:59:00 INFO]: tick 4529"
+      },
+      {
+       "ts": 1794009600020,
+       "unit": "minecraft.service",
+       "prio": 6,
+       "audit": 0,
+       "msg": "[23:59:00 INFO]: tick 4530"
+      },
+      {
+       "ts": 1794009600040,
+       "unit": "minecraft.service",
+       "prio": 6,
+       "audit": 0,
+       "msg": "[23:59:00 INFO]: tick 4531"
+      },
+      {
+       "ts": 1794009600060,
+       "unit": "minecraft.service",
+       "prio": 6,
+       "audit": 0,
+       "msg": "[23:59:00 INFO]: tick 4532"
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "websocket": [
+  {
+   "event": "ws-open",
+   "session": 0,
+   "auth": true,
+   "user_agent": "smallworld mc-agent",
+   "version": "13",
+   "connection_upgrade": true
+  },
+  {
+   "event": "ws-hello",
+   "session": 0,
+   "message": {
+    "type": "hello",
+    "agent": "1"
+   }
+  },
+  {
+   "event": "ws-ended",
+   "session": 0,
+   "unmasked": 0
+  }
+ ],
+ "console": [],
+ "github": [],
+ "https": [],
+ "rcon": {
+  "stats_connections": 1,
+  "connections": []
+ },
+ "systemd": {
+  "calls": [
+   [
+    "journalctl",
+    "-o",
+    "json",
+    "--no-pager",
+    "--output-fields=_SYSTEMD_UNIT,SYSLOG_IDENTIFIER,PRIORITY,MESSAGE,MC_AUDIT,UNIT",
+    "--since=-5min"
+   ],
+   [
+    "journalctl",
+    "-o",
+    "json",
+    "--no-pager",
+    "--output-fields=_SYSTEMD_UNIT,SYSLOG_IDENTIFIER,PRIORITY,MESSAGE,MC_AUDIT,UNIT",
+    "--after-cursor=s=parity;i=05001"
+   ]
+  ],
+  "probes": [
+   "show -p ActiveState -p ActiveEnterTimestampMonotonic minecraft.service",
+   "show -p MemoryCurrent --value minecraft.service"
+  ]
+ },
+ "audit": [
+  [
+   [
+    "MESSAGE",
+    "agent action=rejected_dismiss ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "rejected_dismiss"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"name\": \"mallory\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=rejected_dismiss ok=True login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "rejected_dismiss"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"name\": \"Mallory\"}"
+   ],
+   [
+    "MC_RESULT",
+    "ok"
+   ]
+  ],
+  [
+   [
+    "MESSAGE",
+    "agent action=rejected_dismiss ok=False login=admin@parity.test"
+   ],
+   [
+    "SYSLOG_IDENTIFIER",
+    "mc-agent"
+   ],
+   [
+    "MC_AUDIT",
+    "1"
+   ],
+   [
+    "PRIORITY",
+    "5"
+   ],
+   [
+    "MC_ACTION",
+    "rejected_dismiss"
+   ],
+   [
+    "MC_LOGIN",
+    "admin@parity.test"
+   ],
+   [
+    "MC_ARGS",
+    "{\"name\": \"a b\"}"
+   ],
+   [
+    "MC_RESULT",
+    "rejected_dismiss: needs a Java name"
+   ]
+  ]
+ ],
+ "files": {
+  "/var/lib/mc-agent/logs.json": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "cursor": "s=parity;i=05013",
+    "day": "20261107",
+    "rows": 4
+   }
+  },
+  "/var/lib/mc-agent/nonces.json": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "nonce-logs_rejected-0001": "<time>",
+    "nonce-logs_rejected-0002": "<time>",
+    "nonce-logs_rejected-0003": "<time>"
+   }
+  },
+  "/var/lib/mc-agent/rejected.json": {
+   "type": "file",
+   "mode": "0o600",
+   "content": [
+    {
+     "name": "Trudy",
+     "uuid": null,
+     "count": 1,
+     "first": 1794009485000,
+     "last": 1794009485000,
+     "ip": "2001:db8:1::/48"
+    }
+   ]
+  },
+  "/var/lib/mc-agent/spool.jsonl": {
+   "type": "file",
+   "mode": "0o600",
+   "content": "<0 bytes>"
+  }
+ }
+}

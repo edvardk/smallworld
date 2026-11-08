@@ -21,3 +21,14 @@ def test_reads_version(tmp_path: Path, capsys) -> None:
     world_info.main([str(tmp_path)])
     out = capsys.readouterr().out
     assert "26.2 (DataVersion 4700)" in out and "vanilla DIM-1" in out
+
+
+def test_reports_the_26x_layout(tmp_path: Path, capsys) -> None:
+    data = b"\x0a" + _s("Data") + b"\x03" + _s("DataVersion") + struct.pack(">i", 5023) + b"\x00"
+    for dim in ("overworld", "the_nether", "the_end"):
+        (tmp_path / "world" / "dimensions" / "minecraft" / dim / "region").mkdir(parents=True)
+    with gzip.open(tmp_path / "world" / "level.dat", "wb") as f:
+        f.write(b"\x0a" + _s("") + data + b"\x00")
+    world_info.main([str(tmp_path)])
+    out = capsys.readouterr().out
+    assert "26.x minecraft:overworld, minecraft:the_end, minecraft:the_nether" in out and "bukkit" not in out

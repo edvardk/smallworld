@@ -22,11 +22,30 @@ mc_telemetry_jar_sha256: "da8a6cfc8ec299bc158a25f18ee472c5bea4d51025fdeab64bf027
 # (scripts/brand_art.py check). v1.2: the optional resource pack's sha1 (mc_brand_pack_sha1: the Worker's
 # /pack/<sha1>.zip and server.properties resource-pack-sha1) is rendered: mcctl render builds the pack from the
 # config repo's art (mcctl/brandpack.py).
-mc_brand_jar_sha256: "c712e48e82a1ff88fcb9356e26b25482f69ff530b4dc0f3e363034c1439416b2"
+mc_brand_jar_sha256: "59e229618b7357d9638c80c958f0239be2403991e5ec99d6cfa64b8035452d30"
 mc_brand_icon_sha256: "939ecfd72097963dd7f221bf7df9972cf6d8f4a58ef9f0cdd7fd546edff52372"
 restic_sha256:
   amd64: f415415624dcc452f2a02b8c33641791a8c6d6d3b65bbb3543fcf9a25151585c
   arm64: a5f64aaab53d51e311fa3829124c5b703f2d14cf187d8640b6be3b2b49376465
+# v1.4: smallworld-rcon (rust/smallworld-rcon), the Rust drop-in for mc_rcon.py's command line: static musl binaries
+# committed as rust/dist/smallworld-rcon-<target>, rebuilt byte for byte by scripts/build_rust.py check (CI job rust).
+# The base role checks the one for the box's architecture against this pin before installing it (keys: Debian
+# architecture names, as restic_sha256's).
+mc_smallworld_rcon_sha256:
+  amd64: 432fffddc002b9d65a2061b1d501520258fcdf5239c8d522a48cacda1066618c
+  arm64: bac51b0c2ceb9b46702d9e96beb2523035d26bbb5c19a8f848bbf1b8895f2673
+# v1.4: smallworld-map (rust/smallworld-map), the world map pre-renderer (role map, docs/rust/smallworld-map.md): same
+# reproducible build and committed binaries; the map role checks this pin before installing it.
+mc_smallworld_map_sha256:
+  amd64: 0dc5733ddacbdafaeac4a1ecb2e5763250b1ea5582c4707efcfcc39a774d2fa1
+  arm64: 43d7a47e5900b2d55df7e01d7ee88911be2b342b9ab70639ea480200b2828789
+# v1.4: smallworld-agent (rust/smallworld-agent, PORTING.md), the Rust port of mc_agent.py: committed as
+# rust/dist/smallworld-agent-<target> and rebuilt byte for byte by scripts/build_rust.py check, like smallworld-rcon.
+# Installed on every box by the base role (checked against this pin first); runs as mc-agent with
+# server.yml agent.implementation: rust.
+mc_smallworld_agent_sha256:
+  amd64: fafbdcc6438b0ae12ead0dd3c1ee0bbe4b5b46587db40dd7518e39528cba9d13
+  arm64: b67645a9b7f9c7e1960b8aa9d3427e0d1ade93b5c743112065da035ad8b7070f
 
 # --- OS tuning -----------------------------------------------------------------------------------
 base_zram_enabled: true
@@ -53,6 +72,15 @@ mc_rcon_port: 25575
 # server dir, RCON password from server.properties), never the other way round, so code running as
 # `minecraft` can't read their environment (/proc/<pid>/environ) or their files.
 mc_ops_user: mcops
+# v1.4: the world map pre-renderer (role map, mc-map.service) runs as this static system user, in group minecraft
+# (read-only on the world through group permissions and its sandbox): neither minecraft (a parser bug must never be
+# able to write the world) nor the ops user (its credentials). Its tiles go to mc_map_dir, which the JVM reads.
+mc_map_user: mcmap
+mc_map_dir: /var/lib/mc-map   # = the unit's StateDirectory=mc-map; mc-brand's pocket_map.prerender_dir
+# The block palette and map colours for the pinned Minecraft version (server-config/keys/<version>/, map role); the
+# renderer reads the palette, mc-brand the colours.
+mc_map_palette: "{{ mc_root }}/share/map-palette.tsv"
+mc_map_colors: "{{ mc_root }}/share/map-colors.tsv"
 # P11: what mc-reboot-gate starts to reboot (polkit allows the ops user exactly this unit + verb `start`). The e2e run
 # points it at a harmless target instead.
 mc_reboot_target: reboot.target

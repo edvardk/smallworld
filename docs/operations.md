@@ -87,6 +87,33 @@ deploy stays too (remove them in the panel). Ops always come from Git only.
 **Strict mode:** `minecraft.strict_whitelist: true` in `server.yml` makes `players.yml` the whole whitelist: a
 deploy removes every live player it doesn't list (pending panel adds still count until they merge or expire).
 
+### Switching the agent's implementation (v1.4)
+
+mc-agent comes in two implementations (reference.md "Two agent implementations"): `python` (`scripts/mc_agent.py`,
+the default) and `rust` (`smallworld-agent`, the port; the default becomes `rust` in a later release, after a soak).
+Both run as `mcops` in the same sandbox and share every state file (`/var/lib/mc-agent/`, `pending.json`, the job
+lock, the markers), so switching either way loses nothing and needs nothing but a deploy.
+
+- **Switch:** `mcctl config set agent.implementation rust -C $C`, then publish and deploy as for any change (push
+  to main, or `mcctl deploy -C $C`). The deploy points `/opt/minecraft/bin/mc-agent` at the binary, rewrites
+  `mc-agent.service` (`ExecStart=.../smallworld-agent run`) and restarts it; with experience telemetry on it then
+  starts `mc-telemetry.service`, which runs the telemetry the Python agent ran in-process (after the agent's
+  restart, so the two never write the telemetry's files at once). Nothing else changes: the panel, Discord and
+  mcctl's actions work the same.
+- **Check:** `systemctl status mc-agent mc-telemetry` on the box (the agent's line `mc-agent 1.x.y: pushing to
+  ...` at start is the same), `cat /opt/minecraft/product-version.json` (`"agent": {"implementation": "rust",
+  "sha256": ...}`), and the panel's Health tab (metrics arriving, Versions row green). `readlink
+  /opt/minecraft/bin/mc-agent` names the implementation mcctl's actions run.
+- **Roll back:** `mcctl config set agent.implementation python -C $C` and deploy. The deploy stops and removes
+  `mc-telemetry.service` first, then restarts mc-agent as the Python script with its in-process telemetry.
+  If a deploy is impossible and the Rust agent misbehaves, `sudo systemctl stop mc-agent mc-telemetry` on the box
+  silences it (the server and its backups don't depend on it; the panel then shows the host's agent as down)
+  until the next deploy.
+
+The binary is on every box either way (`/opt/minecraft/bin/smallworld-agent`, root, 0755): each deploy checks it
+against its pin (`mc_smallworld_agent_sha256`) before installing it, and a new binary restarts the agent where it
+runs.
+
 ## The panel
 
 `https://panel.<your domain>` (Terraform output `panel_url`). Cloudflare Access lets in only the admin email(s)
@@ -140,7 +167,7 @@ used to drift apart silently (v1.2.2 reached the server and the Worker in separa
 | mc-agent runs older code than installed | restart it (a deploy does) |
 
 `mcctl doctor` checks the same against the config repo's pin as it is now (rows `versions` and `panel → git`,
-read from the watchdog's D1 with the Cloudflare token), and the home screen and `mcctl status` show the deployed
+read from the watchdog's D1 with the Cloudflare token), and the dashboard and `mcctl status` show the deployed
 version over SSH.
 
 ### The Panel → Git self-test (v1.3)
@@ -180,13 +207,23 @@ them, so archives stay until you delete them.
 What a switch (or create) does, step by step in the header banner: in-game countdown (skipped when nobody is
 online) → stop → **archive the active world** (the final backup and the safety snapshot in one: nothing else
 happens unless it is in restic's list) → fetch the target archive (or nothing, for a new world) → swap the world
-folders (`world`, `world_nether`, `world_the_end`) as `minecraft` and write the world's `server.properties` keys →
-start → check that it answers (and has the seed you asked for) → set its border → back it up. If anything fails
-before the swap, the old world starts again untouched; if the swap itself fails, the server stays stopped and the
-admin-stopped marker names the archive to restore.
+folders as `minecraft` and write the world's `server.properties` keys → start → check that it answers (and has the
+seed you asked for) → set its border → back it up. If anything fails before the swap, the old world starts again
+untouched; if the swap itself fails, the server stays stopped and the admin-stopped marker names the archive to
+restore.
+
+**Folder layout (Minecraft 26.x):** a world is the one `world/` folder, every dimension inside it
+(`world/dimensions/minecraft/{overworld,the_nether,the_end}/`); the Bukkit world names (`world_nether`,
+`world_the_end`: borders, pre-generation) are unchanged. A switch removes `world/` and any old `world_nether/`
+and `world_the_end/` from the server dir (all in the archive just taken) and copies the archive's `world/`. A
+world **archived before the 26.x upgrade** (split `world/`, `world_nether/`, `world_the_end/`) switches in with
+its three folders and the server moves it into the new layout at its first start (a 30-second pause, one way;
+the banner's start step says so). An archive with region files in **both** layouts is refused before anything changes
+(the server would refuse it or merge old chunks in): restore it by hand if you need it.
 
 **Per world:** inventories, ender chests, XP, advancements and statistics (each world folder has its own
-`playerdata/`, `advancements/`, `stats/`), the border and pre-generation. **Shared:** the whitelist, operators,
+`players/data/`, `players/advancements/`, `players/stats/`; `playerdata/`, `advancements/`, `stats/` before
+26.x), the border and pre-generation. **Shared:** the whitelist, operators,
 bans, plugins and their data, and every other `server.properties` key. Game rules live in each world's
 `level.dat`.
 
@@ -209,6 +246,77 @@ quoted seed, one-line description, the `https://` source, claims with `within` b
 
 **Cost:** R2 includes 10 GB of storage; the tab shows a note when the archives pass that. restic deduplicates, so
 an archive costs what changed since the snapshots it shares data with, not its full size.
+
+## Pre-generation
+
+**What it does.** With Chunky locked (a default plugin), `mc-health` (every 5 minutes) generates the world's
+terrain ahead of the players, so exploring doesn't make the server generate chunks while people play (chunk
+generation is the most common cause of lag spikes on a small server). It works **only while nobody is online**:
+when a player joins, the next check pauses it (`chunky pause`); when the server is empty again it continues. One
+Chunky task at a time:
+
+1. **Bordered pass:** every dimension with a border (`world.border_radius`, or the library world's own), in the
+   order overworld → nether → end, up to its border (`chunky world W`, `chunky worldborder`, `chunky start`).
+2. **Frontier** (v1.4, `world.pregenerate.frontier`, default on): once the bordered passes are done, and for a
+   dimension without a border (often the End, or a library world without one), it keeps generating
+   `world.pregenerate.margin` blocks (default 1024) beyond the farthest chunk generated so far: a square around
+   0,0 (where the border is centred), capped at the border and at `world.pregenerate.max_radius` (default
+   10000). The farthest chunk comes from the region files on disk (their names, then the 4 KiB header of the
+   outermost files): chunks are generated around players, so that is how far they have been. A new task starts
+   only when the target grew by at least 256 blocks (no new task every 5 minutes), and never while the disk is at
+   its alert threshold (`monitoring.alerts.disk_pct`). Chunky skips chunks that exist, so a bigger square only
+   generates the new ring.
+
+It doesn't run during a maintenance window (deploys, restores), while the server is stopped on purpose, or while
+a backup holds it: `mc-backup` pauses a running task before `save-off` (chunks generated while saving is off pile
+up in memory) and continues it after `save-on`, even when the backup fails; `/var/lib/mc-snapshots/pregen-hold.json`
+tells `mc-health` to leave it alone meanwhile (it expires by itself after 4 hours if a backup is killed). A
+restart needs nothing: Chunky's `continue-on-restart: true` resumes the task, and a check that finds it running
+with players online pauses it again (so for up to 5 minutes after a restart it may run with players on). A world
+switch cancels the old world's task and starts afresh.
+
+**The margin.** Each player generates the terrain within their view distance (`performance.view_distance`, 10-12
+chunks: 160-192 blocks) around them; 1024 blocks is that plus a few minutes of travel beyond the generated area
+(sprinting ~5.6 blocks/s, a horse ~14, a boat on ice far more). Elytra flights (30-60 blocks/s) cross 1024 blocks
+in well under a minute, so no margin fully covers them: the frontier catches up the next time the server is
+empty. Per-player areas (a task around each player's farthest point instead of one square) would cover far-off
+bases more cheaply; that is a possible later improvement.
+
+**Disk.** A fully generated overworld region file (512 x 512 blocks) is typically 5-10 MB, so a 5000-block border
+(10 000 x 10 000 blocks, about 380 region files) takes **roughly 2-4 GB**; the Nether at 1250 a few hundred MB at
+most, and the End, mostly void, little. These are estimates from Minecraft's typical region sizes; terrain,
+structures and later building change them. Frontier expansion in a dimension **without a border** grows the world
+as far as players go, up to `max_radius` (10 000 blocks around 0,0 is about 1500 region files: up to ~10-15 GB of
+overworld-like terrain). **The world border is the real control** of the world's size; `max_radius` is only a
+hard cap. Health's disk alert (`monitoring.alerts.disk_pct`) also stops new frontier rings.
+
+**Backups.** restic deduplicates, so only the **first backup after a pass** is big (it uploads the new region
+files); after that backups carry only what changed, as before. Expect the R2 bucket to grow by about the world's
+size once (R2 includes 10 GB of storage).
+
+**Trade-off.** Pre-generated terrain keeps the generation of the Minecraft version that made it: after an upgrade
+(`mcctl upgrade --minecraft-version`), new biomes and structures appear only in chunks generated afterwards,
+beyond the pre-generated area (and the frontier keeps moving that boundary outwards). If you plan an upgrade with
+new terrain soon, a smaller border or `frontier: false` keeps more of the world for it.
+
+**Watch it.**
+
+```bash
+mcctl status -C $C                         # pregen: world 63% · world_nether queued · world_the_end queued
+journalctl -u mc-health | grep pregen      # started / running / paused / continued / frontier / done, per check
+mcctl rcon -C $C chunky progress           # Chunky's own view of a running task
+```
+
+`mcctl status` shows `pregen: done` (with `· frontier <world> <radius>` once it has grown), `(paused)` while
+players are on and `(held: backup)` during a backup. Discord gets one note when every bordered pass is done. The
+state is in `/var/lib/mc-health/state.json` (`pregen_done`, `pregen_progress`, `pregen_frontier`) and the status
+line in `/var/lib/mc-health/pregen.json`.
+
+**Stop it or skip a world.** `mcctl config set world.pregenerate.enabled false` (or `world.pregenerate.frontier
+false` for the bordered passes only), push: the next check after the deploy cancels the task it started. A
+library world's `pregen: false` (the panel's New world option, `mcctl worlds create --no-pregen`) turns it off
+for that world alone. To skip one dimension's bordered pass, add its world (e.g. `world_the_end`) to
+`pregen_done` in the state file.
 
 ## Discord
 
@@ -265,9 +373,9 @@ The ones you will use (all take `-C $C`; the complete list is in [reference.md](
 
 | Command | What it does |
 |---|---|
-| `mcctl` | v1.3: on a terminal, the home screen: a status header and a menu of these commands ([reference](reference.md#the-home-screen-and-the-remembered-config-repo-v13)); remembers the config repo, so `-C` is optional |
+| `mcctl` | on a terminal, the dashboard: the web panel's tabs (Overview, Players, Worlds, Plugins, Backups, Logs, Console, Publish, Health) with live status, every action's output kept on screen and the typed confirmations; ctrl+p lists every action ([reference](reference.md#the-dashboard-and-the-remembered-config-repo)); remembers the config repo, so `-C` is optional |
 | `mcctl doctor` | checks tools, `.env`, every credential live (writes `expiry.yml`: commit it), the product pin, DNS, the tailnet, the watchdog; `--fix` repairs what it can (file mode, a stale product pin after a typed `yes`) |
-| `mcctl status [--json]` | server state, players, TPS/MSPT, last backup, last deploy run, drift (disabled plugins, open panel PRs) |
+| `mcctl status [--json]` | server state, players, TPS/MSPT, last backup, pre-generation (v1.4), last deploy run, drift (disabled plugins, open panel PRs) |
 | `mcctl deploy [--check] [--force-restart]` | deploy from your computer (the same playbook and secrets as CI; `--check` is a dry run with a diff; `--force-restart`: restart now even outside `maintenance.window`) |
 | `mcctl publish [--route pr\|main\|deploy] [--dry-run] [--revert] [--wait-empty]` | v1.3: preview what your config change does (roles, restart, Terraform, who is online), validate, then a pull request, its checks, your merge and the deploy ([reference](reference.md#publishing-a-config-change-v13)) |
 | `mcctl players list\|add\|remove\|op\|deop NAME` | edit `players.yml` (UUID from Mojang); v1.3: as a pull request you merge when green (`--push`: straight to main) |
@@ -297,6 +405,7 @@ the *target* release's schema migration and validation itself. When the checkout
 | Hourly backup | every hour (+ up to 5 min random delay) | restic to R2; the lock keeps every snapshot at least 7 days |
 | Prune | Sundays 03:30 | between backups |
 | Health check + self-heal | every 5 minutes | restarts a crashed server, dumps and restarts a frozen one; at most 3 restarts a day, then Discord |
+| Chunk pre-generation | every 5 minutes, only with nobody online | each bordered dimension up to its border, then the frontier ahead of the players; paused around backups ([Pre-generation](#pre-generation)) |
 | Watchdog | every 5 minutes, outside the box | status pings over IPv4 and IPv6 separately; heartbeat lateness; alerts on Discord |
 | Server build and plugin updates | weekly, `automation.update_day` (Tuesday) 04:17 UTC | the newest builds of the same Minecraft version are boot-tested in CI, then the updater App opens a pull request that merges itself once `server / gate` re-verified every hash |
 | Weekly deploy | the same slot | deploys `main` as it is; restarts only if something changed |
@@ -304,10 +413,44 @@ the *target* release's schema migration and validation itself. When the checkout
 | A restart a deploy left for the maintenance window | `maintenance.window`'s start (then every 15 minutes inside it) | only with a window and a pending restart ([Maintenance window](#maintenance-window-v13)); any earlier start of the server applies it too |
 | Reboots for OS updates | checked every 30 minutes | only inside `automation.reboot_window` (04:30-06:00 local), with nobody online, no backup or restore running and the server not stopped on purpose; **never forced**: still pending after 3 days, Discord reminds you daily |
 | Backup check + expiry check | Mondays | `restic check` on 5 % of the data and a restore of the newest snapshot (must be < 2 h old); credential expiry (`expiry.yml`), domain expiry (RDAP) and the watchdog's freshness. Problems go to Discord and the run turns red |
+| World map pre-render (v1.4) | nightly, `map.schedule` (`*-*-* 04:23` host time, up to 10 min random delay) | reads only the regions that changed since the last run, at idle priority ([World map](#world-map-v14)) |
 | Security updates on the box | daily (Debian unattended upgrades) | Tailscale is held at its pinned version (bump the pin for Tailscale security fixes: [reference.md](reference.md#bumping-versions)) |
 
 Never automatic: a new Minecraft version (`mcctl upgrade --minecraft-version`), minor/major product releases,
 and anything in `server.yml`.
+
+## World map (v1.4)
+
+`mc-map.timer` runs `smallworld-map` every night (`map.schedule`): it reads the region files of the Overworld and
+the End (never the Nether) and writes map tiles to `/var/lib/mc-map`. mc-brand paints them into pocket maps where a
+player hasn't been yet, and onto the spawn map room's wall (`branding.map_room`). Vanilla's live colours replace
+the pre-render wherever a held map redraws, so a stale tile only lasts until the player walks past.
+
+- **What it costs.** A first run (after the deploy that turns it on, a world switch or a palette change) reads every
+  fully generated chunk: a few minutes per 10,000 × 10,000 blocks on one core. Later runs only read the region
+  files whose chunks changed: usually seconds. It runs at idle priority (Nice 19, idle IO), so the server always
+  wins; `map.threads` only shortens the first run.
+- **Disk.** One tile is 256 KB. At the default borders (Overworld radius 5000, End 3000) that is about 700 tiles,
+  ≈ 180 MB, plus ~30 KB of state per region in `/var/lib/mc-map/.work`. All-empty tiles (End void) aren't written.
+  Nothing there is backed up: it is regenerated from the world.
+- **Is it working?** `journalctl -u mc-map` shows one JSON line per dimension and run (`regions_rendered`,
+  `chunks_full`, `chunks_failed`, `unknown_states`, `tiles_written`, `seconds`); `/mcbrand selftest` shows
+  `prerender on [overworld=genN the_end=genM]`, the map room's frames and, after a player held a pocket map, how
+  many of vanilla's pixels the pre-render matched (100 % unless the world changed since the render). On the box,
+  `sudo -u mcmap /opt/minecraft/bin/smallworld-map stats --out /var/lib/mc-map` summarises the tiles and
+  `stats --world /opt/minecraft/server/world` counts chunks by status.
+- **Render now:** `sudo systemctl start mc-map.service`. **Force a full re-render** (after restoring an old backup
+  into the same folder, or to rule out the cache): `sudo rm -rf /var/lib/mc-map/.work` and start the service; it
+  starts over by itself after a world switch, a new palette (Minecraft version) or a changed radius.
+- **Chunks it skips** are counted, not fatal: proto-chunks (not fully generated: pre-generate with Chunky,
+  `world.pregen`), chunks saved by another game version (drawn once the server has loaded and re-saved them), a
+  chunk the server was writing at that moment (`chunks_failed`: retried next night). `unknown_states` above 0 means
+  the palette doesn't match the world: re-run `scripts/map_palette.py dump` after a version bump.
+- **The map room** spawns its frames whenever its chunk is loaded and removes them with the chunk (they are never
+  saved with the world), so moving it is a server.yml change and a deploy; `branding.map_room.enabled: false` removes
+  it. Build a wall behind it if you want one: fixed frames hang in the air too.
+- **Turn it off:** `map.enabled: false` removes the timer, the binary and `/var/lib/mc-map`; pocket maps go back
+  to vanilla's own terrain.
 
 ## Backups and restore drills
 
@@ -731,6 +874,7 @@ ever appear in an alert (a CI alert carries the run's link only). Every alert's 
 | ⚠️ The server's memory is nearly full / ✅ pressure is over | health.py | heap after GC above `heap_pct` for `heap_checks` checks | more `jvm.heap_mb` or a bigger box (`host.resize_hint`) |
 | 🔴 The server's disk is filling up / ✅ fine again | health.py | disk at `disk_pct` | `du -sh /opt/minecraft/server/*`, clean logs, grow the disk |
 | ⚠️ The hosting provider is short on CPU / ✅ the CPU is ours again | health.py | CPU steal above `steal_pct` for `steal_checks` checks | usually passes; the panel's CPU chart; dedicated cores if it lasts |
+| ℹ️ Chunk pre-generation is finished | health.py (v1.4) | every bordered dimension is generated up to its border (once per world) | - ([Pre-generation](#pre-generation)) |
 | ⚠️ The outside watchdog can't be reached / has stopped checking / ✅ again | health.py | heartbeats fail 3 checks in a row, or the Worker's cron is 15 min stale | cloudflarestatus.com, the Worker's cron trigger and logs |
 | ⚠️ Security updates are waiting for a reboot / ℹ️ rebooting / ✅ back | reboot gate | pending 3+ days because the window never found the server empty (daily reminder), or it reboots now | `sudo systemctl reboot` on the box when convenient |
 | ℹ️ The server restarts in N s for a config deploy | mc_rcon (deploy) | a deploy restart while players are online (they get an in-game countdown) | - |
@@ -790,7 +934,8 @@ Two independent watchers, so a dead box is noticed even though it can't report i
     `GET /status` shows freshness only (no addresses, no messages), and `mcctl doctor` / `mcctl init` check
     that the cron ran in the last 15 minutes. Worker invocation logs are off (they would record request
     headers, i.e. the bearer token); only the Worker's own error lines are logged.
-- **`mc-agent`** (P8, `panel.mode: cloudflare`, the default; `scripts/mc_agent.py`, runs as `mcops`,
+- **`mc-agent`** (P8, `panel.mode: cloudflare`, the default; `scripts/mc_agent.py`, or v1.4's Rust port with
+  `agent.implementation: rust` ([switching](#switching-the-agents-implementation-v14)); runs as `mcops`,
   `MemoryMax=64M`): outbound HTTPS only, bearer `AGENT_TOKEN`.
   - every `monitoring.metrics_interval_s` (60 s) one sample (TPS, MSPT, players, heap and GC pauses from the
     GC log, JVM memory, CPU, steal, load, memory, disk, network) → `POST /ingest/metrics` → D1 day tables; samples

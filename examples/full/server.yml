@@ -24,6 +24,10 @@ host:
 # players.yml are kept and announced; true = players.yml is the whole whitelist).
 minecraft: {version: "26.3", accept_eula: true, motd: "Lighthouse", strict_whitelist: false}
 backups: {bucket: lighthouse-backups}
+# v1.4: Chunky pre-generation while nobody is online: each bordered dimension up to its border, then 1024 blocks
+# beyond the farthest generated chunk (frontier), never past 10000 blocks from 0,0 (the defaults, spelled out).
+world:
+  pregenerate: {enabled: true, frontier: true, margin: 1024, max_radius: 10000}
 jvm: {gc: zgc, heap_mb: 6144}
 performance:
   profile: vanilla
@@ -31,6 +35,8 @@ performance:
   cpu_affinity: split
   noatime: true
 panel: {mode: cloudflare}   # access.emails: [admin.email] (derived)
+# v1.4: the Rust agent (smallworld-agent) and its telemetry sidecar; the default is python until after a soak.
+agent: {implementation: rust}
 experience: {enabled: true}
 alerts: {discord: true}
 discord:
@@ -87,5 +93,22 @@ branding:
     max_range: 2000
     distance_rounding: 10
     height_threshold: 8
-  pocket_map: {enabled: true}      # v1.3: /map
+  pocket_map: {enabled: true, prerender: true}   # v1.3: /map; v1.4: unexplored terrain from the nightly map render
+  map_room:                        # v1.4: a 4x3 wall of pre-rendered maps, 6 blocks north of spawn, facing it
+    enabled: true
+    world: overworld
+    at: spawn
+    offset: [0, 0, -6]
+    facing: south
+    width: 4
+    height: 3
+    view: border                   # the whole world border; `spawn` = vanilla's map grid at `scale` around spawn
+    scale: 3
+    cursors: true
+map:                               # v1.4: nightly world map pre-render (pocket map + map room)
+  enabled: true
+  schedule: "*-*-* 02:41"          # quiet hours, before maintenance.window
+  dimensions: [overworld, end]     # never the Nether
+  radius: null                     # null = each dimension's world border
+  threads: 1
 client: {enabled: true}

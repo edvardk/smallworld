@@ -10,6 +10,7 @@ import csv
 import io
 import json
 import sqlite3
+import time
 from pathlib import Path
 
 import pytest
@@ -126,8 +127,9 @@ def test_export_minute_rows_span_month_tables_and_page(fake: D1Fake, monkeypatch
 
 @pytest.mark.posix_only  # a 0600 .env
 def test_cli_metrics_export_and_errors(
-    tmp_path: Path, fake: D1Fake, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, fake: D1Fake, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(time, "time", lambda: NOW / 1000)  # the fake's data is around NOW, not today
     cfg = make_config_repo(
         tmp_path / "cfg", example_server() | {"name": "lh", "dns": {"zone": "example.org", "hostname": "mc"}}
     )

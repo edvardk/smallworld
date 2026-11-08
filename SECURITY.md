@@ -89,7 +89,8 @@ Read and write** besides Secrets and Administration.
 
 Two system users (P7 review). `minecraft` runs the JVM, so every plugin runs as it. `mcops` runs everything that
 holds a credential: `mc-backup`, `mc-prune`, `mc-backup-check` (v1.2, the weekly backup test), `mc-health` (and
-its self-heal), `notify.py`, the fetch half of a restore, every `mc-run`/`mc-restic` command, and `mc-agent` (P8).
+its self-heal), `notify.py`, the fetch half of a restore, every `mc-run`/`mc-restic` command, `mc-agent` (P8, in
+either implementation) and v1.4's telemetry sidecar `mc-telemetry` (rust mode).
 
 | | `minecraft` (JVM, plugins) | `mcops` (helpers) |
 |---|---|---|
@@ -222,7 +223,8 @@ deduplicated like every backup). What it adds to the attack surface:
 ### The same actions from mcctl (v1.3)
 
 `mcctl restart|worlds|plugins|players kick|ban|pardon` run the panel's actions over Tailscale SSH as the deploy
-user (the admin's `check` rule): `sudo mc-run -/etc/minecraft/notify.env /opt/minecraft/bin/mc_agent.py cli ...`.
+user (the admin's `check` rule): `sudo mc-run -/etc/minecraft/notify.env /opt/minecraft/bin/mc-agent cli ...` (v1.4:
+the symlink to the chosen implementation; `mc_agent.py cli` on an older box).
 No new credential, unit, polkit verb or listening socket: the entry point runs mc-agent's Executor as `mcops` in
 mc-run's sandbox, so its systemd actions are the units `50-mc-ops.rules` already allows, and it reads only
 `notify.env` (the watchdog's maintenance window), never `agent.env`. It needs no signature because only the
@@ -451,7 +453,9 @@ What the mc-telemetry plugin, mc-agent's telemetry and the Worker's experience s
   file only `mcops` can read is refused), accepted only if `fstat` says it's a regular file, read with a size cap
   (the GC log: its last 1 MiB). Only the last path component is checked: a directory under the server dir
   replaced by a symlink (e.g. the world's `stats/`) could still point the stats reader at other JSON `mcops` can
-  read, of which only three integer counters would be shipped. The telemetry thread holds no lock while it reads
+  read, of which only three integer counters would be shipped. v1.4: mc-health's frontier expansion lists the
+  region folders and reads each `r.X.Z.mca`'s 4 KiB header the same way, and refuses a region folder with a
+  symlink anywhere under the server dir; what it derives is one number (a radius, capped by `max_radius`). The telemetry thread holds no lock while it reads
   files or talks to the Worker, so a signed `player_message` (handled inline on the WebSocket) never waits on it.
 - **In-game messages are a signed command** (`player_message`, HMAC like every other): the Worker's verdict engine
   decides, the agent re-checks the shape and the rate limits with the live state (one per player per 30 min, none
@@ -600,6 +604,105 @@ What `maintenance.window` and the update notice add:
 - **The update notice** asks `api.github.com` anonymously (no token, `mcctl.http`, HTTPS only) for the pinned
   repository's latest release, at most once a day; it learns nothing about the deployment but which product
   repository it pins, and its answer only selects a line of text.
+
+## smallworld-rcon (v1.4)
+
+What the Rust drop-in for `mc_rcon.py`'s command line changes on the box:
+
+- **A new binary, `/opt/minecraft/bin/smallworld-rcon`**, `root:root 0755`: every user may run it, nobody but root
+  may change it. It is the committed build in `rust/dist/` for the box's architecture, whose sha256 the deploy
+  checks against `mc_smallworld_rcon_sha256` on the controller **before** copying it; CI rebuilds it byte for byte
+  from the source with the pinned toolchain (`scripts/build_rust.py check`). Static (musl), no crates.io
+  dependencies (std only: no third-party code to audit), `unsafe` forbidden.
+- **No new privileges or listeners.** It runs as whoever calls it, as the Python script did: `minecraft` for
+  `ExecStop`, the world border and game rules and `mc`; `mcops` (through `mc-run`, with notify.env) for the
+  deploy's countdown. It only connects out to RCON on `127.0.0.1:rcon.port` (or `rcon.ip`), never listens, and reads
+  one file: `server.properties` in the server directory, opened without following symlinks, without blocking,
+  regular files only, at most 1 MiB (as `mc_rcon.read_untrusted`). The RCON password it reads there never reaches
+  argv, stdout or stderr.
+- **Discord** still goes through `notify.py` (the binary has no TLS): the countdown runs `notify.py restart-alert`
+  from the binary's own directory (root-owned) with the environment it was given, only when
+  `DISCORD_WEBHOOK_URL` is set; the webhook URL stays in the environment, never on a command line.
+- **`ExecStop`** is a `/bin/sh -c` line inside the existing sandboxed unit (no change to its `systemd-analyze
+  security` score): `mc_rcon.py stop` runs only when the binary gave no verdict (exit status above 1).
+
+## The world map (v1.4)
+
+What the nightly pre-render (`smallworld-map`, role `map`) and its readers in mc-brand change on the box:
+
+- **A new static system user, `mcmap`** (`mc_map_user`), primary group `minecraft`, no home, no shell. Not
+  `minecraft` (a bug in the parser of player-influenced chunk data must never be able to write the world) and not
+  `mcops` (it holds credentials). It reads the world through group permissions only (the server writes it 0640 /
+  0750 under `UMask=0027`).
+- **A new unit, `mc-map.service`** (started by `mc-map.timer`, server.yml `map.schedule`): the shared sandbox plus
+  `MemoryDenyWriteExecute`, `PrivateNetwork=true`, `IPAddressDeny=any`, `RestrictAddressFamilies=AF_UNIX`,
+  `PrivateIPC`, `ProcSubset=pid`, `SystemCallFilter=~@privileged @resources`, `InaccessiblePaths=` for the
+  credential directories (`/etc/minecraft`, `/var/lib/mc-agent`, the restic cache, ...), idle priority,
+  `MemoryMax=512M`, `RuntimeMaxSec=4h`. **Read-only on the world by the sandbox**, not only by file modes:
+  `ProtectSystem=strict` leaves nothing writable but its `StateDirectory=mc-map`. No credentials, no network, no
+  polkit verb (nothing but the timer and root start it). Within the `systemd-analyze security` gate (≤ 2.5:
+  `tests/test_hardening.py`, `tests/e2e/hardening_check.py`); `tests/e2e/map_check.py` proves `mcmap` can't write
+  the world.
+- **A new binary, `/opt/minecraft/bin/smallworld-map`**, `root:root 0755`, installed only after its sha256 matches
+  `mc_smallworld_map_sha256` on the controller (the reproducible build in `rust/dist/`, `scripts/build_rust.py
+  check`). std only (its inflate and LZ4 decoders are its own; every stream's checksum is verified), `unsafe`
+  forbidden, never `mmap`.
+- **Parser input is semi-trusted**: the server writes the region files, but chunks carry player-made content and
+  the world library imports uploaded worlds. Every length is bounds-checked, nesting is capped (512), output is
+  capped (64 MiB per chunk), heights and coordinates are range-checked so the walk stays bounded; a malformed
+  chunk is counted and skipped, never a crash (`cargo test`'s fuzz tests feed it random, truncated and bit-flipped
+  NBT, streams and region files).
+- **A new directory the JVM reads**: `/var/lib/mc-map` (0750 `mcmap:minecraft`, files 0640), like the verdict
+  directory: the plugin may read, never write. mc-brand accepts a tile only with the exact size, magic, scale,
+  reserved field and the tile coordinates of its file name; a malicious tile can only paint map pixels. It reads
+  files off the main thread, caches at most 4 MB, never follows the pre-render into the Nether, and ignores it when
+  `meta.json`'s world identity isn't the world on disk (a world switch).
+- **The spawn map room** (`branding.map_room`, off by default) places item frames in the live world: fixed,
+  invulnerable, never saved with the world (respawned when their chunk loads), protected against breaking,
+  damage, rotation and taking the map; turning it on is a deliberate config change.
+
+## The Rust agent (v1.4)
+
+What `agent.implementation: rust` (smallworld-agent, the port of mc-agent; default `python`) changes:
+
+- **A new binary, `/opt/minecraft/bin/smallworld-agent`**, `root:root 0755`, on every box whichever implementation
+  runs (mcctl's actions may run it in any panel mode). As smallworld-rcon: the committed build in `rust/dist/` for
+  the box's architecture, its sha256 checked against `mc_smallworld_agent_sha256` on the controller **before** it is
+  copied, rebuilt byte for byte from the source in CI (`scripts/build_rust.py check`). Its code is public; running
+  it as another user gains nothing, because what it can do comes from `mcops`'s files, `agent.env` (root 0600, read
+  by systemd) and the polkit rules, not from the binary. `/opt/minecraft/bin/mc-agent` is a root-owned symlink to
+  the chosen implementation, and is what mcctl runs.
+- **Same privileges, same sandbox.** `mc-agent.service` keeps its user (`mcops`), groups (`minecraft`,
+  `systemd-journal`), `EnvironmentFile`, `UMask=0077`, limits, `ReadWritePaths` and the whole `mc_systemd_sandbox`
+  with `MemoryDenyWriteExecute=true` (static musl, ring, no JIT, no W+X mapping) and `SystemCallFilter=@system-service`;
+  its `systemd-analyze security` score is the same (≤ 2.5, offline in `tests/test_hardening.py` for both
+  implementations, live in the e2e's rust shard: `hardening_check.py --agent` also checks the running binary has
+  no_new_privs and its seccomp filter). polkit is unchanged: the rules name the user and the unit, never the
+  executable. Its state in rust mode is `/var/lib/mc-agent` only.
+- **Same behaviour, proved.** Python is the spec: the console allowlist, HMAC verification and nonces, refusal
+  texts, audit entries, file modes, RCON lines, systemctl calls and the scrubber match `mc_agent.py`
+  (`rust/smallworld-agent/PORTING.md`: shared test vectors, 25 black-box parity scenarios against the release
+  binary in CI, differential fuzzing of the console allowlist and of the scrubber + journal parser). Every
+  documented divergence is listed there with its reason; none widens what a command may do. The scrubber's claims
+  in [Privilege separation](#privilege-separation) hold for both implementations word for word.
+- **The telemetry sidecar, `mc-telemetry.service`** (rust mode with experience on): `scripts/telemetry.py`, which
+  the Rust agent doesn't port, runs as `mc_agent.py telemetry` in its own unit, as `mcops` with the same
+  `EnvironmentFile` (it posts with the agent token, so never as `minecraft`), the standard sandbox plus
+  `MemoryDenyWriteExecute=true` and the same exposure gate (≤ 2.5, offline and in the e2e). It may write only its
+  state (`/var/lib/mc-agent` for the telemetry id, as in-process; `/var/lib/mc-telemetry`) and the verdict directory;
+  `SupplementaryGroups=systemd-journal` lets it read systemd's own resource lines (`SYSLOG_IDENTIFIER=systemd`),
+  which it only counts, never ships. It hands the Rust agent `/var/lib/mc-telemetry/online.json` (UUID, name, tips
+  flag, join time per online player; `mcops` 0640 in a 0700 directory): nothing running as `minecraft` can read or
+  forge it, and a stale or missing file only makes `player_message` refuse ("player isn't online").
+- **Supply chain.** smallworld-rcon and smallworld-map stay std only. The agent uses a small set of crates (TLS with rustls + ring
+  and the system CA bundle, JSON, RustCrypto HMAC/SHA, gzip, regex, Unicode tables, libc), each pinned exactly in
+  `rust/Cargo.toml` and at least two weeks old, listed in `rust/allowed-crates.txt` (CI fails if `Cargo.lock` holds
+  anything else) and checked by `cargo deny` (`rust/deny.toml`, pinned in CI: licences, RustSec advisories,
+  crates.io as the only source); adding or bumping one is a maintainer decision. `unsafe` is denied except in
+  `sys.rs` (libc calls, one commented block each); builds are `--locked --offline` after `cargo fetch --locked`.
+- **Journal `PRIORITY` (fixed in both implementations):** a local process could send a `PRIORITY` that
+  `isdigit()` accepts but `int()` refuses and stall log shipping at that entry for good; such a value now reads as
+  the default priority.
 
 ## Not covered (v1)
 

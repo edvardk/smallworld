@@ -131,5 +131,7 @@
       tags: [monitoring]
     - role: agent          # mc-agent: metrics/logs/commands to the Worker (panel.mode cloudflare), design §5a
       tags: [agent]
+    - role: map            # v1.4: smallworld-map, the nightly world map pre-render (server.yml map)
+      tags: [map]
     - role: autoreboot     # mc-reboot-gate: reboots for updates in the window when nobody is online (P11)
       tags: [autoreboot]

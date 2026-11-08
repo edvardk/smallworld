@@ -138,6 +138,18 @@ def test_png_pixels_are_not_scanned_but_its_text_chunks_are(tmp_path) -> None:
     assert "b.png:" in out
 
 
+def test_elf_binaries_are_scanned_by_their_strings(tmp_path) -> None:
+    """v1.4: an ELF executable (rust/dist/) is scanned by its printable runs of 8+ characters: a pattern inside
+    random machine-code bytes doesn't count, embedded text does."""
+    noise = pf.ELF_MAGIC + b"\x02\x01\x01\0\x93\x01zorblax\xff\x00\x12"
+    text = pf.ELF_MAGIC + b"\x02\x01\x01\0\x93/home/zorblax/src\0"
+    repo = make_repo(tmp_path, {"dist/a": noise, "dist/b": text})
+    code, out, _ = run_main(repo, deny(tmp_path, "zorblax"))
+    assert code == 1
+    assert "dist/a" not in out
+    assert "dist/b:" in out
+
+
 def test_allowed_forms_pass_and_others_hit(tmp_path) -> None:
     ok = (
         f"https://github.com/{pf.PUBLIC_REPOSITORY}\nuses: {pf.PUBLIC_REPOSITORY}/.github/workflows/x.yml@abc\n"

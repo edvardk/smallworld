@@ -1,7 +1,8 @@
 """v1.3 server actions from the CLI (`restart`, `console`, `worlds`, `plugins`, `players kick|ban|pardon`).
 
 Decision (docs/plans, v1.3 A4): the actions the panel has run **over Tailscale SSH**, like `rcon`, `stop` and
-`start`, through the very code the panel uses: `scripts/mc_agent.py cli` on the server runs the agent's
+`start`, through the very code the panel uses: `mc-agent cli` on the server (v1.4: scripts/mc_agent.py or
+the Rust port, server.yml agent.implementation; `mc_agent.py cli` on an older box) runs the agent's
 Executor (its checks, the countdown job runner, the world library and plugin rules) as the ops user via
 `sudo mc-run` (its sandbox, the polkit rules of 50-mc-ops.rules: never generic systemctl as root) and writes
 the panel's audit entry (journal, MC_AUDIT=1) with the login `mcctl:<local user>`. Nothing is re-implemented
@@ -33,6 +34,10 @@ from mcctl.schema import ServerConfig
 BIN = "/opt/minecraft/bin"  # = ansible mc_bin_dir
 MC_RUN = "/usr/local/bin/mc-run"  # base role: runs a command as the ops user in a sandbox
 NOTIFY_ENV = "/etc/minecraft/notify.env"  # WATCHDOG_URL + HEARTBEAT_TOKEN: the restart's maintenance window
+# v1.4: the agent's entry point, a symlink to the implementation server.yml agent.implementation selects (base
+# role); a box deployed before v1.4 has only the Python script.
+AGENT_ENTRY = f"{BIN}/mc-agent"
+LEGACY_AGENT_ENTRY = f"{BIN}/mc_agent.py"
 COUNTDOWNS = (0, 10, 60, 300)  # = scripts/mc_panel.py COUNTDOWNS (the panel's choices)
 DEFAULT_COUNTDOWN = 60  # = the Worker's default (countdownArg)
 WORLD_NAME = re.compile(schema.WORLD_NAME)
@@ -80,12 +85,23 @@ def cli_login(user: str | None = None) -> str:
     return f"mcctl:{cleaned or 'unknown'}"
 
 
-def agent_command(login: str, action: str, args: dict[str, Any] | None = None) -> str:
-    """The server-side entry point for one action (or a list): mc_agent.py cli as the ops user."""
-    argv = ["sudo", MC_RUN, f"-{NOTIFY_ENV}", f"{BIN}/mc_agent.py", "cli", login, action]
+def agent_argv(
+    login: str, action: str, args: dict[str, Any] | None = None, entry: str = AGENT_ENTRY
+) -> list[str]:
+    """One action (or a list) through the agent's `cli` as the ops user: `sudo mc-run ENV ENTRY cli ...`."""
+    argv = ["sudo", MC_RUN, f"-{NOTIFY_ENV}", entry, "cli", login, action]
     if args is not None:
         argv.append(json.dumps(args, sort_keys=True, separators=(",", ":")))
-    return shlex.join(argv)
+    return argv
+
+
+def agent_command(login: str, action: str, args: dict[str, Any] | None = None) -> str:
+    """The SSH command for one action: `mc-agent cli` (v1.4: whichever implementation the box runs), or
+    `mc_agent.py cli` on a box deployed before v1.4, which has no mc-agent. The check needs sudo as well: the
+    deploy user can't look into the bin directory (root:minecraft 0750)."""
+    new = shlex.join(agent_argv(login, action, args))
+    old = shlex.join(agent_argv(login, action, args, LEGACY_AGENT_ENTRY))
+    return f"if sudo test -x {shlex.quote(AGENT_ENTRY)}; then exec {new}; else exec {old}; fi"
 
 
 def confirm_phrase(action: str, name: str, enabled: bool = False) -> str:

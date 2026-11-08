@@ -4,7 +4,8 @@
     world_info.py /path/to/server-dir [--level-name world]
 
 Reads <dir>/<level>/level.dat (gzipped NBT) and prints Version.Name, DataVersion and the dimension
-layout (Bukkit-style world_nether/world_the_end vs vanilla DIM-1/DIM1). Stdlib only.
+layout: 26.x (every dimension in <level>/dimensions/<namespace>/<dimension>/), or pre-26 Bukkit-style
+world_nether/world_the_end or vanilla DIM-1/DIM1 (the server migrates those at start-up). Stdlib only.
 """
 
 from __future__ import annotations
@@ -85,7 +86,11 @@ def main(argv: list[str] | None = None) -> int:
         if (args.server_dir / d).is_dir()
     ]
     vanilla = [d for d in ("DIM-1", "DIM1") if (world / d).is_dir()]
-    layout = [f"bukkit {', '.join(bukkit)}"] if bukkit else []
+    base = world / "dimensions"
+    namespaces = [ns for ns in base.iterdir() if ns.is_dir()] if base.is_dir() else []
+    dims = sorted(f"{ns.name}:{d.name}" for ns in namespaces for d in ns.iterdir() if d.is_dir())
+    layout = [f"26.x {', '.join(dims)}"] if dims else []
+    layout += [f"bukkit {', '.join(bukkit)}"] if bukkit else []
     layout += [f"vanilla {', '.join(vanilla)}"] if vanilla else []
     print(f"layout     : {'; '.join(layout) or 'overworld only'}")
     return 0

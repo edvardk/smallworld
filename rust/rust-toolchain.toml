@@ -1,0 +1,8 @@
+# The exact Rust toolchain for rust/ (rustup reads this file and installs it, with these components and targets,
+# the first time cargo runs here). Bump deliberately: scripts/build_rust.py refuses another rustc, and a new
+# toolchain changes the binaries in dist/ (rebuild them with `python scripts/build_rust.py build`).
+[toolchain]
+channel = "1.97.0"
+profile = "minimal"
+components = ["clippy", "rustfmt"]
+targets = ["x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl"]

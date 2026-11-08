@@ -291,6 +291,8 @@ def _zip_members(path: str, data: bytes) -> list[tuple[str, str, bytes | None]] 
         return None
 
 
+ELF_MAGIC = b"\x7fELF"
+ELF_MIN_RUN = 8
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 PNG_PIXELS = {b"IDAT", b"fdAT"}  # compressed pixel data: random bytes, checked by eye (docs/publishing.md)
 
@@ -327,11 +329,22 @@ def _png_metadata(data: bytes) -> bytes | None:
     return b"\n".join(out)
 
 
+def _elf_strings(data: bytes) -> bytes:
+    """An ELF executable's text: its runs of at least ELF_MIN_RUN printable ASCII characters, one per line
+    (what `strings -n 8` prints). Machine code and tables are random bytes in which short patterns match by
+    chance (v1.4: rust/dist/); text the build embeds (paths, names, URLs, messages) comes in longer runs."""
+    return b"\n".join(re.findall(rb"[\x20-\x7e\t]{%d,}" % ELF_MIN_RUN, data))
+
+
 def texts(path: str, data: bytes, depth: int = 0) -> Iterator[tuple[str, str, Kind]]:
     """(label, text, kind) triples to scan for one file: UTF-8 text as is; zip archives (jars, packs)
     member by member, their names too ("name"); a well-formed PNG without its compressed pixel data (whose
-    random bytes match short patterns by chance; the pixels are reviewed by eye); anything else decoded as
-    Latin-1 ("binary"), so ASCII strings inside binaries are still found."""
+    random bytes match short patterns by chance; the pixels are reviewed by eye); an ELF executable's
+    printable strings (`_elf_strings`, the same reason); anything else decoded as Latin-1 ("binary"), so ASCII
+    strings inside binaries are still found."""
+    if data[:4] == ELF_MAGIC:
+        yield path, _elf_strings(data).decode("latin-1"), "binary"
+        return
     png = _png_metadata(data)
     if png is not None:
         yield path, png.decode("latin-1"), "binary"

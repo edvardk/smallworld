@@ -64,7 +64,9 @@ It exports `git ls-files` of that commit (`git archive`, modes kept) minus the e
 rewrites `CHANGELOG.md` (the preamble, `## [Unreleased]`, the release being published, and one line saying
 that earlier releases stay in the archived repository), and scans every path and every file. Binaries are
 read as Latin-1, zip archives (the plugin jars) member by member, names included, and PNGs without their
-compressed pixel data (random bytes that match short patterns by chance): look at the images yourself. It exits 0 when clean,
+compressed pixel data (random bytes that match short patterns by chance): look at the images yourself. ELF
+executables (`rust/dist/`) are scanned by their printable strings of 8+ characters (`strings -n 8`), for the
+same reason: their machine code is random bytes. It exits 0 when clean,
 1 on hits (`path:line: category (publish-denylist.txt:N)`), 2 on errors. It also notes when
 `PRODUCT_REPOSITORY` (`mcctl/configrepo.py`) isn't the public name yet, because `--create` refuses that.
 
@@ -159,7 +161,7 @@ with any `python3` >= 3.11, no venv):
 
 | Where | What runs | What it checks |
 |---|---|---|
-| `pre-commit` hook | `guard.py staged` | every staged added or modified file, read from the index: its path and content against the denylist (zips and PNG metadata as in the dry run) and the per-file generic checks (session links, emails, public IPs, the owner's name outside its allowed forms, timezone defaults); paths listed in `publish-exclude` are refused (they never exist in the public repository); the pinned gitleaks on the staged changes when it is on `PATH` (one warning line when it isn't) |
+| `pre-commit` hook | `guard.py staged` | every staged added or modified file, read from the index: its path and content against the denylist (zips, PNG metadata and ELF strings as in the dry run) and the per-file generic checks (session links, emails, public IPs, the owner's name outside its allowed forms, timezone defaults); paths listed in `publish-exclude` are refused (they never exist in the public repository); the pinned gitleaks on the staged changes when it is on `PATH` (one warning line when it isn't) |
 | `commit-msg` hook | `guard.py commit-msg FILE` | the message (denylist, session links, emails) and the author and committer identity: the email must be a GitHub noreply address (or a reserved test domain) |
 | `pre-push` hook | `guard.py range BASE HEAD` | every commit being pushed: message, author and committer names (denylist) and emails, the files it changed. A new branch is checked from where it left `origin/main` |
 | CI, required check `publication` (`ci.yml`) | `guard.py range` on a pull request (every commit, `fetch-depth: 0`); `guard.py tree HEAD` nightly, on releases and dispatches (the whole tree, exactly like the dry run, including references to excluded paths) | the same checks. The denylist is the Actions secret `PUBLISH_DENYLIST` (the file's content, in `SMALLWORLD_DENYLIST_TEXT`). A fork's pull request gets no secrets and runs the generic checks only; in `edvardk/smallworld` every other run fails without the secret |

@@ -35,9 +35,14 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "code": (),  # computed: any path that is not docs
     # actionlint: every workflow it lints (the product's and the config-repo template's materialized example)
     "workflows": (".github/*", "template/.github/*", "examples/config-repo/.github/*"),
-    # ci.yml job plugin: build_plugin.py check + brand_art.py check + build_client_mod.py check
+    # ci.yml job plugin: build_plugin.py check + map_palette.py check (v1.4) + brand_art.py check +
+    # build_client_mod.py check
     "plugin": (
         "plugin/*",
+        "scripts/map_palette.py",
+        "scripts/map_palette/*",
+        "scripts/config_keys.py",
+        "server-config/keys/*/map-*",
         "client/mod/*",
         "scripts/build_plugin.py",
         "scripts/build_client_mod.py",
@@ -48,6 +53,27 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "ansible/group_vars/all/main.yml",
         "docs/images/brand-*",
         "requirements/validate.txt",
+    ),
+    # v1.4 ci.yml job rust: rustfmt, clippy, cargo test, cargo deny, build_rust.py check (the committed
+    # binaries and their pins), the differential tests against mc_rcon.py and mc_agent.py, smallworld-map
+    # against the reference renderer
+    "rust": (
+        "rust/*",
+        "scripts/build_rust.py",
+        "scripts/mc_rcon.py",
+        "scripts/notify.py",
+        "scripts/alerts.py",
+        "scripts/mc_agent.py",
+        "scripts/mc_panel.py",
+        "scripts/worlds.py",
+        "tests/test_rust_rcon.py",
+        "tests/test_rust_map.py",  # v1.4: smallworld-map vs tests/map_reference.py on the fixture
+        "tests/map_reference.py",
+        "tests/fixtures/world-26.3/*",
+        "server-config/keys/*/map-palette.tsv",
+        "tests/test_rust_agent_cli.py",
+        "ansible/group_vars/all/main.yml",
+        "requirements/dev.txt",
     ),
     # v1.2 ci.yml job seeds: re-verify the seed catalogue (/locate) on the pinned server build, so the
     # panel's "verified on <version>" badge stays honest (scripts/seed_check.py)
@@ -67,6 +93,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "mcctl/*",
         "scripts/*",
         "plugin/*",
+        "rust/dist/*",
         "server-config/*",
         "template/*",
         "watchdog/*",
@@ -93,6 +120,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "ansible/roles/minecraft/*",
         "ansible/roles/plugins/*",
         "ansible/roles/backups/*",
+        "ansible/roles/map/*",  # v1.4: map_check.py (telemetry-brand shard)
+        "rust/dist/smallworld-map-*",
         "mcctl/migrate.py",
         "mcctl/serverops.py",
         "mcctl/restorecmd.py",
@@ -100,6 +129,9 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "scripts/restore.py",
         "scripts/telemetry.py",
         "scripts/mc_agent.py",
+        # v1.4: the Rust agent and the agent role (the telemetry sidecar runs in the heavy telemetry shard)
+        "rust/dist/*",
+        "ansible/roles/agent/*",
     ),
 }
 

@@ -166,6 +166,10 @@ def java_keys() -> set[str]:
     keys = set()
     for obj, key in re.findall(r'(\w+)\.get(?:String|Boolean|Int|StringList|MapList)\("(\w+)"', body):
         keys.add(f"{sections[obj]}.{key}" if obj in sections else key)
+    # v1.4: branding.map_room is read by its own method (room.getX("k") -> map_room.k)
+    room = src.split("static MapRoom.Spec mapRoom(", 1)[1].split("\n    }\n", 1)[0]
+    for key in re.findall(r'room\.(?:get(?:String|Boolean|Int|IntegerList)|isInt)\("(\w+)"', room):
+        keys.add(f"map_room.{key}")
     return keys
 
 
@@ -179,11 +183,15 @@ def leaf_keys(d: dict, prefix: str = "") -> set[str]:
 def test_plugin_settings_keys_match_the_plugin() -> None:
     cfg = schema.load_server(yaml.safe_load(FULL.read_text()))
     rendered = render.brand_plugin(cfg)
-    # v1.1: the /modpack hand-off paths are product constants, added by the template (not server.yml)
-    product = {"client.request_dir", "client.code_file"}
-    assert leaf_keys(rendered) | product == java_keys()
+    # v1.1: the /modpack hand-off paths are product constants, added by the template (not server.yml); v1.4 the
+    # pre-render's directory and colours too
+    product = {"client.request_dir", "client.code_file", "pocket_map.prerender_dir", "pocket_map.colors_file"}
+    # v1.4: map_room carries at/offset or x/y/z (the full example uses at: spawn)
+    explicit = {"map_room.x", "map_room.y", "map_room.z"}
+    assert leaf_keys(rendered) | product | explicit == java_keys()
     tpl = (REPO / "ansible/roles/plugins/templates/mc-brand.yml.j2").read_text()
     assert "'request_dir': mc_client_request_dir, 'code_file': mc_client_code_file" in tpl
+    assert "'pocket_map': {'prerender_dir': mc_map_dir, 'colors_file': mc_map_colors}" in tpl
     assert (
         rendered["drink"]["enabled"] is True and rendered["discord_invite"] == "https://discord.gg/lighthouse"
     )

@@ -537,3 +537,18 @@ def test_status_reads_the_deployed_product_version() -> None:
         == "deployed v1.2.2, pinned v1.3.0: deploy"
     )
     assert remote.parse_product("not json") is None and remote.parse_product('{"version": "x y"}') is None
+
+
+def test_status_shows_the_pregen_line() -> None:
+    """v1.4: health.py's pregen.json (its StateDirectory, world-readable) as one `pregen` line in `mcctl status`;
+    nothing for a box before v1.4 or a file that isn't health.py's JSON."""
+    assert "cat /var/lib/mc-health/pregen.json" in remote.STATUS_SCRIPT
+    assert remote.parse_status(STATUS_OUT).pregen is None
+    line = "world 63% · world_nether done · world_the_end queued"
+    st = remote.parse_status(STATUS_OUT + "@@mcctl:pregen\n" + json.dumps({"line": line, "at": 1}) + "\n")
+    assert st.pregen == line
+    assert ("pregen", line) in remote.status_rows(st)
+    assert f"  pregen        {line}" in remote.format_status(st, "example").splitlines()
+    for bad in ("not json", "[1]", '{"line": 3}', '{"line": "  "}'):
+        assert remote.parse_pregen(bad) is None, bad
+    assert remote.parse_pregen(json.dumps({"line": "done\x1b[31m\n" + "x" * 300})) == "done[31m" + "x" * 192

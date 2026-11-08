@@ -1,0 +1,21 @@
+# v1.4: the smallworld-map binary for this box (rust/dist/, pinned by mc_smallworld_map_sha256): Debian's name for the
+# architecture (the pin's key) and the Rust target it was built for, as the base role's smallworld-rcon.
+map_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts['architecture']] }}"
+map_target: "{{ {'amd64': 'x86_64-unknown-linux-musl', 'arm64': 'aarch64-unknown-linux-musl'}[map_arch] }}"
+map_src: "{{ playbook_dir }}/../rust/dist/smallworld-map-{{ map_target }}"
+# The block palette and colours for the server's Minecraft version (scripts/map_palette.py), installed as
+# mc_map_palette (the renderer) and mc_map_colors (mc-brand).
+map_keys_dir: "{{ playbook_dir }}/../server-config/keys/{{ server_lock.minecraft_version }}"
+# Paths mc-map.service can't see at all (the renderer reads the world and writes its own state, nothing else).
+map_inaccessible_paths:
+  - -/etc/shadow
+  - -/etc/gshadow
+  - -/etc/sudoers
+  - -/etc/sudoers.d
+  - -/etc/minecraft
+  - -/etc/ssh
+  - -/etc/ssl/private
+  - -/var/lib/tailscale
+  - -/var/lib/mc-agent
+  - -/var/lib/mc-restore
+  - -/var/cache/mc-restic

@@ -47,6 +47,7 @@ jobs:
       code: ${{ steps.changes.outputs.code }}
       workflows: ${{ steps.changes.outputs.workflows }}
       plugin: ${{ steps.changes.outputs.plugin }}
+      rust: ${{ steps.changes.outputs.rust }}
       seeds: ${{ steps.changes.outputs.seeds }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -135,8 +136,16 @@ jobs:
           path: ~/.terraform.d/plugin-cache
           key: terraform-providers-${{ runner.os }}-${{ hashFiles('terraform/.terraform.lock.hcl') }}
 
+      # tests/agent_parity runs mc-agent in `unshare -rm` (docs/ci.md "The agent parity harness"): Ubuntu 24.04
+      # restricts unprivileged user namespaces through AppArmor.
+      - name: Allow unprivileged user namespaces (agent parity harness)
+        if: env.CODE == 'true'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: pytest
         if: env.CODE == 'true'
+        env:
+          AGENT_PARITY_REQUIRE: "1"
         run: pytest -q
 
       # The watchdog Worker's unit tests (node's built-in runner; no npm packages, no network).
@@ -211,8 +220,14 @@ jobs:
         if: runner.os == 'Linux'
         run: ansible-galaxy collection install -r ansible/requirements.yml
 
+      - name: Allow unprivileged user namespaces (agent parity harness)
+        if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: pytest (everything)
         if: runner.os == 'Linux'
+        env:
+          AGENT_PARITY_REQUIRE: "1"
         run: pytest -q
 
       - name: pytest (the controller's tests that make sense here)
@@ -285,6 +300,7 @@ jobs:
   # P13/P17: the in-house plugins (mc-telemetry, mc-brand) are reproducible: rebuilt from source with the pinned JDK
   # against the API bundled in the pinned server jar (all downloads sha256-checked), each must equal the committed
   # jar and its group_vars pin; the branding art (icon, resource pack) too, and the pack's format is the jar's.
+  # v1.4: the world map's palette, re-dumped from the pinned jar's block registry (scripts/map_palette.py).
   # Runs when its inputs changed (scripts/ci_changes.py group `plugin`), and always on releases and dispatches.
   plugin:
     needs: changes
@@ -303,7 +319,8 @@ jobs:
           cache-dependency-path: requirements/validate.txt
 
       # Only the downloads build_plugin.py re-verifies on every use (the server jar against server.lock.yml,
-      # the compile-only jars by their file name = sha256); the JDK is downloaded and sha256-checked each run.
+      # the compile-only jars by their file name = sha256; map_palette.py's vanilla jar against the server jar's
+      # download-context); the JDK is downloaded and sha256-checked each run.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -318,12 +335,116 @@ jobs:
       - name: Rebuild the in-house plugins and compare
         run: python scripts/build_plugin.py check --cache "$RUNNER_TEMP/build-plugin"
 
+      # v1.4: the world map's block palette, dumped from the pinned jar's block registry (the same cached jars)
+      - name: Re-dump the map palette and compare
+        run: python scripts/map_palette.py check --cache "$RUNNER_TEMP/build-plugin"
+
       - name: Rebuild the branding art and compare
         run: python scripts/brand_art.py check
 
       # v1.2: the Smallworld client mod (client/mod/build.yml; every input sha256-checked on each use)
       - name: Rebuild the client mod and compare
         run: python scripts/build_client_mod.py check --cache "$RUNNER_TEMP/build-client-mod"
+
+  # v1.4: the Rust workspace (rust/: smallworld-rcon, the drop-in for mc_rcon.py's command line; smallworld-core;
+  # smallworld-map, the world map pre-renderer; smallworld-agent, the port of mc_agent.py). rustup installs the toolchain rust/rust-toolchain.toml pins, with
+  # clippy, rustfmt and both musl targets (every download checked against the channel manifest's sha256); the crates
+  # are fetched as Cargo.lock pins them (crates.io checksums); cargo deny (pinned version and sha256) checks licences,
+  # advisories, bans and sources (rust/deny.toml); then rustfmt, clippy (warnings are errors), the unit tests, the
+  # reproducible rebuild compared byte for byte with rust/dist/ and the group_vars pins (scripts/build_rust.py check,
+  # with the clang it pins for ring), and the differential tests against mc_rcon.py and mc_agent.py
+  # (tests/test_rust_rcon.py, tests/test_rust_agent_cli.py: the latter in user namespaces, which Ubuntu 24.04's
+  # AppArmor restricts unless told otherwise), the agent parity scenarios and smallworld-map against the reference
+  # renderer (tests/test_rust_map.py). Runs when its inputs changed (scripts/ci_changes.py group `rust`), and
+  # always on releases and dispatches. Like `plugin`, not a required check.
+  rust:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          # The binary's spec Python (Debian 13's python3, docs/rust/smallworld-rcon.md "Which Python is the
+          # spec"): the differential tests demand exact parity on it; lint and controller run them on 3.12-3.14.
+          python-version: "3.13.5"
+          cache: pip
+          cache-dependency-path: requirements/dev.txt
+
+      - name: Install the build script's and the tests' dependencies
+        run: pip install --require-hashes --no-deps -r requirements/dev.txt
+
+      - name: Install the pinned Rust toolchain (rust/rust-toolchain.toml)
+        working-directory: rust
+        run: |
+          rustup toolchain install
+          rustc --version
+
+      - name: Fetch the crates (Cargo.lock, crates.io checksums)
+        working-directory: rust
+        run: cargo fetch --locked
+
+      - name: cargo deny (licences, advisories, bans, sources)
+        working-directory: rust
+        env:
+          CARGO_DENY_VERSION: "0.20.2"
+          CARGO_DENY_SHA256: 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f
+        run: |
+          name="cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl"
+          curl -fsSL -o "$RUNNER_TEMP/cargo-deny.tgz" \
+            "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/${name}.tar.gz"
+          echo "${CARGO_DENY_SHA256}  $RUNNER_TEMP/cargo-deny.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/cargo-deny.tgz" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/${name}/cargo-deny" --locked check
+
+      - name: The C toolchain ring is built with (clang 18.1.3, llvm-ar-18; scripts/build_rust.py checks the version)
+        run: |
+          if ! command -v clang-18 >/dev/null || ! command -v llvm-ar-18 >/dev/null; then
+            sudo apt-get install -y --no-install-recommends clang-18 llvm-18
+          fi
+          clang-18 --version | head -n 1
+
+      - name: rustfmt
+        working-directory: rust
+        run: cargo fmt --all --check
+
+      - name: clippy
+        working-directory: rust
+        run: cargo clippy --locked --offline --all-targets -- -D warnings
+
+      - name: Unit tests
+        working-directory: rust
+        run: cargo test --locked --offline
+
+      - name: Rebuild the binaries and compare
+        run: python scripts/build_rust.py check
+
+      - name: Differential tests against mc_rcon.py and mc_agent.py
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          pytest -q tests/test_rust_rcon.py tests/test_rust_agent_cli.py
+
+      # The black-box parity harness (tests/agent_parity) against the committed Rust agent: v1.4, every scenario
+      # (rust/smallworld-agent/PORTING.md "Parity gate"; tests/test_agent.py keeps this list equal to the goldens).
+      # The differential step above already lifted the AppArmor restriction on user namespaces.
+      - name: Parity scenarios against the Rust agent
+        env:
+          RUST_PARITY_SCENARIOS: >-
+            auth_settings backup cli client_codes console countdown_cancel locks logs_rejected lookup
+            nonce_store pending_expiry plugin poll_fallback restore selftest_failures selftest_ok
+            state_roundtrip status stop_start tail verify whitelist_pr world_pr worlds ws_reconnect
+        run: |
+          read -ra scenarios <<< "$RUST_PARITY_SCENARIOS"
+          k=$(printf '%s\n' "${scenarios[@]}" | sed 's/.*/test_scenario[&]/' | paste -sd' ' | sed 's/ / or /g')
+          pytest -q tests/agent_parity/test_agent_parity.py -k "$k" --impl=rust \
+            --agent-bin="$PWD/rust/dist/smallworld-agent-x86_64-unknown-linux-musl"
+
+      - name: smallworld-map byte for byte against the reference renderer (v1.4)
+        run: pytest -q tests/test_rust_map.py
 
   # v1.2: the world library's seed catalogue (worlds/seeds.yml). Boots the pinned server jar once per seed
   # (throwaway world, RCON on 127.0.0.1 with a random password), runs each claim's /locate and fails when a claim

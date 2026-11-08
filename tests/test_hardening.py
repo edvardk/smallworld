@@ -22,6 +22,8 @@ UNITS = {
     "mc-health.service": (REPO / "ansible/roles/monitoring/templates/mc-health.service.j2", 2.5),
     "mc-restore-apply.service": (REPO / "ansible/roles/backups/templates/mc-restore-apply.service.j2", 2.5),
     "mc-agent.service": (REPO / "ansible/roles/agent/templates/mc-agent.service.j2", 2.5),
+    # v1.4: the telemetry sidecar beside the Rust agent (as mcops, agent.env)
+    "mc-telemetry.service": (REPO / "ansible/roles/agent/templates/mc-telemetry.service.j2", 2.5),
     # P10: the panel's plugin switch (as minecraft) and restore (as mcops; a template, scored as one instance)
     "mc-plugins-apply.service": (REPO / "ansible/roles/plugins/templates/mc-plugins-apply.service.j2", 2.5),
     "mc-restore@abcdef12.service": (REPO / "ansible/roles/backups/templates/mc-restore@.service.j2", 2.5),
@@ -37,11 +39,14 @@ UNITS = {
         REPO / "ansible/roles/minecraft/templates/mc-restart-window.service.j2",
         2.5,
     ),
+    # v1.4: the world map pre-render (as mcmap, no network, read-only on the world)
+    "mc-map.service": (REPO / "ansible/roles/map/templates/mc-map.service.j2", 2.5),
     "minecraft.service": (REPO / "ansible/roles/minecraft/templates/minecraft.service.j2", 4.5),
 }
 HARDENING = yaml.safe_load((REPO / "ansible/roles/hardening/defaults/main.yml").read_text())
 FIREWALL = yaml.safe_load((REPO / "ansible/roles/firewall/defaults/main.yml").read_text())
 BACKUPS = yaml.safe_load((REPO / "ansible/roles/backups/defaults/main.yml").read_text())
+MAP = yaml.safe_load((REPO / "ansible/roles/map/defaults/main.yml").read_text())
 
 
 def render(template: Path, **extra: object) -> str:
@@ -70,7 +75,15 @@ def render(template: Path, **extra: object) -> str:
         "mc_experience_enabled": True,
         "mc_client_enabled": False,  # v1.1
         "mc_panel_mode": "cloudflare",
+        "mc_agent_implementation": "python",  # v1.4 (the rust unit: test_the_rust_agent_unit_*)
         "mc_watchdog_url": "https://hb.mc.example.com",
+        "mc_level_name": "world",
+        "mc_map_dimensions": [  # v1.4
+            {"id": "minecraft:overworld", "radius": 5000},
+            {"id": "minecraft:the_end", "radius": None},
+        ],
+        "mc_map_threads": 1,
+        "map_inaccessible_paths": MAP["map_inaccessible_paths"],
         **extra,
     }
     # Resolve the group_vars' own templating (mc_bin_dir: "{{ mc_root }}/bin", ...) once.
@@ -97,6 +110,8 @@ def test_every_unit_gets_the_sandbox(unit: str) -> None:
             "mc-plugins-apply.service",
             "mc-world-apply.service",
         )
+        else GROUP_VARS["mc_map_user"]
+        if unit == "mc-map.service"
         else "mcops"
     )
     assert f"User={user}" in text
@@ -104,11 +119,22 @@ def test_every_unit_gets_the_sandbox(unit: str) -> None:
         assert "SupplementaryGroups=minecraft" in text and "EnvironmentFile=" in text
     else:
         assert "EnvironmentFile=" not in text
+    if unit == "mc-map.service":
+        # v1.4: a parser of player-influenced data: its own user (group minecraft for read access), no
+        # credentials, no network, nothing writable but its StateDirectory (ProtectSystem=strict).
+        lines = text.splitlines()
+        for directive in ("Group=minecraft", "PrivateNetwork=true", "IPAddressDeny=any", "StateDirectory=mc-map",
+                          "StateDirectoryMode=0750", "UMask=0027", "RestrictAddressFamilies=AF_UNIX",
+                          "MemoryMax=512M", "RuntimeMaxSec=4h", *GROUP_VARS["mc_helper_priority"]):  # fmt: skip
+            assert directive in lines, directive
+        assert "ReadWritePaths" not in text and "SupplementaryGroups" not in text
+        assert "-/etc/minecraft" in text  # the credentials' directory isn't even visible
 
 
 FENCE_HONOURING = ("minecraft.service", "mc-backup.service", "mc-prune.service", "mc-agent.service",
                    "mc-health.service", "mc-reboot-gate.service", "mc-world.service",
-                   "mc-backup-check.service", "mc-restart-window.service")  # fmt: skip
+                   "mc-backup-check.service", "mc-restart-window.service", "mc-map.service",
+                   "mc-telemetry.service")  # fmt: skip
 
 
 @pytest.mark.parametrize("unit", FENCE_HONOURING)
@@ -169,13 +195,63 @@ def test_mc_run_transient_units_are_sandboxed() -> None:
         assert f"-p {prop}" in helper, prop
 
 
+@pytest.mark.skipif(shutil.which("sh") is None or shutil.which("date") is None, reason="needs sh and date")
+def test_mc_run_names_only_the_agent_cli_unit(tmp_path: Path) -> None:
+    """v1.4: `mc-run ENV mc_agent.py cli ...` (mcctl's actions) runs in a unit named mc-agent-cli-<pid>-<ns>, so its
+    audit entries carry a product unit in mc-agent's D1 rows; every other command keeps systemd-run's anonymous
+    unit (nothing new is shipped)."""
+    base = (REPO / "ansible/roles/base/tasks/main.yml").read_text()
+    content = base.split("Install `mc-run` helper")[1].split("content: |\n", 1)[1].split("    owner: root")[0]
+    script = "\n".join(line[6:] for line in content.splitlines())
+    script = script.replace("{{ mc_ops_user }}", "mcops").replace("{{ mc_bin_dir }}", "/opt/minecraft/bin")
+    assert "{{" not in script
+    (tmp_path / "mc-run").write_text(script)
+    fake = tmp_path / "bin" / "systemd-run"
+    fake.parent.mkdir()
+    fake.write_text('#!/bin/sh\nfor a in "$@"; do printf \'%s\\n\' "$a"; done\n')
+    fake.chmod(0o755)
+    env = {"PATH": f"{fake.parent}:/usr/bin:/bin"}
+
+    def argv(*args: str) -> list[str]:
+        out = subprocess.run(["sh", str(tmp_path / "mc-run"), "-/etc/minecraft/notify.env", *args],
+                             capture_output=True, text=True, env=env, check=True).stdout  # fmt: skip
+        return out.splitlines()
+
+    cli = argv("/opt/minecraft/bin/mc_agent.py", "cli", "mcctl:x", "status")
+    assert re.fullmatch(r"--unit=mc-agent-cli-\d+-\d{19}", cli[0]), cli[0]
+    import mc_agent
+
+    assert mc_agent.D1_UNITS.match(cli[0].removeprefix("--unit=") + ".service")  # its rows are the product's
+    assert cli[-4:] == ["/opt/minecraft/bin/mc_agent.py", "cli", "mcctl:x", "status"]
+    assert argv("/opt/minecraft/bin/mc_agent.py", "cli")[0] != cli[0]  # a new name every run
+    # v1.4: mcctl's entry point (the symlink) and the Rust binary itself are the same cli
+    for entry in ("/opt/minecraft/bin/mc-agent", "/opt/minecraft/bin/smallworld-agent"):
+        got = argv(entry, "cli", "mcctl:x", "status")
+        assert re.fullmatch(r"--unit=mc-agent-cli-\d+-\d{19}", got[0]) and got[-4:] == [
+            entry,
+            "cli",
+            "mcctl:x",
+            "status",
+        ]
+    for other in (["/opt/minecraft/bin/notify.py", "maintenance", "0", "deploy"],
+                  ["/opt/minecraft/bin/mc_agent.py", "status"], ["/usr/bin/python3", "-c", "cli"],
+                  ["/opt/minecraft/bin/mc-agent", "run"], ["/opt/minecraft/bin/mc-agent-x", "cli"],
+                  ["/opt/minecraft/bin/smallworld-rcon", "countdown", "60"]):  # fmt: skip
+        got = argv(*other)
+        assert not any(a.startswith("--unit") for a in got), got
+        assert got[0] == "--quiet" and got[-len(other) :] == other
+
+
 @pytest.mark.skipif(shutil.which("systemd-analyze") is None, reason="systemd-analyze not installed")
-@pytest.mark.parametrize("unit", sorted(UNITS))
-def test_systemd_analyze_security_offline_gate(unit: str, tmp_path: Path) -> None:
-    """Exposure as systemd-analyze scores the unit file (the e2e run repeats it on the live unit)."""
+@pytest.mark.parametrize(
+    ("unit", "impl"), [(u, "python") for u in sorted(UNITS)] + [("mc-agent.service", "rust")]
+)
+def test_systemd_analyze_security_offline_gate(unit: str, impl: str, tmp_path: Path) -> None:
+    """Exposure as systemd-analyze scores the unit file (the e2e run repeats it on the live unit); v1.4: the
+    agent's unit in both implementations."""
     template, limit = UNITS[unit]
     path = tmp_path / unit
-    path.write_text(render(template))
+    path.write_text(render(template, mc_agent_implementation=impl))
     proc = subprocess.run(
         [
             "systemd-analyze",
@@ -359,11 +435,99 @@ def test_agent_may_write_only_the_markers_directory() -> None:
     assert "ReadWritePaths=/run/mc-verdicts" in client.splitlines()
 
 
+def test_the_rust_agent_unit_runs_the_binary_and_keeps_the_sandbox() -> None:
+    """v1.4: agent.implementation rust runs smallworld-agent (the real path, not the mc-agent symlink) with the
+    same user, groups, sandbox, limits and writable paths; the telemetry state is the sidecar's."""
+    py = render(UNITS["mc-agent.service"][0]).splitlines()
+    rust = render(UNITS["mc-agent.service"][0], mc_agent_implementation="rust").splitlines()
+    assert (
+        "ExecStart=/opt/minecraft/bin/mc_agent.py" in py
+        and "ExecStart=/opt/minecraft/bin/smallworld-agent run" in rust
+    )
+    assert "StateDirectory=mc-agent mc-telemetry" in py and "StateDirectory=mc-agent" in rust
+    assert not any(line.startswith("Environment=PYTHON") for line in rust)
+
+    def kept(lines: list[str]) -> list[str]:
+        return [
+            ln for ln in lines if not ln.startswith(("#", "ExecStart=", "StateDirectory=", "Environment="))
+        ]
+
+    assert kept(py) == kept(rust)  # nothing else differs: sandbox, MDWE, limits, ReadWritePaths, fence
+
+
+def test_the_sidecar_unit_is_the_agents_telemetry_half() -> None:
+    """mc-telemetry.service: the agent's user, groups and environment file (the agent token), the telemetry's
+    state (telemetry-id.json in mc-agent's, segments + online.json in mc-telemetry's), the verdict directory
+    writable (verdicts.tsv for the plugin), nothing else."""
+    text = render(UNITS["mc-telemetry.service"][0])
+    lines = text.splitlines()
+    for want in ("User=mcops", "SupplementaryGroups=minecraft systemd-journal", "EnvironmentFile=/etc/minecraft/agent.env",
+                 "StateDirectory=mc-agent mc-telemetry", "UMask=0077", "MemoryMax=64M",
+                 "ExecStart=/opt/minecraft/bin/mc_agent.py telemetry"):  # fmt: skip
+        assert want in lines, want
+    assert [ln for ln in lines if ln.startswith("ReadWritePaths=")] == ["ReadWritePaths=/run/mc-verdicts"]
+
+
+def test_agent_restarts_follow_code_switch_and_product_version() -> None:
+    """v1.4: the binary, the mc-agent symlink and the product version file notify `mc-agent code changed`
+    (a release that changed no script used to leave the old code running: installed != running); the handler pair
+    also restarts the telemetry sidecar where it is installed, after the agent."""
+    base = yaml.safe_load((REPO / "ansible/roles/base/tasks/main.yml").read_text())
+    by_name = {t["name"]: t for t in base}
+    for name in ("Install server-side scripts", "Install smallworld-agent",
+                 "Point mc-agent at the selected implementation (agent.implementation)",
+                 "Record the installed product version"):  # fmt: skip
+        assert by_name[name].get("notify") == "mc-agent code changed", name
+    content = by_name["Record the installed product version"]["ansible.builtin.copy"]["content"]
+    assert "'agent': base_agent_record" in content and "'version'" in content
+    pin = by_name[
+        "The smallworld-agent binary is the pinned build (a mismatch fails the deploy before anything is installed)"
+    ]
+    assert "mc_smallworld_agent_sha256[base_rcon_arch]" in str(pin["ansible.builtin.assert"]["that"])
+    install = by_name["Install smallworld-agent"]["ansible.builtin.copy"]
+    assert (install["owner"], install["group"], install["mode"]) == ("root", "root", "0755")
+    assert [t["name"] for t in base].index(pin["name"]) < [t["name"] for t in base].index(
+        "Install smallworld-agent"
+    )
+    handlers = yaml.safe_load((REPO / "ansible/roles/agent/handlers/main.yml").read_text())
+    listeners = [h["name"] for h in handlers if "mc-agent code changed" in str(h.get("listen", ""))]
+    assert listeners == ["Is mc-agent installed (its code changed)?", "Restart mc-agent (its code changed)",
+                         "Is the telemetry sidecar installed?", "Restart the telemetry sidecar"]  # fmt: skip
+    defaults = yaml.safe_load((REPO / "ansible/roles/base/defaults/main.yml").read_text())
+    env = jinja2.Environment(undefined=jinja2.StrictUndefined)  # noqa: S701 - not HTML
+    env.filters["bool"] = bool  # Ansible's filter, for booleans
+    for impl, entry in (("python", "mc_agent.py"), ("rust", "smallworld-agent")):
+        assert env.from_string(defaults["base_agent_entry"]).render(mc_agent_implementation=impl) == entry
+    agent = yaml.safe_load((REPO / "ansible/roles/agent/defaults/main.yml").read_text())["agent_sidecar"]
+    for mode, impl, exp, want in (("cloudflare", "rust", True, "True"), ("cloudflare", "python", True, "False"),
+                                  ("cloudflare", "rust", False, "False"), ("off", "rust", True, "False")):  # fmt: skip
+        got = env.from_string(agent).render(
+            mc_panel_mode=mode, mc_agent_implementation=impl, mc_experience_enabled=exp
+        )
+        assert got == want, (mode, impl, exp)
+
+
+def test_the_sidecar_starts_only_after_the_python_agent_stopped() -> None:
+    """A switch to rust: mc-agent is restarted (Python's in-process telemetry gone) before the sidecar starts, so two
+    telemetry writers never share telemetry-id.json; a switch back removes the sidecar before the handler restarts
+    the Python agent."""
+    tasks = yaml.safe_load((REPO / "ansible/roles/agent/tasks/main.yml").read_text())
+    inner = [t["name"] for t in tasks[0]["block"]]
+    assert (
+        inner.index("Install the mc-agent unit")
+        < inner.index("Restart mc-agent now when its unit changed in rust mode (the sidecar starts next)")
+        < inner.index("Enable and start the telemetry sidecar")
+    )
+    removal = next(t for t in tasks if t["name"] == "Remove the telemetry sidecar where it doesn't belong")
+    assert removal["when"] == "not agent_sidecar"
+
+
 TIMELY_UNITS = (
     "mc-agent.service",
     "mc-health.service",
     "mc-backup.service",
     "mc-restart-window.service",
+    "mc-telemetry.service",  # v1.4: the agent's telemetry half (minute rows have a deadline too)
 )  # P13 review M1: deadlines
 IDLE_UNITS = ("mc-prune.service", "mc-reboot-gate.service", "mc-backup-check.service")
 
@@ -407,6 +571,20 @@ def test_p13_helpers_priority_classes_and_the_jvm_wins() -> None:
     )
 
 
+def _health_env(borders: dict, plugins: list, **extra: object) -> list[str]:
+    defaults = yaml.safe_load((REPO / "ansible/roles/monitoring/defaults/main.yml").read_text())
+    return render(
+        REPO / "ansible/roles/monitoring/templates/health.env.j2",
+        **{**defaults,
+           "mc_watchdog_url": "https://w", "mc_secret_heartbeat_token": "t", "mc_secret_discord_webhook_url": "",
+           "health_mspt_alert": 45, "health_mspt_alert_checks": 3, "health_heap_alert_pct": 85,
+           "health_heap_alert_checks": 6, "health_gc_pause_alert_ms": 50, "health_alert_repeat_hours": 6,
+           "health_disk_alert_pct": 85, "health_steal_alert_pct": 10, "health_steal_alert_checks": 3,
+           "mc_resize_hint": "x", "mc_level_name": "survival", "mc_world_border_radius": borders,
+           "plugins_lock": {"plugins": [{"name": n} for n in plugins]}, **extra},
+    ).splitlines()  # fmt: skip
+
+
 @pytest.mark.parametrize(
     ("borders", "plugins", "want"),
     [
@@ -419,16 +597,25 @@ def test_p13_helpers_priority_classes_and_the_jvm_wins() -> None:
 def test_health_env_lists_the_pregen_worlds_in_order(borders: dict, plugins: list, want: str) -> None:
     """Chunky pre-generation covers every dimension with a border, overworld -> nether -> end, by Bukkit world
     name (level-name + _nether / _the_end), and is off without Chunky."""
-    text = render(
-        REPO / "ansible/roles/monitoring/templates/health.env.j2",
-        mc_watchdog_url="https://w", mc_secret_heartbeat_token="t", mc_secret_discord_webhook_url="",
-        health_mspt_alert=45, health_mspt_alert_checks=3, health_heap_alert_pct=85, health_heap_alert_checks=6,
-        health_gc_pause_alert_ms=50, health_alert_repeat_hours=6, health_disk_alert_pct=85, health_steal_alert_pct=10,
-        health_steal_alert_checks=3, mc_resize_hint="x", monitoring_heal_startup_grace_s=900,
-        mc_level_name="survival", mc_world_border_radius=borders,
-        plugins_lock={"plugins": [{"name": n} for n in plugins]}, monitoring_pregen_enabled=True,
-    )  # fmt: skip
-    assert f"PREGEN_WORLDS={want}" in text.splitlines()
+    assert f"PREGEN_WORLDS={want}" in _health_env(borders, plugins, monitoring_pregen_enabled=True)
+
+
+def test_health_env_frontier_lists_every_dimension_with_its_border() -> None:
+    """v1.4: frontier expansion covers every dimension (border empty = none); world.pregenerate.enabled false
+    (monitoring_pregen_enabled), frontier false or a world's pregen false turn it off."""
+    borders = {"minecraft:overworld": 5000, "minecraft:the_nether": 1250}
+    lines = _health_env(borders, ["Chunky"])
+    assert (
+        "PREGEN_FRONTIER=survival:overworld:5000,survival_nether:the_nether:1250,survival_the_end:the_end:"
+        in lines
+    )
+    assert "PREGEN_MARGIN=1024" in lines and "PREGEN_MAX_RADIUS=10000" in lines
+    for off in ({"monitoring_pregen_enabled": False}, {"mc_world_pregen": False}):
+        lines = _health_env(borders, ["Chunky"], **off)
+        assert "PREGEN_FRONTIER=" in lines and "PREGEN_WORLDS=" in lines, off
+    lines = _health_env(borders, ["Chunky"], monitoring_pregen_frontier=False)
+    assert "PREGEN_FRONTIER=" in lines and "PREGEN_WORLDS=survival,survival_nether" in lines
+    assert "PREGEN_FRONTIER=" in _health_env(borders, [])
 
 
 def test_p16_cpu_affinity_split_pins_the_jvm_off_the_helpers_cpu() -> None:
@@ -445,3 +632,32 @@ def test_p16_cpu_affinity_split_pins_the_jvm_off_the_helpers_cpu() -> None:
             assert directive in lines, f"{unit}: {directive}"
     off = render(UNITS["minecraft.service"][0]).splitlines()
     assert not any(ln.startswith("AllowedCPUs=") for ln in off)
+
+
+def test_the_jvm_can_read_the_world_map_output() -> None:
+    """v1.4: mc-brand (the JVM, minecraft.service) reads what the map role writes and installs: the plugin config's
+    prerender_dir is mc-map.service's StateDirectory, its colors_file the role's installed colours, both pass the
+    plugin's own path checks (Settings.file), and minecraft.service's sandbox neither hides nor masks them (it
+    may leave them read-only: ProtectSystem=strict)."""
+    import re as _re
+
+    gv = render(REPO / "ansible/roles/map/templates/mc-map.service.j2")
+    assert "StateDirectory=mc-map" in gv.splitlines() and GROUP_VARS["mc_map_dir"] == "/var/lib/mc-map"
+    assert "Group=minecraft" in gv.splitlines() and "StateDirectoryMode=0750" in gv.splitlines()
+    tpl = (REPO / "ansible/roles/plugins/templates/mc-brand.yml.j2").read_text()
+    assert "'pocket_map': {'prerender_dir': mc_map_dir, 'colors_file': mc_map_colors}" in tpl
+    tasks = (REPO / "ansible/roles/map/tasks/main.yml").read_text()
+    assert '{src: map-colors.tsv, dest: "{{ mc_map_colors }}"}' in tasks and "group: minecraft" in tasks
+    colors = GROUP_VARS["mc_map_colors"].replace("{{ mc_root }}", GROUP_VARS["mc_root"])
+    settings = (REPO / "plugin/mc-brand/src/main/java/io/github/edvardk/mcbrand/Settings.java").read_text()
+    prefixes = dict(_re.findall(r'file\(pocketMap\.getString\("(\w+)"\), "([^"]+)"\)', settings))
+    assert GROUP_VARS["mc_map_dir"].startswith(prefixes["prerender_dir"])
+    assert colors.startswith(prefixes["colors_file"])
+    unit = render(UNITS["minecraft.service"][0])
+    for directive in ("InaccessiblePaths", "TemporaryFileSystem", "BindPaths", "BindReadOnlyPaths"):
+        for line in (ln for ln in unit.splitlines() if ln.startswith(directive + "=")):
+            for path in line.split("=", 1)[1].split():
+                path = path.lstrip("-+").split(":")[0]
+                for wanted in (GROUP_VARS["mc_map_dir"], colors):
+                    assert not (wanted + "/").startswith(path.rstrip("/") + "/"), (line, wanted)
+    assert "ProtectHome=true" in unit  # /home only: /var/lib and /opt stay visible

@@ -6,6 +6,150 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Added
+
+- **The dashboard:** `mcctl` with no command, on an interactive terminal, opens a full-screen dashboard
+  (Textual): the web panel in the terminal. A header (deployment, Smallworld and server versions, an online
+  badge); tabs on keys 1-9, or alt+1-9 from anywhere: Overview (live status cards, TPS/MSPT sparklines,
+  backups, deploys, versions, what needs attention, and restart/stop/start/back up), Players, Worlds, Plugins,
+  Backups, Logs (live tail), Console (RCON), Publish, Health (doctor as a table); the keys in the footer and
+  every action in the command palette (ctrl+p). The status refreshes every 10 s in the background and never blocks the screen.
+  Every action runs the existing command and its output stays on screen, with a spinner while it runs and a
+  clear done/failed verdict, until you clear it or run the next one. Destructive actions ask for the same typed
+  confirmation the command checks. Commands that need the terminal itself (ssh, `secrets rotate`, `secrets
+  show-restic`, `doctor --fix`, an interactive `publish`) suspend the dashboard and run there.
+- `mcctl publish --merge|--no-merge` and `--restart now|wait|cancel`, `mcctl players add|remove|op|deop
+  --merge|--no-merge`, `mcctl restore --live ID --confirm TEXT`: answer the commands' questions up front (scripts,
+  the dashboard). Without them a terminal asks as before (unattended: see Changed).
+- **smallworld-rcon** (`rust/smallworld-rcon`), the product's first Rust component: a drop-in for the command line
+  of `scripts/mc_rcon.py` (`cmd`, `stop`, `countdown`, `worldborder`, `gamerule`) with the same arguments, output,
+  exit statuses, timeouts and RCON packets, proved side by side by `tests/test_rust_rcon.py`. Static musl binaries
+  for x86_64 and aarch64, std only (no dependencies), `unsafe` forbidden, built reproducibly with the pinned
+  toolchain by `scripts/build_rust.py` and committed in `rust/dist/` with their sha256 pinned in
+  `ansible/group_vars/all/main.yml` (`mc_smallworld_rcon_sha256`); CI job `rust` (rustfmt, clippy, unit tests, the
+  byte-for-byte rebuild, the differential tests). A walkthrough for Python programmers:
+  `docs/rust/smallworld-rcon.md`.
+- **Rust agent behind a switch:** `server.yml` `agent.implementation: python | rust` (default `python`; it becomes
+  `rust` in a later release, after a soak). `rust` runs **smallworld-agent** (`rust/smallworld-agent`), the complete
+  port of the on-box agent (`mc_agent.py` and the agent half of `mc_panel.py`): every Worker request, signed
+  command, panel action, job, Git sync, self-test, metric, log batch (with the scrubber), inventory and console
+  tail, proved against the Python agent by the black-box parity harness (`tests/agent_parity`: all 25 scenarios
+  run against the committed release binary in CI) plus test vectors and differential fuzzing. Both
+  implementations read and write the same state, so switching back is a deploy (docs/operations.md "Switching the
+  agent's implementation"). Shared code in `rust/smallworld-core` (smallworld-rcon's RCON client moved there;
+  smallworld-rcon stays dependency-free). The agent uses a small pinned crate set (ureq + rustls/ring with the system
+  CA bundle, serde_json, RustCrypto hmac/sha, flate2, regex, Unicode tables, libc): `rust/allowed-crates.txt`
+  (checked against `Cargo.lock`), `cargo deny` (`rust/deny.toml`, pinned in CI), reproducible builds with clang
+  18.1.3 for ring; binaries in `rust/dist/`, pinned as `mc_smallworld_agent_sha256`. Porting contract:
+  `rust/smallworld-agent/PORTING.md`; an overview: `docs/rust/smallworld-agent.md`.
+  - Every box gets `/opt/minecraft/bin/smallworld-agent` (root, 0755, checked against its pin before it is
+    copied) and `/opt/minecraft/bin/mc-agent`, a symlink to the chosen implementation: mcctl's actions run
+    `mc-agent cli` (falling back to `mc_agent.py cli` on a box deployed before this release), and `mc-run` names
+    its unit `mc-agent-cli-*` for any of the three paths.
+  - In rust mode with experience telemetry on, the telemetry (`scripts/telemetry.py`, unchanged) runs in its own
+    unit, **`mc-telemetry.service`** (`mc_agent.py telemetry`: the ops user, the standard sandbox, the same inputs and
+    outputs as in-process, plus `/var/lib/mc-telemetry/online.json` for the Rust agent's in-game messages and its
+    own reader of systemd's resource lines; the overhead card shows it). Python mode is unchanged: one process.
+  - `product-version.json` records `agent: {implementation, sha256}` (the binary's pin in rust mode).
+  - e2e: the agent-a, agent-b and telemetry-brand shards also run with `agent.implementation: rust` (in parallel;
+    the required `e2e` check needs them), and agent-a scores the Rust agent's units live.
+- `notify.py restart-alert SECONDS ONLINE`: posts the deploy-restart note to Discord (what `countdown` posts;
+  smallworld-rcon, which has no TLS, runs it).
+- **World map (v1.4):** a nightly pre-render of the Overworld and the End (never the Nether) into map tiles with
+  the exact colours vanilla maps draw, and two uses in mc-brand:
+  - **`smallworld-map`** (`rust/smallworld-map`, docs/rust/smallworld-map.md): std only, `unsafe` forbidden, never
+    `mmap`; hand-written NBT reader, DEFLATE/zlib/gzip/LZ4Block decoders with every checksum verified, region
+    reader tolerant of the server writing (torn chunks retried next run), 26.x palettes, vanilla's
+    `MapItem.update` (see-through blocks, water depth, north shading, majority at scales 1-4); 512 × 512 tiles per
+    scale 0-4 written atomically; incremental by region mtime and chunk timestamps; `--threads`. Byte for byte
+    equal to `tests/map_reference.py` on the golden fixture and on generated worlds (`tests/test_rust_map.py`);
+    fuzz tests. Static binaries in `rust/dist/`, pinned (`mc_smallworld_map_sha256`).
+  - **Role `map`:** user `mcmap` (group `minecraft`), `mc-map.service` (no network, read-only on the world, idle
+    priority, 512 MB, within the hardening gate) and `mc-map.timer`; server.yml `map: {enabled, schedule,
+    dimensions, radius, threads}` (on by default, nightly at 04:23).
+  - **Pocket map:** unexplored terrain comes from the pre-render (`branding.pocket_map.prerender`, default on);
+    vanilla's live colours still take over wherever the map redraws. Tiles are read off the main thread into a
+    4 MB cache, never in the Nether, never after a world switch until the next render; `/mcbrand selftest` reports
+    how often vanilla's pixels match the pre-render.
+  - **Spawn map room** (`branding.map_room`, off by default): a wall of fixed, invulnerable item frames with maps of
+    the whole world border or vanilla's map grid around spawn, refreshed after each render; never duplicated, moved
+    by a config change.
+- **World map groundwork:** `scripts/map_palette.py dump|check` writes the block colour table the v1.4 map
+  renderer will use (`server-config/keys/<version>/map-palette.tsv`, `map-colors.tsv`) from a build-time dump of
+  the pinned jar's block registry (pinned JDK, pinned jars only, no network, no server or world); CI re-dumps and
+  compares. Spec: docs/reference.md "World map".
+- **Pre-generation switch:** `server.yml` `world.pregenerate.enabled` (default `true`, today's behaviour) turns
+  Chunky pre-generation off for the whole deployment; `mcctl render` maps it onto the monitoring role's existing
+  `monitoring_pregen_enabled` (one path, health.env's `PREGEN_*`). A library world's `pregen` stays the per-world
+  override. Turning it off cancels the task `mc-health` started at its next check.
+- **Frontier expansion:** once the bordered passes are done, and for dimensions without a border, `mc-health`
+  keeps pre-generating ahead of where players have been, still only while nobody is online: a square around 0,0 of
+  the farthest generated chunk (from the region files' names and 4 KiB headers) + `world.pregenerate.margin`
+  (default 1024 blocks), capped at the border and at `world.pregenerate.max_radius` (default 10000); a new Chunky
+  task only when the target grew by 256 blocks, never while the disk is at its alert threshold.
+  `world.pregenerate.frontier: false` turns it off alone.
+- **Pre-generation progress:** `mcctl status` shows a `pregen` line (`world 63% · world_nether queued · ...`,
+  `done`, `(paused)`, `(held: backup)`), from `/var/lib/mc-health/pregen.json` (health.py records each task's
+  percentage from `chunky progress`), and Discord gets one note when every bordered pass is done.
+- docs/operations.md "Pre-generation": what runs when, disk use (estimates), backup growth, the
+  terrain-version trade-off, watching, stopping and skipping.
+
+### Changed
+
+- The v1.3 home screen (a questionary menu whose output scrolled away behind it) is replaced by the
+  dashboard; the rules for when it opens (a terminal, no `--plain`/`NO_COLOR`/`CI`/`TERM=dumb`), `-C DIR`, the
+  remembered config repo and switching it are unchanged.
+- Unattended `mcctl publish` and `mcctl players add|remove|op|deop` (no terminal on stdin) no longer merge
+  the pull request by default: it is opened, its checks followed, and left for a person. `--merge` merges once
+  the checks pass, as before. The other unattended answers are unchanged (wait for an empty server, no
+  Terraform apply).
+- Dependencies: `textual==8.2.8` added (with linkify-it-py, mdit-py-plugins, platformdirs, typing-extensions);
+  `questionary`, `prompt-toolkit` and `wcwidth` dropped (nothing else used them). rich stays at 15.0.0
+  (Textual 8.2.8 needs rich >= 14.2.0).
+- The deploy's countdown, world borders and game rules, the `mc` helper (and with it `mcctl rcon`) and
+  `minecraft.service`'s `ExecStop` call `/opt/minecraft/bin/smallworld-rcon` (root-owned, 0755; the base role
+  installs the build for the box's architecture after checking its pin). `ExecStop` falls back to
+  `mc_rcon.py stop` only when the binary gives no answer (missing, wrong architecture, crashed); its own failure
+  is final, as `mc_rcon.py stop`'s was (systemd then sends SIGTERM). The Python module stays for the scripts that
+  import it.
+- mc-brand's tick timers no longer subtract an `Integer.MIN_VALUE` "never" sentinel (which overflowed): the pocket
+  map re-centres on its holder again (v1.3's re-centre never fired).
+- mc-brand's pocket map centres on even pixels (`Wayfinding.snap(x, scale + 1)`), so its dither parity is the
+  tiles'; the picture re-centres every 2 · 2^scale blocks instead of 2^scale.
+- `scripts/build_rust.py` builds every binary of the workspace (`BINARIES`: smallworld-rcon, smallworld-map).
+- **Backups pause pre-generation:** `mc-backup` pauses a running Chunky task before `save-off` and continues it
+  after `save-on` (only if it was running, also when the backup fails); a pre-generation hold
+  (`/var/lib/mc-snapshots/pregen-hold.json`, expires after 4 h) keeps `mc-health` from continuing it mid-backup.
+
+### Fixed
+
+- **Security:** a journal entry whose `PRIORITY` field is digits that `int()` refuses (`"²"`, which `isdigit()`
+  accepts, or more than 4300 digits) stalled log shipping for good: every log round failed at that entry and its
+  cursor never moved past it, and any local process can send such a field. It now reads as the default priority,
+  like any other malformed field, in both implementations.
+- A release that changed no script left mc-agent running the previous version (the panel's Versions row showed
+  installed != running until the next restart): a new `product-version.json` now restarts it.
+- The Panel -> Git self-test's "at most once a minute on demand" now counts from the last on-demand run: a daily run
+  in between no longer lets the next request through (`selftest.json` keeps the last on-demand result too).
+- mcctl's actions (`mc-agent cli` through `mc-run`) run in a unit named `mc-agent-cli-<pid>-<ns>`, so their audit
+  entries reach mc-agent's D1 rows under a product unit instead of an anonymous `run-p…` one; every other `mc-run`
+  command keeps its anonymous unit (nothing new is shipped).
+- A world switch now really cancels the old world's Chunky task: `chunky cancel` asks for `chunky confirm`
+  first, which was never sent, so the new world's pass could continue the old world's saved task.
+- A task Chunky resumed by itself after a restart (`continue-on-restart`) no longer stays marked as paused in
+  health's state (alerts named pre-generation as the likely cause again).
+- **World library on the Minecraft 26.x folder layout:** a switch now knows that a 26.x world is the one
+  `world/` folder with every dimension inside (`world/dimensions/minecraft/{overworld,the_nether,the_end}/`;
+  the Bukkit names `world_nether`/`world_the_end` stay for borders and pre-generation). Switches between 26.x
+  worlds already carried the Nether and the End inside `world/`; what changes: an archive is checked before
+  anything changes and one with region files in both the 26.x and the pre-26 layout is refused (the server
+  would stop with "already exists" or merge old chunks in); pre-26 folders without region files next to a
+  26.x world are left out and named; a world **archived before the 26.x upgrade** switches in with its three
+  folders and the banner says the server migrates it at start (a 30-second pause). Stale `world_nether/` or
+  `world_the_end/` on the server are still removed (they are in the archive taken first), so they can never
+  be migrated into the next world. `world_info.py` reports the 26.x layout (docs/operations.md "World
+  library").
+
 ## [1.3.1] - 2026-11-07
 
 ### Added

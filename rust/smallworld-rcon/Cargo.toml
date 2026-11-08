@@ -1,0 +1,21 @@
+[package]
+name = "smallworld-rcon"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Drop-in for the command line of Smallworld's scripts/mc_rcon.py (RCON client for the local Minecraft server)"
+license = "MIT"
+publish = false
+
+# No crates.io dependencies: std only, through smallworld-core without features (CLAUDE.md "Rust workspace";
+# tests/test_rust_rcon.py checks the resolved graph).
+[dependencies]
+smallworld-core.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# The comments name files and Python identifiers in prose (mc_rcon.py, server.properties): not code to backtick.
+doc_markdown = "allow"

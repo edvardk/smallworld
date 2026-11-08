@@ -38,7 +38,14 @@ import yaml
 
 from mcctl import __version__, brandpack, clientpack
 from mcctl.configrepo import ConfigRepo
-from mcctl.schema import BrandingHologram, Players, ServerConfig, maintenance_timezone, placeholders
+from mcctl.schema import (
+    BrandingHologram,
+    Players,
+    ServerConfig,
+    maintenance_timezone,
+    map_radius,
+    placeholders,
+)
 
 TFVARS_FILE = Path("terraform") / "terraform.tfvars.json"
 BACKEND_FILE = Path("terraform") / "state.tfbackend"
@@ -150,8 +157,32 @@ def brand_plugin(cfg: ServerConfig) -> dict[str, Any]:
             "distance_rounding": b.compass.distance_rounding,
             "height_threshold": b.compass.height_threshold,
         },
-        "pocket_map": {"enabled": b.pocket_map.enabled},  # v1.3: PocketMap.java
+        # v1.3: PocketMap.java; v1.4: the pre-rendered terrain (PreRender.java; the tile directory is the
+        # product constant mc_map_dir, added by the plugins role's template)
+        "pocket_map": {
+            "enabled": b.pocket_map.enabled,
+            "prerender": b.pocket_map.prerender and cfg.map.enabled,
+        },
+        "map_room": map_room(cfg),  # v1.4: MapRoom.java
         **brand_client(cfg),
+    }
+
+
+def map_room(cfg: ServerConfig) -> dict[str, Any]:
+    """v1.4: MapRoom.java's settings (branding.map_room); `radius` = the rendered radius for view: border."""
+    r = cfg.branding.map_room
+    where: dict[str, Any] = {"at": r.at, "offset": list(r.offset)} if r.at else {"x": r.x, "y": r.y, "z": r.z}
+    return {
+        "enabled": r.enabled and cfg.map.enabled,
+        "world": DIMENSIONS[r.world],
+        **where,
+        "facing": r.facing,
+        "width": r.width,
+        "height": r.height,
+        "view": r.view,
+        "scale": r.scale,
+        "radius": map_radius(cfg, r.world) or 0,
+        "cursors": r.cursors,
     }
 
 
@@ -395,6 +426,18 @@ def world_library(cfg: ServerConfig) -> dict[str, Any]:
     return {"mc_world_active": cfg.world.active, "mc_world_library": lib}
 
 
+def pregenerate(cfg: ServerConfig) -> dict[str, Any]:
+    """v1.4: server.yml world.pregenerate for the monitoring role (health.env's PREGEN_*; the role's defaults
+    are the schema's). A library world's pregen: false still turns it off for that world (minecraft role)."""
+    pre = cfg.world.pregenerate
+    return {
+        "monitoring_pregen_enabled": pre.enabled,
+        "monitoring_pregen_frontier": pre.frontier,
+        "monitoring_pregen_margin": pre.margin,
+        "monitoring_pregen_max_radius": pre.max_radius,
+    }
+
+
 def _helper_cpus(cfg: ServerConfig) -> str:
     """systemd AllowedCPUs of the product's helpers: CPU 0 with cpu_affinity split (the JVM gets 1..n-1, from
     the host's CPU count at deploy: the minecraft role), else performance.helper_cpus ("" = all)."""
@@ -421,6 +464,7 @@ def group_vars(cfg: ServerConfig) -> dict[str, Any]:
         "mc_strict_whitelist": mc.strict_whitelist,  # v1.3: the players role's whitelist guard
         "mc_world_border_radius": {DIMENSIONS[d]: r for d, r in border.items() if r is not None},
         **world_library(cfg),
+        **pregenerate(cfg),
         "mc_nerf_spawner_mobs": cfg.gameplay.nerf_spawner_mobs,
         "mc_redstone_implementation": cfg.gameplay.redstone,
         "mc_gamerules": gamerules(cfg),  # v1.2: set over RCON in every dimension (minecraft role)
@@ -441,11 +485,20 @@ def group_vars(cfg: ServerConfig) -> dict[str, Any]:
         "mc_watchdog_url": watchdog_url(cfg),
         "firewall_mc_max_concurrent": cfg.firewall.max_connections_per_source,
         "mc_panel_mode": cfg.panel.mode,
+        # v1.4: mc-agent as scripts/mc_agent.py or the Rust port (+ the mc-telemetry sidecar)
+        "mc_agent_implementation": cfg.agent.implementation,
         "mc_config_repo": f"{cfg.github.owner}/{cfg.github.config_repo}",
         "mc_metrics_interval_s": cfg.monitoring.metrics_interval_s,
         "mc_logs_max_rows_per_day": cfg.monitoring.logs.max_rows_per_day,
         "mc_reboot_window": cfg.automation.reboot_window,  # P11: mc-reboot-gate (local time = timezone)
         # v1.3: deploys restart Minecraft only inside this window ("" = any time), in this time zone
+        # v1.4: the world map pre-render (role map): one renderer run per dimension, each with its radius
+        "mc_map_enabled": cfg.map.enabled,
+        "mc_map_schedule": cfg.map.schedule,
+        "mc_map_dimensions": [
+            {"id": DIMENSIONS[d], "radius": map_radius(cfg, d)} for d in cfg.map.dimensions
+        ],
+        "mc_map_threads": cfg.map.threads,
         "mc_maintenance_window": cfg.maintenance.window or "",
         "mc_maintenance_timezone": maintenance_timezone(cfg),
         "mc_maintenance_force_minutes": cfg.maintenance.force_after_minutes_before_end,

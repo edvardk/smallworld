@@ -1,0 +1,231 @@
+{
+ "meta": {
+  "generator": "scripts/parity_vectors.py",
+  "doc": "say_text, the announce components, cli_confirm and the Discord alert texts (byte-exact)"
+ },
+ "vectors": {
+  "say_text": [
+   {
+    "label": "Restart",
+    "left": 300,
+    "text": "Restart in 5 minutes. Find a safe spot!"
+   },
+   {
+    "label": "Restart",
+    "left": 240,
+    "text": "Restart in 4 minutes. Find a safe spot!"
+   },
+   {
+    "label": "Restart",
+    "left": 180,
+    "text": "Restart in 3 minutes. Find a safe spot!"
+   },
+   {
+    "label": "Restart",
+    "left": 120,
+    "text": "Restart in 2 minutes. Find a safe spot!"
+   },
+   {
+    "label": "Restart",
+    "left": 60,
+    "text": "Restart in 1 minute. Find a safe spot!"
+   },
+   {
+    "label": "Restart",
+    "left": 30,
+    "text": "Restart in 30 seconds. Find a safe spot!"
+   },
+   {
+    "label": "Restart",
+    "left": 10,
+    "text": "Restart in 10 seconds. Find a safe spot!"
+   },
+   {
+    "label": "Restart",
+    "left": 5,
+    "text": "Restart in 5 seconds. Find a safe spot!"
+   },
+   {
+    "label": "Restart",
+    "left": 4,
+    "text": "Restart in 4 seconds. Find a safe spot!"
+   },
+   {
+    "label": "Restart",
+    "left": 3,
+    "text": "Restart in 3 seconds. Find a safe spot!"
+   },
+   {
+    "label": "Restart",
+    "left": 2,
+    "text": "Restart in 2 seconds. Find a safe spot!"
+   },
+   {
+    "label": "Restart",
+    "left": 1,
+    "text": "Restart in 1 second. Find a safe spot!"
+   },
+   {
+    "label": "Restart",
+    "left": 600,
+    "text": "Restart in 10 minutes. Find a safe spot!"
+   },
+   {
+    "label": "Restart",
+    "left": 0,
+    "text": "Restart in 0 seconds. Find a safe spot!"
+   },
+   {
+    "label": "Server stopping",
+    "left": 300,
+    "text": "Server stopping in 5 minutes. Find a safe spot!"
+   },
+   {
+    "label": "Server stopping",
+    "left": 240,
+    "text": "Server stopping in 4 minutes. Find a safe spot!"
+   },
+   {
+    "label": "Server stopping",
+    "left": 180,
+    "text": "Server stopping in 3 minutes. Find a safe spot!"
+   },
+   {
+    "label": "Server stopping",
+    "left": 120,
+    "text": "Server stopping in 2 minutes. Find a safe spot!"
+   },
+   {
+    "label": "Server stopping",
+    "left": 60,
+    "text": "Server stopping in 1 minute. Find a safe spot!"
+   },
+   {
+    "label": "Server stopping",
+    "left": 30,
+    "text": "Server stopping in 30 seconds. Find a safe spot!"
+   },
+   {
+    "label": "Server stopping",
+    "left": 10,
+    "text": "Server stopping in 10 seconds. Find a safe spot!"
+   },
+   {
+    "label": "Server stopping",
+    "left": 5,
+    "text": "Server stopping in 5 seconds. Find a safe spot!"
+   },
+   {
+    "label": "Server stopping",
+    "left": 4,
+    "text": "Server stopping in 4 seconds. Find a safe spot!"
+   },
+   {
+    "label": "Server stopping",
+    "left": 3,
+    "text": "Server stopping in 3 seconds. Find a safe spot!"
+   },
+   {
+    "label": "Server stopping",
+    "left": 2,
+    "text": "Server stopping in 2 seconds. Find a safe spot!"
+   },
+   {
+    "label": "Server stopping",
+    "left": 1,
+    "text": "Server stopping in 1 second. Find a safe spot!"
+   },
+   {
+    "label": "Server stopping",
+    "left": 600,
+    "text": "Server stopping in 10 minutes. Find a safe spot!"
+   },
+   {
+    "label": "Server stopping",
+    "left": 0,
+    "text": "Server stopping in 0 seconds. Find a safe spot!"
+   }
+  ],
+  "announce_components": [
+   "[\"\", {\"text\": \"[Server] \", \"color\": \"gold\"}, {\"text\": \"Restart in 10 seconds. Find a safe spot!\"}]",
+   "[\"\", {\"text\": \"[Server] \", \"color\": \"gold\"}, {\"text\": \"Restart cancelled.\"}]",
+   "[\"\", {\"text\": \"[Server] \", \"color\": \"gold\"}, {\"text\": \"caf\\u00e9\"}]"
+  ],
+  "cli_confirm": [
+   {
+    "action": "world_create",
+    "args": {
+     "name": "n"
+    },
+    "phrase": "create n"
+   },
+   {
+    "action": "world_switch",
+    "args": {
+     "name": "n"
+    },
+    "phrase": "switch to n"
+   },
+   {
+    "action": "world_delete",
+    "args": {
+     "name": "n"
+    },
+    "phrase": "delete n"
+   },
+   {
+    "action": "plugin",
+    "args": {
+     "name": "p",
+     "enabled": true
+    },
+    "phrase": "enable p"
+   },
+   {
+    "action": "plugin",
+    "args": {
+     "name": "p",
+     "enabled": 1
+    },
+    "phrase": "disable p"
+   },
+   {
+    "action": "plugin",
+    "args": {
+     "name": "p"
+    },
+    "phrase": "disable p"
+   },
+   {
+    "action": "restart",
+    "args": {},
+    "phrase": null
+   },
+   {
+    "action": "moderate",
+    "args": {
+     "verb": "kick"
+    },
+    "phrase": null
+   },
+   {
+    "action": "world_create",
+    "args": {},
+    "phrase": "create None"
+   }
+  ],
+  "alerts": {
+   "selftest_alert": "\u26a0\ufe0f **The panel can't open pull requests on the config repo**\n**Impact:** Whitelist and world changes made in the panel stay live but never reach Git; whitelist changes are dropped after 24 h, and the next deploy undoes them.\n**Likely cause:** The daily Panel -> Git self-test failed 2 times in a row, at token: no GitHub token from the Worker: HTTP 502\n**What to do:** Run `mcctl doctor`, and the self-test from the panel's Health tab after a fix. Token or permissions: the panel's GitHub App (installed on the config repo, Contents + Pull requests); a stale Worker: `mcctl render` + `mcctl apply`.\n**Details:** 2 consecutive failures; last: token: no GitHub token from the Worker: HTTP 502",
+   "selftest_back_alert": "\u2705 **The panel can open pull requests again**\n**Impact:** Panel whitelist and world changes reach the config repo again.\n**Likely cause:** The Panel -> Git self-test passed.\n**What to do:** No action needed - informational.\n**Details:** after 3 failed run(s)",
+   "expired_alert": "\u26a0\ufe0f **Whitelist changes made in the panel were dropped**\n**Impact:** Live on the server for now (add Dave, remove Bob), but the next deploy follows players.yml in Git, so they will be undone then.\n**Likely cause:** They never reached the config repo within 24 h (no pull request could be opened or merged: the panel's GitHub App, CONFIG_REPO, or GitHub itself).\n**What to do:** Re-do them in the panel, or edit players.yml in the config repo and push; `mcctl doctor` checks the panel's GitHub App.\n**Details:** pending panel whitelist change(s) older than 24 h: add Dave, remove Bob",
+   "rejected_alert": [
+    "\u2139\ufe0f **A panel whitelist change was turned down (pull request #4 closed)**\n**Impact:** Undone on the live server with: whitelist remove Bob. The whitelist follows players.yml in Git again.\n**Likely cause:** Pull request #4 was closed without merging.\n**What to do:** Nothing if that was intended. To make the change after all: the panel again, or players.yml in the config repo.\n**Details:** reverted: remove Bob; failed: nothing",
+    "\u2139\ufe0f **A panel whitelist change was turned down (pull request #4 closed)**\n**Impact:** Couldn't run whitelist add Eve: live until the next deploy. The whitelist follows players.yml in Git again.\n**Likely cause:** Pull request #4 was closed without merging.\n**What to do:** Nothing if that was intended. To undo it now: deploy (`mcctl deploy`, or push to main). To make the change after all: the panel again, or players.yml in the config repo.\n**Details:** reverted: nothing; failed: add Eve",
+    "\u2139\ufe0f **A panel whitelist change was turned down (pull request #4 closed)**\n**Impact:** Undone on the live server with: whitelist remove A. Couldn't run whitelist add B: live until the next deploy. The whitelist follows players.yml in Git again.\n**Likely cause:** Pull request #4 was closed without merging.\n**What to do:** Nothing if that was intended. To undo it now: deploy (`mcctl deploy`, or push to main). To make the change after all: the panel again, or players.yml in the config repo.\n**Details:** reverted: remove A; failed: add B"
+   ],
+   "world_rejected_alert": "\u26a0\ufe0f **A panel world change wasn't merged (pull request #2 closed)**\n**Impact:** The server keeps running the world main; deploys honour it, but server.yml in Git still names another world.\n**Likely cause:** Pull request #2 (server.yml world.active/library) was closed without merging.\n**What to do:** Merge an equivalent change to server.yml (world.active and world.library as the panel shows them), or switch back in the panel's Worlds tab. The next world change opens a new pull request.\n**Details:** world.active on the server: main",
+   "render_ip_scrub": "\u2139\ufe0f **from <address> and 2001:db8::1**\n**What to do:** No action needed - informational.\n**Details:** <address>",
+   "render_long": "\ud83d\udd34 **hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh\u2026"
+  }
+ }
+}

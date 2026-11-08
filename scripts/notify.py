@@ -14,11 +14,16 @@ CLI (run through `mc-run /etc/minecraft/notify.env ...` so the token stays out o
 
     notify.py maintenance MINUTES REASON    open (MINUTES > 0) or close (0) a maintenance window: the local
                                             marker health.py's self-heal respects, and the watchdog's window
+    notify.py restart-alert SECONDS ONLINE  v1.4: post mc_rcon's deploy-restart note to Discord (what
+                                            `mc_rcon.py countdown` posts; smallworld-rcon, which has no TLS,
+                                            runs this for its `countdown`)
 
 The markers that make self-heal (and the watchdog, through health.py's heartbeat) stand down live in
 /var/lib/minecraft and are defined here: maintenance.json (this CLI), admin-stopped (admin.py stop, the
 panel's stop), restore.lock (held with flock by restore.py for the whole restore) and fenced (`mcctl migrate`
-fenced this box: nothing may start the server or its helpers, and a deploy refuses to run).
+fenced this box: nothing may start the server or its helpers, and a deploy refuses to run). One more marker
+stands only pre-generation down: pregen-hold.json (v1.4, /var/lib/mc-snapshots: backup.py holds Chunky paused
+for its save-off window, health.py leaves pre-generation alone while it is set).
 """
 
 from __future__ import annotations
@@ -47,6 +52,13 @@ FENCED_FILE = STATE_DIR / "fenced"
 # restic's snapshot list for the panel (P10): backup.py --list-snapshots writes it after every backup and
 # restore (StateDirectory=mc-snapshots of those units, the ops user), mc-agent reads it.
 SNAPSHOTS_FILE = Path("/var/lib/mc-snapshots/snapshots.json")
+# v1.4: backup.py paused Chunky for its save-off window (chunks generated while saving is off pile up in
+# memory): health.py must not continue it until backup.py does. In mc-snapshots, the StateDirectory every
+# unit that backs up already writes (mc-backup, mc-world, mc-restore@), the ops user; health.py (the ops user)
+# reads it. Like maintenance.json it carries its own expiry, so a backup killed before its `finally` holds
+# nothing for long.
+PREGEN_HOLD_FILE = SNAPSHOTS_FILE.with_name("pregen-hold.json")
+PREGEN_HOLD_MAX_S = 4 * 3600
 CHECKS = ("health", "backup")
 STATUSES = ("", "start", "fail")
 MAX_MAINTENANCE_MINUTES = 1440  # = the Worker's limit
@@ -138,6 +150,37 @@ def maintenance_active(now: float | None = None, path: Path | None = None) -> st
     return reason if until > (time.time() if now is None else now) else None
 
 
+def pregen_hold(reason: str, *, now: float | None = None, path: Path | None = None) -> None:
+    """Hold pre-generation (backup.py, around save-off). Never raises."""
+    marker = path or PREGEN_HOLD_FILE
+    until = (time.time() if now is None else now) + PREGEN_HOLD_MAX_S
+    try:
+        tmp = marker.with_name(marker.name + ".tmp")
+        tmp.write_text(json.dumps({"until": until, "reason": " ".join(reason.split())[:100]}))
+        os.replace(tmp, marker)
+    except OSError as e:
+        print(f"pre-generation hold {marker}: {e}", file=sys.stderr)
+
+
+def pregen_release(path: Path | None = None) -> None:
+    """End the hold. Never raises."""
+    marker = path or PREGEN_HOLD_FILE
+    try:
+        marker.unlink(missing_ok=True)
+    except OSError as e:
+        print(f"pre-generation hold {marker}: {e}", file=sys.stderr)
+
+
+def pregen_held(now: float | None = None, path: Path | None = None) -> str | None:
+    """The reason of a current pre-generation hold (health.py leaves Chunky alone), or None."""
+    try:
+        data = json.loads((path or PREGEN_HOLD_FILE).read_text())
+        until, reason = float(data["until"]), str(data.get("reason") or "hold")
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return reason if until > (time.time() if now is None else now) else None
+
+
 def admin_stopped(path: Path | None = None) -> bool:
     return (path or ADMIN_STOPPED_FILE).exists()
 
@@ -179,7 +222,17 @@ def main(argv: list[str] | None = None) -> int:
     if len(args) == 3 and args[0] == "maintenance" and args[1].isdigit():
         maintenance(int(args[1]), args[2])
         return 0
-    print("usage: notify.py maintenance MINUTES REASON", file=sys.stderr)
+    if len(args) == 3 and args[0] == "restart-alert":
+        try:
+            seconds, online = int(args[1]), int(args[2])
+        except ValueError:
+            pass
+        else:
+            from mc_rcon import restart_alert  # local import, as mc_rcon imports this module lazily too
+
+            discord(restart_alert(seconds, online))
+            return 0
+    print("usage: notify.py maintenance MINUTES REASON | restart-alert SECONDS ONLINE", file=sys.stderr)
     return 2
 
 

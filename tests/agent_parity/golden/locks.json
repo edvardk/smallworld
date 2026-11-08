@@ -1,0 +1,120 @@
+{
+ "notes": {
+  "daemon_restart": {
+   "id": "cmd001",
+   "ok": true,
+   "output": "restart scheduled (countdown 10 s, job cmd001)"
+  },
+  "cli_busy": {
+   "exit": 1,
+   "stdout": [
+    "RESULT refused: restart: busy: another action is running (started from the panel or mcctl); wait, or cancel it there"
+   ]
+  },
+  "daemon_cancel": {
+   "id": "cmd002",
+   "ok": true,
+   "output": "restart cancelled by admin@parity.test"
+  },
+  "daemon_busy": {
+   "id": "cmd003",
+   "ok": false,
+   "error": "restart: busy: another action is running (started from the panel or mcctl); wait, or cancel it there"
+  },
+  "daemon_cancel_other": {
+   "id": "cmd004",
+   "ok": false,
+   "error": "cancel: nothing to cancel"
+  },
+  "cli_cancelled": {
+   "exit": 1,
+   "stdout": [
+    "countdown: countdown 10 s, 1 player(s) online",
+    "cancelled: cancelled during the countdown",
+    "RESULT cancelled: cancelled during the countdown"
+   ]
+  },
+  "daemon_after": {
+   "id": "cmd005",
+   "ok": true,
+   "output": "restart scheduled (countdown 0 s, job cmd005)"
+  },
+  "writers": [
+   0,
+   0
+  ],
+  "cli_world": {
+   "exit": 0,
+   "result": [
+    "RESULT ok: world_switch creative: done"
+   ]
+  },
+  "players_on_main": "whitelist:\n  - {name: \"Alice_Op\", uuid: \"11111111-1111-4111-8111-111111111111\"}\n  - {name: \"Bob\", uuid: \"22222222-2222-4222-8222-222222222222\"}\n  - {name: \"Cli1_00\", uuid: \"c1100000-0000-4000-8000-000100000000\"}\n  - {name: \"Cli1_01\", uuid: \"c1100000-0000-4000-8000-000100000001\"}\n  - {name: \"Cli1_02\", uuid: \"c1100000-0000-4000-8000-000100000002\"}\n  - {name: \"Cli1_03\", uuid: \"c1100000-0000-4000-8000-000100000003\"}\n  - {name: \"Cli1_04\", uuid: \"c1100000-0000-4000-8000-000100000004\"}\n  - {name: \"Cli1_05\", uuid: \"c1100000-0000-4000-8000-000100000005\"}\n  - {name: \"Cli1_06\", uuid: \"c1100000-0000-4000-8000-000100000006\"}\n  - {name: \"Cli1_07\", uuid: \"c1100000-0000-4000-8000-000100000007\"}\n  - {name: \"Cli1_08\", uuid: \"c1100000-0000-4000-8000-000100000008\"}\n  - {name: \"Cli1_09\", uuid: \"c1100000-0000-4000-8000-000100000009\"}\n  - {name: \"Cli1_10\", uuid: \"c1100000-0000-4000-8000-00010000000a\"}\n  - {name: \"Cli1_11\", uuid: \"c1100000-0000-4000-8000-00010000000b\"}\n  - {name: \"Cli1_12\", uuid: \"c1100000-0000-4000-8000-00010000000c\"}\n  - {name: \"Cli1_13\", uuid: \"c1100000-0000-4000-8000-00010000000d\"}\n  - {name: \"Cli1_14\", uuid: \"c1100000-0000-4000-8000-00010000000e\"}\n  - {name: \"Cli2_00\", uuid: \"c1100000-0000-4000-8000-000200000000\"}\n  - {name: \"Cli2_01\", uuid: \"c1100000-0000-4000-8000-000200000001\"}\n  - {name: \"Cli2_02\", uuid: \"c1100000-0000-4000-8000-000200000002\"}\n  - {name: \"Cli2_03\", uuid: \"c1100000-0000-4000-8000-000200000003\"}\n  - {name: \"Cli2_04\", uuid: \"c1100000-0000-4000-8000-000200000004\"}\n  - {name: \"Cli2_05\", uuid: \"c1100000-0000-4000-8000-000200000005\"}\n  - {name: \"Cli2_06\", uuid: \"c1100000-0000-4000-8000-000200000006\"}\n  - {name: \"Cli2_07\", uuid: \"c1100000-0000-4000-8000-000200000007\"}\n  - {name: \"Cli2_08\", uuid: \"c1100000-0000-4000-8000-000200000008\"}\n  - {name: \"Cli2_09\", uuid: \"c1100000-0000-4000-8000-000200000009\"}\n  - {name: \"Cli2_10\", uuid: \"c1100000-0000-4000-8000-00020000000a\"}\n  - {name: \"Cli2_11\", uuid: \"c1100000-0000-4000-8000-00020000000b\"}\n  - {name: \"Cli2_12\", uuid: \"c1100000-0000-4000-8000-00020000000c\"}\n  - {name: \"Cli2_13\", uuid: \"c1100000-0000-4000-8000-00020000000d\"}\n  - {name: \"Cli2_14\", uuid: \"c1100000-0000-4000-8000-00020000000e\"}\nops:\n  - {name: \"Alice_Op\", uuid: \"11111111-1111-4111-8111-111111111111\", level: 4}\n",
+  "world_on_main": "# the parity config repo\nname: parity\n\nworld:\n  # kept\n  border_radius: 5000\n  active: \"creative\"\n  library:\n    - {name: \"creative\", seed: \"\", type: \"flat_classic\", preset: null}\n    - {name: \"main\", seed: \"42\", type: \"default\", preset: \"survival_smp\"}\n",
+  "pending_final": {
+   "changed": "<time>",
+   "entries": [],
+   "error": "",
+   "expired": [],
+   "pr": null,
+   "world": null
+  }
+ },
+ "exits": [
+  {
+   "daemon": 0
+  }
+ ],
+ "worker": "<timing-dependent: not compared>",
+ "websocket": [
+  {
+   "event": "ws-open",
+   "session": 0,
+   "auth": true,
+   "user_agent": "smallworld mc-agent",
+   "version": "13",
+   "connection_upgrade": true
+  },
+  {
+   "event": "ws-hello",
+   "session": 0,
+   "message": {
+    "type": "hello",
+    "agent": "1"
+   }
+  },
+  {
+   "event": "ws-ended",
+   "session": 0,
+   "unmasked": 0
+  }
+ ],
+ "console": [],
+ "github": "<timing-dependent: not compared>",
+ "https": [
+  {
+   "method": "POST",
+   "path": "/maintenance",
+   "content_type": "application/json",
+   "auth": "heartbeat",
+   "body": {
+    "minutes": 15,
+    "reason": "panel restart"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/maintenance",
+   "content_type": "application/json",
+   "auth": "heartbeat",
+   "body": {
+    "minutes": 0,
+    "reason": "panel restart"
+   }
+  }
+ ],
+ "rcon": "<timing-dependent: not compared>",
+ "systemd": "<timing-dependent: not compared>",
+ "audit": "<timing-dependent: not compared>",
+ "files": "<timing-dependent: not compared>"
+}

@@ -34,6 +34,9 @@
    in-game countdown), wait until the server is empty (polled each minute, at most `--max-wait` minutes),
    or cancel. `--wait-empty` answers "wait". Without a terminal the answer is "wait", and a wait that times
    out cancels: unattended, mcctl never restarts a server with players on it.
+   Unattended (no terminal on stdin), the merge question answers "no" unless `--merge` is given: the pull
+   request is opened, its checks followed, and it is left for a person to merge. `--merge`/`--no-merge` and
+   `--restart now|wait|cancel` answer the questions up front (scripts, the dashboard).
 5. `--revert`: a pull request that reverts the last deploy's commits on main (the first-parent commits
    between the two newest runs whose deploy job succeeded, newest first, merges with `-m 1`).
 6. `--dry-run`: the preview (and validation) only; `--no-follow`: open the PR or push, then stop.
@@ -711,7 +714,9 @@ def land(
         )
         ui.say(f"  fix it and run `mcctl publish` again on this branch (same pull request): {url}")
         return 1
-    if not ui.confirm("publish_merge", "Checks passed. Merge it now (it deploys)?", default=True):
+    # At a terminal the suggested answer is yes; unattended (no terminal, no --merge) it is no: the pull
+    # request is opened and left for a person, never merged (and deployed) by default.
+    if not ui.confirm("publish_merge", "Checks passed. Merge it now (it deploys)?", default=ui.interactive):
         ui.say(f"  not merged: {url} waits for you (merging it deploys)")
         return 0
     if not before_merge():

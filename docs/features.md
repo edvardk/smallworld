@@ -125,6 +125,9 @@ compass and map), `/compass auto` (back to the default below).
 hand it's a minimap), shows every other player as a named arrow (a dot at the edge beyond the map) and fills in
 the terrain as the player explores, like any vanilla map. `/map zoom` cycles the scale. One per player, free to
 re-get, and it can't be copied, framed, stored or dropped (a dropped one just disappears).
+v1.4: terrain the player hasn't visited comes from the nightly world map render, so a fresh map shows the land at
+once (Overworld and End; vanilla's own colours take over as the player walks). The optional **spawn map room**
+(`branding.map_room`) hangs a wall of maps of the whole world near spawn, refreshed every night.
 
 **`/help`** (also `/commands`) lists the commands this player can use, built from what's switched on, each one a
 click away; Minecraft's own list stays at `/minecraft:help`. A hologram with `help: true` shows the same list,
