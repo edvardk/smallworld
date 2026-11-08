@@ -73,6 +73,9 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   into the restored world or refuse to start over ("already exists"): `restore.py` moves them (never deletes
   them) to `<server dir>/.restore-staging/aside/<UTC time>/`, which backups exclude, and logs the move. Pre-26
   snapshots and folders without region files are left as before.
+- `cargo test` no longer leaves `sw-rej-*`, `swagent-*` and `swcore-*` folders and lock files in TMPDIR: the
+  agent and core crates' tests use a std-only drop guard (`testutil::TmpDir`, compiled for tests alone, like
+  smallworld-map's), also on a failing test. The binaries in `rust/dist/` are unchanged.
 
 ## [1.4.0] - 2026-11-08
 

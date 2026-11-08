@@ -517,11 +517,8 @@ mod tests {
         }
     }
 
-    fn tmp(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("sw-rej-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d.join("rejected.json")
+    fn tmp(name: &str) -> crate::testutil::TmpDir {
+        crate::testutil::TmpDir::new(&format!("sw-rej-{name}")).child("rejected.json")
     }
 
     #[test]
