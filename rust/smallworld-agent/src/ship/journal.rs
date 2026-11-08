@@ -157,6 +157,82 @@ pub(super) fn py_int_value(value: &Value) -> Option<i128> {
     }
 }
 
+/// `str(value)` for a journal field of any JSON type, as `journal_entry` prints it (`str(unit)[:100]`): a str
+/// as is, `None`/`True`/`False`, numbers as Python prints them, lists as `repr`s. Unlike
+/// `pyjson::py_str` (core has no Unicode tables), a str inside a list is escaped where Python's
+/// `str.isprintable()` says so (categories C*, Z* except the space), from the agent's Unicode tables. JSON
+/// objects print with sorted keys (serde_json's order; journalctl never emits one).
+pub fn py_str_field(value: &Value) -> String {
+    match value {
+        Value::String(s) => s.clone(),
+        other => py_repr_field(other),
+    }
+}
+
+fn py_repr_field(value: &Value) -> String {
+    match value {
+        Value::Null | Value::Bool(_) | Value::Number(_) => py_str(value),
+        Value::String(s) => repr_str(s),
+        Value::Array(items) => {
+            let parts: Vec<String> = items.iter().map(py_repr_field).collect();
+            format!("[{}]", parts.join(", "))
+        }
+        Value::Object(map) => {
+            let parts: Vec<String> = map
+                .iter()
+                .map(|(k, v)| format!("{}: {}", repr_str(k), py_repr_field(v)))
+                .collect();
+            format!("{{{}}}", parts.join(", "))
+        }
+    }
+}
+
+/// `str.isprintable()` for one character.
+fn isprintable(ch: char) -> bool {
+    ch == ' '
+        || !matches!(
+            crate::unicode::category(ch),
+            "Cc" | "Cf" | "Cs" | "Co" | "Cn" | "Zl" | "Zp" | "Zs"
+        )
+}
+
+/// `repr(s)`: single quotes unless `s` has a `'` and no `"`; `\\t \\n \\r`, `\\xNN`, `\\uNNNN`, `\\UNNNNNNNN`
+/// for what isn't printable.
+fn repr_str(s: &str) -> String {
+    use std::fmt::Write as _;
+    let quote = if s.contains('\'') && !s.contains('"') {
+        '"'
+    } else {
+        '\''
+    };
+    let mut out = String::new();
+    out.push(quote);
+    for c in s.chars() {
+        let cp = u32::from(c);
+        match c {
+            c if c == quote || c == '\\' => {
+                out.push('\\');
+                out.push(c);
+            }
+            '\t' => out.push_str("\\t"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            c if isprintable(c) => out.push(c),
+            _ if cp <= 0xFF => {
+                let _ = write!(out, "\\x{cp:02x}");
+            }
+            _ if cp <= 0xFFFF => {
+                let _ = write!(out, "\\u{cp:04x}");
+            }
+            _ => {
+                let _ = write!(out, "\\U{cp:08x}");
+            }
+        }
+    }
+    out.push(quote);
+    out
+}
+
 /// Characters for which `str.isdigit()` is true but `str.isdecimal()` isn't (superscripts, circled digits,
 /// ...): `int()` refuses them. Python 3.11, 3.12 and 3.13 agree:
 /// `[c for c in range(0x110000) if chr(c).isdigit() and not chr(c).isdecimal()]`.
@@ -243,8 +319,8 @@ pub fn try_journal_entry(raw: &Obj) -> AResult<Option<Entry>> {
     let get = |k: &str| raw.get(k).filter(|v| truthy(v));
     let unit = get("_SYSTEMD_UNIT")
         .or_else(|| get("SYSLOG_IDENTIFIER"))
-        .map_or(String::new(), py_str);
-    let ident = get("SYSLOG_IDENTIFIER").map_or(String::new(), py_str);
+        .map_or(String::new(), py_str_field);
+    let ident = get("SYSLOG_IDENTIFIER").map_or(String::new(), py_str_field);
     let prio = priority(raw.get("PRIORITY"))?;
     Ok(Some(Entry {
         ts,
@@ -253,7 +329,7 @@ pub fn try_journal_entry(raw: &Obj) -> AResult<Option<Entry>> {
         prio,
         msg: message_text(raw.get("MESSAGE").unwrap_or(&Value::Null)),
         audit: i64::from(raw.get("MC_AUDIT").and_then(Value::as_str) == Some("1")),
-        sd_unit: prefix_cp(&get("UNIT").map_or(String::new(), py_str), 100).to_string(),
+        sd_unit: prefix_cp(&get("UNIT").map_or(String::new(), py_str_field), 100).to_string(),
     }))
 }
 
@@ -574,6 +650,16 @@ mod tests {
         assert_eq!(
             (x.unit.as_str(), x.ident.as_str(), x.sd_unit.as_str()),
             ("5", "5", "[1, 'a']")
+        );
+        // python3 -c 'print(str(["\x85​\U000e0001 é\U0001f600　\\", "x'"'"'y", 1.5, None]))'
+        assert_eq!(
+            py_str_field(&serde_json::json!([
+                "\u{85}\u{200b}\u{e0001} \u{e9}\u{1f600}\u{3000}\\",
+                "x'y",
+                1.5,
+                null
+            ])),
+            "['\\x85\\u200b\\U000e0001 \u{e9}\u{1f600}\\u3000\\\\', \"x'y\", 1.5, None]"
         );
         // Python's `$` matches before a final newline.
         let mut o = Obj::new();

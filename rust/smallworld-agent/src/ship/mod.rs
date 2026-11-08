@@ -299,6 +299,59 @@ pub fn logs_loop(daemon: &crate::daemon::Daemon) {
     );
 }
 
+/// The hidden `selftest-scrub` subcommand, for differential tests only (tests/test_rust_scrub_fuzz.py drives
+/// it against the Python functions): reads one JSON object from stdin, `{"known": [str], "texts": [str],
+/// "journal": [object]}` (each key optional), and prints `{"texts": [Scrubber(known)(text)...], "journal":
+/// [journal_entry(raw) | null | {"error": str}...]}`. It is a pure function of its input: it reads no
+/// environment, settings, file or server.properties, so it can only print (scrubbed) what it was given.
+/// Exit 2 on input that isn't such an object.
+pub fn selftest_scrub(input: &mut dyn std::io::Read, out: &mut dyn std::io::Write) -> u8 {
+    let mut text = String::new();
+    let Some(Value::Object(req)) = input
+        .read_to_string(&mut text)
+        .ok()
+        .and_then(|_| serde_json::from_str::<Value>(&text).ok())
+    else {
+        eprintln!("selftest-scrub: stdin must be a JSON object");
+        return 2;
+    };
+    let strings = |key: &str| -> Option<Vec<String>> {
+        match req.get(key) {
+            None => Some(Vec::new()),
+            Some(Value::Array(items)) => {
+                items.iter().map(|v| v.as_str().map(String::from)).collect()
+            }
+            Some(_) => None,
+        }
+    };
+    let (Some(known), Some(texts)) = (strings("known"), strings("texts")) else {
+        eprintln!("selftest-scrub: known and texts must be lists of strings");
+        return 2;
+    };
+    let scrubber = Scrubber::new(known);
+    let texts: Vec<Value> = texts.iter().map(|t| scrubber.scrub(t).into()).collect();
+    let journal: Vec<Value> = match req.get("journal") {
+        Some(Value::Array(items)) => items
+            .iter()
+            .map(
+                |raw| match raw.as_object().map(journal::try_journal_entry) {
+                    Some(Ok(Some(e))) => Value::Object(e.to_obj()),
+                    Some(Ok(None)) | None => Value::Null,
+                    Some(Err(e)) => {
+                        serde_json::json!({"error": format!("{}: {e}", e.class_name())})
+                    }
+                },
+            )
+            .collect(),
+        _ => Vec::new(),
+    };
+    let reply = serde_json::json!({"texts": texts, "journal": journal});
+    if writeln!(out, "{reply}").is_err() {
+        return 1;
+    }
+    0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -490,6 +543,34 @@ mod tests {
         assert_eq!(r, (0, false));
         assert_eq!(LogState::load(&path).cursor, "c2");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn selftest_scrub_echoes_only_scrubbed_input() {
+        let mut out = Vec::new();
+        let input = r#"{"known": ["AgentTokenShip-0123"], "texts": ["a AgentTokenShip-0123 b", "pass=x"],
+                        "journal": [{"__REALTIME_TIMESTAMP": "5000"}, {"x": 1},
+                                    {"__REALTIME_TIMESTAMP": "0", "PRIORITY": "\u00b2"}, 5]}"#;
+        assert_eq!(selftest_scrub(&mut input.as_bytes(), &mut out), 0);
+        let reply: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(
+            reply["texts"],
+            serde_json::json!(["a <redacted> b", "pass=<redacted>"])
+        );
+        assert_eq!(reply["journal"][0]["ts"], 5);
+        assert_eq!(reply["journal"][1], Value::Null);
+        assert_eq!(
+            reply["journal"][2]["error"],
+            "ValueError: invalid literal for int() with base 10: '\u{b2}'"
+        );
+        assert_eq!(reply["journal"][3], Value::Null);
+        for bad in ["", "[]", r#"{"texts": [1]}"#, r#"{"known": "x"}"#] {
+            assert_eq!(
+                selftest_scrub(&mut bad.as_bytes(), &mut Vec::new()),
+                2,
+                "{bad}"
+            );
+        }
     }
 
     #[test]
