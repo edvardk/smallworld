@@ -2180,7 +2180,8 @@ function paintView(full) {
   main.setAttribute("aria-labelledby", `tab-${current}`);
   const view = main.firstElementChild;
   const fresh = full || !view || view.dataset.tab !== current;
-  const paint = VIEWS.get(current) ?? VIEWS.get("overview");
+  let paint = VIEWS.get(current);
+  if (typeof paint !== "function") paint = V.overview;
   if (fresh) {
     const div = document.createElement("div");
     div.className = "view";
