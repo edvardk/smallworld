@@ -284,21 +284,13 @@ pub fn run_logs_loop(
     }
 }
 
-/// `Agent.observe_logs(entries)`: minecraft.service's delivered lines into the rejected-logins feed; a change
-/// makes the inventory due.
+/// `Agent.observe_logs(entries)`: data's `observe_logs` (the rejected-logins feed); a change makes the
+/// inventory due.
 ///
 /// # Errors
 /// What the feed raises (the log round fails, as in Python).
 pub fn observe_logs(daemon: &crate::daemon::Daemon, entries: &[Obj]) -> Result<(), AgentError> {
-    let lines: Vec<(i64, String)> = entries
-        .iter()
-        .map(|e| {
-            let ts = e.get("ts").and_then(Value::as_i64).unwrap_or(0);
-            let msg = e.get("msg").and_then(Value::as_str).unwrap_or("");
-            (ts, msg.to_string())
-        })
-        .collect();
-    if daemon.panel.rejected.feed(&lines)? {
+    if crate::data::observe_logs(&daemon.panel.rejected, entries)? {
         daemon.inventory_due.set();
     }
     Ok(())
