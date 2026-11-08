@@ -186,6 +186,14 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
   pending lock across a network call; what was recorded meanwhile wins (`merge_sync`).
 - Proof: vectors for `parse_players`/`dump_players`/`apply_entries`, `merge_sync`, `set_world_section`, every
   alert text; scenarios 12, 13, 23, 24.
+- Interface (as ported): `sync::github::{GitHub, TokenSource, FixedToken, github_error, is_github_error,
+  github_from_env(env, Option<Arc<dyn TokenSource>>)}`. `GitHubError` is `AgentError::Value("GitHubError", msg)`.
+  **misc:** `impl TokenSource for TokenCache` (`token()` = `__call__`, `invalidate()` forgets the token and
+  returns true); the self-test's `GitHub(lambda: token, ...)` is `GitHub::new(Arc::new(FixedToken(token)), ...)`,
+  `players_on_main()` and `call("GET", path, None)` are public; texts in `sync::alerts`. **link:** build
+  `sync::PanelSync::new(&settings, &env, Some(Arc::new(TokenCache::new(fetch))), inventory_due)` in the daemon
+  (a `ValueError` there is a startup crash, as in `Agent.__init__`), share its `github` with misc's self-test, and
+  run `sync::panel_loop(&panel_sync, &panel.pending, &stop)` on its own thread.
 
 ### misc (self-test, Mojang lookup, versions, budget, warnings, tokens)
 
