@@ -377,7 +377,15 @@
       # Sandboxed like the product's units (design §7), less strict where these commands write: ProtectSystem=full
       # leaves /opt and /var writable (file permissions still apply: the ops user can't write the server dir;
       # restic's cache, the markers, the restore staging dir and /var/tmp restore tests are its own).
-      exec systemd-run --quiet --pipe --wait --collect --uid={{ mc_ops_user }} --gid={{ mc_ops_user }} \
+      # v1.4: mcctl's actions (`mc_agent.py cli`, mcctl/actions.py) run in a named unit, so their audit entries
+      # carry a product unit (mc-agent-cli-*) wherever mc-agent ships the journal. Unique: $$ is this process (it
+      # becomes systemd-run, alive as long as the unit) plus the time in ns. Every other command keeps
+      # systemd-run's anonymous run-p… unit. (The cli's stdout/stderr go to the caller (--pipe), not the journal.)
+      unit=
+      if [ "${1:-}" = "{{ mc_bin_dir }}/mc_agent.py" ] && [ "${2:-}" = cli ]; then
+        unit="--unit=mc-agent-cli-$$-$(date +%s%N)"
+      fi
+      exec systemd-run ${unit:+"$unit"} --quiet --pipe --wait --collect --uid={{ mc_ops_user }} --gid={{ mc_ops_user }} \
         -p SupplementaryGroups=minecraft -p EnvironmentFile="$env_file" -E PYTHONDONTWRITEBYTECODE=1 \
         -p NoNewPrivileges=yes -p ProtectSystem=full -p ProtectHome=yes -p PrivateDevices=yes \
         -p ProtectKernelTunables=yes -p ProtectKernelModules=yes -p ProtectKernelLogs=yes \

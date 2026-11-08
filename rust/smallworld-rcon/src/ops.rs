@@ -38,7 +38,7 @@ fn sleep(seconds: i128) -> Result<(), PyError> {
     const MAX: i128 = 9_223_372_036; // (2**63 - 1) ns, in whole seconds
     if !(-MAX..=MAX).contains(&seconds) {
         return Err(PyError::Overflow(
-            "timestamp out of range for C PyTime_t".into(),
+            "timestamp too large to convert to C PyTime_t".into(),
         ));
     }
     let secs = u64::try_from(seconds)
@@ -480,7 +480,7 @@ mod tests {
         );
         assert_eq!(
             sleep(9_223_372_037).unwrap_err().traceback_line(),
-            "OverflowError: timestamp out of range for C PyTime_t"
+            "OverflowError: timestamp too large to convert to C PyTime_t"
         );
         assert!(sleep(0).is_ok());
     }
