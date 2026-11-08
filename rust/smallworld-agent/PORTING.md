@@ -23,7 +23,7 @@ divergences are listed under "Divergences"; add one only with a reason and a tes
 | `link/`, `daemon.rs` | link | stubs |
 | `ship/` | ship | stubs |
 | `data/`, `panel/rejected.rs` | data | stubs |
-| `sync/` | sync | stubs |
+| `sync/` | sync | **done**: players.yml, GitHub client, round (`sync_pending`, `sync_world`, `merge_sync`, `revert_live`), alerts, `panel_loop`; vectors players/merge_sync/worlds/texts; mixed Python+Rust writers test (`sync/mixed.rs`). Scenarios 12 (`pending_expiry`, `world_pr`) and 23's pending.json half match their goldens in everything sync writes; they still wait on data (startup pushes) and actions (`whitelist`, `cancel`) |
 | `misc/` | misc | stubs |
 
 Stubs return `AgentError::NotPorted("module::fn")` (or, where the final signature is infallible, a safe
@@ -255,6 +255,12 @@ Gotchas the goldens encode (keep them; both are logged as known issues to fix in
 ## Divergences (documented, deliberate)
 
 - HTTP redirects are refused (a 3xx is `HTTPError`); urllib follows them. No endpoint redirects.
+- sync: a GitHub reply that isn't JSON is `JSONDecodeError: Expecting value: line 1 column 1 (char 0)` whatever
+  the position (pending.json's `error` then says so); a reply body in UTF-16/32 (json.loads detects it) is a
+  `UnicodeDecodeError`. A players.yml value with a lone surrogate escape is a `ValueError` (Python keeps it).
+- sync: a GITHUB_API_URL that `github_from_env` refuses ends the panel loop with one line on stderr; Python's
+  `Agent.__init__` raises and the agent doesn't start (link may move the check to `Daemon::new`).
+- sync: `sorted(library, key=name)` with non-string names raises a `TypeError` with a generic message.
 - `json.loads` input serde_json refuses (`NaN`, `Infinity`, lone surrogate escapes) reads as invalid (a file:
   the default; a command: refused). Integers beyond 64 bits become floats.
 - Transport error classes are urllib's main ones only (`HTTPError`, `URLError`, `TimeoutError`, `ValueError`).

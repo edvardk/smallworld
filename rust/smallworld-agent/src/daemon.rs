@@ -27,7 +27,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 /// Modules still stubs (each owner removes its name when ported; `main` refuses to start while any remain).
-pub const NOT_PORTED: [&str; 5] = ["ship", "data", "actions", "sync", "misc"];
+pub const NOT_PORTED: [&str; 4] = ["ship", "data", "actions", "misc"];
 
 /// The test-only switch (see the module comment).
 pub const ALLOW_STUBS_ENV: &str = "SMALLWORLD_AGENT_ALLOW_STUBS";
