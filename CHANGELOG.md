@@ -28,6 +28,11 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   is final, as `mc_rcon.py stop`'s was (systemd then sends SIGTERM). The Python module stays for the scripts that
   import it.
 
+### Fixed
+
+- The Panel -> Git self-test's "at most once a minute on demand" now counts from the last on-demand run: a daily run
+  in between no longer lets the next request through (`selftest.json` keeps the last on-demand result too).
+
 ## [1.3.1] - 2026-11-07
 
 ### Added

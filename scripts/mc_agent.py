@@ -2352,11 +2352,13 @@ class Agent:
         row alert on Discord once (and once when it passes again). On demand at most once per
         SELFTEST_MIN_GAP_S."""
         with self.selftest_lock:
-            last = self.selftest_state.load()["last"]
-            if trigger == "panel" and last and last.get("trigger") == "panel":
-                ts = last.get("ts")
+            # on demand at most once a minute, counted from the last on-demand run (a daily run in between
+            # doesn't lift the limit)
+            prev = self.selftest_state.load()["last_panel"]
+            if trigger == "panel" and prev:
+                ts = prev.get("ts")
                 if isinstance(ts, int) and time.time() * 1000 - ts < SELFTEST_MIN_GAP_S * 1000:
-                    return last | {"cached": True}
+                    return prev | {"cached": True}
             gh = self.github
             result = mc_panel.selftest(self.github_token if gh else None, gh, time.time())
             result["trigger"] = trigger

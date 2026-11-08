@@ -345,7 +345,9 @@ jobs:
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.13"
+          # The binary's spec Python (Debian 13's python3, docs/rust/smallworld-rcon.md "Which Python is the
+          # spec"): the differential tests demand exact parity on it; lint and controller run them on 3.12-3.14.
+          python-version: "3.13.5"
           cache: pip
           cache-dependency-path: requirements/dev.txt
 

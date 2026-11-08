@@ -32,8 +32,8 @@ restic_sha256:
 # The base role checks the one for the box's architecture against this pin before installing it (keys: Debian
 # architecture names, as restic_sha256's).
 mc_smallworld_rcon_sha256:
-  amd64: 8a54a2e167576bc2cda22040dd6df5797a4ea5cf704bbb58dd8ad161d6925324
-  arm64: 42cee5b1aeefc1fb12453a1f057c2025f2a808cd48575c5b97ad9275952be01a
+  amd64: 0cce11ec8a39c1664c18b01aaadd9361beb9002ac8ef91a8a9910736e781190e
+  arm64: 73d23ee03461d9a4b0a28f161e24157009fe6f459dad82f3183824da0d7efc75
 
 # --- OS tuning -----------------------------------------------------------------------------------
 base_zram_enabled: true

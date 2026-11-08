@@ -6,6 +6,12 @@ fresh fake RCON server each, and asserts the same exit status, stdout, stderr (f
 the traceback's last line, which is all the binary prints) and the same packets received by the server. The binary
 being the source's is scripts/build_rust.py check's job (ci.yml job rust). Plus the workspace rules: no
 dependencies, the pins, the glibc error texts the binary embeds.
+
+The binary's spec is one Python: CPython 3.13.5, Debian 13's python3 (the e2e image and the default box). On it the
+differential tests demand exact parity. On the other Pythons a server may run (Debian 12's 3.11, Ubuntu 24.04's
+3.12, other 3.13.x) they demand parity except for the behaviours in KNOWN / ARGPARSE_KNOWN, where that Python's
+documented alternative is accepted and the binary must still give the spec's answer. On anything else (3.14+) the
+differential tests are skipped: no server runs it (docs/rust/smallworld-rcon.md "Which Python is the spec").
 """
 
 from __future__ import annotations
@@ -23,6 +29,7 @@ import time
 import tomllib
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -44,10 +51,87 @@ def _binary() -> Path | None:
 
 
 BINARY = _binary()
-needs_binary = pytest.mark.skipif(
+SPEC = (3, 13, 5)  # Debian 13's python3: the binary mirrors mc_rcon.py as this Python runs it
+SERVER_MINORS = {(3, 11), (3, 12), (3, 13)}  # Debian 12, Ubuntu 24.04, Debian 13 (the roles' meta platforms)
+RUNNING = tuple(sys.version_info[:3])
+AT_SPEC = RUNNING == SPEC
+_no_binary = pytest.mark.skipif(
     BINARY is None or not BINARY.is_file(),
     reason="no smallworld-rcon binary for this platform (Linux x86_64/aarch64 only; or set SMALLWORLD_RCON_BIN)",
 )
+_not_a_server_python = pytest.mark.skipif(
+    RUNNING[:2] not in SERVER_MINORS,
+    reason=f"Python {'.'.join(map(str, RUNNING))} runs on no server (3.11-3.13 do); the binary's spec is "
+    f"{'.'.join(map(str, SPEC))}, and newer argparse/CPython messages differ by design",
+)
+
+
+def differential(test: Callable) -> Callable:
+    """A side-by-side test: needs the binary and a Python a server may run."""
+    return _no_binary(_not_a_server_python(test))
+
+
+@dataclass(frozen=True)
+class Known:
+    """A behaviour of mc_rcon.py that depends on the Python version: the spec's text (the binary's) and what other
+    server Pythons say instead. None of them is reachable from a production call site (the docs say why)."""
+
+    what: str
+    spec: str
+    others: tuple[str, ...]
+    where: str
+
+
+KNOWN = (
+    Known(
+        "time.sleep() past ~292 years (countdown 99999999999): OverflowError's text",
+        "timestamp too large to convert to C PyTime_t",
+        ("timestamp too large to convert to C _PyTime_t", "timestamp out of range for C PyTime_t"),
+        "3.11, 3.12 name the C type _PyTime_t; some 3.13 builds (3.13.18 here) say 'out of range'",
+    ),
+    Known(
+        "argparse's invalid-choice message lists the subcommands quoted or bare",
+        "(choose from cmd, stop, countdown, worldborder, gamerule)",
+        ("(choose from 'cmd', 'stop', 'countdown', 'worldborder', 'gamerule')",),
+        "quoted in 3.11, 3.12 before 3.12.8, 3.13 before 3.13.3 and from 3.13.14",
+    ),
+)
+_CHOICES = "(choose from cmd, stop, countdown, worldborder, gamerule)"
+# Command lines argparse parses differently by version: the spec's outcome and the other server Pythons' (outcome =
+# ("error", the error line) or ("ran", stdout, the last stderr line); against the disabled server of the test).
+ARGPARSE_KNOWN: dict[str, tuple[tuple[str, ...], list[tuple[str, ...]]]] = {
+    # a single-dash `-=x`: "ambiguous" in newer patch releases, an unknown option in older ones
+    "cmd -=x": (
+        ("error", "smallworld-rcon cmd: error: ambiguous option: -=x could match -h, --help"),
+        [("error", "smallworld-rcon cmd: error: the following arguments are required: command")],
+    ),
+    "worldborder -=x": (
+        ("error", "smallworld-rcon worldborder: error: ambiguous option: -=x could match -h, --help, --dimension, --radius"),
+        [("error", "smallworld-rcon worldborder: error: the following arguments are required: --dimension, --radius")],
+    ),
+    # `-hX`: help (X more single-letter options) in newer releases; older ones (3.11.2 of Debian 12, 3.12.0) refuse it
+    "cmd -hello": (("help",), [("error", "smallworld-rcon cmd: error: argument -h/--help: ignored explicit argument 'ello'")]),
+    "cmd say -hello": (("help",), [("error", "smallworld-rcon cmd: error: argument -h/--help: ignored explicit argument 'ello'")]),
+    "cmd -hx": (("help",), [("error", "smallworld-rcon cmd: error: argument -h/--help: ignored explicit argument 'x'")]),
+    "stop -hfoo": (("help",), [("error", "smallworld-rcon stop: error: argument -h/--help: ignored explicit argument 'foo'")]),
+    # a `--` before the subcommand: dropped in newer patch releases, an (invalid) choice in older ones
+    "-- cmd list": (
+        ("ran", "", "RconError: RCON is disabled in server.properties"),
+        [("error", f"smallworld-rcon: error: argument cmd: invalid choice: '--' {_CHOICES}")],
+    ),
+}  # fmt: skip
+
+
+def off_spec(text: str) -> str:
+    """Text as the spec Python would have printed it: off the spec, each KNOWN alternative becomes the spec's text
+    (only these documented variants; on the spec itself nothing is changed)."""
+    if AT_SPEC:
+        return text
+    for known in KNOWN:
+        for other in known.others:
+            text = text.replace(other, known.spec)
+    return text
+
 
 Reply = str | bytes  # bytes: raw packets to send instead of a normal reply
 
@@ -180,17 +264,23 @@ class Result:
         )
 
 
-def bin_dir(tmp: Path) -> Path:
-    """The binary next to the Python helpers it runs (countdown's Discord note: notify.py), as on the box."""
-    d = tmp / "bin"
-    if not d.is_dir():
-        d.mkdir(parents=True, exist_ok=True)
-        assert BINARY is not None
-        shutil.copy2(BINARY, d / "smallworld-rcon")
-        for name in ("notify.py", "alerts.py", "mc_rcon.py"):
-            shutil.copy2(SCRIPTS / name, d / name)
-            (d / name).chmod(0o755)
-    return d
+BIN_DIR: Path | None = None
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _bin_dir(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """The binary next to the Python helpers it runs (countdown's Discord note: notify.py), as on the box. Copied
+    once, before any test starts a process: copying it while another thread forks lets the child inherit the
+    writable descriptor until it execs, and executing the copy then fails with ETXTBSY ("Text file busy")."""
+    global BIN_DIR
+    if BINARY is None or not BINARY.is_file():
+        return
+    d = tmp_path_factory.mktemp("bin")
+    shutil.copy2(BINARY, d / "smallworld-rcon")
+    for name in ("notify.py", "alerts.py", "mc_rcon.py"):
+        shutil.copy2(SCRIPTS / name, d / name)
+        (d / name).chmod(0o755)
+    BIN_DIR = d
 
 
 def run_one(
@@ -226,7 +316,8 @@ def run_one(
     if impl == "py":
         argv: list[str | bytes] = [sys.executable, str(SCRIPTS / "mc_rcon.py"), *args]
     else:
-        argv = [str(bin_dir(tmp) / "smallworld-rcon"), *args]
+        assert BIN_DIR is not None
+        argv = [str(BIN_DIR / "smallworld-rcon"), *args]
     try:
         proc = subprocess.run(argv, capture_output=True, env=full_env, timeout=timeout, check=False)
     finally:
@@ -241,39 +332,23 @@ def run_one(
     return Result(proc.returncode, out, err, [p for p in srv.packets])
 
 
-# CPython reworded some C-level OverflowError messages in 3.14 (os.kill with a PID past a C int); the binary keeps
-# the 3.12/3.13 text. Only these known variants are folded together.
-_VERSION_VARIANTS = {"Python int too large to convert to C int": "signed integer is greater than maximum"}
-
-
-def _same_across_versions(text: str) -> str:
-    for new, old in _VERSION_VARIANTS.items():
-        text = text.replace(new, old)
-    return text
-
-
 def compare(tmp: Path, args: list[str | bytes], **kw) -> tuple[Result, Result]:
     """Runs both implementations (in parallel) and asserts they behaved the same."""
     with ThreadPoolExecutor(2) as pool:
         fpy = pool.submit(run_one, "py", tmp, args, **kw)
         frs = pool.submit(run_one, "rs", tmp, args, **kw)
         py, rs = fpy.result(), frs.result()
+    py_out, py_err = off_spec(py.stdout), off_spec(py.stderr)
     assert rs.rc == py.rc, (py, rs)
-    assert rs.stdout == py.stdout, (py, rs)
-    if py.stderr.startswith("Traceback"):
+    assert rs.stdout == py_out, (py, rs)
+    if py_err.startswith("Traceback"):
         # The binary prints the exception line(s) the traceback ends with (a message may hold a newline).
-        py_err = _same_across_versions(py.stderr)
-        assert re.match(r"[\w.]+(: |\n)", rs.stderr) and py_err.endswith(
-            "\n" + _same_across_versions(rs.stderr)
-        ), (
-            py,
-            rs,
-        )
-    elif py.rc == 2 and "error:" in py.stderr:
+        assert re.match(r"[\w.]+(: |\n)", rs.stderr) and py_err.endswith("\n" + rs.stderr), (py, rs)
+    elif py.rc == 2 and "error:" in py_err:
         # argparse's usage line wraps by terminal width; the error line is what callers read.
-        assert rs.stderr.splitlines()[-1] == py.stderr.splitlines()[-1], (py, rs)
+        assert rs.stderr.splitlines()[-1] == py_err.splitlines()[-1], (py, rs)
     else:
-        assert rs.stderr == py.stderr, (py, rs)
+        assert rs.stderr == py_err, (py, rs)
     assert rs.packets == py.packets, (py, rs)
     return py, rs
 
@@ -380,6 +455,14 @@ def test_execstop_falls_back_only_when_the_binary_cannot_answer(
     assert ("falling back to mc_rcon.py stop" in proc.stderr) is fallback, proc
 
 
+def test_ci_runs_the_differential_tests_on_the_spec_python() -> None:
+    """ci.yml's rust job sets up exactly SPEC, where the side-by-side tests demand exact parity."""
+    ci = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
+    setup = [s for s in ci["jobs"]["rust"]["steps"] if "setup-python" in str(s.get("uses"))]
+    assert setup and setup[0]["with"]["python-version"] == ".".join(map(str, SPEC))
+    assert any("tests/test_rust_rcon.py" in str(s.get("run")) for s in ci["jobs"]["rust"]["steps"])
+
+
 def test_build_script_scrubs_the_environment_and_checks_the_toolchain(tmp_path: Path) -> None:
     sys.path.insert(0, str(SCRIPTS))
     import build_rust
@@ -412,7 +495,7 @@ def test_embedded_errno_texts_are_glibcs() -> None:
 # --- differential: the same behaviour, case by case --------------------------------------------------------------
 
 
-@needs_binary
+@differential
 def test_cmd_success_and_formatting(tmp_path: Path) -> None:
     py, _ = compare(
         tmp_path, ["cmd", "list"], handler=reply("§6There are §a3§6 of a max of 20 players online")
@@ -421,7 +504,7 @@ def test_cmd_success_and_formatting(tmp_path: Path) -> None:
     assert py.packets == [[(1, 3, b"pw"), (2, 2, b"list"), (3, 0, b"")]]
 
 
-@needs_binary
+@differential
 @pytest.mark.parametrize(
     "words",
     [
@@ -436,7 +519,7 @@ def test_cmd_words(tmp_path: Path, words: list[str]) -> None:
     compare(tmp_path, ["cmd", *words], handler=lambda: lambda c: f"echo {c} §")
 
 
-@needs_binary
+@differential
 def test_multi_packet_and_fragmented_replies(tmp_path: Path) -> None:
     long = "".join(f"line {i} ✓\n" for i in range(1500))  # > 4096 characters: several packets
     py, _ = compare(tmp_path / "a", ["cmd", "big"], handler=reply(long))
@@ -446,7 +529,7 @@ def test_multi_packet_and_fragmented_replies(tmp_path: Path) -> None:
     compare(tmp_path / "c", ["cmd", "x"], handler=reply("tiny"), server={"chunk": 1})
 
 
-@needs_binary
+@differential
 def test_reply_bytes_edge_cases(tmp_path: Path) -> None:
     # invalid UTF-8 (replaced), a short packet (struct.error), a wrong id, an empty body, a closed connection
     bad_utf8 = FakeServer.packet(0, 0, b"a\xffb\xe2\x82c").replace(struct.pack("<i", 0), b"<ID>", 1)
@@ -459,7 +542,7 @@ def test_reply_bytes_edge_cases(tmp_path: Path) -> None:
     compare(tmp_path / "e", ["cmd", "x"], handler=lambda: lambda c: b"CLOSE")
 
 
-@needs_binary
+@differential
 @pytest.mark.parametrize("sub", [["cmd", "list"], ["stop"], ["countdown", "5"],
                                  ["worldborder", "--dimension", "d", "--radius", "5"],
                                  ["gamerule", "--name", "x", "--value", "1", "--dimension", "d"]])  # fmt: skip
@@ -471,13 +554,13 @@ def test_auth_failure_refused_and_disabled(tmp_path: Path, sub: list[str]) -> No
     compare(tmp_path / "noprops", sub, props=None)
 
 
-@needs_binary
+@differential
 def test_login_variants(tmp_path: Path) -> None:
     compare(tmp_path / "a", ["cmd", "list"], handler=reply("ok"), server={"login": "empty-first"})
     compare(tmp_path / "b", ["cmd", "list"], handler=reply("ok"), server={"password": "other"})
 
 
-@needs_binary
+@differential
 def test_timeouts(tmp_path: Path) -> None:
     """The 10 s socket timeout: a login nobody answers, a command nobody answers (both in parallel: ~10 s)."""
     cases = [
@@ -499,7 +582,7 @@ def test_timeouts(tmp_path: Path) -> None:
     assert results[1][0].stdout == "countdown skipped: timed out\n"
 
 
-@needs_binary
+@differential
 def test_countdown(tmp_path: Path) -> None:
     online = reply("There are 2 of a max of 20 players online: a, b")
     py, _ = compare(tmp_path / "one", ["countdown", "1"], handler=online)
@@ -518,7 +601,7 @@ def test_countdown(tmp_path: Path) -> None:
     compare(tmp_path / "unparsed", ["countdown", "60"], handler=reply("§cUnknown command"))
 
 
-@needs_binary
+@differential
 def test_countdown_discord_note_goes_through_notify(tmp_path: Path) -> None:
     """With a webhook configured both post the same note through notify.py (here an http:// URL, which notify
     refuses without sending anything: both print its `discord notify failed: ValueError`)."""
@@ -545,7 +628,7 @@ def border_handler(*, broken: bool = False) -> Callable[[], Callable[[str], Repl
     return make
 
 
-@needs_binary
+@differential
 def test_worldborder_idempotency(tmp_path: Path) -> None:
     args = ["worldborder", "--dimension", "minecraft:overworld", "--radius", "5000"]
     shared = border_handler()  # one state for both runs of each implementation
@@ -590,7 +673,7 @@ def gamerule_handler(start: str = "false") -> Callable[[], Callable[[str], Reply
     return make
 
 
-@needs_binary
+@differential
 def test_gamerule_idempotency(tmp_path: Path) -> None:
     dims = ["--dimension", "minecraft:overworld", "--dimension", "minecraft:the_nether", "--dimension",
             "minecraft:the_end"]  # fmt: skip
@@ -612,7 +695,7 @@ def test_gamerule_idempotency(tmp_path: Path) -> None:
                 *dims], handler=gamerule_handler())  # fmt: skip
 
 
-@needs_binary
+@differential
 def test_stop(tmp_path: Path) -> None:
     """save-all flush, stop (one packet), then wait for $MAINPID: here a process the fake server ends on `stop`."""
     procs: dict[str, subprocess.Popen] = {}
@@ -667,14 +750,14 @@ PROPS_CASES = {
 }
 
 
-@needs_binary
+@differential
 @pytest.mark.parametrize("case", sorted(PROPS_CASES))
 def test_properties_parsing(tmp_path: Path, case: str) -> None:
     compare(tmp_path, ["cmd", "list"], props=PROPS_CASES[case], handler=reply("ok"),
             server={"password": "pass=w:rd é"})  # fmt: skip
 
 
-@needs_binary
+@differential
 def test_properties_file_edge_cases(tmp_path: Path) -> None:
     ok = {"handler": reply("ok")}
     compare(
@@ -699,13 +782,13 @@ def test_properties_file_edge_cases(tmp_path: Path) -> None:
     )
 
 
-@needs_binary
+@differential
 def test_server_dir_variants(tmp_path: Path) -> None:
     for i, value in enumerate(["/nonexistent//x/", "", "rel/./dir"]):
         compare(tmp_path / str(i), ["cmd", "list"], props=None, env={"MC_SERVER_DIR": value})
 
 
-@needs_binary
+@differential
 def test_non_utf8_arguments(tmp_path: Path) -> None:
     """Python decodes them to lone surrogates and fails only when sending (after the login)."""
     compare(tmp_path / "cmd", ["cmd", "say", b"caf\xe9"], handler=reply("ok"))
@@ -725,52 +808,54 @@ ARGPARSE_CASES = [
     "", "x", "cmd", "countdown", "countdown abc", "countdown 5 6", "worldborder", "worldborder --dimension",
     "worldborder --dimension a --radius x", "worldborder --dim a --rad 5 extra", "gamerule --name a",
     "gamerule --name a --value b", "cmd -x", "cmd list -x", "-x cmd list", "stop extra", "countdown -x",
-    "cmd -hello", "cmd --help=x", "cmd -h=x", "cmd say -hello", "worldborder --dimension -- x --radius 5",
+    "cmd --help=x", "cmd -h=x", "worldborder --dimension -- x --radius 5",
     "worldborder --dimension -x --radius 5", "worldborder --dimension -5 --radius 5", "countdown -- 5",
     "countdown 5 --", "cmd a -- -- b", "--cmd list", "cmd --list", "cmd -", "cmd -1x", "cmd -1.5", "cmd -.5",
     "cmd -5.", "worldborder --dimension=a=b --radius=1", "worldborder --radius 1 --dimension", "countdown 5 --x",
-    "cmd -hx", "worldborder -h", "worldborder --dimension x --radius 1 -x", "worldborder --dimension x --radius -1",
+    "worldborder -h", "worldborder --dimension x --radius 1 -x", "worldborder --dimension x --radius -1",
     "stop -h", "stop --", "stop -- --", "countdown -- -- 5", "worldborder -- --dimension x",
     "worldborder --dimension x --radius 1 --", "worldborder --dimension x -- --radius 1", "cmd --he",
     "gamerule --name a --value b --dimension=", "cmd list -- -h", "-h cmd", "cmd list -h", "countdown -h 5",
     "countdown x -h", "countdown 5 -x", "cmd a -x b", "-x cmd a -y", "worldborder --dimension x --radius=",
-    "cmd -x -h", "cmd -hh", "stop -hfoo", "cmd --=x", "worldborder --=x", "cmd ---x", "countdown 0x5",
-    "countdown +5", "countdown 5_0", "countdown 1_", "worldborder --dimension d --radius 007", "cmd -=x",
-    "worldborder -=x", "countdown -5\n", "gamerule --nam a --val 1 --dim d --dim e", "cmd a\nb",
+    "cmd -x -h", "cmd -hh", "cmd --=x", "worldborder --=x", "cmd ---x", "countdown 0x5",
+    "countdown +5", "countdown 5_0", "countdown 1_", "worldborder --dimension d --radius 007",
+    "countdown -5\n", "gamerule --nam a --val 1 --dim d --dim e", "cmd a\nb", "-- -- cmd list",
 ]  # fmt: skip
-# argparse changed in 3.13: a `--` before the subcommand is dropped (the box runs Python 3.13).
-ARGPARSE_313_CASES = ["-- cmd list", "-- -- cmd list"]
 
 
-@needs_binary
+def argparse_outcome(r: Result) -> tuple[str, ...]:
+    if r.rc == 0 and r.stdout.startswith("usage:"):
+        return ("help",)  # argparse-like help, not byte for byte
+    if r.rc == 2:
+        return ("error", off_spec(r.stderr).splitlines()[-1])
+    return ("ran", off_spec(r.stdout), *off_spec(r.stderr).splitlines()[-1:])
+
+
+@differential
 def test_argparse_behaviour(tmp_path: Path) -> None:
     """Every command line ends the same way: the parsed command reaches the (disabled) server identically, or the
-    same `error:` line and status 2, or help (status 0)."""
-    cases = ARGPARSE_CASES + (ARGPARSE_313_CASES if sys.version_info >= (3, 13) else [])
+    same `error:` line and status 2, or help (status 0). The lines in ARGPARSE_KNOWN follow the spec in the binary
+    and this Python's own rule in mc_rcon.py."""
+    cases = ARGPARSE_CASES + list(ARGPARSE_KNOWN)
     props = PROPS.replace("enable-rcon=true", "enable-rcon=false")
 
     def one(i: int, line: str) -> None:
-        args = line.split(" ") if line else []
-        py = run_one("py", tmp_path / f"{i}", args, props=props)
-        rs = run_one("rs", tmp_path / f"{i}", args, props=props)
-        assert rs.rc == py.rc, (line, py, rs)
-        if py.rc == 0 and py.stdout.startswith("usage:"):
-            assert rs.stdout.startswith("usage:"), (line, rs)  # help: argparse-like, not byte for byte
-        elif py.rc == 2:
-            assert rs.stderr.splitlines()[-1] == py.stderr.splitlines()[-1], (line, py, rs)
+        args = [a.replace("\\n", "\n") for a in line.split(" ")] if line else []
+        py = argparse_outcome(run_one("py", tmp_path / f"{i}", args, props=props))
+        rs = argparse_outcome(run_one("rs", tmp_path / f"{i}", args, props=props))
+        if line in ARGPARSE_KNOWN:
+            spec, others = ARGPARSE_KNOWN[line]
+            assert rs == spec, (line, rs)
+            assert py == spec or (not AT_SPEC and py in others), (line, py)
         else:
-            assert (rs.stdout, rs.stderr.splitlines()[-1:]) == (py.stdout, py.stderr.splitlines()[-1:]), (
-                line,
-                py,
-                rs,
-            )
+            assert rs == py, (line, py, rs)
 
     with ThreadPoolExecutor(8) as pool:
         for f in [pool.submit(one, i, line) for i, line in enumerate(cases)]:
             f.result()
 
 
-@needs_binary
+@differential
 def test_argparse_parsed_values_reach_the_server(tmp_path: Path) -> None:
     for i, args in enumerate(
         [
