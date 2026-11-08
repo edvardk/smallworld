@@ -15,6 +15,8 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ### Fixed
 
+- The panel showed a whitelist add (or any action's result) only after a page reload when the agent's inventory
+  arrived later than 6 s: it now reloads the open tab four times over about 20 s after an action.
 - The Panel -> Git self-test no longer fails at "repository" with `the token can't push (permissions.push is
   false)` when the Worker reported the token's granted permissions: `GET /repos` `permissions.push` describes a
   user's role and is false for a GitHub App installation token, whose push comes from its contents:write grant
