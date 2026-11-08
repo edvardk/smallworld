@@ -275,3 +275,5 @@ Gotchas the goldens encode (keep them; both are logged as known issues to fix in
   (rustls refuses the latter). phase 1.
 - 2026-11-08, core `flock.rs` tests and `jobs.rs` test `the_file_lock_is_shared_across_runners`: retry the
   re-acquire (a concurrent test's fork shares the lock's descriptor until its exec). Tests only. phase 1.
+- 2026-11-08, `sys.rs`: add `monotonic()` (CLOCK_MONOTONIC, for `unit_uptime_s`) and `disk_usage(path)`
+  (`shutil.disk_usage`); `systemd.rs`: `run` becomes `pub(crate)` (data's `systemctl show` queries). Additive. data.

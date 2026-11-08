@@ -1,4 +1,4 @@
-//! The few things std lacks, from libc: `umask`, local time (`localtime_r`, for `time.strftime`) and signals
+//! The few things std lacks, from libc: `umask`, `time.monotonic`, `shutil.disk_usage` (statvfs), local time (`localtime_r`, for `time.strftime`) and signals
 //! (`pthread_sigmask` + `sigwait` on a dedicated thread, Python's `signal.signal` handlers without async-signal
 //! code). Every `unsafe` block in the crate is here, each with what makes it sound.
 
@@ -17,6 +17,52 @@ pub fn now() -> f64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0.0, |d| d.as_secs_f64())
+}
+
+/// `time.monotonic()`: CLOCK_MONOTONIC in seconds (the clock systemd's `*TimestampMonotonic` properties use;
+/// std's `Instant` can't be compared with them).
+pub fn monotonic() -> f64 {
+    let mut ts = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    // SAFETY: clock_gettime writes one timespec through a valid pointer to a local; CLOCK_MONOTONIC always exists.
+    let rc = unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &raw mut ts) };
+    if rc != 0 {
+        return 0.0;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let secs = ts.tv_sec as f64 + ts.tv_nsec as f64 / 1e9;
+    secs
+}
+
+/// `shutil.disk_usage(path)`: (total, used, free) bytes from statvfs (used = blocks - bfree, free = bavail).
+///
+/// # Errors
+/// The `OSError` of statvfs.
+pub fn disk_usage(path: &std::path::Path) -> std::io::Result<(u64, u64, u64)> {
+    use std::os::unix::ffi::OsStrExt;
+    let c = std::ffi::CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| std::io::Error::from_raw_os_error(libc::EINVAL))?;
+    // SAFETY: an all-zero statvfs is a valid value of this plain C struct; statvfs fills it.
+    let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
+    // SAFETY: `c` is a NUL-terminated string that outlives the call; `st` is a valid, writable statvfs.
+    let rc = unsafe { libc::statvfs(c.as_ptr(), &raw mut st) };
+    if rc != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    #[allow(clippy::unnecessary_cast)]
+    let (blocks, bfree, bavail, frsize) = (
+        st.f_blocks as u64,
+        st.f_bfree as u64,
+        st.f_bavail as u64,
+        st.f_frsize as u64,
+    );
+    Ok((
+        blocks * frsize,
+        blocks.saturating_sub(bfree) * frsize,
+        bavail * frsize,
+    ))
 }
 
 /// Broken-down time fields we print.
