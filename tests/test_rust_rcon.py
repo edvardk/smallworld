@@ -241,6 +241,17 @@ def run_one(
     return Result(proc.returncode, out, err, [p for p in srv.packets])
 
 
+# CPython reworded some C-level OverflowError messages in 3.14 (os.kill with a PID past a C int); the binary keeps
+# the 3.12/3.13 text. Only these known variants are folded together.
+_VERSION_VARIANTS = {"Python int too large to convert to C int": "signed integer is greater than maximum"}
+
+
+def _same_across_versions(text: str) -> str:
+    for new, old in _VERSION_VARIANTS.items():
+        text = text.replace(new, old)
+    return text
+
+
 def compare(tmp: Path, args: list[str | bytes], **kw) -> tuple[Result, Result]:
     """Runs both implementations (in parallel) and asserts they behaved the same."""
     with ThreadPoolExecutor(2) as pool:
@@ -251,7 +262,13 @@ def compare(tmp: Path, args: list[str | bytes], **kw) -> tuple[Result, Result]:
     assert rs.stdout == py.stdout, (py, rs)
     if py.stderr.startswith("Traceback"):
         # The binary prints the exception line(s) the traceback ends with (a message may hold a newline).
-        assert re.match(r"[\w.]+(: |\n)", rs.stderr) and py.stderr.endswith("\n" + rs.stderr), (py, rs)
+        py_err = _same_across_versions(py.stderr)
+        assert re.match(r"[\w.]+(: |\n)", rs.stderr) and py_err.endswith(
+            "\n" + _same_across_versions(rs.stderr)
+        ), (
+            py,
+            rs,
+        )
     elif py.rc == 2 and "error:" in py.stderr:
         # argparse's usage line wraps by terminal width; the error line is what callers read.
         assert rs.stderr.splitlines()[-1] == py.stderr.splitlines()[-1], (py, rs)
