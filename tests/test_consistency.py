@@ -185,6 +185,7 @@ def test_no_vault_left() -> None:
     # the removal, and this test has to name the word.
     needle = "vault"
     exempt = {REPO / "docs/design/product-v1.md", REPO / "tests/test_consistency.py"}
+    exempt |= set(REPO.glob("server-config/keys/*/map-palette.tsv"))  # v1.4: the game's own `minecraft:vault` block
     skip_dirs = {".git", ".ruff_cache", "__pycache__", ".terraform", ".venv", ".pytest_cache", ".mcctl"}
     skip_dirs |= {"plans"}  # working notes on release branches, never on main (the public squash drops them)
     skip_dirs |= {".claude"}  # agent worktrees: other checkouts of this repo

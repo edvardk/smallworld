@@ -46,6 +46,11 @@ Where things are: `docs/map.md` (feature map + phase glossary).
   deploy would restart it.
 - Config keys: after changing `minecraft_version` or plugins, regenerate `server-config/keys/<version>/` with
   `scripts/config_keys.py` (static analysis of the pinned jar, never runs it); `tests/test_overlays.py` enforces it.
+  The one exception, a **build-time registry dump**: `scripts/map_palette.py` (v1.4 world map) runs
+  `scripts/map_palette/Dump.java` on the pinned JDK against only the pinned, hash-checked jars, without network,
+  to bootstrap the block registry (never the server, never a world) and write
+  `server-config/keys/<version>/map-palette.tsv` + `map-colors.tsv`; re-run `dump` after a version bump (CI runs
+  `check`, `tests/test_map_reference.py` checks they exist).
 - Server-side scripts (`mc_rcon`, `notify`, `backup`, `restore`, `health`, `admin`, `mc_agent`, `mc_panel`) are
   stdlib-only, Python >= 3.11.
   The controller (`mcctl`) needs Python >= 3.12 (`mcctl.MIN_PYTHON` = `requires-python`; pinned ansible-core).

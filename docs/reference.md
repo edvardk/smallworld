@@ -10,6 +10,7 @@ product/config-repo split, GitHub settings and releasing. New here? Start with t
 - [Secrets inventory](#secrets-inventory) ([running Terraform](#running-terraform), [Tailscale OAuth client](#tailscale-oauth-client-for-terraform))
 - [Setup by hand](#setup-by-hand)
 - [mcctl commands](#mcctl-commands)
+- [World map](#world-map) (v1.4: the tile format and how mc-brand reads it)
 - [Bumping versions](#bumping-versions)
 - [Move to a new VPS](#move-to-a-new-vps)
 - [Product and config repos](#product-and-config-repos) ([automation](#automation-p11), [GitHub settings](#github-settings), [releasing](#releasing))
@@ -487,6 +488,144 @@ validated but not rendered yet. `mcctl validate` warns about placeholders (RFC 2
 `example.com` in logins, emails and `dns.zone`; the template's `example-*` GitHub names) and `render`/`deploy`
 refuse them: they would end up in the tailnet ACL, Cloudflare Access, DNS or the wrong repository's secrets.
 
+## World map
+
+v1.4 pre-renders the world into map tiles: the pocket map (`/map`) shows terrain the player has never visited, and
+the spawn map room shows the whole world. The renderer (`smallworld-map`, Rust, a nightly systemd timer as its
+own user) writes tiles; mc-brand reads them. This section is the contract between the two: both follow it, and
+both are tested against the Python reference renderer `tests/map_reference.py`, which is normative where this text
+is ambiguous. The Overworld and the End are rendered; the Nether never is (vanilla draws Nether maps as noise).
+
+### Inputs
+
+- **The world:** `<level-name>/dimensions/<ns>/<dim>/region/r.<X>.<Z>.mca` (26.x keeps every dimension under
+  one folder), plus external chunks `c.<chunkX>.<chunkZ>.mcc` in the same folder. Region header: 1024 big-endian
+  locations (`sector << 8 | count`) and 1024 timestamps; payload `u32 length`, `u8 compression` (1 gzip, 2 zlib,
+  3 none; bit `0x80`: the stream is in the `.mcc` file; 4 LZ4Block and 127 custom are counted and skipped). Never
+  `mmap` (the server truncates region files); read, check the chunk's `xPos`/`zPos` against its slot.
+- **Which chunks:** `DataVersion` equal to the palette's `data_version` and `Status` `minecraft:full` (vanilla
+  draws only loaded, full chunks). `--provisional` also draws `features`, `initialize_light`, `light` and
+  `spawn` chunks (tile flag bit 0). Any other chunk is skipped and counted: an older chunk is drawn once the
+  server has loaded and re-saved it.
+- **Chunk NBT used:** `yPos` (minimum Y = `yPos * 16`), `Heightmaps.WORLD_SURFACE` (`ceillog2(height + 1)` bits
+  per entry, index `x + z * 16`, value = first free y − minimum Y; the long count gives the bit count except 11
+  vs 12 bits, where the dimension's height decides), `sections[].Y` and `sections[].block_states`
+  (`{palette, data?}`, `max(4, ceillog2(palette size))` bits, values never span longs, index
+  `((y & 15) * 16 + z) * 16 + x`). Sections without `block_states` (26.x light-only sections) are air. A palette
+  entry is a bare block id (its default state; `{"": id}` inside a list that mixes forms) or `{id, properties?}`
+  whose missing properties take the default state's values.
+- **The palette:** `server-config/keys/<minecraft_version>/map-palette.tsv` and `map-colors.tsv`, dumped from the
+  pinned server jar by `scripts/map_palette.py` (the build-time registry dump, CLAUDE.md "Config keys"; CI
+  re-dumps and compares). Tab-separated records: `M key value` (metadata: `format` 1, `minecraft_version`,
+  `data_version`, `server`, `blocks`, `states`), `D block properties colour fluid surface` (each block's default
+  state, registry order) and `S ...` (a state of the block above whose last three fields differ from its `D`
+  line; any other state has the `D` values). `properties` is `k=v` sorted by name, comma-separated, `-` for none.
+  `colour` is the MapColor id (0 = NONE: the map looks through it), `fluid` 1 if the state has a fluid, `surface`
+  the colour recorded when the walk stops on it (a fluid state without a sturdy top face counts as its fluid's
+  block). `map-colors.tsv`: `id rrggbb`. An unknown block or property set counts as NONE and is reported.
+
+### The algorithm (vanilla's `MapItem.update`, 26.3 bytecode)
+
+Per block column: start at `w` = WORLD_SURFACE value + minimum Y. If `w <= minY + 1`, the column is bedrock
+(STONE grey; empty End void columns included). Else step down (`w -= 1`, read the state) while the state's colour
+is NONE and `w > minY`. If then `w > minY` and the state has a fluid, count the depth (from `w - 1` down, one per
+block, while the block is fluid and above minY; the first is always counted) and record `surface`, else
+`colour`. At scale `s` (0..4, `i = 2^s` blocks per pixel, pixel `gx = floor(x / i)`): the footprint's most
+frequent colour (a tie goes to the colour seen first, footprint order x outer, z inner), `d1` = Σ `w / (i*i)` and
+depth = Σ depth `// (i*i)`. Brightness, with parity `p = (gx + gz) & 1`, in IEEE doubles exactly as written (so
+`7 * 0.1 + 0.2 > 0.9`):
+
+- WATER (colour 12): `d2 = depth * 0.1 + p * 0.2`; HIGH (2) if `< 0.5`, LOW (0) if `> 0.9`, else NORMAL (1).
+- Else `d3 = (d1 - d0) * 4.0 / (i + 4) + (p - 0.5) * 0.4`, `d0` = the northern pixel's `d1` at the same scale
+  (across chunk, region and tile borders); HIGH if `> 0.6`, LOW if `< -0.6`, else NORMAL. A missing northern
+  pixel (chunk not drawn) gives `d0 = d1`.
+
+The pixel's value is `colour * 4 + brightness`; NONE and missing pixels are 0. Footprints never cross a chunk
+(i ≤ 16), so a pixel depends only on its own chunk and the chunk north of it.
+
+### Tile file
+
+A tile is 512 × 512 pixels at every scale, so a scale-`s` tile covers `512 << s` blocks (scale 0: one region,
+scale 4: 16 × 16 regions). `tx = floor(gx / 512)`, the pixel's offset in it `gx mod 512` (floor), the same for z.
+
+| Offset | Size | Field (little-endian) |
+|---|---|---|
+| 0 | 8 | magic `SWMAPT\x00\x01` (the last byte is the format version) |
+| 8 | 1 | scale, 0..4 |
+| 9 | 1 | flags: bit 0 = provisional chunks drawn; other bits 0 |
+| 10 | 2 | reserved, 0 |
+| 12 | 4 | `tx`, i32 |
+| 16 | 4 | `tz`, i32 |
+| 20 | 4 | DataVersion of the chunks drawn (= the palette's), u32 |
+| 24 | 8 | `rendered_at`: unix seconds of the run that wrote the tile, i64 (tests: fixed, 0 for the goldens) |
+| 32 | 262144 | one byte per pixel, rows north to south (z), columns west to east (x); 0 = no data |
+
+A reader rejects a tile whose size isn't exactly 262176 bytes, whose magic, scale or reserved field differ, or
+whose `tx`/`tz`/scale don't match its file name, and treats it as missing. An all-zero tile is not written (and
+is deleted when a render empties it). Files are written to a temporary name in the same directory and renamed.
+
+### Directory layout
+
+```
+/var/lib/mc-map/                        mc_map_dir (StateDirectory, 0750 mcmap:minecraft, files 0640)
+  <ns>/<dim>/meta.json                  {"format": 1, "generation": N, "world": {"dev": D, "ino": I},
+                                         "data_version": 5023, "palette_sha256": "...", "rendered_at": T}
+  <ns>/<dim>/s<scale>/<tx>.<tz>.swt     the tiles, e.g. minecraft/overworld/s0/-1.0.swt
+  .work/<ns>/<dim>/...                  the renderer's own state (per-chunk timestamps, column cache); private
+```
+
+`<ns>/<dim>` is the dimension's key (`minecraft:the_end` → `minecraft/the_end`). `world` is the world folder's
+`st_dev`/`st_ino` when the render ran.
+
+### Incremental updates
+
+A run must leave exactly the tiles a full render of the same world would write (only `rendered_at` of tiles it
+didn't touch may be older, and a chunk that can't be read right now keeps its previous pixels). The rule:
+
+1. A full render when there is no state, the world identity, the palette's sha256 or the renderer's format
+   changed: the dimension's tiles and state are deleted first.
+2. Otherwise a region file is looked at only when its size or mtime changed; in it, a chunk is dirty when its
+   header timestamp changed, it appeared, or it disappeared (location 0 or the region file is gone). A dirty
+   chunk is read again; if it can't be read now (torn write, wrong slot), its previous pixels stay and it stays
+   dirty for the next run.
+3. A dirty chunk's pixels are recomputed at every scale (0 where it isn't drawable any more), and so is the
+   brightness of the top pixel row of the chunk south of it (its `d0` changed).
+4. Touched tiles are written (renamed into place), then `meta.json` with `generation + 1`, then the state. A run
+   that touched nothing leaves `meta.json` alone.
+
+### How mc-brand reads the tiles
+
+- **Where:** `<mc_map_dir>/<ns>/<dim>/` for the player's world; never for the Nether (`the_nether`), and never
+  when `meta.json` is missing, its `format` isn't 1, or its `world` differs from the world folder's
+  `unix:dev`/`unix:ino` (a world switch: no stale map until the next render).
+- **A window:** for a map centred on `(cx, cz)` at scale `s` (`cx`, `cz` multiples of `2i`, below), pixel
+  `(k1, l1)` of the 128 × 128 canvas is tile pixel `gx = cx / i + k1 - 64`, `gz = cz / i + l1 - 64`; it touches at
+  most 2 × 2 tiles. A value `v > 0` is painted as base colour `v >> 2` shaded by `v & 3`
+  (`channel * {180, 220, 255, 135}[v & 3] / 255`, from `map-colors.tsv`) with `setPixelColor`; 0 leaves the
+  pixel to vanilla. Pixels vanilla has drawn are released to vanilla's live colour as today (PocketMap).
+- **Caching:** decoded tiles in a small LRU (16 tiles, 4 MB); the cache is dropped when `meta.json`'s
+  `generation` changes (checked at most once a minute, only when a window is wanted); file reads off the main
+  thread, the map falls back to today's behaviour until the tile is loaded.
+- **The spawn map room** (1.4.0): a wall of item frames, one `MapView` per frame on vanilla's map grid (centre
+  `floor((x + 64) / w) * w + w / 2 - 64`, `w = 128 * i`, which is always a multiple of `2i`), each painted from the
+  same tiles by a non-contextual renderer and repainted when `generation` changes.
+
+### The pocket map's centre snap
+
+The stored pixels are computed with parity `(gx + gz) & 1`; vanilla dithers with `(k1 + l1) & 1`, and the two
+agree only when `cx / i + cz / i` is even. So pocket maps are centred on multiples of `2i` blocks:
+`Wayfinding.snap(coord, scale + 1)` instead of `snap(coord, scale)`, at creation and on every re-centre
+(`RECENTRE_PX` = 4 is already even). Vanilla-grid maps already have even centres. The reference is
+`map_reference.pocket_centre`; `tests/test_map_reference.py` shows that the tiles equal vanilla's own pixels for
+even centres and differ for odd ones.
+
+### Golden tests
+
+`tests/fixtures/world-26.3/` holds real chunks of a 26.3 world and generated edge cases (its README says where
+they come from and how to regenerate them); `golden.json` has the sha256 of every tile `tests/map_reference.py`
+renders from it with `rendered_at` 0. The Rust renderer must produce the same files, byte for byte.
+`scripts/map_preview.py` turns a tile (or a fixture render) into a PNG.
+
 ## Bumping versions
 
 - **Server build / plugins (same MC version):** automatic in config repos (P11, see [Automation](#automation-p11)); by
@@ -507,6 +646,8 @@ refuse them: they would end up in the tailnet ACL, Cloudflare Access, DNS or the
   `mcctl lock update -C $C` does the same for the newest builds of the current version. Adding X to the product:
   - `python scripts/update_lock.py --minecraft-version X`, set `minecraft.version` in `template/server.yml`, run `python scripts/sync_example.py`.
   - Run `python scripts/config_keys.py --javap <jdk>/bin/javap` to list the new keys, and `pytest` to check the overlays still validate.
+  - Run `python scripts/map_palette.py dump` (the world map's palette) and regenerate the map fixture
+    (`tests/fixtures/world-26.3/README.md`).
   - If `java_major` changed, bump `temurin_version`.
 - **Tailscale / Temurin / restic:** bump the pins in `ansible/group_vars/all/main.yml`. For restic and Tailscale, also bump `.github/workflows/server.yml` (backup-check / deploy jobs; `pytest` checks they match); the Tailscale upgrade runs detached on the server and Ansible reconnects, since the deploy itself goes over Tailscale SSH.
   Tailscale is held at its pin, so **security fixes need this manual bump**.

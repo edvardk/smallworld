@@ -18,6 +18,10 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   `docs/rust/smallworld-rcon.md`.
 - `notify.py restart-alert SECONDS ONLINE`: posts the deploy-restart note to Discord (what `countdown` posts;
   smallworld-rcon, which has no TLS, runs it).
+- **World map groundwork:** `scripts/map_palette.py dump|check` writes the block colour table the v1.4 map
+  renderer will use (`server-config/keys/<version>/map-palette.tsv`, `map-colors.tsv`) from a build-time dump of
+  the pinned jar's block registry (pinned JDK, pinned jars only, no network, no server or world); CI re-dumps and
+  compares. Spec: docs/reference.md "World map".
 
 ### Changed
 
