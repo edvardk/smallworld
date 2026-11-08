@@ -1993,6 +1993,7 @@ WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 OP_CONT, OP_TEXT, OP_BIN, OP_CLOSE, OP_PING, OP_PONG = 0x0, 0x1, 0x2, 0x8, 0x9, 0xA
 WS_MAX_MESSAGE = 1 << 20
 WS_RECV_TIMEOUT_S = 15.0
+WS_CLOSE_WAIT_S = 5.0  # v1.5: at shutdown, how long the Worker has to answer our close frame
 # v1.5: at shutdown, the telemetry's last round + its segment (an HTTP call <= 20 s)
 TELEMETRY_STOP_WAIT_S = 30.0
 WS_PING_S = 45.0  # idle this long: ping
@@ -2029,6 +2030,7 @@ class WebSocket:
         self.parts: list[bytes] | None = None  # a fragmented message being received
         self.last_rx = time.monotonic()
         self.send_lock = threading.Lock()  # the session thread and the console tail both send
+        self.close_sent = False  # v1.5: one close frame per session (an echo or our own 1000)
 
     @classmethod
     def connect(cls, url: str, headers: dict[str, str], timeout: float = 20.0) -> WebSocket:
@@ -2141,7 +2143,7 @@ class WebSocket:
                 continue
             if op == OP_CLOSE:
                 with contextlib.suppress(OSError):
-                    self._send(OP_CLOSE, data[:2])
+                    self.send_close(data[:2])  # the echo (none if we closed first: this is the answer)
                 return None
             if op in (OP_TEXT, OP_BIN):
                 if self.parts is not None:
@@ -2163,9 +2165,17 @@ class WebSocket:
     def ping(self) -> None:
         self._send(OP_PING, b"")
 
+    def send_close(self, payload: bytes = struct.pack(">H", 1000)) -> None:
+        """The session's one close frame (RFC 6455 5.5.1: nothing is sent after it)."""
+        with self.send_lock:
+            if self.close_sent:
+                return
+            self.close_sent = True
+            self.sock.sendall(encode_frame(OP_CLOSE, payload))
+
     def close(self) -> None:
         with contextlib.suppress(OSError):
-            self._send(OP_CLOSE, struct.pack(">H", 1000))
+            self.send_close()
         self.sock.close()
 
 
@@ -2616,10 +2626,16 @@ class Agent:
 
     def shutdown(self, threads: dict[str, threading.Thread]) -> None:
         """v1.5, after SIGTERM (`stop` set): deterministic, not left to daemon threads racing the
-        interpreter's exit: the telemetry's RAM buffer goes to a segment (Telemetry.run ends with
-        shutdown()). The wait is bounded."""
-        if "telemetry" in threads:
-            threads["telemetry"].join(TELEMETRY_STOP_WAIT_S)
+        interpreter's exit. The WebSocket is closed gracefully (1000; the session ends on the Worker's
+        answer), then the telemetry's RAM buffer goes to a segment (Telemetry.run ends with shutdown()). Each
+        wait is bounded."""
+        ws = self.ws
+        if ws is not None:
+            with contextlib.suppress(OSError):
+                ws.send_close()
+        for name, wait in (("control", WS_CLOSE_WAIT_S), ("telemetry", TELEMETRY_STOP_WAIT_S)):
+            if name in threads:
+                threads[name].join(wait)
 
 
 # P10: job reports (the Worker keeps them in the Control object: no D1 rows) and the inventory pushes that

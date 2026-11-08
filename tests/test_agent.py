@@ -858,6 +858,48 @@ def test_websocket_handshake_ping_fragments_and_close() -> None:
     assert got["close"][0] == mc_agent.OP_CLOSE
 
 
+def test_one_close_frame_per_session_and_a_close_we_start() -> None:
+    """v1.5: the echo of the Worker's close is the session's only close frame (close() sends no second one);
+    at shutdown the agent closes first (1000) and the Worker's answer ends recv() without an echo."""
+    ws, peer = ws_pair(timeout=2)
+    peer.sendall(server_frame(mc_agent.OP_CLOSE, struct.pack(">H", 1001)))
+    assert ws.recv() is None
+    ws.close()
+    peer.settimeout(2)
+    assert read_client_frame(peer) == (mc_agent.OP_CLOSE, struct.pack(">H", 1001))
+    assert peer.recv(100) == b""
+    ws, peer = ws_pair(timeout=2)
+    ws.send_close()
+    ws.send_close()
+    peer.settimeout(2)
+    assert read_client_frame(peer) == (mc_agent.OP_CLOSE, struct.pack(">H", 1000))
+    peer.sendall(server_frame(mc_agent.OP_CLOSE, struct.pack(">H", 1000)))
+    assert ws.recv() is None
+    ws.close()
+    assert peer.recv(100) == b""
+
+
+def test_shutdown_closes_the_websocket_and_waits_for_the_threads(settings) -> None:
+    """v1.5: SIGTERM -> Agent.shutdown: the live socket gets its 1000 close, then the control and telemetry
+    threads are given their bounded time."""
+    agent = mc_agent.Agent(settings)
+    ws, peer = ws_pair(timeout=2)
+    agent.ws = ws
+    joined: list[tuple[str, float]] = []
+
+    class T:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def join(self, timeout: float) -> None:
+            joined.append((self.name, timeout))
+
+    agent.shutdown({"control": T("control"), "telemetry": T("telemetry"), "logs": T("logs")})  # type: ignore[dict-item]
+    peer.settimeout(2)
+    assert read_client_frame(peer) == (mc_agent.OP_CLOSE, struct.pack(">H", 1000))
+    assert joined == [("control", mc_agent.WS_CLOSE_WAIT_S), ("telemetry", mc_agent.TELEMETRY_STOP_WAIT_S)]
+
+
 def test_websocket_refuses_a_bad_accept() -> None:
     lsock = socket.create_server(("127.0.0.1", 0))
 

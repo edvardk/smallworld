@@ -201,6 +201,8 @@ pub fn telemetry_loop(d: &Daemon) -> AResult<()> {
 /// adapts a loop with its own signature.
 pub type LoopFn = Box<dyn Fn(&Daemon) -> AResult<()> + Send>;
 
+/// mc_agent.py `WS_CLOSE_WAIT_S` (v1.5): at shutdown, how long the Worker has to answer our close frame.
+pub const WS_CLOSE_WAIT_S: f64 = 5.0;
 /// mc_agent.py `TELEMETRY_STOP_WAIT_S` (v1.5): at shutdown, the telemetry's last round and its segment.
 pub const TELEMETRY_STOP_WAIT_S: f64 = 30.0;
 
@@ -216,11 +218,20 @@ pub fn join_within(h: &std::thread::JoinHandle<()>, secs: f64) -> bool {
     true
 }
 
-/// `Agent.shutdown(threads)` (v1.5, after SIGTERM): the telemetry's RAM buffer saved to a segment (its loop
-/// ends with `shutdown`). The wait is bounded.
-pub fn shutdown(_daemon: &Daemon, threads: &[(&'static str, std::thread::JoinHandle<()>)]) {
-    if let Some((_, h)) = threads.iter().find(|(n, _)| *n == "telemetry") {
-        join_within(h, TELEMETRY_STOP_WAIT_S);
+/// `Agent.shutdown(threads)` (v1.5, after SIGTERM): the WebSocket closed gracefully (1000; the session ends on
+/// the Worker's answer), then the telemetry's RAM buffer saved to a segment (its loop ends with `shutdown`).
+/// Each wait is bounded.
+pub fn shutdown(daemon: &Daemon, threads: &[(&'static str, std::thread::JoinHandle<()>)]) {
+    if let Some(ws) = daemon.ws_sender() {
+        ws.send_close(&1000u16.to_be_bytes());
+    }
+    for (name, wait) in [
+        ("control", WS_CLOSE_WAIT_S),
+        ("telemetry", TELEMETRY_STOP_WAIT_S),
+    ] {
+        if let Some((_, h)) = threads.iter().find(|(n, _)| *n == name) {
+            join_within(h, wait);
+        }
     }
 }
 
