@@ -751,8 +751,12 @@ mod tests {
             )
             .is_ok()
         );
-        // released after the job
-        assert!(take_job_lock(&path).is_ok());
+        // released after the job (retried: a concurrent test's fork may share the descriptor until its exec)
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while take_job_lock(&path).is_err() {
+            assert!(Instant::now() < deadline, "the job lock wasn't released");
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 
     #[test]

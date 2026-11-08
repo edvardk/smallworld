@@ -234,3 +234,6 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
 ## Shared changes
 
 (One line per change to a shared file after phase 1: date, file, what, who.)
+
+- 2026-11-08, core `flock.rs` tests and `jobs.rs` test `the_file_lock_is_shared_across_runners`: retry the
+  re-acquire (a concurrent test's fork shares the lock's descriptor until its exec). Tests only. phase 1.

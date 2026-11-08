@@ -146,8 +146,16 @@ mod tests {
         let held = take_job_lock(&p).unwrap();
         assert_eq!(take_job_lock(&p).unwrap_err(), JobLockError::Busy);
         drop(held);
-        let again = take_job_lock(&p).unwrap();
-        drop(again);
+        // Another test may be spawning a child right now: between fork and exec the child shares our open file
+        // description (and so the lock) until exec closes it (O_CLOEXEC). Give it a moment.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while take_job_lock(&p).is_err() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the lock wasn't released"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
     }
 
     #[test]
