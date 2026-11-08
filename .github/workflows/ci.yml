@@ -326,13 +326,16 @@ jobs:
       - name: Rebuild the client mod and compare
         run: python scripts/build_client_mod.py check --cache "$RUNNER_TEMP/build-client-mod"
 
-  # v1.4: the Rust workspace (rust/: smallworld-rcon, the drop-in for mc_rcon.py's command line). rustup installs the
-  # toolchain rust/rust-toolchain.toml pins, with clippy, rustfmt and both musl targets (every download checked against
-  # the channel manifest's sha256); then rustfmt, clippy (warnings are errors), the unit tests, the reproducible
-  # rebuild compared byte for byte with rust/dist/ and the group_vars pins (scripts/build_rust.py check), and the
-  # differential tests against mc_rcon.py (tests/test_rust_rcon.py, which lint's pytest also runs). Runs when its
-  # inputs changed (scripts/ci_changes.py group `rust`), and always on releases and dispatches. Like `plugin`, not a
-  # required check.
+  # v1.4: the Rust workspace (rust/: smallworld-rcon, the drop-in for mc_rcon.py's command line; smallworld-core;
+  # smallworld-agent, the port of mc_agent.py). rustup installs the toolchain rust/rust-toolchain.toml pins, with
+  # clippy, rustfmt and both musl targets (every download checked against the channel manifest's sha256); the crates
+  # are fetched as Cargo.lock pins them (crates.io checksums); cargo deny (pinned version and sha256) checks licences,
+  # advisories, bans and sources (rust/deny.toml); then rustfmt, clippy (warnings are errors), the unit tests, the
+  # reproducible rebuild compared byte for byte with rust/dist/ and the group_vars pins (scripts/build_rust.py check,
+  # with the clang it pins for ring), and the differential tests against mc_rcon.py and mc_agent.py
+  # (tests/test_rust_rcon.py, tests/test_rust_agent_cli.py: the latter in user namespaces, which Ubuntu 24.04's
+  # AppArmor restricts unless told otherwise). Runs when its inputs changed (scripts/ci_changes.py group `rust`), and
+  # always on releases and dispatches. Like `plugin`, not a required check.
   rust:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' }}
@@ -358,6 +361,29 @@ jobs:
           rustup toolchain install
           rustc --version
 
+      - name: Fetch the crates (Cargo.lock, crates.io checksums)
+        working-directory: rust
+        run: cargo fetch --locked
+
+      - name: cargo deny (licences, advisories, bans, sources)
+        working-directory: rust
+        env:
+          CARGO_DENY_VERSION: "0.20.2"
+          CARGO_DENY_SHA256: 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f
+        run: |
+          name="cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl"
+          curl -fsSL -o "$RUNNER_TEMP/cargo-deny.tgz" \
+            "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/${name}.tar.gz"
+          echo "${CARGO_DENY_SHA256}  $RUNNER_TEMP/cargo-deny.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/cargo-deny.tgz" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/${name}/cargo-deny" --locked check
+
+      - name: The C toolchain ring is built with (clang 18.1.3, llvm-ar-18; scripts/build_rust.py checks the version)
+        run: |
+          command -v clang-18 >/dev/null && command -v llvm-ar-18 >/dev/null \
+            || sudo apt-get install -y --no-install-recommends clang-18 llvm-18
+          clang-18 --version | head -n 1
+
       - name: rustfmt
         working-directory: rust
         run: cargo fmt --all --check
@@ -373,8 +399,10 @@ jobs:
       - name: Rebuild the binaries and compare
         run: python scripts/build_rust.py check
 
-      - name: Differential tests against mc_rcon.py
-        run: pytest -q tests/test_rust_rcon.py
+      - name: Differential tests against mc_rcon.py and mc_agent.py
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          pytest -q tests/test_rust_rcon.py tests/test_rust_agent_cli.py
 
   # v1.2: the world library's seed catalogue (worlds/seeds.yml). Boots the pinned server jar once per seed
   # (throwaway world, RCON on 127.0.0.1 with a random password), runs each claim's /locate and fails when a claim

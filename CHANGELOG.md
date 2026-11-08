@@ -16,6 +16,16 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   `ansible/group_vars/all/main.yml` (`mc_smallworld_rcon_sha256`); CI job `rust` (rustfmt, clippy, unit tests, the
   byte-for-byte rebuild, the differential tests). A walkthrough for Python programmers:
   `docs/rust/smallworld-rcon.md`.
+- **smallworld-agent** (`rust/smallworld-agent`, not installed yet): the start of the Rust port of the on-box
+  agent (`mc_agent.py` and the agent half of `mc_panel.py`). Its `cli` entry point (what `mcctl` runs over SSH:
+  restart, plugin, moderate, world_create/switch/delete, the worlds and plugins lists) is ported and proved
+  against `mc_agent.py cli` by `tests/test_rust_agent_cli.py` (same output, exit status, audit entries, RCON
+  commands, systemctl calls and files; the job lock interlocks across the two). Shared code in
+  `rust/smallworld-core` (smallworld-rcon's RCON client moved there; smallworld-rcon stays dependency-free). The
+  agent uses a small pinned crate set (ureq + rustls/ring with the system CA bundle, serde_json, RustCrypto
+  hmac/sha, flate2, regex, Unicode tables, libc): `rust/allowed-crates.txt` (checked against `Cargo.lock`),
+  `cargo deny` (`rust/deny.toml`, pinned in CI), reproducible builds with clang 18.1.3 for ring; binaries in
+  `rust/dist/`, pinned as `mc_smallworld_agent_sha256`. Porting contract: `rust/smallworld-agent/PORTING.md`.
 - `notify.py restart-alert SECONDS ONLINE`: posts the deploy-restart note to Discord (what `countdown` posts;
   smallworld-rcon, which has no TLS, runs it).
 

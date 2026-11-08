@@ -27,10 +27,13 @@ a command line, error handling and tests, in about 3,000 lines (half of them tes
 binary needs nothing at run time: `ExecStop` keeps working even if the box's Python were broken, which matters
 because a bad stop can lose world data.
 
-The rules it follows (CLAUDE.md "Rust workspace"): the toolchain is pinned (`rust/rust-toolchain.toml`), there
-are **no crates.io dependencies** (std only, like the stdlib-only server scripts: nothing to audit, no supply
-chain), `unsafe` is forbidden, and the committed binaries in `rust/dist/` are rebuilt byte for byte by
-`python scripts/build_rust.py check` in CI.
+The rules it follows (CLAUDE.md "Rust workspace"): the toolchain is pinned (`rust/rust-toolchain.toml`),
+smallworld-rcon has **no crates.io dependencies** (std only, like the stdlib-only server scripts: nothing to
+audit, no supply chain; its shared code lives in `rust/smallworld-core`, used without features), `unsafe` is
+forbidden, and the committed binaries in `rust/dist/` are rebuilt byte for byte by
+`python scripts/build_rust.py check` in CI. (The agent port, `rust/smallworld-agent`, does use a small, pinned
+set of crates for TLS, JSON and regexes: `rust/allowed-crates.txt`, `rust/deny.toml`,
+`rust/smallworld-agent/PORTING.md`.)
 
 ## Where it runs
 
@@ -49,8 +52,10 @@ box's architecture (x86_64 or aarch64, the same choice as restic's download) and
 
 ```text
 rust/
-  Cargo.toml              the workspace: its members and the release profile (how dist/ is built)
-  Cargo.lock              committed; lists only our own crate (no dependencies)
+  Cargo.toml              the workspace: its members, the agent's pinned crates, the release profiles
+  Cargo.lock              committed (smallworld-rcon's part of it: only our own crates)
+  allowed-crates.txt      the exact crates.io crates the lock may hold (tests/test_consistency.py)
+  deny.toml               cargo deny: licences, advisories, bans, crates.io only
   rust-toolchain.toml     the exact compiler version, its components and the two musl targets
   .cargo/config.toml      link with rust-lld (ships with Rust): no C toolchain needed for either target
   dist/                   the committed binaries, one per target
@@ -59,16 +64,21 @@ rust/
     src/
       main.rs             entry point: parse the arguments, run the subcommand, exit status
       args.rs             the command line, parsed by argparse's rules
-      ops.rs              connect, stop, countdown, worldborder, gamerule (mc_rcon.py's functions)
+      ops.rs              stop, countdown, worldborder, gamerule (mc_rcon.py's functions)
+  smallworld-core/        shared with smallworld-agent (std only without features)
+    src/
+      mcrcon.rs           connect(): the RCON settings from server.properties
       rcon.rs             the protocol: packets and the Rcon connection
       properties.rs       reading server.properties
       pystr.rs            Python's text rules: strings, whitespace, int(), repr()
       error.rs            the error type: one variant per Python exception
       errno.rs            glibc's error texts (Python prints them; the binary links musl)
+      ...                 the agent's shared pieces (pyjson, fsx, flock, audit, paths)
+  smallworld-agent/       the port of mc_agent.py (PORTING.md)
 ```
 
 `Cargo.toml` is `pyproject.toml`; `Cargo.lock` is a fully resolved `requirements/*.txt` with hashes (ours is
-nearly empty); a *crate* is a package; a *workspace* is several crates sharing one lock file and one `target/`
+nearly empty for this crate); a *crate* is a package; a *workspace* is several crates sharing one lock file and one `target/`
 build directory. Each `src/*.rs` file is a *module*, pulled in by a `mod name;` line in `main.rs`, the way a
 Python package imports its own modules.
 

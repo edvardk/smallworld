@@ -63,7 +63,9 @@ pub fn gmtime(t: f64) -> Tm {
 
 /// `time.localtime(t)` through the C library (musl reads `TZ` and /etc/localtime, like glibc for Python).
 pub fn localtime(t: f64) -> Tm {
-    #[allow(clippy::cast_possible_truncation)]
+    // libc 0.2 marks musl's time_t deprecated (it will follow musl 1.2's 64-bit time_t); on our 64-bit targets
+    // it already is 64-bit, so the alias is exactly what localtime_r takes.
+    #[allow(clippy::cast_possible_truncation, deprecated)]
     let secs = t.floor() as libc::time_t;
     // SAFETY: `tm` is a plain C struct, valid when zeroed; localtime_r writes only into it and reads `secs`.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };

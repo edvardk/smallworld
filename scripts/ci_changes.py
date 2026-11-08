@@ -49,15 +49,19 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "docs/images/brand-*",
         "requirements/validate.txt",
     ),
-    # v1.4 ci.yml job rust: rustfmt, clippy, cargo test, build_rust.py check (the committed binaries and their
-    # pins), the differential tests against mc_rcon.py
+    # v1.4 ci.yml job rust: rustfmt, clippy, cargo test, cargo deny, build_rust.py check (the committed
+    # binaries and their pins), the differential tests against mc_rcon.py and mc_agent.py
     "rust": (
         "rust/*",
         "scripts/build_rust.py",
         "scripts/mc_rcon.py",
         "scripts/notify.py",
         "scripts/alerts.py",
+        "scripts/mc_agent.py",
+        "scripts/mc_panel.py",
+        "scripts/worlds.py",
         "tests/test_rust_rcon.py",
+        "tests/test_rust_agent_cli.py",
         "ansible/group_vars/all/main.yml",
         "requirements/dev.txt",
     ),

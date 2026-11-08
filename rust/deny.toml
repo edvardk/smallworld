@@ -1,0 +1,44 @@
+# cargo deny check (ci.yml job rust; the version and sha256 of cargo-deny are pinned there). The supply-chain
+# policy of the Rust workspace, next to allowed-crates.txt (the exact crate set, tests/test_consistency.py).
+
+[graph]
+# Only what the binaries are built for: the windows/macOS entries Cargo.lock carries for ureq's and getrandom's
+# optional platform code are never compiled and are ignored here.
+targets = ["x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl"]
+all-features = false
+
+[advisories]
+# The RustSec advisory database: any vulnerability or unmaintained/unsound notice of a crate in the graph fails,
+# as does a yanked version.
+yanked = "deny"
+ignore = []
+
+[licenses]
+# Permissive licences only (nothing copyleft). ring is "Apache-2.0 AND ISC"; unicode-normalization's tables are
+# Unicode-3.0; subtle is BSD-3-Clause.
+allow = ["MIT", "Apache-2.0", "ISC", "BSD-3-Clause", "Unicode-3.0"]
+confidence-threshold = 0.93
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+# Our own crates are path dependencies (publish = false).
+allow-wildcard-paths = true
+deny = [
+    # TLS: rustls with ring only. No OpenSSL, no aws-lc (rustls' default provider), no native-tls.
+    { crate = "openssl-sys" },
+    { crate = "openssl" },
+    { crate = "native-tls" },
+    { crate = "aws-lc-sys" },
+    { crate = "aws-lc-rs" },
+    # Blocking I/O on OS threads, like the Python agent: no async runtime.
+    { crate = "tokio" },
+    # Bundled Mozilla roots: the agent verifies against the system bundle (http.rs).
+    { crate = "webpki-roots" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

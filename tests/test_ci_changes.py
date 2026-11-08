@@ -43,6 +43,8 @@ def load(name: str) -> dict:
         (["rust/smallworld-rcon/src/rcon.rs"], {"code", "rust"}),
         (["rust/dist/smallworld-rcon-x86_64-unknown-linux-musl"], {"code", "rust", "e2e"}),
         (["scripts/mc_rcon.py"], {"code", "rust", "e2e"}),
+        (["rust/smallworld-agent/src/cli.rs"], {"code", "rust"}),
+        (["scripts/mc_agent.py"], {"code", "rust", "e2e", "e2e_full"}),
         (["watchdog/panel/seeds.json"], {"code", "e2e", "e2e_full", "seeds"}),
         (["scripts/boot_test.py"], {"code", "e2e", "seeds"}),
         ([], set()),
