@@ -180,13 +180,23 @@ them, so archives stay until you delete them.
 What a switch (or create) does, step by step in the header banner: in-game countdown (skipped when nobody is
 online) → stop → **archive the active world** (the final backup and the safety snapshot in one: nothing else
 happens unless it is in restic's list) → fetch the target archive (or nothing, for a new world) → swap the world
-folders (`world`, `world_nether`, `world_the_end`) as `minecraft` and write the world's `server.properties` keys →
-start → check that it answers (and has the seed you asked for) → set its border → back it up. If anything fails
-before the swap, the old world starts again untouched; if the swap itself fails, the server stays stopped and the
-admin-stopped marker names the archive to restore.
+folders as `minecraft` and write the world's `server.properties` keys → start → check that it answers (and has the
+seed you asked for) → set its border → back it up. If anything fails before the swap, the old world starts again
+untouched; if the swap itself fails, the server stays stopped and the admin-stopped marker names the archive to
+restore.
+
+**Folder layout (Minecraft 26.x):** a world is the one `world/` folder, every dimension inside it
+(`world/dimensions/minecraft/{overworld,the_nether,the_end}/`); the Bukkit world names (`world_nether`,
+`world_the_end`: borders, pre-generation) are unchanged. A switch removes `world/` and any old `world_nether/`
+and `world_the_end/` from the server dir (all in the archive just taken) and copies the archive's `world/`. A
+world **archived before the 26.x upgrade** (split `world/`, `world_nether/`, `world_the_end/`) switches in with
+its three folders and the server moves it into the new layout at its first start (a 30-second pause, one way;
+the banner's start step says so). An archive with region files in **both** layouts is refused before anything changes
+(the server would refuse it or merge old chunks in): restore it by hand if you need it.
 
 **Per world:** inventories, ender chests, XP, advancements and statistics (each world folder has its own
-`playerdata/`, `advancements/`, `stats/`), the border and pre-generation. **Shared:** the whitelist, operators,
+`players/data/`, `players/advancements/`, `players/stats/`; `playerdata/`, `advancements/`, `stats/` before
+26.x), the border and pre-generation. **Shared:** the whitelist, operators,
 bans, plugins and their data, and every other `server.properties` key. Game rules live in each world's
 `level.dat`.
 

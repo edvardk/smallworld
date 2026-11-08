@@ -440,8 +440,8 @@ def snapshot_age_hours(snap: dict[str, Any], now: datetime | None = None) -> flo
 def check_world(root: Path, default_level: str = "world") -> str:
     """Fail unless root holds a usable world: <level>/level.dat and >= 1 region file.
 
-    The overworld's region files are in <level>/region/ on Paper; newer vanilla layouts nest them
-    deeper (dimensions/...), so any region/*.mca under the world folder counts.
+    The overworld's region files are in <level>/dimensions/minecraft/overworld/region/ since 26.x and in
+    <level>/region/ before, so any region/*.mca under the world folder counts.
     """
     level = level_name(default_level, root)
     world = root / level
