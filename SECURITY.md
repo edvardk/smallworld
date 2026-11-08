@@ -656,8 +656,9 @@ What `agent.implementation: rust` (smallworld-agent, the port of mc-agent; defau
   writes only what it wrote in-process (`/var/lib/mc-agent/telemetry-id.json`, `/var/lib/mc-telemetry/segments`,
   `verdicts.tsv`/`messages.tsv` in the verdict directory), all inside the agent unit's `StateDirectory=` and
   `ReadWritePaths=`; the snapshots, stats files and GC log it reads from minecraft-writable directories go through
-  `read_untrusted` (no FIFO, no symlink, capped), and a snapshot's `NaN`/`Infinity` reads as missing (a v1.4 fix in
-  both implementations: Python used to fail every round at such a file). `smallworld-agent telemetry`, the parity
+  `read_untrusted` (no FIFO, no symlink, capped); both implementations parse a snapshot the same way, known
+  weaknesses included (a `NaN`/`Infinity` in an integer field fails the round at that file: kept for parity, listed
+  for a fix in both). `smallworld-agent telemetry`, the parity
   harness's entry point (as `mc_agent.py telemetry`), has no unit.
 - **Supply chain.** smallworld-rcon stays std only. The agent uses a small set of crates (TLS with rustls + ring
   and the system CA bundle, JSON, RustCrypto HMAC/SHA, gzip, regex, Unicode tables, libc), each pinned exactly in

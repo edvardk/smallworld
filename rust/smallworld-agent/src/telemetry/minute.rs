@@ -2,8 +2,9 @@
 //! `Sessions`. Float results follow Python's operations one for one: `round()` is data's `py_round`, `min`/`max`
 //! keep the first of equal values, `sum()` is CPython >= 3.12's (compensated for floats, `py_sum`).
 
+use super::TResult;
 use super::json::{J, OMap};
-use super::snapshot::{Player, Snapshot, World, merge_hot};
+use super::snapshot::{Player, Snapshot, World, merge_hot, py_int};
 use crate::data::metrics::{py_round, py_round_int};
 
 pub const MAX_LAG_EVENTS: usize = 20;
@@ -118,11 +119,18 @@ pub fn r(v: Option<f64>, nd: usize) -> J {
 }
 
 /// telemetry.py `summarize_server(snaps)`.
-pub fn summarize_server(snaps: &[Snapshot]) -> OMap {
-    #[allow(clippy::cast_possible_truncation)]
-    let ticks = snaps.iter().fold(0_i64, |acc, s| {
-        acc.saturating_add(s.srv.get("ticks").map_or(0, |t| t as i64))
-    });
+///
+/// # Errors
+/// Python's `int()` of a non-finite `ticks` or sum.
+pub fn summarize_server(snaps: &[Snapshot]) -> TResult<OMap> {
+    let mut ticks = 0_i64;
+    for s in snaps {
+        let t = match s.srv.get("ticks") {
+            Some(t) if t != 0.0 => py_int(t)?,
+            _ => 0,
+        };
+        ticks = ticks.saturating_add(t);
+    }
     let vals = |k: &str| -> Vec<f64> { snaps.iter().filter_map(|s| s.srv.get(k)).collect() };
     let or0 = |v: Option<f64>| v.filter(|x| *x != 0.0).map_or(Num::I(0), Num::F);
     let weighted = py_sum(
@@ -140,9 +148,10 @@ pub fn summarize_server(snaps: &[Snapshot]) -> OMap {
             .fold(0_i64, |a, w| a.saturating_add(f(w)))
     };
     let spikes: usize = snaps.iter().map(|s| s.srv.spikes.len()).sum();
-    #[allow(clippy::cast_possible_truncation)]
-    let int_sum = |k: &str| py_fsum(&vals(k)) as i64;
-    OMap::new()
+    let int_sum = |k: &str| py_int(py_fsum(&vals(k)));
+    let budget_skips = int_sum("budget_skips")?;
+    let lost_windows = int_sum("lost_windows")?;
+    Ok(OMap::new()
         .with("ticks", ticks)
         .with("tps", r(py_min(&vals("tps")), 2))
         .with("mean", r(mean, 2))
@@ -172,9 +181,9 @@ pub fn summarize_server(snaps: &[Snapshot]) -> OMap {
         .with("heap_max_mb", vals("heap_max_mb").last().copied())
         .with("self_p99_us", r(py_max(&vals("self_p99_us")), 1))
         .with("self_max_us", r(py_max(&vals("self_max_us")), 1))
-        .with("budget_skips", int_sum("budget_skips"))
-        .with("lost_windows", int_sum("lost_windows"))
-        .with("samples", snaps.len())
+        .with("budget_skips", budget_skips)
+        .with("lost_windows", lost_windows)
+        .with("samples", snaps.len()))
 }
 
 /// `round(sum(ints) / len(ints))`.

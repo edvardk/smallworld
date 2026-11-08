@@ -57,10 +57,6 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ### Fixed
 
-- A snapshot from the mc-telemetry plugin with `NaN`, `Infinity` or an integer too big for a float in a number
-  field failed every telemetry round at that snapshot (the reader never moved past it, so no minute rows were
-  shipped until the file went away). Such a value now reads as missing, in both implementations.
-
 - **Security:** a journal entry whose `PRIORITY` field is digits that `int()` refuses (`"²"`, which `isdigit()`
   accepts, or more than 4300 digits) stalled log shipping for good: every log round failed at that entry and its
   cursor never moved past it, and any local process can send such a field. It now reads as the default priority,

@@ -8,6 +8,7 @@
 //! (PORTING.md "Divergences"; the plugin writes neither). A hot chunk's boolean `cx`/`cz` is echoed as written.
 
 use super::json::{J, OMap, loads_bytes};
+use super::{PyExc, TResult};
 use regex::Regex;
 use smallworld_core::pystr::{isspace, prefix_cp, split_ws};
 use std::path::{Path, PathBuf};
@@ -47,33 +48,61 @@ pub fn clean_text(v: Option<&J>, limit: usize) -> String {
     }
 }
 
-/// telemetry.py `_num(v)`: a finite float for an int or float (not a bool), else None. (v1.4 fix, in both: a
-/// non-finite value, or an int too big for a float, is None; Python used to raise from `int()` later, which failed
-/// every telemetry round at that snapshot.)
+/// telemetry.py `_num(v)`: a float for an int or float (not a bool), else None. `NaN` and the infinities pass
+/// (Python's json accepts them); `int()` of one raises later, as in Python (a known Python issue, kept for parity:
+/// the telemetry round fails at that snapshot).
 pub fn num(v: Option<&J>) -> Option<f64> {
     #[allow(clippy::cast_precision_loss)]
-    let x = match v? {
-        J::Int(n) => *n as f64,
-        J::Float(x) => *x,
-        _ => return None,
-    };
-    x.is_finite().then_some(x)
+    match v? {
+        J::Int(n) => Some(*n as f64),
+        J::Float(x) => Some(*x),
+        _ => None,
+    }
 }
 
-/// `int(_num(v) or 0)` (truncation toward zero; beyond 64 bits it saturates).
+/// Python's `int(x)` for a float: truncation toward zero (beyond 64 bits it saturates); `NaN` is a `ValueError`,
+/// an infinity an `OverflowError`.
+///
+/// # Errors
+/// Python's exception for a non-finite value.
 #[allow(clippy::cast_possible_truncation)]
-pub fn int_num(v: Option<&J>) -> i64 {
-    num(v).map_or(0, |x| x as i64)
+pub fn py_int(x: f64) -> TResult<i64> {
+    if x.is_nan() {
+        Err(PyExc::new(
+            "ValueError",
+            "cannot convert float NaN to integer",
+        ))
+    } else if x.is_infinite() {
+        Err(PyExc::new(
+            "OverflowError",
+            "cannot convert float infinity to integer",
+        ))
+    } else {
+        Ok(x as i64)
+    }
+}
+
+/// `int(_num(v) or 0)` (`NaN` is truthy: it reaches `int()`).
+///
+/// # Errors
+/// As `py_int`.
+pub fn int_num(v: Option<&J>) -> TResult<i64> {
+    match num(v) {
+        None | Some(0.0) => Ok(0),
+        Some(x) => py_int(x),
+    }
 }
 
 /// telemetry.py `_fps(v)`: 0..10 000 or None.
-#[allow(clippy::cast_possible_truncation)]
-pub fn fps(v: Option<&J>) -> Option<i64> {
-    let n = num(v)?;
+///
+/// # Errors
+/// As `py_int` (`NaN` and `Infinity` reach `int()`).
+pub fn fps(v: Option<&J>) -> TResult<Option<i64>> {
+    let Some(n) = num(v) else { return Ok(None) };
     if n < 0.0 {
-        None
+        Ok(None)
     } else {
-        Some((n as i64).min(10_000))
+        Ok(Some(py_int(n)?.min(10_000)))
     }
 }
 
@@ -108,9 +137,12 @@ impl Hot {
 }
 
 /// telemetry.py `parse_hot(raw)`.
-pub fn parse_hot(raw: Option<&J>) -> Vec<Hot> {
+///
+/// # Errors
+/// As `py_int`.
+pub fn parse_hot(raw: Option<&J>) -> TResult<Vec<Hot>> {
     let Some(J::List(items)) = raw else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let mut out = Vec::new();
     for c in items.iter().take(MAX_HOT) {
@@ -124,15 +156,20 @@ pub fn parse_hot(raw: Option<&J>) -> Vec<Hot> {
         if cx.as_py_int().is_none() || cz.as_py_int().is_none() {
             continue;
         }
-        let count = |k: &str| int_num(c.get(k)).max(0);
+        let count = |k: &str| int_num(c.get(k)).map(|n| n.max(0));
         out.push(Hot {
             w: clean_str(w, 64),
             cx: cx.clone(),
             cz: cz.clone(),
-            counts: [count("ent"), count("tiles"), count("vil"), count("items")],
+            counts: [
+                count("ent")?,
+                count("tiles")?,
+                count("vil")?,
+                count("items")?,
+            ],
         });
     }
-    out
+    Ok(out)
 }
 
 /// telemetry.py `merge_hot(snaps)`.
@@ -323,15 +360,24 @@ impl Snapshot {
     }
 }
 
-/// telemetry.py `parse_snapshot(data)`.
-pub fn parse_snapshot(data: &[u8]) -> Option<Snapshot> {
-    let raw = loads_bytes(data)?;
-    let raw = raw.as_obj()?;
+/// telemetry.py `parse_snapshot(data)`: `Ok(None)` where Python returns None.
+///
+/// # Errors
+/// What Python raises (`int()` of `NaN` or an infinity).
+pub fn parse_snapshot(data: &[u8]) -> TResult<Option<Snapshot>> {
+    let Some(raw) = loads_bytes(data) else {
+        return Ok(None);
+    };
+    let Some(raw) = raw.as_obj() else {
+        return Ok(None);
+    };
     let v_ok = matches!(raw.get("v"), Some(J::Int(1) | J::Bool(true)))
         || matches!(raw.get("v"), Some(J::Float(x)) if x.to_bits() == 1.0_f64.to_bits());
-    let ts = raw.get("ts").and_then(J::as_py_int)?;
+    let Some(ts) = raw.get("ts").and_then(J::as_py_int) else {
+        return Ok(None);
+    };
     if !v_ok {
-        return None;
+        return Ok(None);
     }
     let empty = OMap::new();
     let srv = raw.get("srv").and_then(J::as_obj).unwrap_or(&empty);
@@ -357,17 +403,17 @@ pub fn parse_snapshot(data: &[u8]) -> Option<Snapshot> {
             {
                 out.worlds.push(World {
                     n: clean_str(n, 64),
-                    chunks: int_num(w.get("chunks")),
-                    entities: int_num(w.get("entities")),
-                    tiles: int_num(w.get("tiles")),
-                    ticking: int_num(w.get("ticking")),
-                    players: int_num(w.get("players")),
+                    chunks: int_num(w.get("chunks"))?,
+                    entities: int_num(w.get("entities"))?,
+                    tiles: int_num(w.get("tiles"))?,
+                    ticking: int_num(w.get("ticking"))?,
+                    players: int_num(w.get("players"))?,
                 });
             }
         }
     }
-    out.scanned = int_num(srv.get("scanned"));
-    out.hot = parse_hot(srv.get("hot"));
+    out.scanned = int_num(srv.get("scanned"))?;
+    out.hot = parse_hot(srv.get("hot"))?;
     let mut players = Vec::new();
     if let Some(J::List(pl)) = raw.get("pl") {
         for p in pl.iter().take(500) {
@@ -381,29 +427,29 @@ pub fn parse_snapshot(data: &[u8]) -> Option<Snapshot> {
             players.push(Player {
                 u: u.clone(),
                 n: n.clone(),
-                ping: int_num(p.get("ping")),
+                ping: int_num(p.get("ping"))?,
                 brand: clean_text(p.get("brand"), 32),
-                view: int_num(p.get("view")),
-                send: int_num(p.get("send")),
+                view: int_num(p.get("view"))?,
+                send: int_num(p.get("send"))?,
                 loc: clean_text(p.get("loc"), 16),
                 w: clean_text(p.get("w"), 64),
-                cx: int_num(p.get("cx")),
-                cz: int_num(p.get("cz")),
-                ent: int_num(p.get("ent")),
+                cx: int_num(p.get("cx"))?,
+                cz: int_num(p.get("cz"))?,
+                ent: int_num(p.get("ent"))?,
                 glide: p.get("glide") == Some(&J::Bool(true)),
                 tips: p.get("tips") != Some(&J::Bool(false)),
-                join: int_num(p.get("join")),
-                fps: fps(p.get("fps")),
+                join: int_num(p.get("join"))?,
+                fps: fps(p.get("fps"))?,
             });
         }
     }
-    Some(Snapshot {
-        seq: int_num(raw.get("seq")),
+    Ok(Some(Snapshot {
+        seq: int_num(raw.get("seq"))?,
         ts,
-        win_ms: int_num(raw.get("win_ms")),
+        win_ms: int_num(raw.get("win_ms"))?,
         srv: out,
         pl: players,
-    })
+    }))
 }
 
 /// telemetry.py `SnapshotReader`: new snapshots since the last read, by sequence number; a restarted plugin (seq
@@ -442,9 +488,12 @@ impl SnapshotReader {
     }
 
     /// `read()`.
-    pub fn read(&mut self) -> Vec<Snapshot> {
+    ///
+    /// # Errors
+    /// What `parse_snapshot` raises (the reader doesn't move: the next round reads the same files).
+    pub fn read(&mut self) -> TResult<Vec<Snapshot>> {
         let Some(mut names) = Self::names(&self.directory) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         names.sort();
         let mut out: Vec<Snapshot> = Vec::new();
@@ -457,7 +506,7 @@ impl SnapshotReader {
             else {
                 continue;
             };
-            if let Some(snap) = parse_snapshot(&data)
+            if let Some(snap) = parse_snapshot(&data)?
                 && snap.ts > self.last_ts
             {
                 out.push(snap);
@@ -474,7 +523,7 @@ impl SnapshotReader {
             self.last_seq = last.seq;
             self.last_ts = last.ts;
         }
-        out
+        Ok(out)
     }
 }
 
@@ -498,21 +547,36 @@ mod tests {
     fn nums_like_python() {
         assert_eq!(num(Some(&J::Bool(true))), None);
         assert_eq!(num(Some(&J::Int(3))), Some(3.0));
-        assert_eq!(num(Some(&J::Float(f64::INFINITY))), None);
-        assert_eq!(int_num(Some(&J::Float(-2.7))), -2);
-        assert_eq!(fps(Some(&J::Float(12345.0))), Some(10_000));
-        assert_eq!(fps(Some(&J::Int(-1))), None);
+        assert_eq!(int_num(Some(&J::Float(-2.7))), Ok(-2));
+        assert_eq!(fps(Some(&J::Float(12345.0))), Ok(Some(10_000)));
+        assert_eq!(fps(Some(&J::Int(-1))), Ok(None));
+        assert_eq!(fps(Some(&J::Float(f64::NEG_INFINITY))), Ok(None));
+        assert_eq!(
+            int_num(Some(&J::Float(f64::NAN))).unwrap_err().class,
+            "ValueError"
+        );
+        assert_eq!(
+            fps(Some(&J::Float(f64::INFINITY))).unwrap_err().class,
+            "OverflowError"
+        );
     }
 
-    /// The v1.4 fix in both (tests/test_telemetry.py `test_non_finite_numbers_in_a_snapshot_never_stall_the_reader`).
+    /// Python raises from `int()` for `NaN`/`Infinity` in an int field (kept for parity, PORTING.md "telemetry").
     #[test]
-    fn non_finite_numbers_read_as_missing() {
-        let raw = format!(
-            r#"{{"v": 1, "ts": 5, "srv": {{"tps": NaN, "ticks": {}}}, "pl": [{{"u": "3f2a0000-0000-4000-8000-000000000c41", "n": "Em_K", "ping": Infinity, "fps": -Infinity}}]}}"#,
-            "9".repeat(400)
+    fn non_finite_ints_raise_like_python() {
+        let raw = r#"{"v": 1, "ts": 5, "srv": {"tps": NaN}, "pl": [{"u": "3f2a0000-0000-4000-8000-000000000c41", "n": "Em_K", "ping": Infinity}]}"#;
+        let e = parse_snapshot(raw.as_bytes()).unwrap_err();
+        assert_eq!(
+            (e.class.as_str(), e.text.as_str()),
+            ("OverflowError", "cannot convert float infinity to integer")
         );
-        let s = parse_snapshot(raw.as_bytes()).unwrap();
-        assert_eq!((s.srv.get("tps"), s.srv.get("ticks")), (None, None));
-        assert_eq!((s.pl[0].ping, s.pl[0].fps), (0, None));
+        let ok =
+            parse_snapshot(br#"{"v": 1, "ts": 5, "srv": {"tps": NaN, "heap_used_mb": 1e400}}"#)
+                .unwrap()
+                .unwrap();
+        assert!(
+            ok.srv.get("tps").unwrap().is_nan()
+                && ok.srv.get("heap_used_mb") == Some(f64::INFINITY)
+        );
     }
 }

@@ -568,7 +568,7 @@ impl Telemetry {
     /// # Errors
     /// What Python's `poll` raises (the loop logs it).
     pub fn poll(&self, c: &mut Core) -> TResult<Option<J>> {
-        let snaps = c.reader.read();
+        let snaps = c.reader.read()?;
         let mut row = None;
         for s in snaps {
             let s = Arc::new(s);
@@ -624,7 +624,7 @@ impl Telemetry {
                     .into()
             })
             .collect();
-        let srv = minute::summarize_server(&snaps);
+        let srv = minute::summarize_server(&snaps)?;
         let pl = minute::summarize_players(&snaps);
         let ev = c.pending_events.clone();
         let lag = minute::lag_events(&snaps, &running);

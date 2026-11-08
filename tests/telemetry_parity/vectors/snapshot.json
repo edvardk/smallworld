@@ -613,7 +613,9 @@
        "self_max_us": null,
        "budget_skips": null,
        "lost_windows": null,
-       "heap_used_mb": null,
+       "heap_used_mb": {
+        "float": "Infinity"
+       },
        "heap_max_mb": null,
        "spikes": [],
        "worlds": [],
@@ -1328,165 +1330,32 @@
     "label": "NaN ping",
     "json": "{\"v\":1,\"ts\":5,\"pl\":[{\"u\":\"aaaaaaaa-1111-4111-8111-111111111111\",\"n\":\"A\",\"ping\":NaN}]}",
     "out": {
-     "ok": {
-      "seq": 0,
-      "ts": 5,
-      "win_ms": 0,
-      "srv": {
-       "tps": null,
-       "ticks": null,
-       "mean": null,
-       "p50": null,
-       "p95": null,
-       "p99": null,
-       "p999": null,
-       "max": null,
-       "self_p99_us": null,
-       "self_max_us": null,
-       "budget_skips": null,
-       "lost_windows": null,
-       "heap_used_mb": null,
-       "heap_max_mb": null,
-       "spikes": [],
-       "worlds": [],
-       "scanned": 0,
-       "hot": []
-      },
-      "pl": [
-       {
-        "u": "aaaaaaaa-1111-4111-8111-111111111111",
-        "n": "A",
-        "ping": 0,
-        "brand": "",
-        "view": 0,
-        "send": 0,
-        "loc": "",
-        "w": "",
-        "cx": 0,
-        "cz": 0,
-        "ent": 0,
-        "glide": false,
-        "tips": true,
-        "join": 0,
-        "fps": null
-       }
-      ]
-     }
+     "error": "cannot convert float NaN to integer",
+     "type": "ValueError"
     }
    },
    {
     "label": "Infinity scanned",
     "json": "{\"v\":1,\"ts\":5,\"srv\":{\"scanned\":Infinity}}",
     "out": {
-     "ok": {
-      "seq": 0,
-      "ts": 5,
-      "win_ms": 0,
-      "srv": {
-       "tps": null,
-       "ticks": null,
-       "mean": null,
-       "p50": null,
-       "p95": null,
-       "p99": null,
-       "p999": null,
-       "max": null,
-       "self_p99_us": null,
-       "self_max_us": null,
-       "budget_skips": null,
-       "lost_windows": null,
-       "heap_used_mb": null,
-       "heap_max_mb": null,
-       "spikes": [],
-       "worlds": [],
-       "scanned": 0,
-       "hot": []
-      },
-      "pl": []
-     }
+     "error": "cannot convert float infinity to integer",
+     "type": "OverflowError"
     }
    },
    {
     "label": "1e400 world chunks",
     "json": "{\"v\":1,\"ts\":5,\"srv\":{\"worlds\":[{\"n\":\"w\",\"chunks\":1e400}]}}",
     "out": {
-     "ok": {
-      "seq": 0,
-      "ts": 5,
-      "win_ms": 0,
-      "srv": {
-       "tps": null,
-       "ticks": null,
-       "mean": null,
-       "p50": null,
-       "p95": null,
-       "p99": null,
-       "p999": null,
-       "max": null,
-       "self_p99_us": null,
-       "self_max_us": null,
-       "budget_skips": null,
-       "lost_windows": null,
-       "heap_used_mb": null,
-       "heap_max_mb": null,
-       "spikes": [],
-       "worlds": [
-        {
-         "n": "w",
-         "chunks": 0,
-         "entities": 0,
-         "tiles": 0,
-         "ticking": 0,
-         "players": 0
-        }
-       ],
-       "scanned": 0,
-       "hot": []
-      },
-      "pl": []
-     }
+     "error": "cannot convert float infinity to integer",
+     "type": "OverflowError"
     }
    },
    {
     "label": "Infinity hot ent",
     "json": "{\"v\":1,\"ts\":5,\"srv\":{\"hot\":[{\"w\":\"w\",\"cx\":1,\"cz\":1,\"ent\":Infinity}]}}",
     "out": {
-     "ok": {
-      "seq": 0,
-      "ts": 5,
-      "win_ms": 0,
-      "srv": {
-       "tps": null,
-       "ticks": null,
-       "mean": null,
-       "p50": null,
-       "p95": null,
-       "p99": null,
-       "p999": null,
-       "max": null,
-       "self_p99_us": null,
-       "self_max_us": null,
-       "budget_skips": null,
-       "lost_windows": null,
-       "heap_used_mb": null,
-       "heap_max_mb": null,
-       "spikes": [],
-       "worlds": [],
-       "scanned": 0,
-       "hot": [
-        {
-         "w": "w",
-         "cx": 1,
-         "cz": 1,
-         "ent": 0,
-         "tiles": 0,
-         "vil": 0,
-         "items": 0
-        }
-       ]
-      },
-      "pl": []
-     }
+     "error": "cannot convert float infinity to integer",
+     "type": "OverflowError"
     }
    }
   ],

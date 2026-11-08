@@ -342,9 +342,11 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
   `--impl=rust`), its vectors in `cargo test` (`telemetry/vectors.rs`: every group, compared as compact JSON
   text), the agent scenario `experience` (the daemon with `EXPERIENCE=1`: minute rows, player_message's online view
   and limits, messages.tsv), e2e `telemetry_check.py` on the rust shard (`E2E_AGENT_IMPL`).
-- Fixed in both (v1.4.0): `_num` returns None for `NaN`, `Infinity` and an int too big for a float (Python's
-  `int()` used to raise later, failing every round at that snapshot). Tests: `tests/test_telemetry.py`
-  `test_non_finite_numbers_in_a_snapshot_never_stall_the_reader`, `snapshot::tests::non_finite_numbers_read_as_missing`.
+- Python issues kept for parity (the goldens and vectors lock them in; fix in both later, with a test on each side):
+  `NaN`/`Infinity` in a snapshot's integer field raises from `int()` (`ValueError`/`OverflowError`: the round fails
+  and the reader never moves past that file; Rust raises the same exception, `snapshot::py_int`, vectors
+  `python_raises`); a backfill row the Worker refuses with a 4xx is retried forever (the Pacer never gives it up);
+  `latest` is never cleared after the plugin goes quiet (`quiet()` and `online()` keep the last snapshot).
 
 ## Parity gate (tests/agent_parity)
 
@@ -439,7 +441,9 @@ Gotchas the goldens encode (keep them; both are logged as known issues to fix in
 - telemetry: a minute row's `stats` object lists its players in sorted order; Python's comes from iterating a set
   (`online().keys() | {...}`), which varies with the hash seed. Same content.
 - telemetry: a snapshot's integer beyond 64 bits (Python: a big int) saturates where Python `int()`s it, and makes
-  a `ts` invalid (the snapshot is skipped); a boolean `ts` (an int to Python) reads as 0/1 where Python echoes
+  a `ts` invalid (the snapshot is skipped); one beyond a float's range reads as an infinity (Python's `float()`
+  raises `OverflowError: int too large to convert to float` in `_num` itself); a `NaN` among the values `sorted()`
+  or `sort(key=...)` orders may come out in another order; a boolean `ts` (an int to Python) reads as 0/1 where Python echoes
   `true` in the row's `raw`. The plugin writes neither (a hot chunk's boolean `cx`/`cz` is echoed as Python does).
 - telemetry: a segment with a corrupt deflate stream is unreadable (given up, a gap), as a truncated or non-gzip
   one is in both; Python raises an uncaught `zlib.error` for it (the round fails). The segments are the agent's own.

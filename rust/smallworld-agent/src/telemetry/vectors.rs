@@ -299,14 +299,31 @@ fn snapshot_vectors() {
             }
             input = J::Obj(raw).dumps();
         }
-        let mut got = parse_snapshot(input.as_bytes()).map_or(J::Null, |s| s.to_j());
+        let out = get(c, "out");
+        let parsed = match parse_snapshot(input.as_bytes()) {
+            Err(e) => {
+                // Python raises here too (a known issue kept for parity): the same exception
+                assert_eq!(
+                    (e.class.as_str(), e.text.as_str()),
+                    (
+                        text(get(out, "type")).as_str(),
+                        text(get(out, "error")).as_str()
+                    ),
+                    "{label}"
+                );
+                continue;
+            }
+            Ok(p) => p,
+        };
+        assert_eq!(get(out, "error"), &J::Null, "{label}: Python raises");
+        let mut got = parsed.map_or(J::Null, |s| s.to_j());
         if label == "players"
             && let J::Obj(m) = &mut got
             && let Some(J::List(pl)) = m.get_mut("pl")
         {
             pl.truncate(10);
         }
-        let want = get(get(c, "out"), "ok");
+        let want = get(out, "ok");
         match label.as_str() {
             // PORTING.md "Divergences": an int `ts` beyond 64 bits is refused (Python keeps the big int); a
             // boolean `ts` reads as the int (Python echoes `true`).
@@ -329,11 +346,12 @@ fn snapshot_vectors() {
             Some(x) if input.as_obj().is_some() => J::Float(x),
             _ => input.clone(),
         };
-        same(&J::from(fps(Some(&parsed))), get(c, "out"), "_fps");
+        same(&J::from(fps(Some(&parsed)).unwrap()), get(c, "out"), "_fps");
     }
     for c in list(&v, "parse_hot") {
         let got = J::List(
             parse_hot(Some(get(c, "in")))
+                .unwrap()
                 .iter()
                 .map(Hot::to_j)
                 .collect(),
@@ -347,7 +365,7 @@ fn snapshot_vectors() {
             .iter()
             .map(|hot| {
                 let srv = Srv {
-                    hot: parse_hot(Some(hot)),
+                    hot: parse_hot(Some(hot)).unwrap(),
                     ..Srv::default()
                 };
                 snapshot(0, srv, Vec::new())
@@ -425,7 +443,7 @@ fn minute_vectors() {
             .map(|s| snapshot(0, srv_of(s), Vec::new()))
             .collect();
         same(
-            &J::Obj(summarize_server(&snaps)),
+            &J::Obj(summarize_server(&snaps).unwrap()),
             get(c, "out"),
             "summarize_server",
         );
