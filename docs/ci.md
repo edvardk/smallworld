@@ -12,14 +12,14 @@ reusable workflow it runs is built to keep those near zero: see
 | Event | `ci.yml` | `e2e-mock.yml` |
 |---|---|---|
 | Pull request, docs only (`docs/**` except the brand previews, root `*.md`, `LICENSE`) | `lint` (ruff, yamllint, the tests that read the docs), `gitleaks`, `publication`, `config-repo / validate` | `e2e` essential half |
-| Pull request, code | `lint` (everything), `gitleaks`, `publication`, `config-repo / validate`, `controller` (3 OS x 3 Pythons); `plugin` / `seeds` if their inputs changed, `actionlint` if a workflow changed | `e2e` essential half; the heavy half too if the change touches what those checks exercise |
+| Pull request, code | `lint` (everything), `gitleaks`, `publication`, `config-repo / validate`, `controller` (3 OS x 3 Pythons); `plugin` / `rust` / `seeds` if their inputs changed, `actionlint` if a workflow changed | `e2e` essential half; the heavy half too if the change touches what those checks exercise |
 | Nightly, 22:07 / 22:37 UTC on `main` | everything | the whole `e2e` |
 | Monthly, the 1st, 23:43 UTC | | the four benches, if the month's commits touched what they measure |
 | `release.yml` (tag push) | everything, including `controller` | |
 | `workflow_dispatch` | everything, including `controller` | `scope`: `full` (default) / `essential` / `none`; `bench: true` adds the benches |
 | Push to `main` | nothing (the pull request already tested the merge commit; the nightly run catches two PRs that break only together) | nothing |
 
-The path groups live in one place, `scripts/ci_changes.py` (`code`, `workflows`, `plugin`, `seeds`, `e2e`, `e2e_full`),
+The path groups live in one place, `scripts/ci_changes.py` (`code`, `workflows`, `plugin`, `rust`, `seeds`, `e2e`, `e2e_full`),
 tested by `tests/test_ci_changes.py`. When the change set can't be known (a dispatch, a tag, a git error) the
 answer is "everything changed".
 

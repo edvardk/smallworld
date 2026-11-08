@@ -40,6 +40,7 @@ product/config-repo split, GitHub settings and releasing. New here? Start with t
 | `examples/config-repo/` | The template materialized with fake example.com values: CI fixture only (`scripts/sync_example.py`) |
 | `examples/full/server.yml` | A deployment with every feature on: the tests' reference `server.yml` |
 | `scripts/` | Python. On the server (stdlib only): `mc_rcon`, `backup`, `restore`, `health` (+ self-heal), `notify` (watchdog heartbeats, maintenance windows, Discord), `admin`, `mc_agent` (metrics, logs and signed commands to the Worker). Controller: lock/key tooling, smoke test |
+| `rust/` | Rust (v1.4). `smallworld-rcon`: the drop-in for `mc_rcon.py`'s command line, called by `ExecStop`, the deploy's countdown, world borders and game rules, and `mc`. Pinned toolchain, std only, static musl binaries for x86_64/aarch64 committed in `rust/dist/` (rebuilt byte for byte by `scripts/build_rust.py check`); walkthrough: [rust/smallworld-rcon.md](rust/smallworld-rcon.md) |
 | `mcctl/`, `schema/` | Product v1 CLI (P1–P6 so far): `server.yml` schema + validation, config-repo loading, `render`, `deploy`, `doctor` (token validators, `expiry.yml`), `status`, `plan`/`apply`, `bootstrap`, tailnet wrappers, state file, pinned-product cache; generated JSON Schema |
 | `.github/workflows/` | `server` (**reusable**: what every config repo runs: validate + gitleaks, deploy, backup-check), `ci` (lint, tests, gitleaks over the history, actionlint, the example config repo through `server`), `e2e-mock` (`mcctl init --mock` → validate → `terraform validate` → site.yml in a systemd Debian 13 container with the real Purpur, idempotent second run, then the P7 hardening checked live: `systemd-analyze security` gate, sysctls, sshd masked, admin-stopped, the firewall ruleset's limits in a network namespace), `release` (tags + source archive and `SHA256SUMS`), `update-lock` (manual, reference locks). `dependabot.yml`: weekly Actions + pip bumps |
 
@@ -50,7 +51,9 @@ product/config-repo split, GitHub settings and releasing. New here? Start with t
   deploy. `mc_config` compares parsed values and writes only when a managed key differs. Overlays are applied
   while the server is **stopped** (in the restart handler), so it can't overwrite them on shutdown.
 - **Restarts only on real change** (jar, plugin, JRE, unit or overlay): 60/30/10 s in-game countdown (skipped
-  when nobody is online), Discord notice, then `ExecStop` does `save-all flush` + `stop` over RCON.
+  when nobody is online), Discord notice, then `ExecStop` does `save-all flush` + `stop` over RCON. v1.4: these run
+  `smallworld-rcon` (Rust, `rust/`), identical to `mc_rcon.py`'s command line; `ExecStop` falls back to
+  `mc_rcon.py stop` only if the binary gives no answer at all ([the stop path](rust/smallworld-rcon.md#the-stop-path)).
 - **Verified keys.** `scripts/config_keys.py` rebuilds the pinned Purpur jar from the vanilla jar and Purpur's
   patch (hash-checked), then lists every config key via `javap`. No server code is run. `pytest` fails if an
   overlay uses a key that doesn't exist in the pinned version. spark is bundled with Paper, so it isn't a plugin.
@@ -550,6 +553,9 @@ refuse them: they would end up in the tailnet ACL, Cloudflare Access, DNS or the
   the `uses:` line changed, `auto_merge: builds+patch`) goes on `update/product-vX.Y.Z` with auto-merge on, where
   `server / gate` checks the release tag and merges it; anything else (minor/major, or server.yml migrated) is on
   `upgrade/product-vX.Y.Z` and **you merge it**. No downgrades.
+- **Rust toolchain:** set the exact version in `rust/rust-toolchain.toml` (a stable release at least two weeks
+  old), then `python scripts/build_rust.py build` and pin the printed sha256s as `mc_smallworld_rcon_sha256` in
+  `ansible/group_vars/all/main.yml` (a new compiler changes the binaries); CI's `rust` job checks the rebuild.
 - **GitHub Actions / Python tooling:** Dependabot opens weekly PRs (SHA pins and `requirements/`).
 - **Python dependencies:** `requirements/{validate,deploy,dev}.in` hold the direct pins (validate: PyYAML and
   rich (mcctl's terminal UI), for the workflow's validate job; deploy: + ansible-core and mcstatus; dev: +
@@ -743,6 +749,14 @@ terraform -chdir=terraform init -backend=false && terraform -chdir=terraform val
 node --import ./watchdog/test/register.mjs --test watchdog/test/worker.test.mjs watchdog/test/monitoring.test.mjs watchdog/test/panel.test.mjs watchdog/test/actions.test.mjs
 # The panel UI in Chromium against a local mock API (needs Playwright; pytest skips it without): screenshots
 node --import ./watchdog/test/register.mjs watchdog/test/ui.smoke.mjs /tmp/shots
+```
+
+The Rust workspace (`rust/`, rustup installs the pinned toolchain on first use; walkthrough in
+[rust/smallworld-rcon.md](rust/smallworld-rcon.md)):
+
+```bash
+(cd rust && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test)
+python scripts/build_rust.py check   # the committed binaries are the source's, byte for byte, and their pins
 ```
 
 CI also runs actionlint (built from source with `go install`) and the example config repo through the reusable

@@ -601,6 +601,27 @@ What `maintenance.window` and the update notice add:
   repository's latest release, at most once a day; it learns nothing about the deployment but which product
   repository it pins, and its answer only selects a line of text.
 
+## smallworld-rcon (v1.4)
+
+What the Rust drop-in for `mc_rcon.py`'s command line changes on the box:
+
+- **A new binary, `/opt/minecraft/bin/smallworld-rcon`**, `root:root 0755`: every user may run it, nobody but root
+  may change it. It is the committed build in `rust/dist/` for the box's architecture, whose sha256 the deploy
+  checks against `mc_smallworld_rcon_sha256` on the controller **before** copying it; CI rebuilds it byte for byte
+  from the source with the pinned toolchain (`scripts/build_rust.py check`). Static (musl), no crates.io
+  dependencies (std only: no third-party code to audit), `unsafe` forbidden.
+- **No new privileges or listeners.** It runs as whoever calls it, as the Python script did: `minecraft` for
+  `ExecStop`, the world border and game rules and `mc`; `mcops` (through `mc-run`, with notify.env) for the
+  deploy's countdown. It only connects out to RCON on `127.0.0.1:rcon.port` (or `rcon.ip`), never listens, and reads
+  one file: `server.properties` in the server directory, opened without following symlinks, without blocking,
+  regular files only, at most 1 MiB (as `mc_rcon.read_untrusted`). The RCON password it reads there never reaches
+  argv, stdout or stderr.
+- **Discord** still goes through `notify.py` (the binary has no TLS): the countdown runs `notify.py restart-alert`
+  from the binary's own directory (root-owned) with the environment it was given, only when
+  `DISCORD_WEBHOOK_URL` is set; the webhook URL stays in the environment, never on a command line.
+- **`ExecStop`** is a `/bin/sh -c` line inside the existing sandboxed unit (no change to its `systemd-analyze
+  security` score): `mc_rcon.py stop` runs only when the binary gave no verdict (exit status above 1).
+
 ## Not covered (v1)
 
 - **GitHub Free:** without GitHub Pro the config repo (private, personal account) can't have rulesets, so

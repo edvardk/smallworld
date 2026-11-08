@@ -21,6 +21,16 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 - `mcctl publish --merge|--no-merge` and `--restart now|wait|cancel`, `mcctl players add|remove|op|deop
   --merge|--no-merge`, `mcctl restore --live ID --confirm TEXT`: answer the commands' questions up front (scripts,
   the dashboard). Without them a terminal asks as before (unattended: see Changed).
+- **smallworld-rcon** (`rust/smallworld-rcon`), the product's first Rust component: a drop-in for the command line
+  of `scripts/mc_rcon.py` (`cmd`, `stop`, `countdown`, `worldborder`, `gamerule`) with the same arguments, output,
+  exit statuses, timeouts and RCON packets, proved side by side by `tests/test_rust_rcon.py`. Static musl binaries
+  for x86_64 and aarch64, std only (no dependencies), `unsafe` forbidden, built reproducibly with the pinned
+  toolchain by `scripts/build_rust.py` and committed in `rust/dist/` with their sha256 pinned in
+  `ansible/group_vars/all/main.yml` (`mc_smallworld_rcon_sha256`); CI job `rust` (rustfmt, clippy, unit tests, the
+  byte-for-byte rebuild, the differential tests). A walkthrough for Python programmers:
+  `docs/rust/smallworld-rcon.md`.
+- `notify.py restart-alert SECONDS ONLINE`: posts the deploy-restart note to Discord (what `countdown` posts;
+  smallworld-rcon, which has no TLS, runs it).
 
 ### Changed
 
@@ -34,6 +44,20 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 - Dependencies: `textual==8.2.8` added (with linkify-it-py, mdit-py-plugins, platformdirs, typing-extensions);
   `questionary`, `prompt-toolkit` and `wcwidth` dropped (nothing else used them). rich stays at 15.0.0
   (Textual 8.2.8 needs rich >= 14.2.0).
+- The deploy's countdown, world borders and game rules, the `mc` helper (and with it `mcctl rcon`) and
+  `minecraft.service`'s `ExecStop` call `/opt/minecraft/bin/smallworld-rcon` (root-owned, 0755; the base role
+  installs the build for the box's architecture after checking its pin). `ExecStop` falls back to
+  `mc_rcon.py stop` only when the binary gives no answer (missing, wrong architecture, crashed); its own failure
+  is final, as `mc_rcon.py stop`'s was (systemd then sends SIGTERM). The Python module stays for the scripts that
+  import it.
+
+### Fixed
+
+- The Panel -> Git self-test's "at most once a minute on demand" now counts from the last on-demand run: a daily run
+  in between no longer lets the next request through (`selftest.json` keeps the last on-demand result too).
+- mcctl's actions (`mc_agent.py cli` through `mc-run`) run in a unit named `mc-agent-cli-<pid>-<ns>`, so their audit
+  entries reach mc-agent's D1 rows under a product unit instead of an anonymous `run-p…` one; every other `mc-run`
+  command keeps its anonymous unit (nothing new is shipped).
 
 ## [1.3.1] - 2026-11-07
 

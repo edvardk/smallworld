@@ -24,7 +24,7 @@
     - name: Announce restart in game (skipped if nobody is online)
       ansible.builtin.command: >-
         /usr/local/bin/mc-run -{{ mc_etc_dir }}/notify.env
-        {{ mc_bin_dir }}/mc_rcon.py countdown {{ mc_restart_countdown_seconds }}
+        {{ mc_bin_dir }}/smallworld-rcon countdown {{ mc_restart_countdown_seconds }}
       changed_when: false
       failed_when: false
 

@@ -49,6 +49,14 @@ Where things are: `docs/map.md` (feature map + phase glossary).
 - Server-side scripts (`mc_rcon`, `notify`, `backup`, `restore`, `health`, `admin`, `mc_agent`, `mc_panel`) are
   stdlib-only, Python >= 3.11.
   The controller (`mcctl`) needs Python >= 3.12 (`mcctl.MIN_PYTHON` = `requires-python`; pinned ansible-core).
+- Rust workspace (v1.4, `rust/`, `docs/rust/smallworld-rcon.md`): the toolchain is pinned exactly in
+  `rust/rust-toolchain.toml` (a stable release at least two weeks old); no crates.io dependencies (std only,
+  `unsafe` forbidden; `tests/test_rust_rcon.py`); `Cargo.lock` is committed and builds run `--locked`. The binaries in
+  `rust/dist/` are committed and pinned (`mc_smallworld_rcon_sha256`): after changing Rust code or the toolchain run
+  `python scripts/build_rust.py build`, update the pins, and make sure `python scripts/build_rust.py check`,
+  `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test` pass (ci.yml job `rust`).
+  `smallworld-rcon` must stay identical to `mc_rcon.py`'s command line (the differential tests): change both or
+  neither.
 - Cross-file pins (restic, Tailscale, Temurin vs `java_major`, secrets used by workflows) are checked by
   `tests/test_consistency.py`; extend it when adding a pin that lives in two places.
 - Shared Ansible variables use the `mc_` prefix. Product constants (pins, paths) live in
@@ -118,4 +126,5 @@ Where things are: `docs/map.md` (feature map + phase glossary).
   links (the commit-msg hook refuses them). The `publication` CI check runs the same checks on every PR.
 - Lint locally before committing:
   `ruff check . && ruff format --check . && yamllint --strict . && pytest -q && (cd ansible && ansible-lint) && terraform -chdir=terraform fmt -check -recursive`
-  (plus `terraform -chdir=terraform init -backend=false && terraform -chdir=terraform validate`; CI also runs actionlint).
+  (plus `terraform -chdir=terraform init -backend=false && terraform -chdir=terraform validate`; CI also runs actionlint;
+  after Rust changes the cargo checks and `python scripts/build_rust.py check`).

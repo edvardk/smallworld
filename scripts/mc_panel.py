@@ -602,9 +602,12 @@ class SelfTestState:
         data = read_json(self.path, {})
         if not isinstance(data, dict):
             data = {}
-        last = data.get("last")
+        last, last_panel = data.get("last"), data.get("last_panel")
         return {
             "last": last if isinstance(last, dict) else None,
+            # the last on-demand run: the once-a-minute limit counts from it, whatever ran since (v1.4 fix: a
+            # daily run in between used to lift the limit)
+            "last_panel": last_panel if isinstance(last_panel, dict) else None,
             "failures": int(data.get("failures") or 0),
             "alerted": data.get("alerted") is True,
         }
@@ -613,6 +616,8 @@ class SelfTestState:
         with self.lock:
             st = self.load()
             st["last"] = result
+            if result.get("trigger") == "panel":
+                st["last_panel"] = result
             if result.get("ok") or not result.get("configured", True):
                 if st["alerted"] and alert and result.get("ok"):
                     alert(selftest_back_alert(st["failures"]))

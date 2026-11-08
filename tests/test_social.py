@@ -316,7 +316,7 @@ def test_gamerules_are_applied_idempotently_in_every_dimension(fake_server) -> N
             continue
         raise AssertionError(bad)
     tasks = (REPO / "ansible/roles/minecraft/tasks/main.yml").read_text()
-    assert "mc_rcon.py gamerule --name {{ item.key }} --value {{ item.value }}" in tasks
+    assert "smallworld-rcon gamerule --name {{ item.key }} --value {{ item.value }}" in tasks
     assert "changed_when: \"'CHANGED' in mc_gamerule.stdout\"" in tasks
 
 

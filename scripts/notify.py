@@ -14,6 +14,9 @@ CLI (run through `mc-run /etc/minecraft/notify.env ...` so the token stays out o
 
     notify.py maintenance MINUTES REASON    open (MINUTES > 0) or close (0) a maintenance window: the local
                                             marker health.py's self-heal respects, and the watchdog's window
+    notify.py restart-alert SECONDS ONLINE  v1.4: post mc_rcon's deploy-restart note to Discord (what
+                                            `mc_rcon.py countdown` posts; smallworld-rcon, which has no TLS,
+                                            runs this for its `countdown`)
 
 The markers that make self-heal (and the watchdog, through health.py's heartbeat) stand down live in
 /var/lib/minecraft and are defined here: maintenance.json (this CLI), admin-stopped (admin.py stop, the
@@ -179,7 +182,17 @@ def main(argv: list[str] | None = None) -> int:
     if len(args) == 3 and args[0] == "maintenance" and args[1].isdigit():
         maintenance(int(args[1]), args[2])
         return 0
-    print("usage: notify.py maintenance MINUTES REASON", file=sys.stderr)
+    if len(args) == 3 and args[0] == "restart-alert":
+        try:
+            seconds, online = int(args[1]), int(args[2])
+        except ValueError:
+            pass
+        else:
+            from mc_rcon import restart_alert  # local import, as mc_rcon imports this module lazily too
+
+            discord(restart_alert(seconds, online))
+            return 0
+    print("usage: notify.py maintenance MINUTES REASON | restart-alert SECONDS ONLINE", file=sys.stderr)
     return 2
 
 

@@ -245,6 +245,7 @@ GROUP_VARS_CONSTANTS = {
     "mc_deploy_maintenance_minutes",
     "mc_telemetry_jar_sha256",  # P13
     "mc_brand_jar_sha256",  # P17
+    "mc_smallworld_rcon_sha256",  # v1.4: rust/dist/ binaries (scripts/build_rust.py)
     "mc_brand_icon_sha256",
     "mc_helper_priority",
     "mc_timely_priority",  # P13 review M1

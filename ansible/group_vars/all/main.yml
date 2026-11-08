@@ -27,6 +27,13 @@ mc_brand_icon_sha256: "939ecfd72097963dd7f221bf7df9972cf6d8f4a58ef9f0cdd7fd546ed
 restic_sha256:
   amd64: f415415624dcc452f2a02b8c33641791a8c6d6d3b65bbb3543fcf9a25151585c
   arm64: a5f64aaab53d51e311fa3829124c5b703f2d14cf187d8640b6be3b2b49376465
+# v1.4: smallworld-rcon (rust/smallworld-rcon), the Rust drop-in for mc_rcon.py's command line: static musl binaries
+# committed as rust/dist/smallworld-rcon-<target>, rebuilt byte for byte by scripts/build_rust.py check (CI job rust).
+# The base role checks the one for the box's architecture against this pin before installing it (keys: Debian
+# architecture names, as restic_sha256's).
+mc_smallworld_rcon_sha256:
+  amd64: 0cce11ec8a39c1664c18b01aaadd9361beb9002ac8ef91a8a9910736e781190e
+  arm64: 73d23ee03461d9a4b0a28f161e24157009fe6f459dad82f3183824da0d7efc75
 
 # --- OS tuning -----------------------------------------------------------------------------------
 base_zram_enabled: true
