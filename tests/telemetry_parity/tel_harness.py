@@ -41,6 +41,7 @@ from harness import (  # noqa: E402
     GC_LOG,
     HMAC_KEY,
     MOUNTS,
+    PYTHON,
     ROOTS,
     AgentProc,
     Box,
@@ -50,6 +51,7 @@ from harness import (  # noqa: E402
 )
 
 GOLDEN = HERE / "golden"
+PYTHON_IMPL = PYTHON  # `<prefix> telemetry` = scripts/mc_agent.py telemetry
 TEL_MOUNTS = MOUNTS | {"/var/lib/mc-telemetry": "var-lib-mc-telemetry"}
 T0 = calendar.timegm((2026, 1, 15, 10, 0, 0)) * 1000  # the first snapshot minute (ms)
 MIN = 60_000

@@ -1,0 +1,293 @@
+{
+ "meta": {
+  "generator": "scripts/telemetry_vectors.py",
+  "doc": "parse_show, consumed_cpu_ms, Overhead.observe_journal + sample"
+ },
+ "vectors": {
+  "parse_show": [
+   {
+    "in": "Id=minecraft.service\nCPUUsageNSec=5000000000\nMemoryCurrent=3221225472\nMemoryPeak=[not set]\nIOReadBytes=18446744073709551615\nIOWriteBytes=0\n\nId=mc-agent.service\nCPUUsageNSec=\nMemoryCurrent=42\n",
+    "out": {
+     "ok": {
+      "minecraft.service": {
+       "CPUUsageNSec": 5000000000,
+       "MemoryCurrent": 3221225472,
+       "MemoryPeak": null,
+       "IOReadBytes": 18446744073709551615,
+       "IOWriteBytes": 0
+      },
+      "mc-agent.service": {
+       "CPUUsageNSec": null,
+       "MemoryCurrent": 42
+      }
+     }
+    }
+   },
+   {
+    "in": "Id=a.service\nX=1=2\nY=-5\nZ= 7\nW=\u0661\u0662\nV=99999999999999999999999\n\n\n\nId=\nCPUUsageNSec=1\n\nno equals line\nId=b.service",
+    "out": {
+     "ok": {
+      "a.service": {
+       "X": null,
+       "Y": null,
+       "Z": null,
+       "W": 12,
+       "V": 99999999999999999999999
+      },
+      "b.service": {}
+     }
+    }
+   },
+   {
+    "in": "",
+    "out": {
+     "ok": {}
+    }
+   },
+   {
+    "in": "\n\n",
+    "out": {
+     "ok": {}
+    }
+   }
+  ],
+  "consumed_cpu_ms": [
+   {
+    "in": "mc-backup.service: Consumed 1min 2.500s CPU time, 812.3M memory peak.",
+    "out": [
+     62500.0,
+     812.3
+    ]
+   },
+   {
+    "in": "mc-backup.service: Consumed 2.1s CPU time, 1.5G memory peak, 0B memory swap peak.",
+    "out": [
+     2100.0,
+     1536.0
+    ]
+   },
+   {
+    "in": "mc-health@daily.service: Consumed 350ms CPU time.",
+    "out": [
+     350.0,
+     null
+    ]
+   },
+   {
+    "in": "x: Consumed 12.75ms CPU time, 512K memory peak.",
+    "out": [
+     12.75,
+     0.5
+    ]
+   },
+   {
+    "in": "x: Consumed 3h 2min CPU time.",
+    "out": null
+   },
+   {
+    "in": "x: Consumed 59min 59.999s CPU time over 1h 2min elapsed time, 2G memory peak",
+    "out": [
+     3599999.0,
+     2048.0
+    ]
+   },
+   {
+    "in": "x: Consumed 1.5us CPU time.",
+    "out": null
+   },
+   {
+    "in": "Deactivated successfully.",
+    "out": null
+   },
+   {
+    "in": "x: Consumed 7s CPU time, 1.2T memory peak.",
+    "out": [
+     7000.0,
+     null
+    ]
+   }
+  ],
+  "overhead": {
+   "ONESHOT_UNITS": "^(mc-[a-z0-9@._-]+\\.service)$",
+   "steps": [
+    {
+     "stats": {
+      "minecraft.service": {
+       "CPUUsageNSec": 5000000000,
+       "MemoryCurrent": 3221225472,
+       "MemoryPeak": null,
+       "IOReadBytes": 1048576,
+       "IOWriteBytes": 0
+      }
+     },
+     "now": 1000.0,
+     "journal_before": [
+      {
+       "ident": "systemd",
+       "sd_unit": "mc-backup.service",
+       "msg": "mc-backup.service: Consumed 1min 2.500s CPU time, 812.3M memory peak."
+      },
+      {
+       "ident": "systemd",
+       "sd_unit": "mc-health@daily.service",
+       "msg": "mc-health@daily.service: Consumed 350ms CPU time."
+      },
+      {
+       "ident": "systemd",
+       "sd_unit": "mc-backup.service",
+       "msg": "mc-backup.service: Consumed 2.1s CPU time, 1.5G memory peak, 0B memory swap peak."
+      },
+      {
+       "ident": "systemd",
+       "sd_unit": "minecraft.service",
+       "msg": "x: Consumed 3h 2min CPU time."
+      },
+      {
+       "ident": "mc-agent",
+       "sd_unit": "mc-prune.service",
+       "msg": "x: Consumed 12.75ms CPU time, 512K memory peak."
+      },
+      {
+       "ident": "systemd",
+       "sd_unit": "mc-evil.service; rm",
+       "msg": "x: Consumed 12.75ms CPU time, 512K memory peak."
+      },
+      {
+       "ident": "systemd",
+       "sd_unit": "mc-prune.service",
+       "msg": "Deactivated successfully."
+      },
+      {
+       "ident": "systemd",
+       "sd_unit": "MC-UPPER.service",
+       "msg": "x: Consumed 12.75ms CPU time, 512K memory peak."
+      },
+      {
+       "ident": "systemd",
+       "sd_unit": null,
+       "msg": "x: Consumed 12.75ms CPU time, 512K memory peak."
+      }
+     ],
+     "out": {
+      "minecraft.service": {
+       "mem_mb": 3072.0,
+       "mem_peak_mb": null,
+       "cpu_pct": null,
+       "io_read_kb": null,
+       "io_write_kb": null
+      },
+      "mc-backup.service": {
+       "cpu_ms": 64600.0,
+       "runs": 2,
+       "mem_peak_mb": 1536.0
+      },
+      "mc-health": {
+       "cpu_ms": 350.0,
+       "runs": 1,
+       "mem_peak_mb": 0.0
+      }
+     }
+    },
+    {
+     "stats": {
+      "minecraft.service": {
+       "CPUUsageNSec": 8000000000,
+       "MemoryCurrent": 3221348928,
+       "MemoryPeak": 18446744073709551615,
+       "IOReadBytes": 3145728,
+       "IOWriteBytes": 1000
+      },
+      "mc-agent.service": {
+       "CPUUsageNSec": 1
+      }
+     },
+     "now": 1060.0,
+     "journal_before": [],
+     "out": {
+      "minecraft.service": {
+       "mem_mb": 3072.1,
+       "mem_peak_mb": 17592186044416.0,
+       "cpu_pct": 5.0,
+       "io_read_kb": 2048.0,
+       "io_write_kb": 1.0
+      },
+      "mc-agent.service": {
+       "mem_mb": null,
+       "mem_peak_mb": null,
+       "cpu_pct": null,
+       "io_read_kb": null,
+       "io_write_kb": null
+      }
+     }
+    },
+    {
+     "stats": {
+      "minecraft.service": {
+       "CPUUsageNSec": 7000000000,
+       "MemoryCurrent": null,
+       "IOReadBytes": 1,
+       "IOWriteBytes": 1500
+      }
+     },
+     "now": 1060.0,
+     "journal_before": [
+      {
+       "ident": "systemd",
+       "sd_unit": "mc-backup.service",
+       "msg": "mc-backup.service: Consumed 1min 2.500s CPU time, 812.3M memory peak."
+      }
+     ],
+     "out": {
+      "minecraft.service": {
+       "mem_mb": null,
+       "mem_peak_mb": null,
+       "cpu_pct": null,
+       "io_read_kb": null,
+       "io_write_kb": 0.5
+      },
+      "mc-backup.service": {
+       "cpu_ms": 62500.0,
+       "runs": 1,
+       "mem_peak_mb": 812.3
+      }
+     }
+    },
+    {
+     "stats": {
+      "minecraft.service": {
+       "CPUUsageNSec": 7000000333,
+       "IOReadBytes": 2
+      }
+     },
+     "now": 1090.5,
+     "journal_before": [],
+     "out": {
+      "minecraft.service": {
+       "mem_mb": null,
+       "mem_peak_mb": null,
+       "cpu_pct": 0.0,
+       "io_read_kb": 0.0,
+       "io_write_kb": null
+      }
+     }
+    }
+   ]
+  },
+  "unit_stats_argv": [
+   "systemctl",
+   "show",
+   "-p",
+   "Id",
+   "-p",
+   "CPUUsageNSec",
+   "-p",
+   "MemoryCurrent",
+   "-p",
+   "MemoryPeak",
+   "-p",
+   "IOReadBytes",
+   "-p",
+   "IOWriteBytes"
+  ]
+ }
+}

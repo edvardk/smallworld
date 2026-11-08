@@ -1,0 +1,184 @@
+{
+ "meta": {
+  "generator": "scripts/telemetry_vectors.py",
+  "doc": "verdicts_tsv; Messages.check / add (messages.tsv) with their rate limits",
+  "unicode_sensitive": true,
+  "unidata_version": "15.1.0"
+ },
+ "vectors": {
+  "verdicts_tsv": [
+   {
+    "verdicts": {
+     "server": {
+      "verdict": "fine-and-more",
+      "headline": "Server\tsmooth\nall",
+      "reasons": [
+       "a",
+       "",
+       "b\u001fc",
+       "r0",
+       "r1",
+       "r2",
+       "r3",
+       "r4",
+       "r5",
+       "r6",
+       "r7",
+       "r8"
+      ],
+      "tips": [
+       "caf\u00e9",
+       42,
+       null
+      ]
+     },
+     "players": {
+      "aaaaaaaa-1111-4111-8111-111111111111": {
+       "verdict": "laggy",
+       "headline": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+       "reasons": "no",
+       "tips": [
+        "t"
+       ]
+      },
+      "bbbbbbbb-2222-4222-8222-222222222222": "not a dict",
+      "not-a-uuid": {
+       "verdict": "ok"
+      },
+      "CCCCCCCC-3333-4333-8333-333333333333": {
+       "verdict": "ok"
+      }
+     }
+    },
+    "now_ms": 1768471200123,
+    "out": "mc-verdicts 1 1768471200123\nS\tfine-and\tServer smooth all\ta\u001fb c\u001fr0\u001fr1\u001fr2\u001fr3\u001fr4\tcaf\u00e9\u001f42\nP\taaaaaaaa-1111-4111-8111-111111111111\tlaggy\txxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\t\tt\n"
+   },
+   {
+    "verdicts": {},
+    "now_ms": 1768471200123,
+    "out": "mc-verdicts 1 1768471200123\n"
+   },
+   {
+    "verdicts": {
+     "server": "nope",
+     "players": null
+    },
+    "now_ms": 1768471200123,
+    "out": "mc-verdicts 1 1768471200123\n"
+   },
+   {
+    "verdicts": {
+     "players": {
+      "aaaaaaaa-1111-4111-8111-111111111111": {}
+     }
+    },
+    "now_ms": 1768471200123,
+    "out": "mc-verdicts 1 1768471200123\nP\taaaaaaaa-1111-4111-8111-111111111111\t\t\t\t\n"
+   }
+  ],
+  "messages": {
+   "limits": {
+    "per_player_s": 1800,
+    "broadcast_s": 600,
+    "join_grace_s": 60,
+    "per_hour": 3,
+    "EXPIRE_S": 120
+   },
+   "online": {
+    "aaaaaaaa-1111-4111-8111-111111111111": {
+     "tips": true,
+     "join": 1000000
+    },
+    "bbbbbbbb-2222-4222-8222-222222222222": {
+     "tips": false,
+     "join": 0
+    },
+    "cccccccc-3333-4333-8333-333333333333": {
+     "join": 1950000
+    }
+   },
+   "steps": [
+    {
+     "to": "aaaaaaaa-1111-4111-8111-111111111111",
+     "kind": "tip",
+     "now": 1000.0,
+     "text": "hello\tthere",
+     "refused": "player joined less than a minute ago",
+     "messages_tsv": null
+    },
+    {
+     "to": "aaaaaaaa-1111-4111-8111-111111111111",
+     "kind": "tip",
+     "now": 1500.0,
+     "text": "again",
+     "refused": "player got a message recently",
+     "messages_tsv": null
+    },
+    {
+     "to": "bbbbbbbb-2222-4222-8222-222222222222",
+     "kind": "tip",
+     "now": 1500.0,
+     "text": "x",
+     "refused": "player turned tips off",
+     "messages_tsv": null
+    },
+    {
+     "to": "cccccccc-3333-4333-8333-333333333333",
+     "kind": "tip",
+     "now": 2000.0,
+     "text": "early",
+     "refused": "player joined less than a minute ago",
+     "messages_tsv": null
+    },
+    {
+     "to": "cccccccc-3333-4333-8333-333333333333",
+     "kind": "join",
+     "now": 2000.0,
+     "text": "welcome \u2028 line",
+     "refused": null,
+     "messages_tsv": "mc-messages 1\nM\tm4\tcccccccc-3333-4333-8333-333333333333\t2120000\twelcome line\thover text\n"
+    },
+    {
+     "to": "*",
+     "kind": "broadcast",
+     "now": 2001.0,
+     "text": "all",
+     "refused": null,
+     "messages_tsv": "mc-messages 1\nM\tm4\tcccccccc-3333-4333-8333-333333333333\t2120000\twelcome line\thover text\nM\tm5\t*\t2121000\tall\thover text\n"
+    },
+    {
+     "to": "*",
+     "kind": "broadcast",
+     "now": 2300.0,
+     "text": "all again",
+     "refused": "a broadcast was sent recently",
+     "messages_tsv": null
+    },
+    {
+     "to": "aaaaaaaa-1111-4111-8111-111111111111",
+     "kind": "tip",
+     "now": 2900.0,
+     "text": "limit?",
+     "refused": null,
+     "messages_tsv": "mc-messages 1\nM\tm7\taaaaaaaa-1111-4111-8111-111111111111\t3020000\tlimit?\thover text\n"
+    },
+    {
+     "to": "nobody",
+     "kind": "tip",
+     "now": 3000.0,
+     "text": "x",
+     "refused": "hourly message limit reached",
+     "messages_tsv": null
+    },
+    {
+     "to": "aaaaaaaa-1111-4111-8111-111111111111",
+     "kind": "tip",
+     "now": 4700.0,
+     "text": "after the hour yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+     "refused": "hourly message limit reached",
+     "messages_tsv": null
+    }
+   ]
+  }
+ }
+}

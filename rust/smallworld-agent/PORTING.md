@@ -320,6 +320,11 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
 
 ## Parity gate (tests/agent_parity)
 
+The telemetry port (v1.4.0, `scripts/telemetry.py` -> `<bin> telemetry`) has its own gate,
+`tests/telemetry_parity` (docs/ci.md "The telemetry parity harness"): `pytest tests/telemetry_parity --impl=rust
+--agent-bin=PATH` runs the sidecar's scenarios against `PATH telemetry`; vectors in
+`tests/telemetry_parity/vectors/*.json` (`scripts/telemetry_vectors.py`).
+
 The harness (`origin/agent-harness`, merged) runs 25 black-box scenarios against `<bin> run` (daemon) or
 `<bin> cli ...` inside `unshare -rm` and compares with `tests/agent_parity/golden/`:
 `pytest tests/agent_parity --impl=rust --agent-bin=rust/dist/smallworld-agent-x86_64-unknown-linux-musl` (or a

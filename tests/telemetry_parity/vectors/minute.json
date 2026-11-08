@@ -1,0 +1,2456 @@
+{
+ "meta": {
+  "generator": "scripts/telemetry_vectors.py",
+  "doc": "_median, _r, summarize_server, summarize_players, lag_events, Sessions"
+ },
+ "vectors": {
+  "median": [
+   {
+    "in": [],
+    "out": null
+   },
+   {
+    "in": [
+     1.0
+    ],
+    "out": 1.0
+   },
+   {
+    "in": [
+     3.0,
+     1.0
+    ],
+    "out": 2.0
+   },
+   {
+    "in": [
+     1.0,
+     2.0,
+     4.0
+    ],
+    "out": 2.0
+   },
+   {
+    "in": [
+     2.675,
+     2.675
+    ],
+    "out": 2.675
+   },
+   {
+    "in": [
+     0.1,
+     0.2
+    ],
+    "out": 0.15000000000000002
+   },
+   {
+    "in": [
+     1e+308,
+     1e+308
+    ],
+    "out": {
+     "float": "Infinity"
+    }
+   },
+   {
+    "in": [
+     5,
+     1,
+     3,
+     2
+    ],
+    "out": 2.5
+   }
+  ],
+  "r": [
+   {
+    "x": 0.125,
+    "nd": 1,
+    "out": 0.1
+   },
+   {
+    "x": 0.125,
+    "nd": 2,
+    "out": 0.12
+   },
+   {
+    "x": 0.135,
+    "nd": 1,
+    "out": 0.1
+   },
+   {
+    "x": 0.135,
+    "nd": 2,
+    "out": 0.14
+   },
+   {
+    "x": 2.675,
+    "nd": 1,
+    "out": 2.7
+   },
+   {
+    "x": 2.675,
+    "nd": 2,
+    "out": 2.67
+   },
+   {
+    "x": 1.005,
+    "nd": 1,
+    "out": 1.0
+   },
+   {
+    "x": 1.005,
+    "nd": 2,
+    "out": 1.0
+   },
+   {
+    "x": 12.345,
+    "nd": 1,
+    "out": 12.3
+   },
+   {
+    "x": 12.345,
+    "nd": 2,
+    "out": 12.35
+   },
+   {
+    "x": -0.05,
+    "nd": 1,
+    "out": -0.1
+   },
+   {
+    "x": -0.05,
+    "nd": 2,
+    "out": -0.05
+   },
+   {
+    "x": 99.995,
+    "nd": 1,
+    "out": 100.0
+   },
+   {
+    "x": 99.995,
+    "nd": 2,
+    "out": 100.0
+   },
+   {
+    "x": 1e-09,
+    "nd": 1,
+    "out": 0.0
+   },
+   {
+    "x": 1e-09,
+    "nd": 2,
+    "out": 0.0
+   },
+   {
+    "x": 19.98,
+    "nd": 1,
+    "out": 20.0
+   },
+   {
+    "x": 19.98,
+    "nd": 2,
+    "out": 19.98
+   },
+   {
+    "x": 80.25,
+    "nd": 1,
+    "out": 80.2
+   },
+   {
+    "x": 80.25,
+    "nd": 2,
+    "out": 80.25
+   },
+   {
+    "x": 151.25,
+    "nd": 1,
+    "out": 151.2
+   },
+   {
+    "x": 151.25,
+    "nd": 2,
+    "out": 151.25
+   },
+   {
+    "x": 52.25,
+    "nd": 1,
+    "out": 52.2
+   },
+   {
+    "x": 52.25,
+    "nd": 2,
+    "out": 52.25
+   },
+   {
+    "x": 52.35,
+    "nd": 1,
+    "out": 52.4
+   },
+   {
+    "x": 52.35,
+    "nd": 2,
+    "out": 52.35
+   },
+   {
+    "x": 112.05,
+    "nd": 1,
+    "out": 112.0
+   },
+   {
+    "x": 112.05,
+    "nd": 2,
+    "out": 112.05
+   },
+   {
+    "x": 0.05,
+    "nd": 1,
+    "out": 0.1
+   },
+   {
+    "x": 0.05,
+    "nd": 2,
+    "out": 0.05
+   },
+   {
+    "x": 1234.5678,
+    "nd": 1,
+    "out": 1234.6
+   },
+   {
+    "x": 1234.5678,
+    "nd": 2,
+    "out": 1234.57
+   },
+   {
+    "x": 3.0000000000000004,
+    "nd": 1,
+    "out": 3.0
+   },
+   {
+    "x": 3.0000000000000004,
+    "nd": 2,
+    "out": 3.0
+   },
+   {
+    "x": null,
+    "nd": 2,
+    "out": null
+   }
+  ],
+  "summarize_server": [
+   {
+    "snapshots": [
+     {
+      "tps": 20.0,
+      "ticks": 200.0,
+      "mean": 12.0,
+      "p50": 11.0,
+      "p95": 20.0,
+      "p99": 31.5,
+      "p999": 40.0,
+      "max": 45.0,
+      "self_p99_us": null,
+      "self_max_us": null,
+      "budget_skips": null,
+      "lost_windows": null,
+      "heap_used_mb": 2000.0,
+      "heap_max_mb": null,
+      "spikes": [],
+      "worlds": [
+       {
+        "n": "world",
+        "chunks": 400,
+        "entities": 300,
+        "tiles": 50,
+        "ticking": 40,
+        "players": 1
+       }
+      ],
+      "scanned": 10,
+      "hot": []
+     },
+     {
+      "tps": 20.0,
+      "ticks": 198.0,
+      "mean": 14.0,
+      "p50": 2.675,
+      "p95": 20.0,
+      "p99": 48.25,
+      "p999": 40.0,
+      "max": 45.0,
+      "self_p99_us": 80.25,
+      "self_max_us": null,
+      "budget_skips": 2.0,
+      "lost_windows": null,
+      "heap_used_mb": null,
+      "heap_max_mb": null,
+      "spikes": [],
+      "worlds": [
+       {
+        "n": "world",
+        "chunks": 400,
+        "entities": 300,
+        "tiles": 50,
+        "ticking": 40,
+        "players": 2
+       }
+      ],
+      "scanned": 10,
+      "hot": []
+     },
+     {
+      "tps": 19.87,
+      "ticks": 199.0,
+      "mean": null,
+      "p50": 12.5,
+      "p95": 20.0,
+      "p99": 30.0,
+      "p999": 40.0,
+      "max": 45.0,
+      "self_p99_us": null,
+      "self_max_us": 151.25,
+      "budget_skips": null,
+      "lost_windows": 1.0,
+      "heap_used_mb": null,
+      "heap_max_mb": null,
+      "spikes": [],
+      "worlds": [
+       {
+        "n": "world",
+        "chunks": 400,
+        "entities": 300,
+        "tiles": 50,
+        "ticking": 40,
+        "players": 2
+       }
+      ],
+      "scanned": 10,
+      "hot": []
+     }
+    ],
+    "out": {
+     "ticks": 597,
+     "tps": 19.87,
+     "mean": 8.66,
+     "p50": 11.0,
+     "p95": 20.0,
+     "p99": 48.25,
+     "p999": 40.0,
+     "max": 45.0,
+     "spikes": 0,
+     "chunks": 400,
+     "entities": 300,
+     "tiles": 40,
+     "worlds": [
+      {
+       "n": "world",
+       "chunks": 400,
+       "entities": 300,
+       "tiles": 50,
+       "ticking": 40,
+       "players": 2
+      }
+     ],
+     "hot": [],
+     "heap_used_mb": 2000.0,
+     "heap_max_mb": null,
+     "self_p99_us": 80.2,
+     "self_max_us": 151.2,
+     "budget_skips": 2,
+     "lost_windows": 1,
+     "samples": 3
+    }
+   },
+   {
+    "snapshots": [
+     {
+      "tps": null,
+      "ticks": null,
+      "mean": null,
+      "p50": null,
+      "p95": null,
+      "p99": null,
+      "p999": null,
+      "max": null,
+      "self_p99_us": null,
+      "self_max_us": null,
+      "budget_skips": null,
+      "lost_windows": null,
+      "heap_used_mb": null,
+      "heap_max_mb": null,
+      "spikes": [],
+      "worlds": [],
+      "scanned": 10,
+      "hot": []
+     }
+    ],
+    "out": {
+     "ticks": 0,
+     "tps": null,
+     "mean": null,
+     "p50": null,
+     "p95": null,
+     "p99": null,
+     "p999": null,
+     "max": null,
+     "spikes": 0,
+     "chunks": 0,
+     "entities": 0,
+     "tiles": 0,
+     "worlds": [],
+     "hot": [],
+     "heap_used_mb": null,
+     "heap_max_mb": null,
+     "self_p99_us": null,
+     "self_max_us": null,
+     "budget_skips": 0,
+     "lost_windows": 0,
+     "samples": 1
+    }
+   },
+   {
+    "snapshots": [
+     {
+      "tps": 20.0,
+      "ticks": 0.0,
+      "mean": 50.0,
+      "p50": 11.0,
+      "p95": 20.0,
+      "p99": 30.0,
+      "p999": 40.0,
+      "max": 45.0,
+      "self_p99_us": null,
+      "self_max_us": null,
+      "budget_skips": null,
+      "lost_windows": null,
+      "heap_used_mb": null,
+      "heap_max_mb": null,
+      "spikes": [],
+      "worlds": [
+       {
+        "n": "world",
+        "chunks": 400,
+        "entities": 300,
+        "tiles": 50,
+        "ticking": 40,
+        "players": 0
+       }
+      ],
+      "scanned": 10,
+      "hot": []
+     },
+     {
+      "tps": 20.0,
+      "ticks": 3.0,
+      "mean": 0.1,
+      "p50": 11.0,
+      "p95": 20.0,
+      "p99": 30.0,
+      "p999": 40.0,
+      "max": 45.0,
+      "self_p99_us": null,
+      "self_max_us": null,
+      "budget_skips": null,
+      "lost_windows": null,
+      "heap_used_mb": null,
+      "heap_max_mb": null,
+      "spikes": [],
+      "worlds": [
+       {
+        "n": "world",
+        "chunks": 400,
+        "entities": 300,
+        "tiles": 50,
+        "ticking": 40,
+        "players": 0
+       }
+      ],
+      "scanned": 10,
+      "hot": []
+     }
+    ],
+    "out": {
+     "ticks": 3,
+     "tps": 20.0,
+     "mean": 0.1,
+     "p50": 11.0,
+     "p95": 20.0,
+     "p99": 30.0,
+     "p999": 40.0,
+     "max": 45.0,
+     "spikes": 0,
+     "chunks": 400,
+     "entities": 300,
+     "tiles": 40,
+     "worlds": [
+      {
+       "n": "world",
+       "chunks": 400,
+       "entities": 300,
+       "tiles": 50,
+       "ticking": 40,
+       "players": 0
+      }
+     ],
+     "hot": [],
+     "heap_used_mb": null,
+     "heap_max_mb": null,
+     "self_p99_us": null,
+     "self_max_us": null,
+     "budget_skips": 0,
+     "lost_windows": 0,
+     "samples": 2
+    }
+   },
+   {
+    "snapshots": [],
+    "out": {
+     "ticks": 0,
+     "tps": null,
+     "mean": null,
+     "p50": null,
+     "p95": null,
+     "p99": null,
+     "p999": null,
+     "max": null,
+     "spikes": 0,
+     "chunks": 0,
+     "entities": 0,
+     "tiles": 0,
+     "worlds": [],
+     "hot": [],
+     "heap_used_mb": null,
+     "heap_max_mb": null,
+     "self_p99_us": null,
+     "self_max_us": null,
+     "budget_skips": 0,
+     "lost_windows": 0,
+     "samples": 0
+    }
+   }
+  ],
+  "summarize_players": [
+   {
+    "snapshots": [
+     [
+      {
+       "u": "aaaaaaaa-1111-4111-8111-111111111111",
+       "n": "Alice",
+       "ping": 35,
+       "brand": "vanilla",
+       "view": 10,
+       "send": 10,
+       "loc": "en_us",
+       "w": "world",
+       "cx": 3,
+       "cz": 0,
+       "ent": 140,
+       "glide": false,
+       "tips": true,
+       "join": 1768471170000,
+       "fps": 118
+      }
+     ],
+     [
+      {
+       "u": "aaaaaaaa-1111-4111-8111-111111111111",
+       "n": "Alice",
+       "ping": 45,
+       "brand": "vanilla",
+       "view": 10,
+       "send": 10,
+       "loc": "en_us",
+       "w": "world",
+       "cx": 3,
+       "cz": 0,
+       "ent": 140,
+       "glide": false,
+       "tips": true,
+       "join": 1768471170000,
+       "fps": 61
+      },
+      {
+       "u": "bbbbbbbb-2222-4222-8222-222222222222",
+       "n": "Bob",
+       "ping": 80,
+       "brand": "vanilla",
+       "view": 10,
+       "send": 10,
+       "loc": "en_us",
+       "w": "world",
+       "cx": 0,
+       "cz": 0,
+       "ent": 4,
+       "glide": false,
+       "tips": true,
+       "join": 1768471202000,
+       "fps": null
+      }
+     ],
+     [
+      {
+       "u": "aaaaaaaa-1111-4111-8111-111111111111",
+       "n": "Alice",
+       "ping": 35,
+       "brand": "vanilla",
+       "view": 10,
+       "send": 10,
+       "loc": "en_us",
+       "w": "world",
+       "cx": 3,
+       "cz": 0,
+       "ent": 140,
+       "glide": false,
+       "tips": true,
+       "join": 1768471170000,
+       "fps": null
+      },
+      {
+       "u": "bbbbbbbb-2222-4222-8222-222222222222",
+       "n": "Bob",
+       "ping": 80,
+       "brand": "vanilla",
+       "view": 10,
+       "send": 10,
+       "loc": "en_us",
+       "w": "world",
+       "cx": 0,
+       "cz": 0,
+       "ent": 4,
+       "glide": true,
+       "tips": true,
+       "join": 1768471202000,
+       "fps": null
+      }
+     ]
+    ],
+    "out": [
+     {
+      "u": "aaaaaaaa-1111-4111-8111-111111111111",
+      "glide": false,
+      "ent": 140,
+      "n": "Alice",
+      "brand": "vanilla",
+      "view": 10,
+      "send": 10,
+      "loc": "en_us",
+      "w": "world",
+      "cx": 3,
+      "cz": 0,
+      "tips": true,
+      "join": 1768471170000,
+      "ping": 38,
+      "ping_max": 45,
+      "pings": [
+       35,
+       45,
+       35
+      ],
+      "samples": 3,
+      "fps": 90,
+      "fps_min": 61
+     },
+     {
+      "u": "bbbbbbbb-2222-4222-8222-222222222222",
+      "glide": true,
+      "ent": 4,
+      "n": "Bob",
+      "brand": "vanilla",
+      "view": 10,
+      "send": 10,
+      "loc": "en_us",
+      "w": "world",
+      "cx": 0,
+      "cz": 0,
+      "tips": true,
+      "join": 1768471202000,
+      "ping": 80,
+      "ping_max": 80,
+      "pings": [
+       80,
+       80
+      ],
+      "samples": 2
+     }
+    ]
+   },
+   {
+    "snapshots": [
+     [
+      {
+       "u": "bbbbbbbb-2222-4222-8222-222222222222",
+       "n": "bob",
+       "ping": 40,
+       "brand": "vanilla",
+       "view": 10,
+       "send": 10,
+       "loc": "en_us",
+       "w": "world",
+       "cx": 0,
+       "cz": 0,
+       "ent": 10,
+       "glide": false,
+       "tips": true,
+       "join": 1,
+       "fps": null
+      },
+      {
+       "u": "aaaaaaaa-1111-4111-8111-111111111111",
+       "n": "Alice",
+       "ping": 40,
+       "brand": "vanilla",
+       "view": 10,
+       "send": 10,
+       "loc": "en_us",
+       "w": "world",
+       "cx": 0,
+       "cz": 0,
+       "ent": 10,
+       "glide": false,
+       "tips": true,
+       "join": 1,
+       "fps": null
+      },
+      {
+       "u": "cccccccc-3333-4333-8333-333333333333",
+       "n": "_c",
+       "ping": 3,
+       "brand": "vanilla",
+       "view": 10,
+       "send": 10,
+       "loc": "en_us",
+       "w": "world",
+       "cx": 0,
+       "cz": 0,
+       "ent": 10,
+       "glide": false,
+       "tips": true,
+       "join": 1,
+       "fps": null
+      }
+     ],
+     [
+      {
+       "u": "aaaaaaaa-1111-4111-8111-111111111111",
+       "n": "Alice",
+       "ping": 4,
+       "brand": "vanilla",
+       "view": 10,
+       "send": 10,
+       "loc": "en_us",
+       "w": "world",
+       "cx": 0,
+       "cz": 0,
+       "ent": 10,
+       "glide": false,
+       "tips": true,
+       "join": 1,
+       "fps": null
+      }
+     ]
+    ],
+    "out": [
+     {
+      "u": "cccccccc-3333-4333-8333-333333333333",
+      "glide": false,
+      "ent": 10,
+      "n": "_c",
+      "brand": "vanilla",
+      "view": 10,
+      "send": 10,
+      "loc": "en_us",
+      "w": "world",
+      "cx": 0,
+      "cz": 0,
+      "tips": true,
+      "join": 1,
+      "ping": 3,
+      "ping_max": 3,
+      "pings": [
+       3
+      ],
+      "samples": 1
+     },
+     {
+      "u": "aaaaaaaa-1111-4111-8111-111111111111",
+      "glide": false,
+      "ent": 10,
+      "n": "Alice",
+      "brand": "vanilla",
+      "view": 10,
+      "send": 10,
+      "loc": "en_us",
+      "w": "world",
+      "cx": 0,
+      "cz": 0,
+      "tips": true,
+      "join": 1,
+      "ping": 22,
+      "ping_max": 40,
+      "pings": [
+       40,
+       4
+      ],
+      "samples": 2
+     },
+     {
+      "u": "bbbbbbbb-2222-4222-8222-222222222222",
+      "glide": false,
+      "ent": 10,
+      "n": "bob",
+      "brand": "vanilla",
+      "view": 10,
+      "send": 10,
+      "loc": "en_us",
+      "w": "world",
+      "cx": 0,
+      "cz": 0,
+      "tips": true,
+      "join": 1,
+      "ping": 40,
+      "ping_max": 40,
+      "pings": [
+       40
+      ],
+      "samples": 1
+     }
+    ]
+   }
+  ],
+  "lag_events": [
+   {
+    "snapshots": [
+     {
+      "srv": {
+       "tps": 20.0,
+       "ticks": 200.0,
+       "mean": 12.5,
+       "p50": 11.0,
+       "p95": 20.0,
+       "p99": 30.0,
+       "p999": 40.0,
+       "max": 45.0,
+       "self_p99_us": null,
+       "self_max_us": null,
+       "budget_skips": null,
+       "lost_windows": null,
+       "heap_used_mb": null,
+       "heap_max_mb": null,
+       "spikes": [
+        [
+         1768471200000,
+         50.0
+        ],
+        [
+         1768471200037,
+         60.25
+        ],
+        [
+         1768471200074,
+         70.5
+        ],
+        [
+         1768471200111,
+         80.75
+        ],
+        [
+         1768471200148,
+         91.0
+        ],
+        [
+         1768471200185,
+         101.25
+        ],
+        [
+         1768471200222,
+         111.5
+        ],
+        [
+         1768471200259,
+         50.0
+        ],
+        [
+         1768471200296,
+         60.25
+        ],
+        [
+         1768471200333,
+         70.5
+        ],
+        [
+         1768471200370,
+         80.75
+        ],
+        [
+         1768471200407,
+         91.0
+        ],
+        [
+         1768471200444,
+         101.25
+        ],
+        [
+         1768471200481,
+         111.5
+        ],
+        [
+         1768471200518,
+         50.0
+        ],
+        [
+         1768471200555,
+         60.25
+        ],
+        [
+         1768471200592,
+         70.5
+        ],
+        [
+         1768471200629,
+         80.75
+        ],
+        [
+         1768471200666,
+         91.0
+        ],
+        [
+         1768471200703,
+         101.25
+        ],
+        [
+         1768471200740,
+         111.5
+        ],
+        [
+         1768471200777,
+         50.0
+        ],
+        [
+         1768471200814,
+         60.25
+        ],
+        [
+         1768471200851,
+         70.5
+        ],
+        [
+         1768471200888,
+         80.75
+        ],
+        [
+         1768471200925,
+         91.0
+        ],
+        [
+         1768471200962,
+         101.25
+        ],
+        [
+         1768471200999,
+         111.5
+        ],
+        [
+         1768471201036,
+         50.0
+        ],
+        [
+         1768471201073,
+         60.25
+        ],
+        [
+         1768471201110,
+         70.5
+        ],
+        [
+         1768471201147,
+         80.75
+        ]
+       ],
+       "worlds": [
+        {
+         "n": "w0",
+         "chunks": 0,
+         "entities": 50,
+         "tiles": 0,
+         "ticking": 0,
+         "players": 0
+        },
+        {
+         "n": "w1",
+         "chunks": 1,
+         "entities": 400,
+         "tiles": 0,
+         "ticking": 0,
+         "players": 0
+        },
+        {
+         "n": "w2",
+         "chunks": 2,
+         "entities": 10,
+         "tiles": 0,
+         "ticking": 0,
+         "players": 0
+        },
+        {
+         "n": "w3",
+         "chunks": 3,
+         "entities": 400,
+         "tiles": 0,
+         "ticking": 0,
+         "players": 0
+        },
+        {
+         "n": "w4",
+         "chunks": 4,
+         "entities": 300,
+         "tiles": 0,
+         "ticking": 0,
+         "players": 0
+        }
+       ],
+       "scanned": 10,
+       "hot": []
+      },
+      "pl": [
+       {
+        "u": "00000000-1111-4111-8111-111111111111",
+        "n": "Alice",
+        "ping": 40,
+        "brand": "vanilla",
+        "view": 10,
+        "send": 10,
+        "loc": "en_us",
+        "w": "w0",
+        "cx": 0,
+        "cz": 0,
+        "ent": 30,
+        "glide": false,
+        "tips": true,
+        "join": 1,
+        "fps": null
+       },
+       {
+        "u": "00000001-1111-4111-8111-111111111111",
+        "n": "Bob",
+        "ping": 40,
+        "brand": "vanilla",
+        "view": 10,
+        "send": 10,
+        "loc": "en_us",
+        "w": "w1",
+        "cx": 0,
+        "cz": 0,
+        "ent": 200,
+        "glide": false,
+        "tips": true,
+        "join": 1,
+        "fps": null
+       },
+       {
+        "u": "00000002-1111-4111-8111-111111111111",
+        "n": "Carol",
+        "ping": 40,
+        "brand": "vanilla",
+        "view": 10,
+        "send": 10,
+        "loc": "en_us",
+        "w": "w2",
+        "cx": 0,
+        "cz": 0,
+        "ent": 200,
+        "glide": true,
+        "tips": true,
+        "join": 1,
+        "fps": null
+       },
+       {
+        "u": "00000003-1111-4111-8111-111111111111",
+        "n": "Dave",
+        "ping": 40,
+        "brand": "vanilla",
+        "view": 10,
+        "send": 10,
+        "loc": "en_us",
+        "w": "w3",
+        "cx": 0,
+        "cz": 0,
+        "ent": 5,
+        "glide": false,
+        "tips": true,
+        "join": 1,
+        "fps": null
+       },
+       {
+        "u": "00000004-1111-4111-8111-111111111111",
+        "n": "Erin",
+        "ping": 40,
+        "brand": "vanilla",
+        "view": 10,
+        "send": 10,
+        "loc": "en_us",
+        "w": "w4",
+        "cx": 0,
+        "cz": 0,
+        "ent": 90,
+        "glide": false,
+        "tips": true,
+        "join": 1,
+        "fps": null
+       }
+      ]
+     },
+     {
+      "srv": {
+       "tps": 20.0,
+       "ticks": 200.0,
+       "mean": 12.5,
+       "p50": 11.0,
+       "p95": 20.0,
+       "p99": 30.0,
+       "p999": 40.0,
+       "max": 45.0,
+       "self_p99_us": null,
+       "self_max_us": null,
+       "budget_skips": null,
+       "lost_windows": null,
+       "heap_used_mb": null,
+       "heap_max_mb": null,
+       "spikes": [
+        [
+         1768471212000,
+         52.25
+        ],
+        [
+         1768471212001,
+         52.35
+        ],
+        [
+         1768471212002,
+         112.05
+        ],
+        [
+         1768471212003,
+         50.0
+        ],
+        [
+         1768471212004,
+         0.05
+        ],
+        [
+         1768471212005,
+         1000.0
+        ],
+        [
+         1768471212006,
+         52.25
+        ]
+       ],
+       "worlds": [
+        {
+         "n": "world",
+         "chunks": 400,
+         "entities": 300,
+         "tiles": 50,
+         "ticking": 40,
+         "players": 0
+        }
+       ],
+       "scanned": 10,
+       "hot": []
+      },
+      "pl": []
+     },
+     {
+      "srv": {
+       "tps": 20.0,
+       "ticks": 200.0,
+       "mean": 12.5,
+       "p50": 11.0,
+       "p95": 20.0,
+       "p99": 30.0,
+       "p999": 40.0,
+       "max": 45.0,
+       "self_p99_us": null,
+       "self_max_us": null,
+       "budget_skips": null,
+       "lost_windows": null,
+       "heap_used_mb": null,
+       "heap_max_mb": null,
+       "spikes": [],
+       "worlds": [
+        {
+         "n": "world",
+         "chunks": 400,
+         "entities": 300,
+         "tiles": 50,
+         "ticking": 40,
+         "players": 0
+        }
+       ],
+       "scanned": 10,
+       "hot": []
+      },
+      "pl": []
+     }
+    ],
+    "running": [
+     "backup"
+    ],
+    "out": [
+     {
+      "t": 1768471200074,
+      "ms": 70.5,
+      "ctx": {
+       "worlds": [
+        {
+         "n": "w1",
+         "entities": 400,
+         "chunks": 1
+        },
+        {
+         "n": "w3",
+         "entities": 400,
+         "chunks": 3
+        },
+        {
+         "n": "w4",
+         "entities": 300,
+         "chunks": 4
+        }
+       ],
+       "near": [
+        {
+         "n": "Bob",
+         "u": "00000001-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w1",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        },
+        {
+         "n": "Carol",
+         "u": "00000002-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w2",
+         "cx": 0,
+         "cz": 0,
+         "glide": true
+        },
+        {
+         "n": "Erin",
+         "u": "00000004-1111-4111-8111-111111111111",
+         "ent": 90,
+         "w": "w4",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        }
+       ],
+       "running": [
+        "backup"
+       ],
+       "players": 5
+      }
+     },
+     {
+      "t": 1768471200111,
+      "ms": 80.8,
+      "ctx": {
+       "worlds": [
+        {
+         "n": "w1",
+         "entities": 400,
+         "chunks": 1
+        },
+        {
+         "n": "w3",
+         "entities": 400,
+         "chunks": 3
+        },
+        {
+         "n": "w4",
+         "entities": 300,
+         "chunks": 4
+        }
+       ],
+       "near": [
+        {
+         "n": "Bob",
+         "u": "00000001-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w1",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        },
+        {
+         "n": "Carol",
+         "u": "00000002-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w2",
+         "cx": 0,
+         "cz": 0,
+         "glide": true
+        },
+        {
+         "n": "Erin",
+         "u": "00000004-1111-4111-8111-111111111111",
+         "ent": 90,
+         "w": "w4",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        }
+       ],
+       "running": [
+        "backup"
+       ],
+       "players": 5
+      }
+     },
+     {
+      "t": 1768471200148,
+      "ms": 91.0,
+      "ctx": {
+       "worlds": [
+        {
+         "n": "w1",
+         "entities": 400,
+         "chunks": 1
+        },
+        {
+         "n": "w3",
+         "entities": 400,
+         "chunks": 3
+        },
+        {
+         "n": "w4",
+         "entities": 300,
+         "chunks": 4
+        }
+       ],
+       "near": [
+        {
+         "n": "Bob",
+         "u": "00000001-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w1",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        },
+        {
+         "n": "Carol",
+         "u": "00000002-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w2",
+         "cx": 0,
+         "cz": 0,
+         "glide": true
+        },
+        {
+         "n": "Erin",
+         "u": "00000004-1111-4111-8111-111111111111",
+         "ent": 90,
+         "w": "w4",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        }
+       ],
+       "running": [
+        "backup"
+       ],
+       "players": 5
+      }
+     },
+     {
+      "t": 1768471200185,
+      "ms": 101.2,
+      "ctx": {
+       "worlds": [
+        {
+         "n": "w1",
+         "entities": 400,
+         "chunks": 1
+        },
+        {
+         "n": "w3",
+         "entities": 400,
+         "chunks": 3
+        },
+        {
+         "n": "w4",
+         "entities": 300,
+         "chunks": 4
+        }
+       ],
+       "near": [
+        {
+         "n": "Bob",
+         "u": "00000001-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w1",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        },
+        {
+         "n": "Carol",
+         "u": "00000002-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w2",
+         "cx": 0,
+         "cz": 0,
+         "glide": true
+        },
+        {
+         "n": "Erin",
+         "u": "00000004-1111-4111-8111-111111111111",
+         "ent": 90,
+         "w": "w4",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        }
+       ],
+       "running": [
+        "backup"
+       ],
+       "players": 5
+      }
+     },
+     {
+      "t": 1768471200222,
+      "ms": 111.5,
+      "ctx": {
+       "worlds": [
+        {
+         "n": "w1",
+         "entities": 400,
+         "chunks": 1
+        },
+        {
+         "n": "w3",
+         "entities": 400,
+         "chunks": 3
+        },
+        {
+         "n": "w4",
+         "entities": 300,
+         "chunks": 4
+        }
+       ],
+       "near": [
+        {
+         "n": "Bob",
+         "u": "00000001-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w1",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        },
+        {
+         "n": "Carol",
+         "u": "00000002-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w2",
+         "cx": 0,
+         "cz": 0,
+         "glide": true
+        },
+        {
+         "n": "Erin",
+         "u": "00000004-1111-4111-8111-111111111111",
+         "ent": 90,
+         "w": "w4",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        }
+       ],
+       "running": [
+        "backup"
+       ],
+       "players": 5
+      }
+     },
+     {
+      "t": 1768471200370,
+      "ms": 80.8,
+      "ctx": {
+       "worlds": [
+        {
+         "n": "w1",
+         "entities": 400,
+         "chunks": 1
+        },
+        {
+         "n": "w3",
+         "entities": 400,
+         "chunks": 3
+        },
+        {
+         "n": "w4",
+         "entities": 300,
+         "chunks": 4
+        }
+       ],
+       "near": [
+        {
+         "n": "Bob",
+         "u": "00000001-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w1",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        },
+        {
+         "n": "Carol",
+         "u": "00000002-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w2",
+         "cx": 0,
+         "cz": 0,
+         "glide": true
+        },
+        {
+         "n": "Erin",
+         "u": "00000004-1111-4111-8111-111111111111",
+         "ent": 90,
+         "w": "w4",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        }
+       ],
+       "running": [
+        "backup"
+       ],
+       "players": 5
+      }
+     },
+     {
+      "t": 1768471200407,
+      "ms": 91.0,
+      "ctx": {
+       "worlds": [
+        {
+         "n": "w1",
+         "entities": 400,
+         "chunks": 1
+        },
+        {
+         "n": "w3",
+         "entities": 400,
+         "chunks": 3
+        },
+        {
+         "n": "w4",
+         "entities": 300,
+         "chunks": 4
+        }
+       ],
+       "near": [
+        {
+         "n": "Bob",
+         "u": "00000001-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w1",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        },
+        {
+         "n": "Carol",
+         "u": "00000002-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w2",
+         "cx": 0,
+         "cz": 0,
+         "glide": true
+        },
+        {
+         "n": "Erin",
+         "u": "00000004-1111-4111-8111-111111111111",
+         "ent": 90,
+         "w": "w4",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        }
+       ],
+       "running": [
+        "backup"
+       ],
+       "players": 5
+      }
+     },
+     {
+      "t": 1768471200444,
+      "ms": 101.2,
+      "ctx": {
+       "worlds": [
+        {
+         "n": "w1",
+         "entities": 400,
+         "chunks": 1
+        },
+        {
+         "n": "w3",
+         "entities": 400,
+         "chunks": 3
+        },
+        {
+         "n": "w4",
+         "entities": 300,
+         "chunks": 4
+        }
+       ],
+       "near": [
+        {
+         "n": "Bob",
+         "u": "00000001-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w1",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        },
+        {
+         "n": "Carol",
+         "u": "00000002-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w2",
+         "cx": 0,
+         "cz": 0,
+         "glide": true
+        },
+        {
+         "n": "Erin",
+         "u": "00000004-1111-4111-8111-111111111111",
+         "ent": 90,
+         "w": "w4",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        }
+       ],
+       "running": [
+        "backup"
+       ],
+       "players": 5
+      }
+     },
+     {
+      "t": 1768471200481,
+      "ms": 111.5,
+      "ctx": {
+       "worlds": [
+        {
+         "n": "w1",
+         "entities": 400,
+         "chunks": 1
+        },
+        {
+         "n": "w3",
+         "entities": 400,
+         "chunks": 3
+        },
+        {
+         "n": "w4",
+         "entities": 300,
+         "chunks": 4
+        }
+       ],
+       "near": [
+        {
+         "n": "Bob",
+         "u": "00000001-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w1",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        },
+        {
+         "n": "Carol",
+         "u": "00000002-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w2",
+         "cx": 0,
+         "cz": 0,
+         "glide": true
+        },
+        {
+         "n": "Erin",
+         "u": "00000004-1111-4111-8111-111111111111",
+         "ent": 90,
+         "w": "w4",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        }
+       ],
+       "running": [
+        "backup"
+       ],
+       "players": 5
+      }
+     },
+     {
+      "t": 1768471200629,
+      "ms": 80.8,
+      "ctx": {
+       "worlds": [
+        {
+         "n": "w1",
+         "entities": 400,
+         "chunks": 1
+        },
+        {
+         "n": "w3",
+         "entities": 400,
+         "chunks": 3
+        },
+        {
+         "n": "w4",
+         "entities": 300,
+         "chunks": 4
+        }
+       ],
+       "near": [
+        {
+         "n": "Bob",
+         "u": "00000001-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w1",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        },
+        {
+         "n": "Carol",
+         "u": "00000002-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w2",
+         "cx": 0,
+         "cz": 0,
+         "glide": true
+        },
+        {
+         "n": "Erin",
+         "u": "00000004-1111-4111-8111-111111111111",
+         "ent": 90,
+         "w": "w4",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        }
+       ],
+       "running": [
+        "backup"
+       ],
+       "players": 5
+      }
+     },
+     {
+      "t": 1768471200666,
+      "ms": 91.0,
+      "ctx": {
+       "worlds": [
+        {
+         "n": "w1",
+         "entities": 400,
+         "chunks": 1
+        },
+        {
+         "n": "w3",
+         "entities": 400,
+         "chunks": 3
+        },
+        {
+         "n": "w4",
+         "entities": 300,
+         "chunks": 4
+        }
+       ],
+       "near": [
+        {
+         "n": "Bob",
+         "u": "00000001-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w1",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        },
+        {
+         "n": "Carol",
+         "u": "00000002-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w2",
+         "cx": 0,
+         "cz": 0,
+         "glide": true
+        },
+        {
+         "n": "Erin",
+         "u": "00000004-1111-4111-8111-111111111111",
+         "ent": 90,
+         "w": "w4",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        }
+       ],
+       "running": [
+        "backup"
+       ],
+       "players": 5
+      }
+     },
+     {
+      "t": 1768471200703,
+      "ms": 101.2,
+      "ctx": {
+       "worlds": [
+        {
+         "n": "w1",
+         "entities": 400,
+         "chunks": 1
+        },
+        {
+         "n": "w3",
+         "entities": 400,
+         "chunks": 3
+        },
+        {
+         "n": "w4",
+         "entities": 300,
+         "chunks": 4
+        }
+       ],
+       "near": [
+        {
+         "n": "Bob",
+         "u": "00000001-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w1",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        },
+        {
+         "n": "Carol",
+         "u": "00000002-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w2",
+         "cx": 0,
+         "cz": 0,
+         "glide": true
+        },
+        {
+         "n": "Erin",
+         "u": "00000004-1111-4111-8111-111111111111",
+         "ent": 90,
+         "w": "w4",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        }
+       ],
+       "running": [
+        "backup"
+       ],
+       "players": 5
+      }
+     },
+     {
+      "t": 1768471200740,
+      "ms": 111.5,
+      "ctx": {
+       "worlds": [
+        {
+         "n": "w1",
+         "entities": 400,
+         "chunks": 1
+        },
+        {
+         "n": "w3",
+         "entities": 400,
+         "chunks": 3
+        },
+        {
+         "n": "w4",
+         "entities": 300,
+         "chunks": 4
+        }
+       ],
+       "near": [
+        {
+         "n": "Bob",
+         "u": "00000001-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w1",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        },
+        {
+         "n": "Carol",
+         "u": "00000002-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w2",
+         "cx": 0,
+         "cz": 0,
+         "glide": true
+        },
+        {
+         "n": "Erin",
+         "u": "00000004-1111-4111-8111-111111111111",
+         "ent": 90,
+         "w": "w4",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        }
+       ],
+       "running": [
+        "backup"
+       ],
+       "players": 5
+      }
+     },
+     {
+      "t": 1768471200888,
+      "ms": 80.8,
+      "ctx": {
+       "worlds": [
+        {
+         "n": "w1",
+         "entities": 400,
+         "chunks": 1
+        },
+        {
+         "n": "w3",
+         "entities": 400,
+         "chunks": 3
+        },
+        {
+         "n": "w4",
+         "entities": 300,
+         "chunks": 4
+        }
+       ],
+       "near": [
+        {
+         "n": "Bob",
+         "u": "00000001-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w1",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        },
+        {
+         "n": "Carol",
+         "u": "00000002-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w2",
+         "cx": 0,
+         "cz": 0,
+         "glide": true
+        },
+        {
+         "n": "Erin",
+         "u": "00000004-1111-4111-8111-111111111111",
+         "ent": 90,
+         "w": "w4",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        }
+       ],
+       "running": [
+        "backup"
+       ],
+       "players": 5
+      }
+     },
+     {
+      "t": 1768471200925,
+      "ms": 91.0,
+      "ctx": {
+       "worlds": [
+        {
+         "n": "w1",
+         "entities": 400,
+         "chunks": 1
+        },
+        {
+         "n": "w3",
+         "entities": 400,
+         "chunks": 3
+        },
+        {
+         "n": "w4",
+         "entities": 300,
+         "chunks": 4
+        }
+       ],
+       "near": [
+        {
+         "n": "Bob",
+         "u": "00000001-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w1",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        },
+        {
+         "n": "Carol",
+         "u": "00000002-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w2",
+         "cx": 0,
+         "cz": 0,
+         "glide": true
+        },
+        {
+         "n": "Erin",
+         "u": "00000004-1111-4111-8111-111111111111",
+         "ent": 90,
+         "w": "w4",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        }
+       ],
+       "running": [
+        "backup"
+       ],
+       "players": 5
+      }
+     },
+     {
+      "t": 1768471200962,
+      "ms": 101.2,
+      "ctx": {
+       "worlds": [
+        {
+         "n": "w1",
+         "entities": 400,
+         "chunks": 1
+        },
+        {
+         "n": "w3",
+         "entities": 400,
+         "chunks": 3
+        },
+        {
+         "n": "w4",
+         "entities": 300,
+         "chunks": 4
+        }
+       ],
+       "near": [
+        {
+         "n": "Bob",
+         "u": "00000001-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w1",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        },
+        {
+         "n": "Carol",
+         "u": "00000002-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w2",
+         "cx": 0,
+         "cz": 0,
+         "glide": true
+        },
+        {
+         "n": "Erin",
+         "u": "00000004-1111-4111-8111-111111111111",
+         "ent": 90,
+         "w": "w4",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        }
+       ],
+       "running": [
+        "backup"
+       ],
+       "players": 5
+      }
+     },
+     {
+      "t": 1768471200999,
+      "ms": 111.5,
+      "ctx": {
+       "worlds": [
+        {
+         "n": "w1",
+         "entities": 400,
+         "chunks": 1
+        },
+        {
+         "n": "w3",
+         "entities": 400,
+         "chunks": 3
+        },
+        {
+         "n": "w4",
+         "entities": 300,
+         "chunks": 4
+        }
+       ],
+       "near": [
+        {
+         "n": "Bob",
+         "u": "00000001-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w1",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        },
+        {
+         "n": "Carol",
+         "u": "00000002-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w2",
+         "cx": 0,
+         "cz": 0,
+         "glide": true
+        },
+        {
+         "n": "Erin",
+         "u": "00000004-1111-4111-8111-111111111111",
+         "ent": 90,
+         "w": "w4",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        }
+       ],
+       "running": [
+        "backup"
+       ],
+       "players": 5
+      }
+     },
+     {
+      "t": 1768471201147,
+      "ms": 80.8,
+      "ctx": {
+       "worlds": [
+        {
+         "n": "w1",
+         "entities": 400,
+         "chunks": 1
+        },
+        {
+         "n": "w3",
+         "entities": 400,
+         "chunks": 3
+        },
+        {
+         "n": "w4",
+         "entities": 300,
+         "chunks": 4
+        }
+       ],
+       "near": [
+        {
+         "n": "Bob",
+         "u": "00000001-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w1",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        },
+        {
+         "n": "Carol",
+         "u": "00000002-1111-4111-8111-111111111111",
+         "ent": 200,
+         "w": "w2",
+         "cx": 0,
+         "cz": 0,
+         "glide": true
+        },
+        {
+         "n": "Erin",
+         "u": "00000004-1111-4111-8111-111111111111",
+         "ent": 90,
+         "w": "w4",
+         "cx": 0,
+         "cz": 0,
+         "glide": false
+        }
+       ],
+       "running": [
+        "backup"
+       ],
+       "players": 5
+      }
+     },
+     {
+      "t": 1768471212002,
+      "ms": 112.0,
+      "ctx": {
+       "worlds": [
+        {
+         "n": "world",
+         "entities": 300,
+         "chunks": 400
+        }
+       ],
+       "near": [],
+       "running": [
+        "backup"
+       ],
+       "players": 0
+      }
+     },
+     {
+      "t": 1768471212005,
+      "ms": 1000.0,
+      "ctx": {
+       "worlds": [
+        {
+         "n": "world",
+         "entities": 300,
+         "chunks": 400
+        }
+       ],
+       "near": [],
+       "running": [
+        "backup"
+       ],
+       "players": 0
+      }
+     }
+    ]
+   }
+  ],
+  "sessions": {
+   "SESSION_GAP_MS": 60000,
+   "steps": [
+    {
+     "feed": [
+      {
+       "ts": 1768471200000,
+       "pl": [
+        [
+         "aaaaaaaa-1111-4111-8111-111111111111",
+         "Alice",
+         1768471170000
+        ]
+       ]
+      }
+     ],
+     "events": [
+      {
+       "k": "join",
+       "t": 1768471170000,
+       "u": "aaaaaaaa-1111-4111-8111-111111111111",
+       "n": "Alice",
+       "join": 1768471170000
+      }
+     ],
+     "names": [
+      "Alice"
+     ]
+    },
+    {
+     "feed": [
+      {
+       "ts": 1768471210000,
+       "pl": [
+        [
+         "aaaaaaaa-1111-4111-8111-111111111111",
+         "Alice",
+         1768471170000
+        ],
+        [
+         "bbbbbbbb-2222-4222-8222-222222222222",
+         "Bob",
+         1768471208000
+        ]
+       ]
+      },
+      {
+       "ts": 1768471260000,
+       "pl": [
+        [
+         "bbbbbbbb-2222-4222-8222-222222222222",
+         "Bob",
+         1768471208000
+        ]
+       ]
+      }
+     ],
+     "events": [
+      {
+       "k": "join",
+       "t": 1768471208000,
+       "u": "bbbbbbbb-2222-4222-8222-222222222222",
+       "n": "Bob",
+       "join": 1768471208000
+      },
+      {
+       "k": "leave",
+       "t": 1768471260000,
+       "u": "aaaaaaaa-1111-4111-8111-111111111111",
+       "n": "Alice",
+       "join": 1768471170000
+      }
+     ],
+     "names": [
+      "Bob"
+     ]
+    },
+    {
+     "feed": [
+      {
+       "ts": 1768471270000,
+       "pl": [
+        [
+         "bbbbbbbb-2222-4222-8222-222222222222",
+         "Bob",
+         1768471208000
+        ],
+        [
+         "cccccccc-3333-4333-8333-333333333333",
+         "Carol",
+         0
+        ]
+       ]
+      }
+     ],
+     "events": [
+      {
+       "k": "join",
+       "t": 1768471270000,
+       "u": "cccccccc-3333-4333-8333-333333333333",
+       "n": "Carol",
+       "join": 1768471270000
+      }
+     ],
+     "names": [
+      "Bob",
+      "Carol"
+     ]
+    },
+    {
+     "feed": [
+      {
+       "ts": 1768471400000,
+       "pl": [
+        [
+         "bbbbbbbb-2222-4222-8222-222222222222",
+         "Bob",
+         1768471390000
+        ]
+       ]
+      }
+     ],
+     "events": [
+      {
+       "k": "leave",
+       "t": 1768471270000,
+       "u": "bbbbbbbb-2222-4222-8222-222222222222",
+       "n": "Bob",
+       "join": 1768471208000
+      },
+      {
+       "k": "leave",
+       "t": 1768471270000,
+       "u": "cccccccc-3333-4333-8333-333333333333",
+       "n": "Carol",
+       "join": 1768471270000
+      },
+      {
+       "k": "join",
+       "t": 1768471390000,
+       "u": "bbbbbbbb-2222-4222-8222-222222222222",
+       "n": "Bob",
+       "join": 1768471390000
+      }
+     ],
+     "names": [
+      "Bob"
+     ]
+    },
+    {
+     "feed": [
+      {
+       "ts": 1768471410000,
+       "pl": [
+        [
+         "bbbbbbbb-2222-4222-8222-222222222222",
+         "Bob",
+         1768471390000
+        ]
+       ]
+      },
+      {
+       "ts": 1768471420000,
+       "pl": []
+      }
+     ],
+     "events": [
+      {
+       "k": "leave",
+       "t": 1768471420000,
+       "u": "bbbbbbbb-2222-4222-8222-222222222222",
+       "n": "Bob",
+       "join": 1768471390000
+      }
+     ],
+     "names": []
+    },
+    {
+     "feed": [
+      {
+       "ts": 1768471415000,
+       "pl": [
+        [
+         "aaaaaaaa-1111-4111-8111-111111111111",
+         "Alice",
+         0
+        ]
+       ]
+      }
+     ],
+     "events": [
+      {
+       "k": "join",
+       "t": 1768471415000,
+       "u": "aaaaaaaa-1111-4111-8111-111111111111",
+       "n": "Alice",
+       "join": 1768471415000
+      }
+     ],
+     "names": [
+      "Alice"
+     ]
+    }
+   ]
+  }
+ }
+}

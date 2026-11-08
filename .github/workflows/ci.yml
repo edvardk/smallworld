@@ -136,8 +136,9 @@ jobs:
           path: ~/.terraform.d/plugin-cache
           key: terraform-providers-${{ runner.os }}-${{ hashFiles('terraform/.terraform.lock.hcl') }}
 
-      # tests/agent_parity runs mc-agent in `unshare -rm` (docs/ci.md "The agent parity harness"): Ubuntu 24.04
-      # restricts unprivileged user namespaces through AppArmor.
+      # tests/agent_parity and tests/telemetry_parity run mc-agent and the telemetry sidecar in `unshare -rm`
+      # (docs/ci.md "The agent parity harness"): Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor.
+      # Both harnesses run inside `pytest -q` (Python implementation; AGENT_PARITY_REQUIRE makes a skip a failure).
       - name: Allow unprivileged user namespaces (agent parity harness)
         if: env.CODE == 'true'
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0

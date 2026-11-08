@@ -1,0 +1,298 @@
+{
+ "meta": {
+  "generator": "scripts/telemetry_vectors.py",
+  "doc": "segment_bytes (decompressed), Segments.write names and state, prune, read_stats"
+ },
+ "vectors": {
+  "segment_bytes": [
+   {
+    "rows": [
+     {
+      "id": "0badc0de:1",
+      "ts": 1768471200000,
+      "seq": 1,
+      "f": 0.1,
+      "s": "caf\u00e9 \u2713",
+      "n": null,
+      "b": true,
+      "e": {},
+      "l": [
+       1,
+       2.5,
+       -0.0,
+       1e+16,
+       1e-07,
+       123456789012345678
+      ]
+     }
+    ],
+    "ndjson": "{\"id\":\"0badc0de:1\",\"ts\":1768471200000,\"seq\":1,\"f\":0.1,\"s\":\"caf\\u00e9 \\u2713\",\"n\":null,\"b\":true,\"e\":{},\"l\":[1,2.5,-0.0,1e+16,1e-07,123456789012345678]}\n"
+   },
+   {
+    "rows": [
+     {
+      "id": "0badc0de:0",
+      "ts": 1768471200000,
+      "seq": 0
+     },
+     {
+      "id": "0badc0de:1",
+      "ts": 1768471260000,
+      "seq": 1
+     },
+     {
+      "id": "0badc0de:2",
+      "ts": 1768471320000,
+      "seq": 2
+     }
+    ],
+    "ndjson": "{\"id\":\"0badc0de:0\",\"ts\":1768471200000,\"seq\":0}\n{\"id\":\"0badc0de:1\",\"ts\":1768471260000,\"seq\":1}\n{\"id\":\"0badc0de:2\",\"ts\":1768471320000,\"seq\":2}\n"
+   },
+   {
+    "rows": [],
+    "ndjson": ""
+   }
+  ],
+  "segment_name": "^(\\d{8}T\\d{4})-([0-9a-f]{8})-(\\d+)-(\\d+)\\.ndjson\\.gz$",
+  "write": [
+   {
+    "rows": [
+     {
+      "id": "abcd0123:5",
+      "ts": 1768471259999,
+      "seq": 5
+     },
+     {
+      "id": "abcd0123:6",
+      "ts": 1768471200000,
+      "seq": 6
+     }
+    ],
+    "acked": [
+     "abcd0123:6"
+    ],
+    "src": "abcd0123",
+    "name": "20260115T1000-abcd0123-5-6.ndjson.gz",
+    "state": {}
+   },
+   {
+    "rows": [
+     {
+      "id": "x:0",
+      "ts": 0,
+      "seq": 0
+     }
+    ],
+    "acked": [],
+    "src": "00000000",
+    "name": "19700101T0000-00000000-0-0.ndjson.gz",
+    "state": {}
+   },
+   {
+    "rows": [
+     {
+      "id": "x:9",
+      "ts": 253402300799000,
+      "seq": 9
+     }
+    ],
+    "acked": [
+     "x:9"
+    ],
+    "src": "ffffffff",
+    "name": "99991231T2359-ffffffff-9-9.ndjson.gz",
+    "state": {}
+   }
+  ],
+  "prune": [
+   {
+    "days": 30,
+    "cap_mb": 10,
+    "files": [
+     [
+      "20251101T0000-0badc0de-1-2",
+      1000,
+      40
+     ],
+     [
+      "20251201T0000-0badc0de-3-3",
+      4194304,
+      1
+     ],
+     [
+      "20251202T0000-0badc0de-4-4",
+      4194304,
+      1
+     ],
+     [
+      "20251203T0000-0badc0de-5-5",
+      3145728,
+      0
+     ]
+    ],
+    "now": 1800000000.0,
+    "hand_deleted": "20250101T0000-0badc0de-9-9.ndjson.gz",
+    "dropped": [
+     "20251101T0000-0badc0de-1-2.ndjson.gz",
+     "20251201T0000-0badc0de-3-3.ndjson.gz"
+    ],
+    "state_after": {
+     "20251202T0000-0badc0de-4-4.ndjson.gz": {
+      "r2": true,
+      "todo": []
+     },
+     "20251203T0000-0badc0de-5-5.ndjson.gz": {
+      "r2": true,
+      "todo": []
+     }
+    }
+   },
+   {
+    "days": 1,
+    "cap_mb": 200,
+    "files": [
+     [
+      "20251101T0000-0badc0de-1-2",
+      10,
+      2
+     ],
+     [
+      "20251102T0000-0badc0de-1-2",
+      10,
+      0.5
+     ],
+     [
+      "20251103T0000-0badc0de-1-2",
+      10,
+      3
+     ]
+    ],
+    "now": 1800000000.0,
+    "hand_deleted": "20250101T0000-0badc0de-9-9.ndjson.gz",
+    "dropped": [
+     "20251101T0000-0badc0de-1-2.ndjson.gz"
+    ],
+    "state_after": {
+     "20251102T0000-0badc0de-1-2.ndjson.gz": {
+      "r2": true,
+      "todo": []
+     },
+     "20251103T0000-0badc0de-1-2.ndjson.gz": {
+      "r2": true,
+      "todo": []
+     }
+    }
+   },
+   {
+    "days": 30,
+    "cap_mb": 10,
+    "files": [
+     [
+      "20251101T0000-0badc0de-1-2",
+      10485760,
+      0
+     ]
+    ],
+    "now": 1800000000.0,
+    "hand_deleted": "20250101T0000-0badc0de-9-9.ndjson.gz",
+    "dropped": [],
+    "state_after": {
+     "20250101T0000-0badc0de-9-9.ndjson.gz": {
+      "r2": false,
+      "todo": [
+       0
+      ]
+     },
+     "20251101T0000-0badc0de-1-2.ndjson.gz": {
+      "r2": true,
+      "todo": []
+     }
+    }
+   },
+   {
+    "days": 30,
+    "cap_mb": 10,
+    "files": [
+     [
+      "20251101T0000-0badc0de-1-2",
+      10485761,
+      0
+     ]
+    ],
+    "now": 1800000000.0,
+    "hand_deleted": "20250101T0000-0badc0de-9-9.ndjson.gz",
+    "dropped": [
+     "20251101T0000-0badc0de-1-2.ndjson.gz"
+    ],
+    "state_after": {}
+   }
+  ],
+  "read_stats": {
+   "STAT_KEYS": {
+    "play_ticks": "minecraft:play_time",
+    "deaths": "minecraft:deaths",
+    "mob_kills": "minecraft:mob_kills",
+    "walk_cm": "minecraft:walk_one_cm",
+    "sprint_cm": "minecraft:sprint_one_cm",
+    "fly_cm": "minecraft:aviate_one_cm",
+    "jumps": "minecraft:jump"
+   },
+   "cases": [
+    {
+     "file": "{\"stats\": {\"minecraft:custom\": {\"minecraft:play_time\": 72000, \"minecraft:deaths\": 2, \"minecraft:walk_one_cm\": 5.5, \"minecraft:jump\": true}}}",
+     "out": {
+      "ok": {
+       "play_ticks": 72000,
+       "deaths": 2,
+       "mob_kills": 0,
+       "sprint_cm": 0,
+       "fly_cm": 0,
+       "jumps": 1
+      }
+     }
+    },
+    {
+     "file": "{\"stats\": {\"minecraft:custom\": []}}",
+     "out": {
+      "ok": {
+       "play_ticks": 0,
+       "deaths": 0,
+       "mob_kills": 0,
+       "walk_cm": 0,
+       "sprint_cm": 0,
+       "fly_cm": 0,
+       "jumps": 0
+      }
+     }
+    },
+    {
+     "file": "{\"stats\": null}",
+     "out": {
+      "ok": {
+       "play_ticks": 0,
+       "deaths": 0,
+       "mob_kills": 0,
+       "walk_cm": 0,
+       "sprint_cm": 0,
+       "fly_cm": 0,
+       "jumps": 0
+      }
+     }
+    },
+    {
+     "file": "[1]",
+     "out": {
+      "error": "'list' object has no attribute 'get'",
+      "type": "AttributeError"
+     }
+    },
+    {
+     "file": "not json",
+     "out": {
+      "ok": null
+     }
+    }
+   ]
+  }
+ }
+}
