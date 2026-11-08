@@ -32,14 +32,15 @@ restic_sha256:
 # The base role checks the one for the box's architecture against this pin before installing it (keys: Debian
 # architecture names, as restic_sha256's).
 mc_smallworld_rcon_sha256:
-  amd64: 29cfd6b559cd89bb09db216d30fb2eaac9b80c31fdb03623c6acdcdedb5f2de0
-  arm64: 91221c47b00da66fc58749bbd428c67b4df9c29a8f3c1424419475efb2e98125
+  amd64: 432fffddc002b9d65a2061b1d501520258fcdf5239c8d522a48cacda1066618c
+  arm64: bac51b0c2ceb9b46702d9e96beb2523035d26bbb5c19a8f848bbf1b8895f2673
 # v1.4: smallworld-agent (rust/smallworld-agent, PORTING.md), the Rust port of mc_agent.py: committed as
 # rust/dist/smallworld-agent-<target> and rebuilt byte for byte by scripts/build_rust.py check, like smallworld-rcon.
-# Not installed yet (the switch, agent.implementation, comes with the integration step); pinned and tested now.
+# Installed on every box by the base role (checked against this pin first); runs as mc-agent with
+# server.yml agent.implementation: rust.
 mc_smallworld_agent_sha256:
-  amd64: e909865633b16f80aeaab58ae7b5b045b1ddf16ad03eec6b447cee198af44e65
-  arm64: 11309cc746bef9b900ca0d8b2ae939afcc965f55f16a979b569cbf666cedf724
+  amd64: fafbdcc6438b0ae12ead0dd3c1ee0bbe4b5b46587db40dd7518e39528cba9d13
+  arm64: b67645a9b7f9c7e1960b8aa9d3427e0d1ade93b5c743112065da035ad8b7070f
 
 # --- OS tuning -----------------------------------------------------------------------------------
 base_zram_enabled: true

@@ -4,7 +4,7 @@
 
 use super::ShipError;
 use crate::link::IngestError;
-use crate::types::{AResult, AgentError, Obj, Value, truthy};
+use crate::types::{Obj, Value, truthy};
 use regex::Regex;
 use smallworld_core::pyjson::{self, py_str};
 use smallworld_core::pystr::{isspace, prefix_cp};
@@ -233,96 +233,43 @@ fn repr_str(s: &str) -> String {
     out
 }
 
-/// Characters for which `str.isdigit()` is true but `str.isdecimal()` isn't (superscripts, circled digits,
-/// ...): `int()` refuses them. Python 3.11, 3.12 and 3.13 agree:
-/// `[c for c in range(0x110000) if chr(c).isdigit() and not chr(c).isdecimal()]`.
-const DIGIT_NOT_DECIMAL: [(u32, u32); 20] = [
-    (0xB2, 0xB3),
-    (0xB9, 0xB9),
-    (0x1369, 0x1371),
-    (0x19DA, 0x19DA),
-    (0x2070, 0x2070),
-    (0x2074, 0x2079),
-    (0x2080, 0x2089),
-    (0x2460, 0x2468),
-    (0x2474, 0x247C),
-    (0x2488, 0x2490),
-    (0x24EA, 0x24EA),
-    (0x24F5, 0x24FD),
-    (0x24FF, 0x24FF),
-    (0x2776, 0x277E),
-    (0x2780, 0x2788),
-    (0x278A, 0x2792),
-    (0x10A40, 0x10A43),
-    (0x10E60, 0x10E68),
-    (0x11052, 0x1105A),
-    (0x1F100, 0x1F10A),
-];
-
-fn digit_not_decimal(ch: char) -> bool {
-    let c = u32::from(ch);
-    DIGIT_NOT_DECIMAL.iter().any(|&(a, b)| (a..=b).contains(&c))
-}
-
-/// `int(prio) if isinstance(prio, str) and prio.isdigit() else 6`. A digit `int()` refuses raises an uncaught
-/// `ValueError` in Python (the log round fails); returned as `AgentError::Value`.
-fn priority(raw: Option<&Value>) -> AResult<Value> {
+/// `journal_priority(prio)`: `int(prio)` when `prio` is a string of digits `int()` takes, else 6. v1.4 security
+/// fix (both implementations): digits `int()` refuses (a superscript, which `isdigit()` accepts; more than
+/// 4300 digits) are the default too, instead of an uncaught `ValueError` that stalled log shipping at that entry.
+fn priority(raw: Option<&Value>) -> Value {
     let Some(Value::String(p)) = raw else {
-        return Ok(6.into());
+        return 6.into();
     };
     let decimal = |c: char| crate::unicode::decimal_value(c).is_some();
-    if p.is_empty() || !p.chars().all(|c| decimal(c) || digit_not_decimal(c)) {
-        return Ok(6.into());
-    }
-    if !p.chars().all(decimal) {
-        return Err(AgentError::Value(
-            "ValueError".into(),
-            format!(
-                "invalid literal for int() with base 10: {}",
-                pyjson::repr_str(p)
-            ),
-        ));
-    }
-    if p.chars().count() > smallworld_core::pystr::INT_MAX_STR_DIGITS {
-        return Err(AgentError::Value(
-            "ValueError".into(),
-            format!(
-                "Exceeds the limit (4300 digits) for integer string conversion: value has {} digits; use \
-                 sys.set_int_max_str_digits() to increase the limit",
-                p.chars().count()
-            ),
-        ));
+    if p.is_empty()
+        || !p.chars().all(decimal)
+        || p.chars().count() > smallworld_core::pystr::INT_MAX_STR_DIGITS
+    {
+        return 6.into();
     }
     let ascii: String = p
         .chars()
         .filter_map(|c| crate::unicode::decimal_value(c).and_then(|d| char::from_digit(d, 10)))
         .collect();
-    Ok(match ascii.parse::<u64>() {
+    match ascii.parse::<u64>() {
         Ok(n) => n.into(),
         Err(_) => ascii.parse::<f64>().map_or(Value::Null, Value::from),
-    })
+    }
 }
 
-/// `journal_entry(raw)` with Python's one uncaught exception: `Ok(None)` where Python returns None (no usable
-/// `__REALTIME_TIMESTAMP`), `Err(Value)` where `int(PRIORITY)` raises.
-///
-/// # Errors
-/// `AgentError::Value("ValueError", ...)` for a PRIORITY of digits `int()` refuses.
-pub fn try_journal_entry(raw: &Obj) -> AResult<Option<Entry>> {
-    let Some(us) = raw.get("__REALTIME_TIMESTAMP").and_then(py_int_value) else {
-        return Ok(None);
-    };
+/// `journal_entry(raw)` as an `Entry`: None where Python returns None (no usable `__REALTIME_TIMESTAMP`). Since the
+/// v1.4 PRIORITY fix nothing in it raises (it used to: a `ValueError` that stalled shipping).
+pub fn try_journal_entry(raw: &Obj) -> Option<Entry> {
+    let us = raw.get("__REALTIME_TIMESTAMP").and_then(py_int_value)?;
     // `// 1000` floors; beyond i64 milliseconds is a documented divergence (Python keeps the big int).
-    let Ok(ts) = i64::try_from(us.div_euclid(1000)) else {
-        return Ok(None);
-    };
+    let ts = i64::try_from(us.div_euclid(1000)).ok()?;
     let get = |k: &str| raw.get(k).filter(|v| truthy(v));
     let unit = get("_SYSTEMD_UNIT")
         .or_else(|| get("SYSLOG_IDENTIFIER"))
         .map_or(String::new(), py_str_field);
     let ident = get("SYSLOG_IDENTIFIER").map_or(String::new(), py_str_field);
-    let prio = priority(raw.get("PRIORITY"))?;
-    Ok(Some(Entry {
+    let prio = priority(raw.get("PRIORITY"));
+    Some(Entry {
         ts,
         unit: prefix_cp(&unit, 100).to_string(),
         ident: prefix_cp(&ident, 100).to_string(),
@@ -330,13 +277,13 @@ pub fn try_journal_entry(raw: &Obj) -> AResult<Option<Entry>> {
         msg: message_text(raw.get("MESSAGE").unwrap_or(&Value::Null)),
         audit: i64::from(raw.get("MC_AUDIT").and_then(Value::as_str) == Some("1")),
         sd_unit: prefix_cp(&get("UNIT").map_or(String::new(), py_str_field), 100).to_string(),
-    }))
+    })
 }
 
 /// `journal_entry(raw)` as the console tail calls it (`contextlib.suppress(ValueError)`): the kept fields of one
 /// `journalctl -o json` line, or None.
 pub fn journal_entry(raw: &Obj) -> Option<Obj> {
-    try_journal_entry(raw).ok().flatten().map(|e| e.to_obj())
+    try_journal_entry(raw).map(|e| e.to_obj())
 }
 
 fn d1_patterns() -> &'static (Regex, Regex) {
@@ -449,8 +396,7 @@ fn parse_line(line: &[u8]) -> Option<Obj> {
 /// minutes), streamed line by line from journalctl and cut at the caps, so a backlog never sits in memory.
 ///
 /// # Errors
-/// `IngestError("journalctl failed: ...")` when it can't run, or exits non-zero having given nothing; the
-/// `ValueError` of `journal_entry` (uncaught in Python).
+/// `IngestError("journalctl failed: ...")` when it can't run, or exits non-zero having given nothing.
 pub fn read_journal(
     cursor: &Value,
     limit: usize,
@@ -476,7 +422,6 @@ pub fn read_journal(
         })?;
     let mut entries = Vec::new();
     let (mut last, mut size, mut full) = (cursor.clone(), 0_usize, false);
-    let mut failure = None;
     if let Some(stdout) = child.stdout.take() {
         let mut reader = BufReader::new(stdout);
         let mut line = Vec::new();
@@ -493,16 +438,9 @@ pub fn read_journal(
             if let Some(c) = raw.get("__CURSOR") {
                 last = c.clone();
             }
-            match try_journal_entry(&raw) {
-                Ok(Some(entry)) => {
-                    size += entry.msg.chars().count();
-                    entries.push(entry);
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    failure = Some(e);
-                    break;
-                }
+            if let Some(entry) = try_journal_entry(&raw) {
+                size += entry.msg.chars().count();
+                entries.push(entry);
             }
             if entries.len() >= limit || size >= max_bytes {
                 full = true;
@@ -515,9 +453,6 @@ pub fn read_journal(
         let _ = child.kill();
     }
     let status = child.wait();
-    if let Some(e) = failure {
-        return Err(ShipError::Agent(e));
-    }
     let code = status.ok().map(|s| {
         use std::os::unix::process::ExitStatusExt;
         s.code().unwrap_or_else(|| -s.signal().unwrap_or(0))
@@ -584,7 +519,7 @@ mod tests {
     #[test]
     fn python_edge_cases() {
         let entry = |raw: Value| try_journal_entry(raw.as_object().unwrap());
-        let e = |raw: Value| entry(raw).unwrap().unwrap();
+        let e = |raw: Value| entry(raw).unwrap();
         // int() of a str: whitespace, underscores, a sign, non-ASCII decimals; floors.
         assert_eq!(
             e(serde_json::json!({"__REALTIME_TIMESTAMP": " 1_234_567 "})).ts,
@@ -599,40 +534,20 @@ mod tests {
         assert_eq!(e(serde_json::json!({"__REALTIME_TIMESTAMP": true})).ts, 0);
         for bad in ["1__0", "_1", "1_", "", "+", "0x10", "1.5"] {
             assert!(
-                entry(serde_json::json!({"__REALTIME_TIMESTAMP": bad}))
-                    .unwrap()
-                    .is_none(),
+                entry(serde_json::json!({"__REALTIME_TIMESTAMP": bad})).is_none(),
                 "{bad}"
             );
         }
-        assert!(
-            entry(serde_json::json!({"__REALTIME_TIMESTAMP": null}))
-                .unwrap()
-                .is_none()
-        );
-        // PRIORITY: isdigit() then int(): a superscript digit is an uncaught ValueError.
-        assert_eq!(
-            e(serde_json::json!({"__REALTIME_TIMESTAMP": "0", "PRIORITY": "\u{663}"})).prio,
-            3
-        );
-        assert_eq!(
-            e(serde_json::json!({"__REALTIME_TIMESTAMP": "0", "PRIORITY": " 3"})).prio,
-            6
-        );
-        let err = entry(serde_json::json!({"__REALTIME_TIMESTAMP": "0", "PRIORITY": "\u{b2}"}))
-            .unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "invalid literal for int() with base 10: '\u{b2}'"
-        );
-        assert!(
-            journal_entry(
-                serde_json::json!({"__REALTIME_TIMESTAMP": "0", "PRIORITY": "\u{b2}"})
-                    .as_object()
-                    .unwrap()
-            )
-            .is_none()
-        );
+        assert!(entry(serde_json::json!({"__REALTIME_TIMESTAMP": null})).is_none());
+        // PRIORITY: digits int() takes; anything else is 6, including digits int() refuses (a superscript, more
+        // than 4300 digits), which used to be an uncaught ValueError that stalled shipping (v1.4 fix).
+        let prio =
+            |p: &str| e(serde_json::json!({"__REALTIME_TIMESTAMP": "0", "PRIORITY": p})).prio;
+        assert_eq!(prio("\u{663}"), 3);
+        assert_eq!(prio("4"), 4);
+        for bad in [" 3", "\u{b2}", "\u{2460}", "", "x", &"1".repeat(5000)] {
+            assert_eq!(prio(bad), 6, "{bad:.8}");
+        }
         // message_text: byte arrays (bools are ints), a bad element empties it, 8000 elements at most.
         assert_eq!(
             message_text(&serde_json::json!([104, true, 255])),

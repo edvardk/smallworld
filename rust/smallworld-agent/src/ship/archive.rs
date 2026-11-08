@@ -209,9 +209,7 @@ mod tests {
     fn the_archive_is_gzipped_ndjson_with_pythons_header() {
         let raw = serde_json::json!({"__REALTIME_TIMESTAMP": "5000", "_SYSTEMD_UNIT": "minecraft.service",
                                      "MESSAGE": "caf\u{e9}"});
-        let e = try_journal_entry(raw.as_object().unwrap())
-            .unwrap()
-            .unwrap();
+        let e = try_journal_entry(raw.as_object().unwrap()).unwrap();
         let body = archive_body(&[e.clone(), e]).unwrap();
         assert_eq!(&body[..4], b"\x1f\x8b\x08\x00"); // magic, deflate, no FNAME
         assert_eq!((body[8], body[9]), (2, 255)); // XFL (best), OS unknown

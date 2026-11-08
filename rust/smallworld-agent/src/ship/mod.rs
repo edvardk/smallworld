@@ -349,12 +349,9 @@ pub fn selftest_scrub(input: &mut dyn std::io::Read, out: &mut dyn std::io::Writ
         Some(Value::Array(items)) => items
             .iter()
             .map(
-                |raw| match raw.as_object().map(journal::try_journal_entry) {
-                    Some(Ok(Some(e))) => Value::Object(e.to_obj()),
-                    Some(Ok(None)) | None => Value::Null,
-                    Some(Err(e)) => {
-                        serde_json::json!({"error": format!("{}: {e}", e.class_name())})
-                    }
+                |raw| match raw.as_object().and_then(journal::try_journal_entry) {
+                    Some(e) => Value::Object(e.to_obj()),
+                    None => Value::Null,
                 },
             )
             .collect(),
@@ -427,9 +424,7 @@ mod tests {
     fn entry(unit: &str, ident: &str, msg: &str, us: i64) -> journal::Entry {
         let raw = serde_json::json!({"__REALTIME_TIMESTAMP": us.to_string(), "_SYSTEMD_UNIT": unit,
                                      "SYSLOG_IDENTIFIER": ident, "MESSAGE": msg});
-        try_journal_entry(raw.as_object().unwrap())
-            .unwrap()
-            .unwrap()
+        try_journal_entry(raw.as_object().unwrap()).unwrap()
     }
 
     #[test]
@@ -574,10 +569,7 @@ mod tests {
         );
         assert_eq!(reply["journal"][0]["ts"], 5);
         assert_eq!(reply["journal"][1], Value::Null);
-        assert_eq!(
-            reply["journal"][2]["error"],
-            "ValueError: invalid literal for int() with base 10: '\u{b2}'"
-        );
+        assert_eq!(reply["journal"][2]["prio"], 6); // v1.4: no more ValueError (stalled shipping)
         assert_eq!(reply["journal"][3], Value::Null);
         for bad in ["", "[]", r#"{"texts": [1]}"#, r#"{"known": "x"}"#] {
             assert_eq!(

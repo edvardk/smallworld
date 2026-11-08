@@ -581,6 +581,17 @@ class Panel:
 
 
 @dataclass(frozen=True)
+class Agent:
+    implementation: Literal["python", "rust"] = opt(
+        "python",
+        doc="v1.4: which mc-agent runs on the box (panel mode cloudflare) and answers mcctl's actions: "
+        "python (scripts/mc_agent.py) or rust (smallworld-agent, the port; the experience telemetry then "
+        "runs in its own unit, mc-telemetry.service). Both read and write the same state, so switching back "
+        "is a deploy. The default becomes rust in a later release, after a soak.",
+    )
+
+
+@dataclass(frozen=True)
 class Logs:
     d1_days: int = opt(14, doc="Days of searchable logs in D1.", minimum=1)
     r2_days: int = opt(30, doc="Days of raw journal archives in R2.", minimum=1)
@@ -1201,6 +1212,7 @@ class ServerConfig:
     backups: Backups = opt(factory=Backups, doc="restic backups to R2.")
     plugins: list[Plugin] = opt(factory=_default_plugins, doc="Plugins (the lock tool pins them).")
     panel: Panel = opt(factory=Panel, doc="Admin panel.")
+    agent: Agent = opt(factory=Agent, doc="v1.4: the on-box agent's implementation.")
     monitoring: Monitoring = opt(factory=Monitoring, doc="Metrics, logs and alert thresholds.")
     experience: Experience = opt(factory=Experience, doc="Player-experience analytics (P13).")
     branding: Branding = opt(

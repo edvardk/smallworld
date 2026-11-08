@@ -117,6 +117,9 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "scripts/restore.py",
         "scripts/telemetry.py",
         "scripts/mc_agent.py",
+        # v1.4: the Rust agent and the agent role (the telemetry sidecar runs in the heavy telemetry shard)
+        "rust/dist/*",
+        "ansible/roles/agent/*",
     ),
 }
 

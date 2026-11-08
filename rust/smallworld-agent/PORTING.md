@@ -25,6 +25,7 @@ divergences are listed under "Divergences"; add one only with a reason and a tes
 | `data/`, `panel/rejected.rs` | data | **done**: vectors parsers/round/rejected/constants/client requests + a Python differential corpus; scenario 17 (`client_codes`) passes on its own; 4 (`status`), 14 (`logs_rejected`), `tail` and 24 (`state_roundtrip`) pass in a local merge with ship + actions |
 | `sync/` | sync | **done**: players.yml, GitHub client, round (`sync_pending`, `sync_world`, `merge_sync`, `revert_live`), alerts, `panel_loop`; vectors players/merge_sync/worlds/texts; mixed Python+Rust writers test (`sync/mixed.rs`). Scenarios 12 (`pending_expiry`, `world_pr`) and 23's pending.json half match their goldens in everything sync writes; they still wait on data (startup pushes) and actions (`whitelist`, `cancel`) |
 | `misc/` | misc | **done** (vectors pass; wiring for the daemon: `misc::Misc`, see "misc" below) |
+| integration | integration | **done** (v1.4): the dist binaries rebuilt with every module, all 25 scenarios in `RUST_PARITY_SCENARIOS`, the deploy switch (`agent.implementation`, "Integration" below) |
 
 Stubs return `AgentError::NotPorted("module::fn")` (or, where the final signature is infallible, a safe
 placeholder documented as such, e.g. the scrubber redacts everything). `daemon::NOT_PORTED` lists the modules
@@ -175,10 +176,12 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
     it (after the integration rebuild) or `SMALLWORLD_AGENT_BIN` points at a cargo build.
   - `observe_all` (telemetry's overhead card) isn't ported: in rust mode the telemetry sidecar reads systemd's
     resource lines itself (design §1.3).
-  - Python bug kept for parity (fix in both): a journal `PRIORITY` of digits `int()` refuses (`"²"`, which
-    `isdigit()` accepts) raises an uncaught `ValueError` in `read_journal`, so every log round fails at that
-    line and the cursor never passes it (a local user can stall shipping with `logger --priority`-style
-    native fields). Rust returns the same `ValueError` and logs `log round failed: ValueError: ...`.
+  - Fixed in both (v1.4 integration): a journal `PRIORITY` of digits `int()` refuses (`"²"`, which `isdigit()`
+    accepts; more than 4300 digits) used to raise an uncaught `ValueError` in `read_journal`, so every log round
+    failed at that line and the cursor never passed it (a local user could stall shipping with a native journal
+    field). Both now read it as the default priority 6 (`mc_agent.journal_priority`, `ship::journal::priority`);
+    `try_journal_entry` returns `Option<Entry>`. Tests: `tests/test_agent.py`
+    `test_a_hostile_priority_cannot_stall_log_shipping`, `journal::tests::python_edge_cases`, the fuzzing.
 
 ### data (metrics, inventory, console tail, client codes, rejected logins)
 
@@ -359,7 +362,26 @@ Gotchas the goldens encode (keep them; both are logged as known issues to fix in
    need data's `collect`/tail and misc's selftest/lookup (wire them through `Panel`/`Executor` fields, which
    exist); sync's self-test texts are used by misc. Port against the interface; stubs keep everything compiling.
 3. Integration (link owns it): `daemon.rs` wiring, `NOT_PORTED` empty, remove `#![allow(dead_code)]` and the stub
-   lint allows in main.rs, rebuild dist binaries once, then the Ansible switch (design §5).
+   lint allows in main.rs, rebuild dist binaries once, then the Ansible switch (design §5). Done except the lint
+   allows in main.rs: removing them surfaces ~40 unused interface items across the modules (declared for the
+   porting contract, unused by the final wiring); a follow-up cleanup, not a behaviour change.
+
+## Integration (v1.4, as deployed)
+
+- `server.yml` `agent.implementation: python | rust` (default `python`, `mcctl/schema.py`) renders
+  `mc_agent_implementation`. The base role installs `/opt/minecraft/bin/smallworld-agent` (root 0755, the pin
+  asserted first) on every box and points `/opt/minecraft/bin/mc-agent` at the chosen implementation;
+  `mc-agent.service` runs `smallworld-agent run` (any first argument but `cli` and the hidden selftests runs the
+  daemon, as in Python). mcctl's `agent_command` runs `mc-agent cli`, or `mc_agent.py cli` on a pre-1.4 box
+  (`sudo test -x`); `mc-run` names `mc-agent-cli-*` units for all three entry paths.
+- The telemetry sidecar is `mc_agent.py telemetry` (`telemetry_main`, Python only; Rust has no such subcommand):
+  `make_telemetry` as in-process, plus `online.json` (`SidecarTelemetry.poll`, the four keys this contract
+  names), its own reader of systemd's resource lines (`overhead_round`, cursor in
+  `/var/lib/mc-telemetry/journal.json`) and `mc-telemetry.service` in the overhead units. Python mode is unchanged.
+- Restarts: a new binary, the symlink or `product-version.json` (`agent: {implementation, sha256}`) notify the
+  handler pair `mc-agent code changed`, which also restarts the sidecar where installed. A switch to rust restarts
+  mc-agent before the sidecar starts, so two telemetry writers never overlap.
+- e2e: `agent-a`, `agent-b`, `telemetry-brand` with `impl: rust` in `e2e-mock.yml`.
 
 ## Divergences (documented, deliberate)
 

@@ -16,16 +16,30 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   `ansible/group_vars/all/main.yml` (`mc_smallworld_rcon_sha256`); CI job `rust` (rustfmt, clippy, unit tests, the
   byte-for-byte rebuild, the differential tests). A walkthrough for Python programmers:
   `docs/rust/smallworld-rcon.md`.
-- **smallworld-agent** (`rust/smallworld-agent`, not installed yet): the start of the Rust port of the on-box
-  agent (`mc_agent.py` and the agent half of `mc_panel.py`). Its `cli` entry point (what `mcctl` runs over SSH:
-  restart, plugin, moderate, world_create/switch/delete, the worlds and plugins lists) is ported and proved
-  against `mc_agent.py cli` by `tests/test_rust_agent_cli.py` (same output, exit status, audit entries, RCON
-  commands, systemctl calls and files; the job lock interlocks across the two). Shared code in
-  `rust/smallworld-core` (smallworld-rcon's RCON client moved there; smallworld-rcon stays dependency-free). The
-  agent uses a small pinned crate set (ureq + rustls/ring with the system CA bundle, serde_json, RustCrypto
-  hmac/sha, flate2, regex, Unicode tables, libc): `rust/allowed-crates.txt` (checked against `Cargo.lock`),
-  `cargo deny` (`rust/deny.toml`, pinned in CI), reproducible builds with clang 18.1.3 for ring; binaries in
-  `rust/dist/`, pinned as `mc_smallworld_agent_sha256`. Porting contract: `rust/smallworld-agent/PORTING.md`.
+- **Rust agent behind a switch:** `server.yml` `agent.implementation: python | rust` (default `python`; it becomes
+  `rust` in a later release, after a soak). `rust` runs **smallworld-agent** (`rust/smallworld-agent`), the complete
+  port of the on-box agent (`mc_agent.py` and the agent half of `mc_panel.py`): every Worker request, signed
+  command, panel action, job, Git sync, self-test, metric, log batch (with the scrubber), inventory and console
+  tail, proved against the Python agent by the black-box parity harness (`tests/agent_parity`: all 25 scenarios
+  run against the committed release binary in CI) plus test vectors and differential fuzzing. Both
+  implementations read and write the same state, so switching back is a deploy (docs/operations.md "Switching the
+  agent's implementation"). Shared code in `rust/smallworld-core` (smallworld-rcon's RCON client moved there;
+  smallworld-rcon stays dependency-free). The agent uses a small pinned crate set (ureq + rustls/ring with the system
+  CA bundle, serde_json, RustCrypto hmac/sha, flate2, regex, Unicode tables, libc): `rust/allowed-crates.txt`
+  (checked against `Cargo.lock`), `cargo deny` (`rust/deny.toml`, pinned in CI), reproducible builds with clang
+  18.1.3 for ring; binaries in `rust/dist/`, pinned as `mc_smallworld_agent_sha256`. Porting contract:
+  `rust/smallworld-agent/PORTING.md`; an overview: `docs/rust/smallworld-agent.md`.
+  - Every box gets `/opt/minecraft/bin/smallworld-agent` (root, 0755, checked against its pin before it is
+    copied) and `/opt/minecraft/bin/mc-agent`, a symlink to the chosen implementation: mcctl's actions run
+    `mc-agent cli` (falling back to `mc_agent.py cli` on a box deployed before this release), and `mc-run` names
+    its unit `mc-agent-cli-*` for any of the three paths.
+  - In rust mode with experience telemetry on, the telemetry (`scripts/telemetry.py`, unchanged) runs in its own
+    unit, **`mc-telemetry.service`** (`mc_agent.py telemetry`: the ops user, the standard sandbox, the same inputs and
+    outputs as in-process, plus `/var/lib/mc-telemetry/online.json` for the Rust agent's in-game messages and its
+    own reader of systemd's resource lines; the overhead card shows it). Python mode is unchanged: one process.
+  - `product-version.json` records `agent: {implementation, sha256}` (the binary's pin in rust mode).
+  - e2e: the agent-a, agent-b and telemetry-brand shards also run with `agent.implementation: rust` (in parallel;
+    the required `e2e` check needs them), and agent-a scores the Rust agent's units live.
 - `notify.py restart-alert SECONDS ONLINE`: posts the deploy-restart note to Discord (what `countdown` posts;
   smallworld-rcon, which has no TLS, runs it).
 
@@ -40,9 +54,15 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ### Fixed
 
+- **Security:** a journal entry whose `PRIORITY` field is digits that `int()` refuses (`"²"`, which `isdigit()`
+  accepts, or more than 4300 digits) stalled log shipping for good: every log round failed at that entry and its
+  cursor never moved past it, and any local process can send such a field. It now reads as the default priority,
+  like any other malformed field, in both implementations.
+- A release that changed no script left mc-agent running the previous version (the panel's Versions row showed
+  installed != running until the next restart): a new `product-version.json` now restarts it.
 - The Panel -> Git self-test's "at most once a minute on demand" now counts from the last on-demand run: a daily run
   in between no longer lets the next request through (`selftest.json` keeps the last on-demand result too).
-- mcctl's actions (`mc_agent.py cli` through `mc-run`) run in a unit named `mc-agent-cli-<pid>-<ns>`, so their audit
+- mcctl's actions (`mc-agent cli` through `mc-run`) run in a unit named `mc-agent-cli-<pid>-<ns>`, so their audit
   entries reach mc-agent's D1 rows under a product unit instead of an anonymous `run-p…` one; every other `mc-run`
   command keeps its anonymous unit (nothing new is shipped).
 

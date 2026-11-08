@@ -22,6 +22,8 @@ UNITS = {
     "mc-health.service": (REPO / "ansible/roles/monitoring/templates/mc-health.service.j2", 2.5),
     "mc-restore-apply.service": (REPO / "ansible/roles/backups/templates/mc-restore-apply.service.j2", 2.5),
     "mc-agent.service": (REPO / "ansible/roles/agent/templates/mc-agent.service.j2", 2.5),
+    # v1.4: the telemetry sidecar beside the Rust agent (as mcops, agent.env)
+    "mc-telemetry.service": (REPO / "ansible/roles/agent/templates/mc-telemetry.service.j2", 2.5),
     # P10: the panel's plugin switch (as minecraft) and restore (as mcops; a template, scored as one instance)
     "mc-plugins-apply.service": (REPO / "ansible/roles/plugins/templates/mc-plugins-apply.service.j2", 2.5),
     "mc-restore@abcdef12.service": (REPO / "ansible/roles/backups/templates/mc-restore@.service.j2", 2.5),
@@ -70,6 +72,7 @@ def render(template: Path, **extra: object) -> str:
         "mc_experience_enabled": True,
         "mc_client_enabled": False,  # v1.1
         "mc_panel_mode": "cloudflare",
+        "mc_agent_implementation": "python",  # v1.4 (the rust unit: test_the_rust_agent_unit_*)
         "mc_watchdog_url": "https://hb.mc.example.com",
         **extra,
     }
@@ -108,7 +111,7 @@ def test_every_unit_gets_the_sandbox(unit: str) -> None:
 
 FENCE_HONOURING = ("minecraft.service", "mc-backup.service", "mc-prune.service", "mc-agent.service",
                    "mc-health.service", "mc-reboot-gate.service", "mc-world.service",
-                   "mc-backup-check.service", "mc-restart-window.service")  # fmt: skip
+                   "mc-backup-check.service", "mc-restart-window.service", "mc-telemetry.service")  # fmt: skip
 
 
 @pytest.mark.parametrize("unit", FENCE_HONOURING)
@@ -198,8 +201,18 @@ def test_mc_run_names_only_the_agent_cli_unit(tmp_path: Path) -> None:
     assert mc_agent.D1_UNITS.match(cli[0].removeprefix("--unit=") + ".service")  # its rows are the product's
     assert cli[-4:] == ["/opt/minecraft/bin/mc_agent.py", "cli", "mcctl:x", "status"]
     assert argv("/opt/minecraft/bin/mc_agent.py", "cli")[0] != cli[0]  # a new name every run
+    # v1.4: mcctl's entry point (the symlink) and the Rust binary itself are the same cli
+    for entry in ("/opt/minecraft/bin/mc-agent", "/opt/minecraft/bin/smallworld-agent"):
+        got = argv(entry, "cli", "mcctl:x", "status")
+        assert re.fullmatch(r"--unit=mc-agent-cli-\d+-\d{19}", got[0]) and got[-4:] == [
+            entry,
+            "cli",
+            "mcctl:x",
+            "status",
+        ]
     for other in (["/opt/minecraft/bin/notify.py", "maintenance", "0", "deploy"],
                   ["/opt/minecraft/bin/mc_agent.py", "status"], ["/usr/bin/python3", "-c", "cli"],
+                  ["/opt/minecraft/bin/mc-agent", "run"], ["/opt/minecraft/bin/mc-agent-x", "cli"],
                   ["/opt/minecraft/bin/smallworld-rcon", "countdown", "60"]):  # fmt: skip
         got = argv(*other)
         assert not any(a.startswith("--unit") for a in got), got
@@ -207,12 +220,15 @@ def test_mc_run_names_only_the_agent_cli_unit(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(shutil.which("systemd-analyze") is None, reason="systemd-analyze not installed")
-@pytest.mark.parametrize("unit", sorted(UNITS))
-def test_systemd_analyze_security_offline_gate(unit: str, tmp_path: Path) -> None:
-    """Exposure as systemd-analyze scores the unit file (the e2e run repeats it on the live unit)."""
+@pytest.mark.parametrize(
+    ("unit", "impl"), [(u, "python") for u in sorted(UNITS)] + [("mc-agent.service", "rust")]
+)
+def test_systemd_analyze_security_offline_gate(unit: str, impl: str, tmp_path: Path) -> None:
+    """Exposure as systemd-analyze scores the unit file (the e2e run repeats it on the live unit); v1.4: the
+    agent's unit in both implementations."""
     template, limit = UNITS[unit]
     path = tmp_path / unit
-    path.write_text(render(template))
+    path.write_text(render(template, mc_agent_implementation=impl))
     proc = subprocess.run(
         [
             "systemd-analyze",
@@ -396,11 +412,99 @@ def test_agent_may_write_only_the_markers_directory() -> None:
     assert "ReadWritePaths=/run/mc-verdicts" in client.splitlines()
 
 
+def test_the_rust_agent_unit_runs_the_binary_and_keeps_the_sandbox() -> None:
+    """v1.4: agent.implementation rust runs smallworld-agent (the real path, not the mc-agent symlink) with the
+    same user, groups, sandbox, limits and writable paths; the telemetry state is the sidecar's."""
+    py = render(UNITS["mc-agent.service"][0]).splitlines()
+    rust = render(UNITS["mc-agent.service"][0], mc_agent_implementation="rust").splitlines()
+    assert (
+        "ExecStart=/opt/minecraft/bin/mc_agent.py" in py
+        and "ExecStart=/opt/minecraft/bin/smallworld-agent run" in rust
+    )
+    assert "StateDirectory=mc-agent mc-telemetry" in py and "StateDirectory=mc-agent" in rust
+    assert not any(line.startswith("Environment=PYTHON") for line in rust)
+
+    def kept(lines: list[str]) -> list[str]:
+        return [
+            ln for ln in lines if not ln.startswith(("#", "ExecStart=", "StateDirectory=", "Environment="))
+        ]
+
+    assert kept(py) == kept(rust)  # nothing else differs: sandbox, MDWE, limits, ReadWritePaths, fence
+
+
+def test_the_sidecar_unit_is_the_agents_telemetry_half() -> None:
+    """mc-telemetry.service: the agent's user, groups and environment file (the agent token), the telemetry's
+    state (telemetry-id.json in mc-agent's, segments + online.json in mc-telemetry's), the verdict directory
+    writable (verdicts.tsv for the plugin), nothing else."""
+    text = render(UNITS["mc-telemetry.service"][0])
+    lines = text.splitlines()
+    for want in ("User=mcops", "SupplementaryGroups=minecraft systemd-journal", "EnvironmentFile=/etc/minecraft/agent.env",
+                 "StateDirectory=mc-agent mc-telemetry", "UMask=0077", "MemoryMax=64M",
+                 "ExecStart=/opt/minecraft/bin/mc_agent.py telemetry"):  # fmt: skip
+        assert want in lines, want
+    assert [ln for ln in lines if ln.startswith("ReadWritePaths=")] == ["ReadWritePaths=/run/mc-verdicts"]
+
+
+def test_agent_restarts_follow_code_switch_and_product_version() -> None:
+    """v1.4: the binary, the mc-agent symlink and the product version file notify `mc-agent code changed`
+    (a release that changed no script used to leave the old code running: installed != running); the handler pair
+    also restarts the telemetry sidecar where it is installed, after the agent."""
+    base = yaml.safe_load((REPO / "ansible/roles/base/tasks/main.yml").read_text())
+    by_name = {t["name"]: t for t in base}
+    for name in ("Install server-side scripts", "Install smallworld-agent",
+                 "Point mc-agent at the selected implementation (agent.implementation)",
+                 "Record the installed product version"):  # fmt: skip
+        assert by_name[name].get("notify") == "mc-agent code changed", name
+    content = by_name["Record the installed product version"]["ansible.builtin.copy"]["content"]
+    assert "'agent': base_agent_record" in content and "'version'" in content
+    pin = by_name[
+        "The smallworld-agent binary is the pinned build (a mismatch fails the deploy before anything is installed)"
+    ]
+    assert "mc_smallworld_agent_sha256[base_rcon_arch]" in str(pin["ansible.builtin.assert"]["that"])
+    install = by_name["Install smallworld-agent"]["ansible.builtin.copy"]
+    assert (install["owner"], install["group"], install["mode"]) == ("root", "root", "0755")
+    assert [t["name"] for t in base].index(pin["name"]) < [t["name"] for t in base].index(
+        "Install smallworld-agent"
+    )
+    handlers = yaml.safe_load((REPO / "ansible/roles/agent/handlers/main.yml").read_text())
+    listeners = [h["name"] for h in handlers if "mc-agent code changed" in str(h.get("listen", ""))]
+    assert listeners == ["Is mc-agent installed (its code changed)?", "Restart mc-agent (its code changed)",
+                         "Is the telemetry sidecar installed?", "Restart the telemetry sidecar"]  # fmt: skip
+    defaults = yaml.safe_load((REPO / "ansible/roles/base/defaults/main.yml").read_text())
+    env = jinja2.Environment(undefined=jinja2.StrictUndefined)  # noqa: S701 - not HTML
+    env.filters["bool"] = bool  # Ansible's filter, for booleans
+    for impl, entry in (("python", "mc_agent.py"), ("rust", "smallworld-agent")):
+        assert env.from_string(defaults["base_agent_entry"]).render(mc_agent_implementation=impl) == entry
+    agent = yaml.safe_load((REPO / "ansible/roles/agent/defaults/main.yml").read_text())["agent_sidecar"]
+    for mode, impl, exp, want in (("cloudflare", "rust", True, "True"), ("cloudflare", "python", True, "False"),
+                                  ("cloudflare", "rust", False, "False"), ("off", "rust", True, "False")):  # fmt: skip
+        got = env.from_string(agent).render(
+            mc_panel_mode=mode, mc_agent_implementation=impl, mc_experience_enabled=exp
+        )
+        assert got == want, (mode, impl, exp)
+
+
+def test_the_sidecar_starts_only_after_the_python_agent_stopped() -> None:
+    """A switch to rust: mc-agent is restarted (Python's in-process telemetry gone) before the sidecar starts, so two
+    telemetry writers never share telemetry-id.json; a switch back removes the sidecar before the handler restarts
+    the Python agent."""
+    tasks = yaml.safe_load((REPO / "ansible/roles/agent/tasks/main.yml").read_text())
+    inner = [t["name"] for t in tasks[0]["block"]]
+    assert (
+        inner.index("Install the mc-agent unit")
+        < inner.index("Restart mc-agent now when its unit changed in rust mode (the sidecar starts next)")
+        < inner.index("Enable and start the telemetry sidecar")
+    )
+    removal = next(t for t in tasks if t["name"] == "Remove the telemetry sidecar where it doesn't belong")
+    assert removal["when"] == "not agent_sidecar"
+
+
 TIMELY_UNITS = (
     "mc-agent.service",
     "mc-health.service",
     "mc-backup.service",
     "mc-restart-window.service",
+    "mc-telemetry.service",  # v1.4: the agent's telemetry half (minute rows have a deadline too)
 )  # P13 review M1: deadlines
 IDLE_UNITS = ("mc-prune.service", "mc-reboot-gate.service", "mc-backup-check.service")
 

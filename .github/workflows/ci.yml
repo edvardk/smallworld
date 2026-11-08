@@ -420,12 +420,15 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           pytest -q tests/test_rust_rcon.py tests/test_rust_agent_cli.py
 
-      # The black-box parity harness (tests/agent_parity) against the committed Rust agent: the scenarios ported so
-      # far (rust/smallworld-agent/PORTING.md "Parity gate"; each module adds its own when it lands). The
-      # differential step above already lifted the AppArmor restriction on user namespaces.
+      # The black-box parity harness (tests/agent_parity) against the committed Rust agent: v1.4, every scenario
+      # (rust/smallworld-agent/PORTING.md "Parity gate"; tests/test_agent.py keeps this list equal to the goldens).
+      # The differential step above already lifted the AppArmor restriction on user namespaces.
       - name: Parity scenarios against the Rust agent
         env:
-          RUST_PARITY_SCENARIOS: "cli"
+          RUST_PARITY_SCENARIOS: >-
+            auth_settings backup cli client_codes console countdown_cancel locks logs_rejected lookup
+            nonce_store pending_expiry plugin poll_fallback restore selftest_failures selftest_ok
+            state_roundtrip status stop_start tail verify whitelist_pr world_pr worlds ws_reconnect
         run: |
           k=$(printf '%s\n' $RUST_PARITY_SCENARIOS | sed 's/.*/test_scenario[&]/' | paste -sd' ' | sed 's/ / or /g')
           pytest -q tests/agent_parity/test_agent_parity.py -k "$k" --impl=rust \

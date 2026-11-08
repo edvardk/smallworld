@@ -27,7 +27,7 @@ def load(name: str) -> dict:
         (["docs/images/brand-server-icon.png"], {"code", "plugin"}),
         (["template/README.md"], {"code", "e2e"}),
         (["tests/test_docs.py"], {"code"}),
-        (["ansible/roles/agent/tasks/main.yml"], {"code", "e2e"}),
+        (["ansible/roles/agent/tasks/main.yml"], {"code", "e2e", "e2e_full"}),  # v1.4: the telemetry sidecar
         (["ansible/roles/minecraft/tasks/main.yml"], {"code", "e2e", "e2e_full"}),
         (["ansible/group_vars/all/main.yml"], {"code", "e2e", "plugin", "rust"}),
         (["plugin/mc-brand/src/main/java/X.java"], {"code", "e2e", "e2e_full", "plugin"}),
@@ -41,7 +41,7 @@ def load(name: str) -> dict:
         (["template/server.lock.yml"], {"code", "plugin", "e2e", "e2e_full", "seeds"}),
         (["worlds/seeds.yml"], {"code", "seeds"}),
         (["rust/smallworld-rcon/src/rcon.rs"], {"code", "rust"}),
-        (["rust/dist/smallworld-rcon-x86_64-unknown-linux-musl"], {"code", "rust", "e2e"}),
+        (["rust/dist/smallworld-rcon-x86_64-unknown-linux-musl"], {"code", "rust", "e2e", "e2e_full"}),
         (["scripts/mc_rcon.py"], {"code", "rust", "e2e"}),
         (["rust/smallworld-agent/src/cli.rs"], {"code", "rust"}),
         (["scripts/mc_agent.py"], {"code", "rust", "e2e", "e2e_full"}),
@@ -156,11 +156,16 @@ def test_e2e_triggers_and_benches() -> None:
     # parallel shards on GitHub's runners, one at a time on the self-hosted one (host-network ports clash)
     strategy = shard["strategy"]
     assert strategy["fail-fast"] is False
-    assert strategy["max-parallel"] == f"${{{{ fromJSON({trusted} && vars.E2E_RUNNER && '1' || '5') }}}}"
-    include = {m["shard"]: m for m in strategy["matrix"]["include"]}
+    assert strategy["max-parallel"] == f"${{{{ fromJSON({trusted} && vars.E2E_RUNNER && '1' || '8') }}}}"
+    entries = strategy["matrix"]["include"]
+    include = {m["shard"]: m for m in entries if m["impl"] == "python"}
     assert set(include) == {"core", "agent-a", "agent-b", "telemetry-brand", "migrate-p16"}
+    # v1.4: three shards again with the Rust agent, alike but for impl
+    rust = {m["shard"]: m for m in entries if m["impl"] == "rust"}
+    assert set(rust) == {"agent-a", "agent-b", "telemetry-brand"} and len(entries) == 8
+    assert all(dict(m, impl="python") == include[s] for s, m in rust.items())
     # GitHub's runners take every shard at once
-    assert strategy["max-parallel"].endswith(f"'{len(include)}') }}}}")
+    assert strategy["max-parallel"].endswith(f"'{len(entries)}') }}}}")
     assert {s for s, m in include.items() if m["full_only"]} == {"telemetry-brand", "migrate-p16"}
     assert all(m["timeout"] for m in include.values()) and shard["timeout-minutes"] == "${{ matrix.timeout }}"
     assert shard["if"] == "${{ !cancelled() && needs.changes.outputs.e2e != 'false' }}"
@@ -184,8 +189,12 @@ def test_e2e_triggers_and_benches() -> None:
     assert agent["env"]["ROUNDS"] == "${{ matrix.shard == 'agent-a' && 'a' || 'b' }}"
     assert agent["run"].rstrip().endswith('agent_check.py --rounds "$ROUNDS"')
     # the heavy half is skipped only on an explicit `false`, in its own shards
-    for part in ("telemetry", "Branding", "setup-node"):
+    for part in ("telemetry", "setup-node"):
         assert where(part) == ["matrix.shard == 'telemetry-brand' && env.FULL != 'false'"], part
+    # v1.4: the rust telemetry shard runs the telemetry half only (branding doesn't involve the agent)
+    assert where("Branding") == [
+        "matrix.shard == 'telemetry-brand' && matrix.impl != 'rust' && env.FULL != 'false'"
+    ]
     for part in ("Migrate", "P16"):  # P16 runs on the migrated box: same shard, after it
         assert where(part) == ["matrix.shard == 'migrate-p16' && env.FULL != 'false'"], part
     site = next(s for s in steps if s.get("name", "").startswith("site.yml"))

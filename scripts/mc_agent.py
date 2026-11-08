@@ -604,6 +604,17 @@ def message_text(value: object) -> str:
     return value[:LOG_ENTRY_MAX_CHARS] if isinstance(value, str) else ""
 
 
+def journal_priority(prio: object) -> int:
+    """PRIORITY as an int, 6 (info) when it isn't one. v1.4 security fix: any local process sets the journal
+    fields it sends, and digits `int()` refuses ("\u00b2" passes isdigit(); over 4300 digits) used to raise
+    out of read_journal, so every log round failed at that entry and its cursor never moved past it (shipping
+    stalled for good). Such a value is now the default, like any other malformed field."""
+    if isinstance(prio, str) and prio.isdigit():
+        with contextlib.suppress(ValueError):
+            return int(prio)
+    return 6
+
+
 def journal_entry(raw: dict[str, Any]) -> dict[str, Any] | None:
     """The fields we keep from one `journalctl -o json` line."""
     try:
@@ -611,12 +622,11 @@ def journal_entry(raw: dict[str, Any]) -> dict[str, Any] | None:
     except (KeyError, TypeError, ValueError):
         return None
     unit = raw.get("_SYSTEMD_UNIT") or raw.get("SYSLOG_IDENTIFIER") or ""
-    prio = raw.get("PRIORITY")
     return {
         "ts": ts,
         "unit": str(unit)[:100],
         "ident": str(raw.get("SYSLOG_IDENTIFIER") or "")[:100],
-        "prio": int(prio) if isinstance(prio, str) and prio.isdigit() else 6,
+        "prio": journal_priority(raw.get("PRIORITY")),
         "msg": message_text(raw.get("MESSAGE")),
         "audit": 1 if raw.get("MC_AUDIT") == "1" else 0,
         # P13: systemd's own lines name the unit they are about ("mc-backup.service: Consumed 2.1s CPU time")
@@ -2273,6 +2283,44 @@ class ClientCodes:
             stop.wait(CLIENT_POLL_S)
 
 
+def make_telemetry(
+    s: Settings,
+    stats: Callable[[], dict[str, dict[str, int | None]]] = telemetry.unit_stats,
+    cls: type[telemetry.Telemetry] = telemetry.Telemetry,
+) -> telemetry.Telemetry:
+    """P13: snapshots -> minute rows (live to the Worker), segments (R2 + the box's copy), backfill. The
+    Python agent runs it in-process; v1.4's sidecar (`mc_agent.py telemetry`, rust mode) on its own."""
+    e = os.environ
+    cfg = telemetry.Config.from_env(dict(e), mc_rcon.SERVER_DIR, e.get("LEVEL_NAME") or "world")
+    msgs = telemetry.Messages(
+        cfg.verdict_dir,
+        per_player_s=max(60, int(e.get("MESSAGE_PER_PLAYER_S") or 1800)),
+        broadcast_s=max(60, int(e.get("MESSAGE_BROADCAST_S") or 1800)),
+        per_hour=max(1, int(e.get("MESSAGE_PER_HOUR") or 20)),
+    )
+    gc_counters = Counters()
+
+    def extra() -> dict[str, Any]:
+        lines = health.read_gc_log(mc_rcon.SERVER_DIR)
+        heap = last_heap(lines)
+        gc = health.parse_gc(lines, gc_counters.gc_uptime, 100.0)
+        gc_counters.gc_uptime = gc.last_uptime
+        return {
+            "gc_heap_after_mb": heap[0] if heap else None,
+            "gc_max_pause_ms": round(max([gc.max_pause_ms, *gc.stalls]), 1),
+        }
+
+    def put(name: str, data: bytes) -> Any:  # noqa: ANN401
+        return request(
+            s, "PUT", f"/ingest/segment?name={urllib.parse.quote(name)}", data, "application/gzip", 60.0
+        )
+
+    return cls(
+        cfg, s.state_dir, post=lambda path, body: post_json(s, path, body), put=put,
+        running=running_units, stats=stats, extra=extra, messages=msgs,
+    )  # fmt: skip
+
+
 class Agent:
     def __init__(self, s: Settings) -> None:
         self.s = s
@@ -2307,40 +2355,7 @@ class Agent:
 
     def make_telemetry(self) -> telemetry.Telemetry:
         """P13: snapshots -> minute rows (live to the Worker), segments (R2 + the box's copy), backfill."""
-        e = os.environ
-        cfg = telemetry.Config.from_env(dict(e), mc_rcon.SERVER_DIR, e.get("LEVEL_NAME") or "world")
-        msgs = telemetry.Messages(
-            cfg.verdict_dir,
-            per_player_s=max(60, int(e.get("MESSAGE_PER_PLAYER_S") or 1800)),
-            broadcast_s=max(60, int(e.get("MESSAGE_BROADCAST_S") or 1800)),
-            per_hour=max(1, int(e.get("MESSAGE_PER_HOUR") or 20)),
-        )
-        gc_counters = Counters()
-
-        def extra() -> dict[str, Any]:
-            lines = health.read_gc_log(mc_rcon.SERVER_DIR)
-            heap = last_heap(lines)
-            gc = health.parse_gc(lines, gc_counters.gc_uptime, 100.0)
-            gc_counters.gc_uptime = gc.last_uptime
-            return {
-                "gc_heap_after_mb": heap[0] if heap else None,
-                "gc_max_pause_ms": round(max([gc.max_pause_ms, *gc.stalls]), 1),
-            }
-
-        def put(name: str, data: bytes) -> Any:  # noqa: ANN401
-            return request(
-                self.s,
-                "PUT",
-                f"/ingest/segment?name={urllib.parse.quote(name)}",
-                data,
-                "application/gzip",
-                60.0,
-            )
-
-        return telemetry.Telemetry(
-            cfg, self.s.state_dir, post=lambda path, body: post_json(self.s, path, body), put=put,
-            running=running_units, extra=extra, messages=msgs,
-        )  # fmt: skip
+        return make_telemetry(self.s)
 
     def github_token(self) -> Any:  # noqa: ANN401 - the Worker's JSON {token, expires_at}
         """A short-lived installation token of the panel's GitHub App, minted by the Worker (which alone holds
@@ -2782,6 +2797,108 @@ def main() -> int:
     return 0
 
 
+# --- v1.4: the telemetry sidecar (agent.implementation rust) ----------------------------------------------
+# The Rust agent doesn't port telemetry.py (design §1.3): `mc_agent.py telemetry` runs it in
+# mc-telemetry.service, with the same inputs and outputs as inside the Python agent (make_telemetry), plus
+# what the Rust agent needs from it and what the Python agent fed it in-process:
+#   - online.json: who is online by the latest snapshot ({uuid: {u, n, tips, join}}, rewritten after every
+#     poll, atomically, 0640), for the Rust agent's player_message (rust/smallworld-agent/src/actions/
+#     telemetry.rs reads it; older than 30 s = nobody online);
+#   - systemd's per-run resource lines (Overhead.observe_journal, which the Python agent's logs loop feeds)
+#     from a journal reader of its own (SYSLOG_IDENTIFIER=systemd, cursor in journal.json, every LOG_BATCH_S);
+#   - the overhead card also measures this unit (SIDECAR_UNITS).
+# The Python agent never runs it (python mode: nothing changes, one process as before).
+
+SIDECAR_DIR = Path("/var/lib/mc-telemetry")  # StateDirectory=mc-telemetry (the Python agent's segments/ too)
+ONLINE_FILE = SIDECAR_DIR / "online.json"  # = rust actions::telemetry::ONLINE_FILE
+SIDECAR_JOURNAL_STATE = SIDECAR_DIR / "journal.json"
+SIDECAR_UNITS = (*telemetry.OVERHEAD_UNITS, "mc-telemetry.service")
+SIDECAR_JOURNAL_MATCH = "SYSLOG_IDENTIFIER=systemd"
+ONLINE_KEYS = ("u", "n", "tips", "join")
+
+
+def online_map(online: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Telemetry.online() narrowed to what player_message needs (no position, world or client details)."""
+    return {u: {k: p.get(k) for k in ONLINE_KEYS} for u, p in online.items()}
+
+
+def write_online(path: Path, online: dict[str, dict[str, Any]]) -> None:
+    """Atomic (tmp + rename), 0640 like the verdicts: the Rust agent (the same ops user) reads it."""
+    telemetry._atomic_text(path, json.dumps(online_map(online), sort_keys=True))
+
+
+class SidecarTelemetry(telemetry.Telemetry):
+    """Telemetry that also publishes its online map after every poll (even a failed one: a fresh file means a
+    live sidecar; a stale one, the Rust agent reads as nobody online)."""
+
+    online_file: Path = ONLINE_FILE
+
+    def poll(self) -> dict[str, Any] | None:
+        try:
+            return super().poll()
+        finally:
+            try:
+                write_online(self.online_file, self.online())
+            except OSError as e:
+                WARN.fail("online.json", f"{type(e).__name__}: {e}")
+            else:
+                WARN.ok("online.json")
+
+
+def overhead_round(
+    state: Path, observe: Callable[[list[dict[str, Any]]], None], read_fn: Callable[..., Any] = read_journal
+) -> bool:
+    """One batch of systemd's own journal lines into Overhead.observe_journal; True if more are waiting. The
+    cursor is saved after the batch was observed (a crash re-reads it: a run counted twice at worst)."""
+    st = LogState.load(state)
+    entries, cursor, more = read_fn(st.cursor, argv=[*journal_argv(st.cursor), SIDECAR_JOURNAL_MATCH])
+    observe(entries)
+    if cursor != st.cursor:
+        st.cursor = cursor
+        st.save(state)
+    return bool(more)
+
+
+def overhead_loop(s: Settings, t: telemetry.Telemetry, stop: threading.Event, state: Path) -> None:
+    while not stop.wait(s.log_batch_s):
+        try:
+            for _ in range(LOG_CATCHUP_BATCHES):
+                if not overhead_round(state, t.overhead.observe_journal) or stop.is_set():
+                    break
+            WARN.ok("overhead journal")
+        except Exception as e:  # one bad round must not end the loop
+            WARN.fail("overhead journal", f"{type(e).__name__}: {e}")
+
+
+def telemetry_main() -> int:
+    """`mc_agent.py telemetry`: the sidecar (mc-telemetry.service, rust mode with experience on)."""
+    try:
+        settings = Settings.from_env()
+        if not settings.experience:
+            raise ValueError("EXPERIENCE is off: the telemetry sidecar has nothing to do")
+        t = make_telemetry(settings, stats=lambda: telemetry.unit_stats(SIDECAR_UNITS), cls=SidecarTelemetry)
+    except ValueError as e:
+        print(f"mc-telemetry: {e}", file=sys.stderr)
+        return 2
+    settings.state_dir.mkdir(parents=True, exist_ok=True)
+    stop = threading.Event()
+    t.stop = stop
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    signal.signal(signal.SIGINT, lambda *_: stop.set())
+    print(f"mc-telemetry {VERSION}: pushing to {urllib.parse.urlsplit(settings.ingest_url).hostname}")
+    loop_args = (settings, t, stop, SIDECAR_JOURNAL_STATE)
+    threads = [
+        threading.Thread(target=t.run, name="telemetry", daemon=True),
+        threading.Thread(target=overhead_loop, args=loop_args, name="overhead", daemon=True),
+    ]
+    for th in threads:
+        th.start()
+    stop.wait()
+    return 0
+
+
 if __name__ == "__main__":
     os.umask(0o077)  # spool, cursor and nonces stay private (StateDirectoryMode=0700 too)
-    sys.exit(cli_main(sys.argv[2:]) if sys.argv[1:2] == ["cli"] else main())
+    if sys.argv[1:2] == ["cli"]:
+        sys.exit(cli_main(sys.argv[2:]))
+    sys.exit(telemetry_main() if sys.argv[1:2] == ["telemetry"] else main())

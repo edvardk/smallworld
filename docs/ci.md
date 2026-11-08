@@ -37,10 +37,11 @@ answer is "everything changed".
   | Shard | Checks (after its own boot + first `site.yml`, ~3.5 min) | Runs | Wall time |
   |---|---|---|---|
   | `core` | `mcctl init` re-run and stale pin, the client switch, `terraform validate`, the second `site.yml` (`changed=0`), hardening, reboot gate, deploy checks, firewall, P12 dry runs | always | ~10 min |
-  | `agent-a` | `agent_check.py --rounds a`: mc-agent's pushes and first commands, then the rounds rcon, client code, stop/start, whitelist, restart, plugin, restore guard, versions (v1.3: version file, Panel → Git self-test, Mojang lookup, ~20 s), cli (v1.3: mcctl's actions through `mc_agent.py cli`, pending.json shared with mc-agent, ~40 s) | always | ~10-11 min |
+  | `agent-a` | `agent_check.py --rounds a`: mc-agent's pushes and first commands, then the rounds rcon, client code, stop/start, whitelist, restart, plugin, restore guard, versions (v1.3: version file, Panel → Git self-test, Mojang lookup, ~20 s), cli (v1.3: mcctl's actions through `mc-agent cli`, pending.json shared with mc-agent, ~40 s) | always | ~10-11 min |
   | `agent-b` | `agent_check.py --rounds b`: mc-agent's pushes and first commands, then the rounds backup/restore, world library | always | ~10 min |
   | `telemetry-brand` | experience telemetry, then branding | heavy half | ~11 min |
   | `migrate-p16` | migrate container -> container, then the P16 knobs on the migrated box | heavy half | ~10 min |
+  | `agent-a, rust`, `agent-b, rust`, `telemetry-brand, rust` | v1.4: the same shards with `agent.implementation: rust` (`mcctl config set` before the render): the Rust mc-agent, `mc-agent cli` and the `mc-telemetry` sidecar through the same black-box rounds; `agent-a, rust` also scores the agent's units live (`hardening_check.py --agent`); `telemetry-brand, rust` runs the telemetry half only | like their Python shard | in parallel: no extra wall time |
 
   The times are a measured full run (v1.2.2: core 10, the one `agent` shard 16, telemetry-brand 11, migrate-p16
   9.5); v1.3 cut `agent` in two by its rounds. Each agent shard repeats the shared part (the agent's sandbox, the

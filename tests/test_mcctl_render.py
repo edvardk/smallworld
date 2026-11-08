@@ -123,6 +123,7 @@ P6_GROUP_VARS = {
     "mc_watchdog_url",
     "firewall_mc_max_concurrent",
     "mc_panel_mode",
+    "mc_agent_implementation",  # v1.4: python or rust
     "mc_config_repo",  # P10 (the agent's whitelist pull requests)
     "mc_metrics_interval_s",
     "mc_logs_max_rows_per_day",
@@ -192,6 +193,7 @@ EXPECTED_GROUP_VARS = {
     "mc_watchdog_url",
     "firewall_mc_max_concurrent",
     "mc_panel_mode",
+    "mc_agent_implementation",  # v1.4
     "mc_config_repo",
     "mc_metrics_interval_s",
     "mc_logs_max_rows_per_day",

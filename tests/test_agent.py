@@ -25,6 +25,7 @@ import mc_agent
 import mc_panel
 import notify
 import pytest
+import yaml
 
 KEY = b"k" * 64
 TOKEN = "t" * 48
@@ -596,6 +597,23 @@ def test_read_journal_asks_only_for_the_fields_it_keeps() -> None:
     assert "--since=-5min" in mc_agent.journal_argv(None)
 
 
+def test_a_hostile_priority_cannot_stall_log_shipping(tmp_path: Path) -> None:
+    """v1.4 security fix: PRIORITY is whatever the sending process says. Digits int() refuses ("\u00b2" passes
+    isdigit(), more than 4300 digits) used to raise out of read_journal, so the batch never shipped and the cursor
+    never moved past that entry; now such a value is the default priority and the batch goes on."""
+    for bad in ("\u00b2", "\u2460", "1" * 5000, "", " 3", "x", None):
+        assert mc_agent.journal_priority(bad) == 6, repr(bad)[:20]
+    assert mc_agent.journal_priority("\u0663") == 3 and mc_agent.journal_priority("3") == 3
+    lines = [jline(1, PRIORITY="\u00b2"), jline(2, PRIORITY="1" * 5000), jline(3, PRIORITY="2")]
+    assert [e["prio"] for e in lines] == [6, 6, 2]
+    script = tmp_path / "journalctl.py"
+    raws = [{"__CURSOR": f"c{i}", "__REALTIME_TIMESTAMP": "1000000", "PRIORITY": p, "MESSAGE": "m"}
+            for i, p in enumerate(["\u00b2", "4", "1" * 5000])]  # fmt: skip
+    script.write_text("import json\n" + "".join(f"print(json.dumps({r!r}))\n" for r in raws))
+    entries, cursor, more = mc_agent.read_journal(None, argv=[sys.executable, str(script)])
+    assert [e["prio"] for e in entries] == [6, 4, 6] and cursor == "c2" and not more
+
+
 def test_read_journal_reports_a_failing_journalctl(tmp_path: Path) -> None:
     import sys
 
@@ -1050,10 +1068,12 @@ def test_the_e2e_cli_round_runs_what_mcctl_runs_over_ssh(monkeypatch: pytest.Mon
     monkeypatch.setenv("MC_SECRET_COMMAND_HMAC_KEY", "k")
     check = importlib.import_module("agent_check")
     args = {"verb": "kick", "target": "E2E_Nobody"}
-    assert shlex.join(check.cli_argv("moderate", args)) == actions.agent_command(
-        check.CLI_LOGIN, "moderate", args
+    assert check.cli_argv("moderate", args) == actions.agent_argv(check.CLI_LOGIN, "moderate", args)
+    assert check.cli_argv("worlds") == actions.agent_argv(check.CLI_LOGIN, "worlds")
+    # what mcctl sends runs exactly that on a v1.4 box
+    assert f"then exec {shlex.join(check.cli_argv('worlds'))};" in actions.agent_command(
+        check.CLI_LOGIN, "worlds"
     )
-    assert shlex.join(check.cli_argv("worlds")) == actions.agent_command(check.CLI_LOGIN, "worlds")
     assert mc_agent.CLI_LOGIN.fullmatch(check.CLI_LOGIN) and "cli" in check.GROUPS["a"]
     uuid = f"{check.CLI_UUID_PREFIX}{3:04x}{19:08x}"
     assert mc_panel.UUID.fullmatch(uuid) and mc_panel.NAME.fullmatch("E2eCli3_19")
@@ -1422,3 +1442,33 @@ def test_selftest_and_lookup_actions(tmp_path: Path, monkeypatch) -> None:
     agent.panel.lookup = lambda name: {"found": False, "via": "api.mojang.com", "asked": name}
     assert json.loads(ex.run({"action": "lookup", "args": {"name": "Steve"}, "login": "a@x", "id": "4"})) == {
         "found": False, "via": "api.mojang.com", "asked": "Steve"}  # fmt: skip
+
+
+def test_ci_gates_every_parity_scenario_on_the_rust_agent() -> None:
+    """v1.4: the port is complete, so ci.yml's rust job runs every scenario of the parity harness against the
+    committed release binary; a new scenario (a golden file) must be added there too."""
+    repo = Path(__file__).parent.parent
+    ci = yaml.safe_load((repo / ".github/workflows/ci.yml").read_text())
+    step = next(
+        s for s in ci["jobs"]["rust"]["steps"] if s.get("name") == "Parity scenarios against the Rust agent"
+    )
+    listed = step["env"]["RUST_PARITY_SCENARIOS"].split()
+    golden = sorted(p.stem for p in (repo / "tests/agent_parity/golden").glob("*.json"))
+    assert sorted(listed) == golden and len(listed) == len(set(listed))
+    assert "rust/dist/smallworld-agent-x86_64-unknown-linux-musl" in step["run"]
+
+
+def test_e2e_runs_the_agent_shards_with_the_rust_agent_too() -> None:
+    """v1.4: agent-a, agent-b and telemetry-brand again with agent.implementation rust, in the same matrix (so the
+    required `e2e` aggregator needs them), rendered into the deployment before site.yml."""
+    repo = Path(__file__).parent.parent
+    wf = yaml.safe_load((repo / ".github/workflows/e2e-mock.yml").read_text())
+    shard = wf["jobs"]["e2e-shard"]
+    rust = {m["shard"] for m in shard["strategy"]["matrix"]["include"] if m["impl"] == "rust"}
+    assert rust == {"agent-a", "agent-b", "telemetry-brand"}
+    assert "e2e-shard" in wf["jobs"]["e2e"]["needs"]
+    render = next(s for s in shard["steps"] if s.get("name") == "mcctl validate + render the new config repo")
+    assert render["env"]["IMPL"] == "${{ matrix.impl }}"
+    assert 'python -m mcctl config set agent.implementation rust -C "$CONFIG"' in render["run"]
+    assert render["run"].index("agent.implementation") < render["run"].index("mcctl render")
+    assert any("hardening_check.py /src/product --agent" in s.get("run", "") for s in shard["steps"])

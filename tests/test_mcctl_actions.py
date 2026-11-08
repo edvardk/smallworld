@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import json
 import shlex
+import shutil
 import subprocess
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -38,6 +39,13 @@ PLUGINS = [
 ]
 
 
+def agent_words(text: str) -> list[str]:
+    """The v1.4 command's `mc-agent cli` branch (agent_command wraps it in the fallback for older boxes)."""
+    if text.startswith("if sudo test -x "):
+        text = text.split("; then exec ", 1)[1].split("; else exec ", 1)[0]
+    return shlex.split(text)
+
+
 class FakeServer:
     """Records every remote command; answers `worlds`/`plugins` lists and streams action results."""
 
@@ -52,7 +60,7 @@ class FakeServer:
     def remote(self, argv: Sequence[str]) -> list[str]:
         assert argv[0] == "ssh" and argv[-2] == "--" and "BatchMode=yes" in argv
         self.sent.append(argv[-1])
-        return shlex.split(argv[-1])
+        return agent_words(argv[-1])
 
     def capture(self, argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
         words = self.remote(argv)
@@ -73,7 +81,7 @@ class FakeServer:
         """(login, action, args) of each mc_agent.py cli action that was sent (lists excluded)."""
         out = []
         for text in self.sent:
-            words = shlex.split(text)
+            words = agent_words(text)
             if "cli" in words and len(words) == words.index("cli") + 4:
                 i = words.index("cli")
                 out.append((words[i + 1], words[i + 2], json.loads(words[i + 3])))
@@ -107,13 +115,34 @@ def run(rem: actions.Remote, fn: Callable[[], int]) -> int:
 
 
 def test_the_command_runs_mc_agent_cli_as_the_ops_user() -> None:
-    text = actions.agent_command("mcctl:sam", "restart", {"countdown": 60, "backup": False})
-    assert shlex.split(text) == [
-        "sudo", "/usr/local/bin/mc-run", "-/etc/minecraft/notify.env", "/opt/minecraft/bin/mc_agent.py", "cli",
+    assert actions.agent_argv("mcctl:sam", "restart", {"countdown": 60, "backup": False}) == [
+        "sudo", "/usr/local/bin/mc-run", "-/etc/minecraft/notify.env", "/opt/minecraft/bin/mc-agent", "cli",
         "mcctl:sam", "restart", '{"backup":false,"countdown":60}',
     ]  # fmt: skip
+    text = actions.agent_command("mcctl:sam", "restart", {"countdown": 60, "backup": False})
     assert "systemctl" not in text  # never a generic systemctl: the agent's fixed, polkit-allowed units
-    assert shlex.split(actions.agent_command("mcctl:sam", "worlds"))[-2:] == ["mcctl:sam", "worlds"]
+    assert actions.agent_argv("mcctl:sam", "worlds")[-2:] == ["mcctl:sam", "worlds"]
+
+
+@pytest.mark.skipif(shutil.which("sh") is None, reason="needs a POSIX shell")
+@pytest.mark.parametrize(("box", "entry"), [("v1.4", "/opt/minecraft/bin/mc-agent"),
+                                            ("v1.3", "/opt/minecraft/bin/mc_agent.py")])  # fmt: skip
+def test_the_command_falls_back_to_mc_agent_py_on_an_older_box(tmp_path: Path, box: str, entry: str) -> None:
+    """v1.4: `mc-agent cli` where the box has the entry point, `mc_agent.py cli` on one deployed before v1.4;
+    the arguments (quoting included) and the exit status are the same either way. A fake sudo stands in for the
+    box: `test -x` answers per box, everything else prints its argv and exits 3."""
+    sudo = tmp_path / "sudo"
+    sudo.write_text(
+        "#!/bin/sh\n"
+        f'if [ "$1" = test ]; then [ "$3" = /opt/minecraft/bin/mc-agent ] && [ {box!r} = v1.4 ]; exit $?; fi\n'
+        'for a in "$@"; do printf \'%s\\n\' "$a"; done; exit 3\n'
+    )
+    sudo.chmod(0o755)
+    args = {"verb": "kick", "target": "Bob", "reason": 'it\'s "spam"; $(rm -rf /)'}
+    proc = subprocess.run(["sh", "-c", actions.agent_command("mcctl:sam", "moderate", args)], capture_output=True,
+                          text=True, env={"PATH": f"{tmp_path}:/usr/bin:/bin"}, check=False)  # fmt: skip
+    assert proc.returncode == 3
+    assert proc.stdout.splitlines() == actions.agent_argv("mcctl:sam", "moderate", args, entry)[1:]
 
 
 @pytest.mark.parametrize(

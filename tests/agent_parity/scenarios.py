@@ -768,13 +768,12 @@ def auth_settings(s: Scenario) -> None:
 
 
 def mcctl_argv(login: str, action: str, args: dict[str, Any] | None = None) -> list[str]:
-    """What follows `mc_agent.py` in mcctl's SSH command (mcctl/actions.py agent_command)."""
-    import shlex
+    """What follows the agent's entry point in mcctl's SSH command (mcctl/actions.py agent_argv, which
+    agent_command runs)."""
+    from mcctl.actions import AGENT_ENTRY, agent_argv
 
-    from mcctl.actions import agent_command
-
-    argv = shlex.split(agent_command(login, action, args))
-    rest = argv[next(i for i, a in enumerate(argv) if a.endswith("/mc_agent.py")) + 1 :]
+    argv = agent_argv(login, action, args)
+    rest = argv[argv.index(AGENT_ENTRY) + 1 :]
     assert rest[0] == "cli", rest
     return rest[1:]
 
