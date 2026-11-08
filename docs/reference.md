@@ -452,8 +452,8 @@ for them. `mcctl/notice.py`: GitHub's `releases/latest` of the pinned repository
 lookup `mcctl upgrade` starts from), anonymous, 3 s timeout, in a background thread while the command runs, cached
 for 24 hours in `${XDG_CACHE_HOME:-~/.cache}/mcctl/update-notice.json` (failures too: a private product asks
 once a day and says nothing). Never with `--plain`/`MCCTL_PLAIN`, `NO_COLOR`, `CI`, `TERM=dumb` or without a
-terminal (the dashboard's rule), never for `update-prs`, `expiry-check`, `panel-pr-check`, `pr-gate`,
-`client-publish`, `schema`, `schema-migrate`, `render` and `upgrade`, never in a re-executed pinned mcctl.
+terminal (the dashboard's rule), never for `update-prs`, `product-update`, `expiry-check`, `panel-pr-check`,
+`pr-gate`, `client-publish`, `schema`, `schema-migrate`, `render` and `upgrade`, never in a re-executed pinned mcctl.
 `MCCTL_NO_UPDATE_NOTICE=1` turns it off.
 
 ### Publishing a config change (v1.3)

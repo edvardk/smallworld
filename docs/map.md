@@ -50,6 +50,7 @@ All commands are parsed in `mcctl/cli.py` (`build_parser`); the `cmd_*` function
 | `mcctl restore` | `mcctl/restorecmd.py` → `scripts/restore.py` on the box | **`tests/test_mcctl_p12.py`** |
 | `mcctl discord` (sync) | `mcctl/integrations.py`, `mcctl/providers/discord.py` | `tests/test_discord.py` |
 | `mcctl update-prs` (CI) | `mcctl/updates.py` | `tests/test_updates.py` |
+| `mcctl product-update` (CI, v1.5: the config repo's manual product-update run: resolve, target's migrate/validate, pin PR or reuse, summaries) | `mcctl/productupdate.py` (+ `mcctl/updates.py`, `mcctl/wfsecrets.py` for the manual-run inputs) | `tests/test_product_update.py` |
 | `mcctl expiry-check` (CI) | `mcctl/expirycheck.py`, `mcctl/providers/rdap.py` | **`tests/test_updates.py`** |
 | `mcctl panel-pr-check` (CI) | `mcctl/panelpr.py` | `tests/test_panelpr.py` |
 | `mcctl pr-gate` (CI) | `mcctl/gate.py`, `scripts/verify_lock_update.py` | `tests/test_gate.py` |

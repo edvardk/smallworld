@@ -388,7 +388,7 @@ The ones you will use (all take `-C $C`; the complete list is in [reference.md](
 | `mcctl restore --list \| --to /var/tmp/DIR \| --live ID` | list snapshots (the last pre-upgrade one marked), restore into a scratch directory and verify, or restore the live world (typed confirmation, safety snapshot first) |
 | `mcctl stop [--reason T]`, `mcctl start` | stop on purpose (self-heal, the watchdog and deploys leave it stopped; the reason is recorded) / start again |
 | `mcctl upgrade [--to vX.Y.Z] \| --minecraft-version V [--dry-run]` | a pull request moving the product pin, or upgrading Minecraft (boot-tested; you merge) |
-| `mcctl rollout [--to vX.Y.Z] [--dry-run]` | v1.5: a product release end to end: pull, pin PR, its checks, your typed merge (or the gate's), the deploy, then `render`, `plan` and `apply` (typed) ([Shipping an update](#shipping-an-update)) |
+| `mcctl rollout [--to vX.Y.Z] [--dry-run]` | v1.5: a product release end to end: pull, pin PR, its checks, your typed merge (or the gate's), the deploy, then `render`, `plan` and `apply` (typed) ([Shipping an update](#shipping-an-update); the GitHub-only half is the [update button](#the-update-button-v15)) |
 | `mcctl migrate --to IP [--ipv6 IP] [--dry-run]`, `mcctl retire-old` | move to a new machine, resumable, with rollback ([reference.md](reference.md#move-to-a-new-vps)) |
 | `mcctl secrets rotate NAME [--dry-run]` | replace a generated secret (`rcon`, `heartbeat`, `agent-token`, `command-hmac`, `r2`, `restic-key`): typed apply, then a deploy |
 | `mcctl secrets show-restic` | print the restic password once, to a terminal only |
@@ -424,6 +424,43 @@ v1.5, for whoever develops the product: two steps from a finished feature branch
 merge deploys ([What runs by itself](#what-runs-by-itself)). If a patch changes the Worker, run `mcctl rollout`
 afterwards (it sees the pin is current and goes straight to render, plan and apply).
 
+### The update button (v1.5)
+
+To pin a release **now** instead of waiting for the weekly slot, from the config repo on GitHub: **Actions >
+server > Run workflow**, branch `main`, task **`product-update`**, product_version **`latest`** (or a tag such as
+`v1.5.1`), **Run workflow**. It runs no Terraform and needs no Cloudflare credential:
+
+1. It resolves the release (`latest` = the newest one). Already pinned there: the run's summary says
+   "nothing to do" and that's all. Older than the pin: refused.
+2. It moves the pin and runs the **target release's** `mcctl schema-migrate` and `mcctl validate` on the change
+   (what `mcctl upgrade` does from your computer).
+3. It opens the pin pull request on `update/product-vX.Y.Z`, or **reuses** the open one for that release (the
+   weekly updater's, updated with the migration if it lacks it, or yours from `mcctl upgrade` on
+   `upgrade/product-vX.Y.Z`, left untouched).
+   - **Patch release**, only the `uses:` line changed: auto-merge is on; `server / gate` checks the tag and
+     merges it, and the merge deploys.
+   - **Minor or major** (or a migration that changes more): the run stops at "pull request opened", **waiting
+     for your merge** (merge it as admin on GitHub, or run the local command below, which merges after you type
+     the tag).
+4. The run's **summary** (the run page, below the jobs) shows the old and new version, the pull request and its
+   state, and **Run locally**. The deploy run that follows the merge repeats it with the deploy's result.
+
+**Run locally** is the Worker step. The run compares what Terraform reads for the Worker and the panel
+(`watchdog/` without its tests, `terraform/`, `mcctl/render.py`) between the two releases, by content:
+
+- changed: in your clone of the config repo, after the deploy,
+  `git pull --ff-only && mcctl rollout --to vX.Y.Z` (it sees the pin is current and runs `render`, `plan` and,
+  after a yes, `apply` with its typed confirmation; before the merge it also merges and watches the deploy);
+- unchanged: no local step (the panel's Versions row shows the Worker one version behind until your next
+  `mcctl render` + `mcctl apply`; that is only the version stamp);
+- couldn't compare: the same command, "run it if the panel or Worker changed".
+
+**Getting the button.** Your config repo's workflow is a copy of the template, and a pin pull request changes
+only its `uses:` line, so the new task and input arrive with the upgrade to v1.5: `mcctl upgrade` / `mcctl
+rollout` (the target release's `schema-migrate` adds them to the same pull request, which then needs your merge
+anyway, being a minor release). If the pin reached v1.5 another way (the weekly updater's PR), `mcctl doctor`
+reports "workflow inputs" and `mcctl doctor --fix` adds them in one commit (push it to main).
+
 ## What runs by itself
 
 | What | When | Notes |
@@ -435,7 +472,7 @@ afterwards (it sees the pin is current and goes straight to render, plan and app
 | Watchdog | every 5 minutes, outside the box | status pings over IPv4 and IPv6 separately; heartbeat lateness; alerts on Discord |
 | Server build and plugin updates | weekly, `automation.update_day` (Tuesday) 04:17 UTC | the newest builds of the same Minecraft version are boot-tested in CI, then the updater App opens a pull request that merges itself once `server / gate` re-verified every hash |
 | Weekly deploy | the same slot | deploys `main` as it is; restarts only if something changed |
-| Product updates | the same slot | a newer **patch** release moves the pin by itself; minor and major releases open a pull request for you |
+| Product updates | the same slot (or now: the [update button](#the-update-button-v15)) | a newer **patch** release moves the pin by itself; minor and major releases open a pull request for you |
 | A restart a deploy left for the maintenance window | `maintenance.window`'s start (then every 15 minutes inside it) | only with a window and a pending restart ([Maintenance window](#maintenance-window-v13)); any earlier start of the server applies it too |
 | Reboots for OS updates | checked every 30 minutes | only inside `automation.reboot_window` (04:30-06:00 local), with nobody online, no backup or restore running and the server not stopped on purpose; **never forced**: still pending after 3 days, Discord reminds you daily |
 | Backup check + expiry check | Mondays | `restic check` on 5 % of the data and a restore of the newest snapshot (must be < 2 h old); credential expiry (`expiry.yml`), domain expiry (RDAP) and the watchdog's freshness. Problems go to Discord and the run turns red |

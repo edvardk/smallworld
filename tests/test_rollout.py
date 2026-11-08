@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 from conftest import Replay, make_config_repo
 
-from mcctl import cli, configrepo, init, publish, remote, rollout, schema, updates
+from mcctl import cli, configrepo, init, publish, remote, rollout, schema, updates, upgrade
 from mcctl.mock import GIT_IDENTITY
 from mcctl.ui import UI
 
@@ -309,3 +309,34 @@ def test_cli_and_dashboard() -> None:
         "rollout --dry-run" in keys["rollout-preview"].help and "mcctl rollout" in keys["term-rollout"].help
     )
     assert schema.PRODUCT_ROOT.is_dir()
+
+
+def test_upgrade_uses_the_updaters_pr_when_its_branch_exists(env: dict[str, Any]) -> None:
+    """v1.5 (seen live): `mcctl upgrade` for a patch pushes update/product-vX.Y.Z, which the updater (weekly,
+    or the Actions product-update run) had pushed first: the push is rejected, and its open PR is used."""
+    root = env["root"]
+    git(root, "switch", "-q", "-c", "update/product-v0.0.1")
+    wf = root / configrepo.WORKFLOW
+    wf.write_text(updates.bump_pin(wf.read_text(), schema_repo(root), "d" * 40, "v0.0.1") + "# updater\n")
+    git(root, "commit", "-qam", "updater: product v0.0.1")
+    git(root, "push", "-q", "origin", "update/product-v0.0.1")
+    git(root, "switch", "-q", "main")
+    git(root, "branch", "-q", "-D", "update/product-v0.0.1")
+    ctx, fake, _tools, product, out = make(env, {})
+    url = "https://github.com/mcctl-tests/cfg/pull/4"
+    fake.open["update/product-v0.0.1"] = url
+    made = upgrade.product_upgrade_pr(ctx, "v0.0.1", "d" * 40, runner=product)
+    assert made is not None and made.url == url and made.unattended, out.getvalue()
+    assert "exists on GitHub with an open pull request: using it" in out.getvalue()
+    assert fake.gh("pr", "create") == [] and fake.gh("pr", "merge") == [
+        ["pr", "merge", url, "--auto", "--squash"]
+    ]
+    assert (
+        git(root, "rev-parse", "--abbrev-ref", "HEAD") == "main" and git(root, "status", "--porcelain") == ""
+    )
+    assert "update/product-v0.0.1" not in git(root, "branch")
+    # no open PR on that branch: a clear refusal naming the fix
+    del fake.open["update/product-v0.0.1"]
+    with pytest.raises(init.StepError) as e:
+        upgrade.product_upgrade_pr(ctx, "v0.0.1", "d" * 40, runner=product)
+    assert "git push origin --delete update/product-v0.0.1" in e.value.fix

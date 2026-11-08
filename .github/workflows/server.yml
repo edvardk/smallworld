@@ -12,7 +12,9 @@
 # Tasks: pull_request / push -> validate (+ the required `gate` check and panel-merge for a panel/* pull request, P10
 # review); push to main -> + deploy (server.yml deploy.enabled); schedule "17 4 * * <update_day>" -> update + deploy
 # (P11); "41 9 * * 1" -> expiry-check; workflow_dispatch -> the chosen task
-# (a manual deploy also runs site.yml a second time and fails unless it reports changed=0).
+# (a manual deploy also runs site.yml a second time and fails unless it reports changed=0; v1.5: task
+# product-update pins the config repo's product_version input, `latest` or vX.Y.Z, now: jobs product-update and
+# product-update-pr, no Terraform, the summary names the local step).
 #
 # Actions minutes (docs/ci.md "Keeping a config repo's minutes low"): a push or schedule deploys only when something
 # deploy-relevant changed since the last successful deploy (scripts/deploy_record.py; a manual deploy or a product
@@ -91,6 +93,9 @@ jobs:
       update_environment: ${{ steps.config.outputs.update_environment }}
       # "false" only when the deploy can be skipped (scripts/deploy_record.py); empty or "true" deploys.
       deploy_needed: ${{ steps.last-deploy.outputs.deploy_needed }}
+      # v1.5: set only when this push moved the product pin (the deploy job's summary: old -> new, local step).
+      previous_product_sha: ${{ steps.previous-pin.outputs.previous_product_sha }}
+      previous_product_version: ${{ steps.previous-pin.outputs.previous_product_version }}
     steps:
       - name: Check out the config repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -214,7 +219,7 @@ jobs:
               esac ;;
             workflow_dispatch)
               case "$INPUT_TASK" in
-                deploy|update|backup-check|expiry-check) tasks="[\"$INPUT_TASK\"]" ;;
+                deploy|update|product-update|backup-check|expiry-check) tasks="[\"$INPUT_TASK\"]" ;;
                 # the product's own CI (ci.yml dispatched by hand) has no task input: it validates (below)
                 *) if [ "$CONFIG_PATH" = "." ]; then echo "::error::unknown task '$INPUT_TASK'"; exit 1; fi ;;
               esac ;;
@@ -229,6 +234,11 @@ jobs:
           fi
           if [ "$tasks" = '["deploy"]' ] && [ "$DEPLOY_ENABLED" != true ]; then
             echo "::notice::deploy skipped: server.yml deploy.enabled is false"
+          fi
+          # v1.5: the pin pull request is opened from main (the updater App's key is in the main-only environment).
+          if [ "$tasks" = '["product-update"]' ] && [ "$REF" != refs/heads/main ]; then
+            echo "::notice::product-update skipped: run it from main (this run: $REF)"
+            tasks='["validate"]'
           fi
           echo "tasks=$tasks" >> "$GITHUB_OUTPUT"
           echo "tasks: $tasks"
@@ -255,6 +265,21 @@ jobs:
         run: >-
           python3 product/scripts/deploy_record.py decide --config "$CONFIG_DIR" --product-sha "$PRODUCT_SHA"
           --event "$EVENT" --before "$BEFORE" --record "$RUNNER_TEMP/deploy-record/record.json"
+
+      # v1.5: did this push move the product pin (a merged pin pull request)? Then the deploy job's summary shows
+      # old -> new, the deploy's result and the local step (mcctl/productupdate.py).
+      - name: The product pin before this push
+        id: previous-pin
+        if: >-
+          contains(steps.task.outputs.tasks, 'deploy') && inputs.config-path == '.' && github.event_name == 'push'
+        working-directory: product
+        env:
+          CONFIG_DIR: ${{ github.workspace }}/config
+          PRODUCT_SHA: ${{ steps.product.outputs.sha }}
+          BEFORE: ${{ github.event.before }}
+        run: >-
+          python -m mcctl product-update previous-pin -C "$CONFIG_DIR" --before "$BEFORE"
+          --product-sha "$PRODUCT_SHA" --github-output "$GITHUB_OUTPUT"
 
   # P10 review: the config repo's required check `server / gate` (terraform/github.tf ruleset on main, pinned to the
   # GitHub Actions app; no GitHub App bypasses it, only the admin). Passes only for what may merge without a human,
@@ -515,6 +540,35 @@ jobs:
         with:
           path: ${{ runner.temp }}/deploy-record
           key: mc-deployed-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # v1.5: a push that moved the product pin: old -> new, this deploy's result, and the local step when the
+      # Worker's inputs changed between the two releases (compared by content; the old product is only read).
+      - name: Check out the previous product (read only, for the summary)
+        if: always() && needs.validate.outputs.previous_product_sha != ''
+        continue-on-error: true
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.validate.outputs.product_repository }}
+          ref: ${{ needs.validate.outputs.previous_product_sha }}
+          token: ${{ secrets.PRODUCT_READ_TOKEN || github.token }}
+          path: product-previous
+          persist-credentials: false
+
+      - name: Product update summary
+        if: always() && needs.validate.outputs.previous_product_sha != ''
+        continue-on-error: true
+        working-directory: product
+        env:
+          CONFIG_DIR: ${{ github.workspace }}/config
+          OLD: ${{ needs.validate.outputs.previous_product_version }}
+          OLD_SHA: ${{ needs.validate.outputs.previous_product_sha }}
+          RESULT: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+        run: >-
+          python -m mcctl product-update deploy-summary -C "$CONFIG_DIR" --old "$OLD" --old-sha "$OLD_SHA"
+          --previous-product "$GITHUB_WORKSPACE/product-previous" --product "$GITHUB_WORKSPACE/product"
+          --result "$RESULT" --run-url "$RUN_URL" --summary "$GITHUB_STEP_SUMMARY"
 
       # A failure reaches Discord in the alert template (scripts/ci_alert.py; docs/operations.md "Alerts").
       - name: Tell Discord the deploy failed
@@ -781,6 +835,163 @@ jobs:
           UPDATER_APP_KEY: ${{ secrets.UPDATER_APP_KEY }}
           PRODUCT_TOKEN: ${{ secrets.PRODUCT_READ_TOKEN || github.token }}
         run: python -m mcctl update-prs -C "$CONFIG_DIR"
+
+  # v1.5: the config repo's manual product update (Run workflow > task product-update, input product_version
+  # `latest` or vX.Y.Z), in two jobs like update-test/update. No Terraform, no Cloudflare credential: the Worker
+  # stays a local step, which the summary names (mcctl/productupdate.py).
+  # product-update: no secret beyond the read-only product token. Resolves the release (already pinned there:
+  # the summary says so, nothing else runs), moves the pin in its checkout, runs the TARGET release's
+  # schema-migrate and validate on it (a tag of the same product repository: the code the pin is about to run),
+  # compares the Worker's inputs between the two releases, and hands the prepared files on as outputs.
+  # product-update-pr: a fresh runner. The updater App's key only in its last step's env: it opens the pin pull
+  # request on update/product-vX.Y.Z, or reuses the open one (the weekly updater's, or `mcctl upgrade`'s
+  # upgrade/product-vX.Y.Z). Who merges is unchanged: auto-merge only for a pure patch bump, which the required
+  # `server / gate` check verifies again; a minor/major release waits for the admin's merge. The merge's push
+  # deploys, and that deploy run's summary repeats old -> new with the result.
+  product-update:
+    needs: validate
+    if: contains(fromJSON(needs.validate.outputs.tasks), 'product-update')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      state: ${{ steps.target.outputs.state }}
+      old: ${{ steps.target.outputs.old }}
+      old_sha: ${{ steps.target.outputs.old_sha }}
+      new: ${{ steps.target.outputs.new }}
+      sha: ${{ steps.target.outputs.sha }}
+      workflow: ${{ steps.prepared.outputs.workflow }}
+      server_yml: ${{ steps.prepared.outputs.server_yml }}
+      worker: ${{ steps.prepared.outputs.worker }}
+      worker_paths: ${{ steps.prepared.outputs.worker_paths }}
+    steps:
+      - name: Check out the config repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: config
+          persist-credentials: false
+
+      - name: Check out the product at the running commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.validate.outputs.product_repository }}
+          ref: ${{ needs.validate.outputs.product_sha }}
+          token: ${{ secrets.PRODUCT_READ_TOKEN || github.token }}
+          path: product
+          persist-credentials: false
+
+      # pip's download cache, keyed by the hashed requirements file (pip checks every hash on install).
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: product/requirements/validate.txt
+
+      - name: Install mcctl's dependencies
+        run: pip install --require-hashes --no-deps -r product/requirements/validate.txt
+
+      - name: Which release? (already pinned there -> nothing to do)
+        id: target
+        working-directory: product
+        env:
+          CONFIG_DIR: ${{ github.workspace }}/config
+          PRODUCT_VERSION: ${{ github.event.inputs.product_version || 'latest' }}
+          PRODUCT_TOKEN: ${{ secrets.PRODUCT_READ_TOKEN || github.token }}
+        run: >-
+          python -m mcctl product-update resolve -C "$CONFIG_DIR" --version "$PRODUCT_VERSION"
+          --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Check out the target release
+        if: steps.target.outputs.state == 'upgrade'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.validate.outputs.product_repository }}
+          ref: ${{ steps.target.outputs.sha }}
+          token: ${{ secrets.PRODUCT_READ_TOKEN || github.token }}
+          path: target
+          persist-credentials: false
+
+      # As `mcctl upgrade` does from a laptop: the target's migrations (server.yml, the workflow's secrets and
+      # manual-run inputs) and its validation, with its own hash-pinned dependencies in a venv of their own.
+      - name: The target release's schema-migrate and validate
+        if: steps.target.outputs.state == 'upgrade'
+        working-directory: target
+        env:
+          CONFIG_DIR: ${{ github.workspace }}/config
+          FROM: ${{ steps.target.outputs.from }}
+          CALLER_REPOSITORY: ${{ github.repository }}
+        run: |
+          python -m venv "$RUNNER_TEMP/target-venv"
+          "$RUNNER_TEMP/target-venv/bin/pip" install --require-hashes --no-deps -r requirements/validate.txt
+          "$RUNNER_TEMP/target-venv/bin/python" -m mcctl schema-migrate -C "$CONFIG_DIR" --from "$FROM"
+          "$RUNNER_TEMP/target-venv/bin/python" -m mcctl validate -C "$CONFIG_DIR" --expect-repository "$CALLER_REPOSITORY"
+
+      - name: The prepared change, and did the Worker's inputs change?
+        id: prepared
+        if: steps.target.outputs.state == 'upgrade'
+        working-directory: product
+        env:
+          CONFIG_DIR: ${{ github.workspace }}/config
+        run: >-
+          python -m mcctl product-update prepared -C "$CONFIG_DIR" --old-product "$GITHUB_WORKSPACE/product"
+          --new-product "$GITHUB_WORKSPACE/target" --github-output "$GITHUB_OUTPUT"
+
+  product-update-pr:
+    needs: [validate, product-update]
+    if: needs.product-update.result == 'success' && needs.product-update.outputs.state == 'upgrade'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: ${{ needs.validate.outputs.update_environment }} # the updater App's key, main only (M2)
+    # Two runs at once would race for the same branch; the second one then reuses the first one's PR.
+    concurrency:
+      group: product-update-${{ github.repository }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the config repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: config
+          persist-credentials: false
+
+      - name: Check out the product at the running commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.validate.outputs.product_repository }}
+          ref: ${{ needs.validate.outputs.product_sha }}
+          token: ${{ secrets.PRODUCT_READ_TOKEN || github.token }}
+          path: product
+          persist-credentials: false
+
+      # pip's download cache, keyed by the hashed requirements file (pip checks every hash on install).
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: product/requirements/validate.txt
+
+      - name: Install mcctl's dependencies
+        run: pip install --require-hashes --no-deps -r product/requirements/validate.txt
+
+      - name: Open or reuse the pin pull request (updater GitHub App)
+        working-directory: product
+        env:
+          CONFIG_DIR: ${{ github.workspace }}/config
+          OLD: ${{ needs.product-update.outputs.old }}
+          OLD_SHA: ${{ needs.product-update.outputs.old_sha }}
+          NEW: ${{ needs.product-update.outputs.new }}
+          SHA: ${{ needs.product-update.outputs.sha }}
+          WORKER: ${{ needs.product-update.outputs.worker }}
+          WORKER_PATHS: ${{ needs.product-update.outputs.worker_paths }}
+          PREPARED_WORKFLOW: ${{ needs.product-update.outputs.workflow }}
+          PREPARED_SERVER_YML: ${{ needs.product-update.outputs.server_yml }}
+          UPDATER_APP_ID: ${{ secrets.UPDATER_APP_ID }}
+          UPDATER_APP_KEY: ${{ secrets.UPDATER_APP_KEY }}
+        run: >-
+          python -m mcctl product-update pr -C "$CONFIG_DIR" --old "$OLD" --old-sha "$OLD_SHA" --new "$NEW"
+          --sha "$SHA" --worker "$WORKER" --worker-paths "$WORKER_PATHS" --summary "$GITHUB_STEP_SUMMARY"
 
   # P11 (design §3 "Expiry", §6): Mondays. expiry.yml (from `mcctl doctor`) + RDAP for dns.zone + the watchdog's
   # public /status; no admin token. Problems go to Discord (when alerts.discord) and fail the job.

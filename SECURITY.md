@@ -19,7 +19,7 @@ password or webhook URL into an issue, a PR, an advisory or a chat: say which se
   Cloudflare Access with the Worker re-checking every token. No public SSH after bootstrap.
 - **Credentials stay where they are used:** admin tokens only on the laptop; deploy secrets in Terraform state,
   the config repo's Actions secrets and root-only env files on the box; the panel App's key only in the Worker;
-  the updater App's key only in the scheduled update job; the Discord bot token only on the laptop. Nothing secret
+  the updater App's key only in the update jobs' last step (weekly, or the manual product-update run); the Discord bot token only on the laptop. Nothing secret
   in git, on a command line or in logs.
 - **On the box:** the JVM (and every plugin) runs as `minecraft`; everything holding a credential runs as
   `mcops`; every unit is sandboxed and gated by `systemd-analyze security`; root is reachable only through
@@ -40,7 +40,7 @@ password or webhook URL into an issue, a PR, an advisory or a chat: say which se
 | The world | `/opt/minecraft/server`, restic snapshots in R2 | The thing players care about; the only irreplaceable data |
 | Backups | R2 bucket with bucket lock | The way back after anything else goes wrong |
 | Deploy secrets (RCON, restic password, R2 keys, heartbeat token, agent token, command HMAC key, Discord webhook) | Terraform state (R2), config repo Actions secrets of the environment `deploy` (main only; `github.environments`, [Actions secrets](#actions-secrets-security-review-m2)), root-only `/etc/minecraft/*.env` (read by systemd for `mcops` units only) | Each one opens a piece of the box or its backups |
-| GitHub App private keys (P10 review / P11) | panel App: `.env` → Terraform state → the Worker's secret binding only; updater App: `.env` → Terraform state → secret of the environment `update` (main only), read by the scheduled update job only | Each can open pull requests and push branches of the config repo (the updater also workflow files); the rulesets keep both off main |
+| GitHub App private keys (P10 review / P11) | panel App: `.env` → Terraform state → the Worker's secret binding only; updater App: `.env` → Terraform state → secret of the environment `update` (main only), read by the update jobs only (weekly, and v1.5's manual product-update) | Each can open pull requests and push branches of the config repo (the updater also workflow files); the rulesets keep both off main |
 | Admin credentials (Cloudflare, GitHub, Tailscale OAuth) | The admin's laptop, config repo `.env` (0600, git-ignored), or Dashlane with only `dl://` references in `.env` (P14) | Can rebuild or destroy everything; never in CI or on the server |
 | Discord bot token (P14, optional) | `.env` (or a Dashlane reference) on the laptop only; never in Terraform, CI, the Worker or the server | Can change the application's commands and its interactions endpoint (point Discord elsewhere); can't sign interactions or run anything on the server |
 | Shell on the box | Tailscale SSH as `deploy` (passwordless sudo); root's password locked and its SSH key removed after bootstrap (security review M1) | Root on the box |
@@ -72,10 +72,10 @@ password or webhook URL into an issue, a PR, an advisory or a chat: say which se
 | Secret | Repository-level (`github.environments: false`) | `github.environments: true` (template default) | Read by |
 |---|---|---|---|
 | RCON, restic password + repository, R2 keys, heartbeat token, agent token, command HMAC key, Discord webhook, `TS_OAUTH_CLIENT_ID`/`TS_AUDIENCE` | every workflow run | environment `deploy`, deployment branches: `main` | the reusable workflow's `deploy`, `backup-check` (manual dispatch only since v1.2), `expiry-check` jobs (`environment: deploy`) |
-| `UPDATER_APP_ID`, `UPDATER_APP_KEY` | every workflow run | environment `update`, `main` only | the scheduled `update` job (`environment: update`) |
+| `UPDATER_APP_ID`, `UPDATER_APP_KEY` | every workflow run | environment `update`, `main` only | the scheduled `update` job and (v1.5) the manual run's `product-update-pr` job (`environment: update`) |
 | `PRODUCT_READ_TOKEN` (optional: only for a private product repo) | every workflow run | repository-level (unchanged) | every job's product checkout (read-only) |
 
-`validate`, `gate`, `panel-merge`, `update-test` and `boot-test` run without an environment and read no deploy
+`validate`, `gate`, `panel-merge`, `update-test`, `boot-test` and (v1.5) `product-update` run without an environment and read no deploy
 secret. The config repo's workflow still passes every secret explicitly (the reusable workflow's interface is
 unchanged): with environments the caller's values are empty and the environment's take their place inside the
 jobs that name the environment. The deploy job's OIDC `sub` becomes `repo:OWNER@OWNER_ID/REPO@REPO_ID:environment:deploy`
@@ -285,6 +285,17 @@ logging; the manifest code is single-use and the installation id isn't secret).
   bypass actor (GitHub doesn't allow Apps there on personal repos); `update/*` is open to it by exclusion: its PRs merge only
   through the gate (verified lock updates, product patch bumps to a tagged release), and without
   `github.protect_main` it doesn't enable auto-merge at all (nothing would gate it).
+- **The manual product update** (v1.5, task `product-update` of the config repo's Run workflow, from `main`
+  only): the same split. Job `product-update` holds no secret beyond the read-only product token; it moves the
+  pin in its checkout and runs the **target release's** `mcctl schema-migrate` and `mcctl validate` (a tag of
+  the pinned product repository, resolved to its commit through the API, with its own hash-pinned dependencies:
+  the code the pin is about to run anyway; `mcctl upgrade` runs the same from a laptop). Its outputs are the
+  prepared workflow/server.yml texts and the Worker comparison. `product-update-pr` runs on a fresh runner in the
+  `update` environment; the App's key is only in its last step's env, which checks that the prepared workflow
+  pins exactly the resolved release before it writes `update/product-vX.Y.Z` (or reuses the open pull request
+  for it). Nothing about merging changes: auto-merge only for a pure patch bump, which `server / gate` verifies
+  again; a minor/major release, or a migration that changes more than the `uses:` line, waits for the admin. No
+  Terraform, Cloudflare or deploy credential is involved; the Worker stays a local `mcctl apply`.
 - **Product bumps judge themselves:** the gate job runs the reusable workflow named by the PR head's `uses:`
   line, so for a product update the *new* product version evaluates its own pull request. What binds it is the
   check that the new SHA is the commit of a patch release tag of the same product repository; a compromised
@@ -395,7 +406,7 @@ admin may SSH in, and only as `deploy`. Accepted.
 | Discord webhook | – | TF state → Actions secret, Worker secret | `GET` (nothing posted) |
 | Discord bot token (P14, slash commands) | the application's own bot (no intents, no guild permissions: the app is installed with the `applications.commands` scope only) | `.env` / Dashlane only; used by `mcctl setup` / `mcctl discord sync` for `GET`/`PATCH /applications/@me` and the guild command bulk overwrite | `doctor`: the token's application = `discord.application_id`, endpoint = the Worker |
 | Panel GitHub App (P10 review, cloudflare mode) | Contents write, Pull requests write, Metadata read; installed on the config repo only; tokens narrowed to that repo + those two | `.env` (`TF_VAR_panel_github_app_id`, `_private_key`) → TF state → Worker secret only | `init`/`doctor`: exactly these permissions (`GET /apps/{slug}`), no events |
-| Updater GitHub App (P11) | Contents, Pull requests, Workflows write, Metadata read; the config repo only | `.env` (`TF_VAR_updater_github_app_*`) → TF state → Actions secrets `UPDATER_APP_ID`/`UPDATER_APP_KEY` (scheduled update job only) | `init`/`doctor`: exactly these permissions |
+| Updater GitHub App (P11) | Contents, Pull requests, Workflows write, Metadata read; the config repo only | `.env` (`TF_VAR_updater_github_app_*`) → TF state → Actions secrets `UPDATER_APP_ID`/`UPDATER_APP_KEY` (the update jobs only: weekly, and the manual product-update) | `init`/`doctor`: exactly these permissions |
 | Tailscale API access token (P12 `migrate` / `--rollback` / `retire-old` only) | the user's own access token (admin of the tailnet), 1-day expiry recommended: renames the old node to `<name>-old`, deletes the new or old node | typed into a hidden prompt (or `TAILSCALE_API_KEY` in the shell) for that run only; never stored, never on argv; the user revokes it | `GET /tailnet/-/devices` before use |
 | GitHub OAuth app secret (panel login, `panel.access.idp: github` only) | – | `.env` (`TF_VAR_panel_github_client_secret`) → TF state → the Access identity provider | `doctor`: set when needed |
 

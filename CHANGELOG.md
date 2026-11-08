@@ -27,6 +27,23 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   confirmation). For minor/major releases and Worker changes; patch releases still roll out by themselves. In
   the dashboard's command palette as "Updates: rollout preview" and "Terminal: roll out the latest release".
 
+- The update button: the config repo's workflow gets task `product-update` and input `product_version`
+  (`latest` or `vX.Y.Z`) under Actions > server > Run workflow
+  ([operations: The update button](docs/operations.md#the-update-button-v15)). It pins that release now, without
+  Terraform: the target release's `schema-migrate` and `validate`, then the pin pull request on
+  `update/product-vX.Y.Z` (an open one for the release is reused: the weekly updater's, or `mcctl upgrade`'s
+  `upgrade/product-vX.Y.Z`). A patch bump merges itself through `server / gate` and deploys; minor and major
+  releases wait for your merge, as before. The run's summary shows old -> new, the pull request and its state,
+  and the exact local command (`mcctl rollout --to vX.Y.Z`) when the Worker's inputs changed between the two
+  releases, else that no local step is needed; the deploy run after the merge repeats it with the deploy's result.
+  Your config repo gets the new task and input with the upgrade to this release (`mcctl upgrade`/`rollout`: the
+  target's `schema-migrate` now adds the template's missing manual-run inputs, as it adds missing secrets);
+  `mcctl doctor` reports a workflow without them ("workflow inputs") and `--fix` adds them in one commit.
+- `mcctl upgrade` uses the open pull request when its branch already exists on GitHub (the updater pushed
+  `update/product-vX.Y.Z` first: the push used to be rejected), and names the fix for a leftover branch without
+  one; the weekly updater no longer opens a duplicate of an open `upgrade/product-vX.Y.Z` and resets a leftover
+  `update/product-vX.Y.Z` branch instead of failing.
+
 - Which parts of the HUD players see: `name`, `players` (or `online`), `health`, `tps`, `mspt`, `ping`, `fps`
   (top bar and sidebar alike; the sidebar's title stays, and a top bar with every part hidden shows just the
   server name). New `server.yml` field `branding.hud.parts` sets the server's default (default: every part, so

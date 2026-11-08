@@ -16,8 +16,9 @@
   secrets, discord                  rotate, integrations (+ dashlane)
   players, restore                  players, restorecmd
   publish                           publish (v1.3: preview, validate, PR / main / deploy)
-  CI: update-prs, expiry-check,     updates, expirycheck, panelpr, gate, clientpublish
-  panel-pr-check, pr-gate, client-publish
+  CI: update-prs, expiry-check,     updates, expirycheck, panelpr, gate, clientpublish,
+  panel-pr-check, pr-gate,          productupdate (v1.5)
+  client-publish, product-update
 
 docs/map.md has the tests and docs per command. `-C DIR` names the config repo (default: the current
 directory if it is one, else the remembered one: mcctl/homecfg.py). Commands that run the product's
@@ -171,6 +172,120 @@ def cmd_update_prs(args: argparse.Namespace) -> int:
     for line in lines:
         print(line)
     return 0
+
+
+def _append(path: Path | None, text: str) -> None:
+    if path is not None:
+        with path.open("a") as fh:
+            fh.write(text)
+
+
+def cmd_product_update(args: argparse.Namespace) -> int:
+    """v1.5: the config repo's manual product-update run (CI only; mcctl/productupdate.py)."""
+    import base64
+
+    from mcctl import productupdate as pu
+    from mcctl import updates
+    from mcctl.providers import ProviderError
+
+    def worker_arg(state: str, paths: str) -> list[str] | None:
+        if state not in ("true", "false"):
+            return None
+        if state == "false":
+            return []
+        return [p for p in paths.split(",") if p] or ["(not listed)"]
+
+    def target_arg() -> pu.Target:
+        repo = configrepo.read_pin((args.config_dir / configrepo.WORKFLOW).read_text())[0]
+        return pu.Target(repo.repository if repo else "", args.old, args.old_sha, args.new, args.sha)
+
+    try:
+        if args.step == "resolve":
+            wf = args.config_dir / configrepo.WORKFLOW
+            pin, errors = configrepo.read_pin(wf.read_text())
+            if pin is None:
+                raise pu.UpdateError("; ".join(errors))
+            try:
+                target = pu.resolve(
+                    pin, args.version, os.environ.get("PRODUCT_TOKEN", ""), http.urllib_transport
+                )
+            except pu.UpdateError as e:
+                _append(args.summary, pu.failed("Product update", str(e)))
+                raise
+            state = "current" if target.current else "upgrade"
+            _append(args.github_output, "".join(f"{k}={v}\n" for k, v in {
+                "state": state, "old": target.old, "old_sha": target.old_sha, "new": target.new,
+                "sha": target.sha, "from": target.migrate_from,
+            }.items()))  # fmt: skip
+            if target.current:
+                _append(args.summary, pu.nothing_to_do(target))
+                print(f"already pinned to {target.new}: nothing to do")
+                return 0
+            wf.write_text(updates.bump_pin(wf.read_text(), target.repository, target.sha, target.new))
+            kind = "patch" if target.patch else "minor/major"
+            print(f"{target.old} -> {target.new} ({target.sha[:12]}, {kind}): pin moved in the checkout")
+            return 0
+        if args.step == "prepared":
+            status = subprocess.run(
+                ["git", "-C", str(args.config_dir), "status", "--porcelain"],
+                capture_output=True, text=True, check=True,
+            ).stdout  # fmt: skip
+            changed = sorted(line[3:].strip() for line in status.splitlines() if line.strip())
+            allowed = {configrepo.WORKFLOW, configrepo.SERVER_YML}
+            if not changed or set(changed) - allowed:
+                raise pu.UpdateError(
+                    f"the migration changed {', '.join(sorted(set(changed) - allowed)) or 'nothing'}: "
+                    "only the workflow and server.yml can go in the pin pull request (use `mcctl upgrade`)"
+                )
+            worker = pu.worker_diff(args.old_product, args.new_product)
+            out = {
+                "changed": ",".join(changed),
+                "workflow": base64.b64encode((args.config_dir / configrepo.WORKFLOW).read_bytes()).decode(),
+                "server_yml": base64.b64encode(
+                    (args.config_dir / configrepo.SERVER_YML).read_bytes()
+                ).decode()
+                if configrepo.SERVER_YML in changed
+                else "",
+                "worker": pu.worker_state(worker),
+                "worker_paths": ",".join(worker or []),
+            }
+            _append(args.github_output, "".join(f"{k}={v}\n" for k, v in out.items()))
+            print(f"changed: {', '.join(changed)}; Worker inputs: {pu.worker_state(worker)}")
+            for path in worker or []:
+                print(f"  {path}")
+            return 0
+        if args.step == "pr":
+            target = target_arg()
+            code, text, log = pu.run_pr(
+                args.config_dir, os.environ, target, worker_arg(args.worker, args.worker_paths)
+            )
+            for line in log:
+                print(line)
+            _append(args.summary, text)
+            return code
+        if args.step == "previous-pin":
+            pin = pu.previous_pin(args.config_dir, args.before, args.product_sha)
+            if pin is not None:
+                _append(args.github_output, f"previous_product_sha={pin.sha}\n"
+                        f"previous_product_version={pin.version or pin.sha[:12]}\n")  # fmt: skip
+                print(f"this push moved the product pin from {pin.version or pin.sha[:12]}")
+            return 0
+        if args.step == "deploy-summary":
+            pin = configrepo.read_pin((args.config_dir / configrepo.WORKFLOW).read_text())[0]
+            if pin is None:
+                return 0
+            target = pu.Target(pin.repository, args.old, args.old_sha, pin.version or pin.sha[:12], pin.sha)
+            text = pu.deploy_summary(
+                repository=os.environ.get("GITHUB_REPOSITORY", ""), target=target, result=args.result,
+                run_url=args.run_url, head_message=os.environ.get("HEAD_MESSAGE", ""),
+                worker=pu.worker_diff(args.previous_product, args.product),
+            )  # fmt: skip
+            _append(args.summary, text)
+            return 0
+    except (pu.UpdateError, ProviderError, http.HttpError, configrepo.ConfigError, OSError) as e:
+        print(f"mcctl product-update {args.step}: {e}", file=sys.stderr)
+        return 1
+    return 2
 
 
 def cmd_expiry_check(args: argparse.Namespace) -> int:
@@ -965,6 +1080,44 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("update-prs", help="CI (P11 update task): open the lock/product update pull requests")
     with_config(sp)
     sp.set_defaults(func=cmd_update_prs)
+
+    sp = sub.add_parser(
+        "product-update",
+        help="CI (v1.5, the manual product-update run): pin a release, its PR, the summaries",
+    )
+    pu_sub = sp.add_subparsers(dest="step", required=True)
+    step = pu_sub.add_parser("resolve", help="the release to pin; moves the pin in the checkout")
+    with_config(step)
+    step.add_argument("--version", default="latest", help="latest (default) or vX.Y.Z")
+    step.add_argument("--github-output", type=Path)
+    step.add_argument("--summary", type=Path, help="append the run summary here ($GITHUB_STEP_SUMMARY)")
+    step = pu_sub.add_parser("prepared", help="the changed files and whether the Worker's inputs changed")
+    with_config(step)
+    step.add_argument("--old-product", type=Path, required=True, help="the running product's checkout")
+    step.add_argument("--new-product", type=Path, required=True, help="the target release's checkout")
+    step.add_argument("--github-output", type=Path)
+    step = pu_sub.add_parser("pr", help="open or reuse the pin pull request (the updater App, from the env)")
+    with_config(step)
+    for name in ("--old", "--old-sha", "--new", "--sha"):
+        step.add_argument(name, required=True)
+    step.add_argument("--worker", default="unknown", help="true | false | unknown")
+    step.add_argument("--worker-paths", default="")
+    step.add_argument("--summary", type=Path)
+    step = pu_sub.add_parser("previous-pin", help="the pin before a push, when the push moved it")
+    with_config(step)
+    step.add_argument("--before", default="")
+    step.add_argument("--product-sha", required=True)
+    step.add_argument("--github-output", type=Path)
+    step = pu_sub.add_parser("deploy-summary", help="the deploy run's summary after a pin move")
+    with_config(step)
+    step.add_argument("--old", required=True)
+    step.add_argument("--old-sha", required=True)
+    step.add_argument("--previous-product", type=Path, required=True)
+    step.add_argument("--product", type=Path, required=True)
+    step.add_argument("--result", default="")
+    step.add_argument("--run-url", default="")
+    step.add_argument("--summary", type=Path)
+    sp.set_defaults(func=cmd_product_update)
 
     sp = sub.add_parser("expiry-check", help="CI (P11): credential/domain expiry and watchdog freshness")
     with_config(sp)

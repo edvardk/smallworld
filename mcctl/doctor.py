@@ -1055,6 +1055,63 @@ def check_workflow_secrets(
     )
 
 
+def check_workflow_inputs(
+    report: Report, repo: configrepo.ConfigRepo, env: Mapping[str, str], deps: Deps, fix: bool
+) -> None:
+    """v1.5: the config repo's manual-run form (workflow_dispatch inputs) has every input and `task` option
+    the pinned product's template has (v1.5: task `product-update`, input `product_version`). A pin moved by
+    the updater's pull request changes only the `uses:` line, so the form stays as it was until this adds
+    them; `--fix` adds them (comments kept) and commits the workflow file; pushing it is the admin's."""
+    from mcctl import wfsecrets
+
+    name = "workflow inputs"
+    product_root = pinned_root(repo.pin, env)
+    if product_root is None:
+        report.add(
+            name, "skip", "compared with the pinned product's template once it is fetched (`mcctl plan`)"
+        )
+        return
+    wf = repo.root / configrepo.WORKFLOW
+    try:
+        text = wf.read_text()
+        template = wfsecrets.template_text(product_root)
+        lacking = wfsecrets.missing_dispatch(text, template)
+    except (OSError, wfsecrets.WorkflowError) as e:
+        report.add(name, "warn", str(e))
+        return
+    if not lacking:
+        report.add(name, "ok", f"{configrepo.WORKFLOW}'s manual run matches the pinned product's template")
+        return
+    what = ", ".join(lacking)
+    if fix:
+        try:
+            wf.write_text(wfsecrets.add_dispatch(text, template))
+        except wfsecrets.WorkflowError as e:
+            report.add(name, "warn", f"{configrepo.WORKFLOW}'s manual run lacks {what}; can't add: {e}")
+            return
+        commit = deps.run(
+            ["git", "-C", str(repo.root), "commit", "-q", "-m", f"mcctl doctor: the manual run gets {what}",
+             "--", configrepo.WORKFLOW]
+        )  # fmt: skip
+        if commit.returncode != 0:
+            wf.write_text(text)
+            report.add(
+                name, "warn", f"added {what}, but `git commit` failed: {(commit.stderr or '').strip()}"
+            )
+            return
+        report.add(
+            name, "ok", f"added {what} to {configrepo.WORKFLOW} and committed it: push to main to use it"
+        )
+        return
+    report.add(
+        name,
+        "warn",
+        f"{configrepo.WORKFLOW}'s manual run (Actions > Run workflow) lacks {what}, which the pinned "
+        "product's template has: `mcctl doctor --fix` adds them (one commit), or copy them from the "
+        "product's template/.github/workflows/server.yml",
+    )
+
+
 # --- the whole doctor ---------------------------------------------------------------------------------
 
 
@@ -1088,6 +1145,7 @@ def run(root: Path, *, fix: bool = False, deps: Deps | None = None, i_know: bool
     check_pin(report, repo, os.environ, deps)
     check_collections(report, repo, os.environ, deps, fix)
     check_workflow_secrets(report, repo, os.environ, deps, fix)
+    check_workflow_inputs(report, repo, os.environ, deps, fix)
     try:
         env = envfile.merged(
             root, resolve=deps.dashlane.resolve_lenient

@@ -74,13 +74,9 @@ def sync(ctx: init.Ctx) -> None:
 def open_pr(ctx: init.Ctx, repository: str, to: str) -> upgrade.Upgraded | None:
     """An open pin PR for `to` (the updater's, or an earlier upgrade's), or None."""
     for branch, unattended in ((f"update/product-{to}", True), (f"upgrade/product-{to}", False)):
-        view = ctx.gh("pr", "view", branch, "-R", repository, "--json", "url,state")
-        try:
-            data = json.loads(view.stdout) if view.returncode == 0 else None
-        except ValueError:
-            data = None
-        if isinstance(data, dict) and data.get("state") == "OPEN" and data.get("url"):
-            return upgrade.Upgraded(str(data["url"]), branch, to, "", unattended)
+        url = upgrade.open_pin_pr(ctx, repository, [branch])
+        if url is not None:
+            return upgrade.Upgraded(url, branch, to, "", unattended)
     return None
 
 

@@ -46,7 +46,7 @@ def test_each_job_reads_only_its_environments_secrets(name: str) -> None:
     if homes:
         (home,) = homes
         assert job.get("environment") == ENV_EXPR[home], f"{name} reads {used}: environment {home}"
-    else:  # validate, gate, panel-merge, update-test, boot-test: no environment, no deploy secret
+    else:  # validate, gate, panel-merge, update-test, boot-test, product-update: no environment, no deploy secret
         assert "environment" not in job, name
 
 
@@ -58,6 +58,7 @@ def test_the_jobs_with_secrets() -> None:
         "backup-check": ENV_EXPR["deploy"],
         "expiry-check": ENV_EXPR["deploy"],
         "update": ENV_EXPR["update"],
+        "product-update-pr": ENV_EXPR["update"],  # v1.5: the manual product update's pull request
     }
     # only the deploy job asks for an OIDC token (its sub then names the environment)
     assert [n for n, j in jobs.items() if (j.get("permissions") or {}).get("id-token")] == ["deploy"]
