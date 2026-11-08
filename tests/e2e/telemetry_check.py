@@ -93,7 +93,8 @@ def wait(what: str, cond: Any, timeout: float, step: float = 5.0) -> Any:
 
 
 def rust_agent(box: str) -> bool:
-    """v1.4: agent.implementation rust (the e2e's rust shard): mc-agent's main process is smallworld-agent."""
+    """v1.4: agent.implementation rust (the default; the e2e's python shards set the fallback): mc-agent's main
+    process is smallworld-agent."""
     pid = sh(box, "systemctl show -P MainPID mc-agent.service").stdout.strip()
     return pid not in ("", "0") and sh(box, f"readlink /proc/{pid}/exe").stdout.strip().endswith(
         "/smallworld-agent"

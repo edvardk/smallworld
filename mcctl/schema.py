@@ -617,11 +617,11 @@ class Panel:
 @dataclass(frozen=True)
 class Agent:
     implementation: Literal["python", "rust"] = opt(
-        "python",
+        "rust",
         doc="v1.4: which mc-agent runs on the box (panel mode cloudflare) and answers mcctl's actions: "
-        "python (scripts/mc_agent.py) or rust (smallworld-agent, the port). Either runs the experience "
-        "telemetry in-process. Both read and write the same state, so switching back is a deploy. "
-        "The default becomes rust in a later release, after a soak.",
+        "rust (smallworld-agent, the port; the default since v1.4.0) or python (scripts/mc_agent.py, the "
+        "supported fallback). Either runs the experience telemetry in-process. Both read and write the same "
+        "state, so switching either way is a deploy.",
     )
 
 

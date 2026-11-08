@@ -663,7 +663,8 @@ What the nightly pre-render (`smallworld-map`, role `map`) and its readers in mc
 
 ## The Rust agent (v1.4)
 
-What `agent.implementation: rust` (smallworld-agent, the port of mc-agent; default `python`) changes:
+What `agent.implementation: rust` (smallworld-agent, the port of mc-agent; the default since v1.4.0, `python`
+the supported fallback) changes:
 
 - **A new binary, `/opt/minecraft/bin/smallworld-agent`**, `root:root 0755`, on every box whichever implementation
   runs (mcctl's actions may run it in any panel mode). As smallworld-rcon: the committed build in `rust/dist/` for
@@ -676,9 +677,9 @@ What `agent.implementation: rust` (smallworld-agent, the port of mc-agent; defau
   `systemd-journal`), `EnvironmentFile`, `UMask=0077`, limits, `ReadWritePaths` and the whole `mc_systemd_sandbox`
   with `MemoryDenyWriteExecute=true` (static musl, ring, no JIT, no W+X mapping) and `SystemCallFilter=@system-service`;
   its `systemd-analyze security` score is the same (≤ 2.5, offline in `tests/test_hardening.py` for both
-  implementations, live in the e2e's rust shard: `hardening_check.py --agent` also checks the running binary has
-  no_new_privs and its seccomp filter). polkit is unchanged: the rules name the user and the unit, never the
-  executable. Its state in rust mode is `/var/lib/mc-agent` only.
+  implementations, live in the e2e's agent-a shards, rust and python: `hardening_check.py --agent` also checks the
+  running process has no_new_privs and its seccomp filter). polkit is unchanged: the rules name the user and the
+  unit, never the executable. Its state is the Python agent's: `/var/lib/mc-agent` and `/var/lib/mc-telemetry`.
 - **Same behaviour, proved.** Python is the spec: the console allowlist, HMAC verification and nonces, refusal
   texts, audit entries, file modes, RCON lines, systemctl calls and the scrubber match `mc_agent.py`
   (`rust/smallworld-agent/PORTING.md`: shared test vectors, 26 black-box parity scenarios plus 13 telemetry

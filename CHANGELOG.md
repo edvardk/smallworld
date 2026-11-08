@@ -29,8 +29,8 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   `ansible/group_vars/all/main.yml` (`mc_smallworld_rcon_sha256`); CI job `rust` (rustfmt, clippy, unit tests, the
   byte-for-byte rebuild, the differential tests). A walkthrough for Python programmers:
   `docs/rust/smallworld-rcon.md`.
-- **Rust agent behind a switch:** `server.yml` `agent.implementation: python | rust` (default `python`; it becomes
-  `rust` in a later release, after a soak). `rust` runs **smallworld-agent** (`rust/smallworld-agent`), the complete
+- **Rust agent:** `server.yml` `agent.implementation: rust | python` (default `rust`, see "Changed"). `rust` runs
+  **smallworld-agent** (`rust/smallworld-agent`), the complete
   port of the on-box agent (`mc_agent.py` and the agent half of `mc_panel.py`): every Worker request, signed
   command, panel action, job, Git sync, self-test, metric, log batch (with the scrubber), inventory, console
   tail and the player-experience telemetry (`scripts/telemetry.py`: minute rows, segments, backfill, verdicts,
@@ -99,6 +99,12 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ### Changed
 
+- **Rust agent is the default; set `agent.implementation: python` to go back.** A deployment that doesn't set
+  it runs smallworld-agent from its first v1.4.0 deploy: the deploy repoints `/opt/minecraft/bin/mc-agent`,
+  rewrites `mc-agent.service` and restarts it once, and the telemetry's identity and segments carry over (the
+  same state files); a second deploy changes nothing. `python` (`scripts/mc_agent.py`) stays a supported
+  fallback (docs/operations.md "Switching the agent's implementation"). The e2e runs every shard with the Rust
+  agent and agent-a, agent-b and telemetry-brand again with the Python one.
 - The v1.3 home screen (a questionary menu whose output scrolled away behind it) is replaced by the
   dashboard; the rules for when it opens (a terminal, no `--plain`/`NO_COLOR`/`CI`/`TERM=dumb`), `-C DIR`, the
   remembered config repo and switching it are unchanged.

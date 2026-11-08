@@ -2,8 +2,8 @@
 
 `smallworld-agent` (v1.4, `rust/smallworld-agent`) is the Rust port of the on-box agent: `scripts/mc_agent.py`
 plus the agent half of `scripts/mc_panel.py`, and the helpers they run in-process (`notify.py`, `worlds.py`,
-`health.py`, `alerts.py`, `mc_rcon.py`, and the player-experience telemetry, `telemetry.py`). It is behind a switch, `server.yml` `agent.implementation: python | rust`
-(default `python`; the default becomes `rust` in a later release, after a soak).
+`health.py`, `alerts.py`, `mc_rcon.py`, and the player-experience telemetry, `telemetry.py`). It is what runs by default since v1.4.0: `server.yml` `agent.implementation: rust | python`
+(default `rust`; `python` stays a supported fallback, set it and deploy to go back).
 
 This page is the map for someone who wants to learn the code. The contract the port was built against (which
 Python each module ports, the rules, the documented divergences, how each part is proved) is
@@ -116,8 +116,8 @@ type), RCON lines, systemctl argv, Worker requests and Discord texts match. Thre
   `tests/test_rust_agent_console.py` and `tests/test_rust_scrub_fuzz.py` (Hypothesis against the hidden, pure
   `selftest-console` / `selftest-scrub` subcommands).
 
-And end to end: the e2e's rust shards (`agent-a`, `agent-b`, `telemetry-brand` with `agent.implementation: rust`)
-run the same rounds as the Python ones on a real Debian box.
+And end to end: every e2e shard deploys the default, `agent.implementation: rust`, on a real Debian box, and
+`agent-a`, `agent-b` and `telemetry-brand` run the same rounds again with the Python fallback.
 
 ## Dependencies and the supply chain
 

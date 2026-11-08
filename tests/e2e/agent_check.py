@@ -1036,7 +1036,8 @@ with mc_panel.Pending(Path("/var/lib/mc-agent/pending.json")).update() as d:
 
 def cli_argv(action: str, args: dict[str, Any] | None = None) -> list[str]:
     """= mcctl.actions.agent_argv(CLI_LOGIN, action, args): v1.4's entry point, the symlink to whichever
-    implementation the deploy chose (agent.implementation; the rust shards run the Rust cli this way)."""
+    implementation the deploy chose (agent.implementation; the default shards run the Rust cli this way, the python
+    shards mc_agent.py)."""
     argv = ["sudo", "/usr/local/bin/mc-run", "-/etc/minecraft/notify.env", "/opt/minecraft/bin/mc-agent",
             "cli", CLI_LOGIN, action]  # fmt: skip
     if args is not None:
@@ -1273,7 +1274,8 @@ def implementation() -> str:
 
 def implementation_checks() -> None:
     """v1.4: the unit, the entry point match agent.implementation (no telemetry unit: in-process). The rounds are the
-    same for both implementations (black box); the e2e's rust shards deploy with agent.implementation: rust."""
+    same for both implementations (black box); the e2e deploys the default, rust, and python in its python
+    shards."""
     impl = implementation()
     print(f"agent.implementation: {impl}")
     want = "smallworld-agent" if impl == "rust" else "mc_agent.py"

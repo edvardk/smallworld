@@ -161,12 +161,13 @@ def test_e2e_triggers_and_benches() -> None:
     assert strategy["fail-fast"] is False
     assert strategy["max-parallel"] == f"${{{{ fromJSON({trusted} && vars.E2E_RUNNER && '1' || '8') }}}}"
     entries = strategy["matrix"]["include"]
-    include = {m["shard"]: m for m in entries if m["impl"] == "python"}
+    # v1.4: every shard with the default agent.implementation, rust
+    include = {m["shard"]: m for m in entries if m["impl"] == "rust"}
     assert set(include) == {"core", "agent-a", "agent-b", "telemetry-brand", "migrate-p16"}
-    # v1.4: three shards again with the Rust agent, alike but for impl
-    rust = {m["shard"]: m for m in entries if m["impl"] == "rust"}
-    assert set(rust) == {"agent-a", "agent-b", "telemetry-brand"} and len(entries) == 8
-    assert all(dict(m, impl="python") == include[s] for s, m in rust.items())
+    # v1.4: three shards again with the Python agent (the fallback), alike but for impl
+    python = {m["shard"]: m for m in entries if m["impl"] == "python"}
+    assert set(python) == {"agent-a", "agent-b", "telemetry-brand"} and len(entries) == 8
+    assert all(dict(m, impl="rust") == include[s] for s, m in python.items())
     # GitHub's runners take every shard at once
     assert strategy["max-parallel"].endswith(f"'{len(entries)}') }}}}")
     assert {s for s, m in include.items() if m["full_only"]} == {"telemetry-brand", "migrate-p16"}
@@ -194,9 +195,9 @@ def test_e2e_triggers_and_benches() -> None:
     # the heavy half is skipped only on an explicit `false`, in its own shards
     for part in ("telemetry", "setup-node"):
         assert where(part) == ["matrix.shard == 'telemetry-brand' && env.FULL != 'false'"], part
-    # v1.4: the rust telemetry shard runs the telemetry half only (branding doesn't involve the agent)
+    # v1.4: the python telemetry shard runs the telemetry half only (branding doesn't involve the agent)
     assert where("Branding") == [
-        "matrix.shard == 'telemetry-brand' && matrix.impl != 'rust' && env.FULL != 'false'"
+        "matrix.shard == 'telemetry-brand' && matrix.impl != 'python' && env.FULL != 'false'"
     ]
     for part in ("Migrate", "P16"):  # P16 runs on the migrated box: same shard, after it
         assert where(part) == ["matrix.shard == 'migrate-p16' && env.FULL != 'false'"], part

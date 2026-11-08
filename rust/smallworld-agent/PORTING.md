@@ -341,7 +341,8 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
 - Proof: `tests/telemetry_parity` (13 scenarios of `<bin> telemetry` against Python's goldens: all pass with
   `--impl=rust`), its vectors in `cargo test` (`telemetry/vectors.rs`: every group, compared as compact JSON
   text), the agent scenario `experience` (the daemon with `EXPERIENCE=1`: minute rows, player_message's online view
-  and limits, messages.tsv), e2e `telemetry_check.py` on the rust shard (`E2E_AGENT_IMPL`).
+  and limits, messages.tsv), e2e `telemetry_check.py` on both telemetry shards (`E2E_AGENT_IMPL`: rust, the
+  default, and python).
 - Python issues kept for parity (the goldens and vectors lock them in; fix in both later, with a test on each side):
   `NaN`/`Infinity` in a snapshot's integer field raises from `int()` (`ValueError`/`OverflowError`: the round fails
   and the reader never moves past that file; Rust raises the same exception, `snapshot::py_int`, vectors
@@ -403,7 +404,7 @@ Gotchas the goldens encode (keep them; both are logged as known issues to fix in
 
 ## Integration (v1.4, as deployed)
 
-- `server.yml` `agent.implementation: python | rust` (default `python`, `mcctl/schema.py`) renders
+- `server.yml` `agent.implementation: python | rust` (default `rust` since v1.4.0, `mcctl/schema.py`) renders
   `mc_agent_implementation`. The base role installs `/opt/minecraft/bin/smallworld-agent` (root 0755, the pin
   asserted first) on every box and points `/opt/minecraft/bin/mc-agent` at the chosen implementation;
   `mc-agent.service` runs `smallworld-agent run` (any first argument but `cli` and the hidden selftests runs the
@@ -412,8 +413,10 @@ Gotchas the goldens encode (keep them; both are logged as known issues to fix in
 - Telemetry runs in-process in both implementations (v1.4.0; the pre-release sidecar `mc-telemetry.service` is
   gone: the agent role stops and removes a leftover unit before it installs or starts mc-agent).
 - Restarts: a new binary, the symlink or `product-version.json` (`agent: {implementation, sha256}`) notify the
-  handler pair `mc-agent code changed`.
-- e2e: `agent-a`, `agent-b`, `telemetry-brand` with `impl: rust` in `e2e-mock.yml`.
+  handler pair `mc-agent code changed`, which restarts only a unit already running the selected implementation:
+  on a switch (or a python box upgrading to the rust default) the unit's own change restarts it, once.
+- e2e: every shard deploys the default (rust); `agent-a`, `agent-b`, `telemetry-brand` again with `impl: python`
+  in `e2e-mock.yml`.
 
 ## Divergences (documented, deliberate)
 

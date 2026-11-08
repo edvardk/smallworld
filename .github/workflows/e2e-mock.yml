@@ -17,10 +17,10 @@ name: e2e-mock
 # Nothing here has a secret: the MC_SECRET_* values below are fixed fakes for a throwaway container, and the
 # restic repository is a local directory inside it.
 #
-# The checks run as parallel shards of job `e2e-shard` (core, agent-a, agent-b, telemetry-brand, migrate-p16; v1.4:
-# agent-a, agent-b and telemetry-brand again with agent.implementation rust), each on its own runner with its own
-# freshly deployed box; job `e2e` (the required check) passes when every shard did. Wall time is the slowest
-# shard's (~11 min) instead of the sum.
+# The checks run as parallel shards of job `e2e-shard` (core, agent-a, agent-b, telemetry-brand, migrate-p16, all with
+# the default agent.implementation rust; v1.4: agent-a, agent-b and telemetry-brand again with the fallback, python),
+# each on its own runner with its own freshly deployed box; job `e2e` (the required check) passes when every shard
+# did. Wall time is the slowest shard's (~11 min) instead of the sum.
 #
 # What runs when (docs/ci.md; the product repo is public, so GitHub's runners cost no minutes here):
 #   - every pull request to main: `e2e` (a required check). The essential half (1-5, reboot gate, deploy checks,
@@ -114,14 +114,15 @@ jobs:
   #                    world);
   #   telemetry-brand: telemetry, then branding (heavy half only);
   #   migrate-p16:     migrate container -> container, then P16 on the migrated box (heavy half only);
-  #   impl: rust       (v1.4) the deployment says agent.implementation: rust (`mcctl config set` before the
-  #                    render): the Rust mc-agent (its telemetry in-process) and the `mc-agent cli` entry point run
-  #                    the same black-box rounds (agent-a also scores the agent's units live: hardening_check.py
-  #                    --agent; telemetry-brand runs the telemetry half only).
+  #   impl:            (v1.4) every shard deploys the default, agent.implementation rust (the Rust mc-agent, its
+  #                    telemetry in-process, and the `mc-agent cli` entry point); `impl: python` shards set the
+  #                    fallback (`mcctl config set` before the render) and run the same black-box rounds with
+  #                    mc_agent.py (agent-a, both kinds, also scores the agent's units live: hardening_check.py
+  #                    --agent; telemetry-brand's python shard runs the telemetry half only).
   # A heavy shard in an essential run skips every step (done in seconds); the matrix stays static. Each check
   # sets up its own preconditions, so none depends on another shard. The required check is `e2e` below.
   e2e-shard:
-    name: e2e-shard (${{ matrix.shard }}${{ matrix.impl == 'rust' && ', rust' || '' }})
+    name: e2e-shard (${{ matrix.shard }}${{ matrix.impl == 'python' && ', python' || '' }})
     needs: changes
     # If `changes` failed its outputs are empty: everything runs (never a silently skipped required check).
     if: ${{ !cancelled() && needs.changes.outputs.e2e != 'false' }}
@@ -141,15 +142,15 @@ jobs:
         && vars.E2E_RUNNER && '1' || '8') }}
       matrix:
         include:
-          - {shard: core, impl: python, full_only: false, timeout: 45}
-          - {shard: agent-a, impl: python, full_only: false, timeout: 45}
-          - {shard: agent-b, impl: python, full_only: false, timeout: 45}
-          - {shard: telemetry-brand, impl: python, full_only: true, timeout: 45}
-          - {shard: migrate-p16, impl: python, full_only: true, timeout: 60}
-          # v1.4: the Rust agent behind agent.implementation (the same rounds, in parallel: no extra wall time)
+          - {shard: core, impl: rust, full_only: false, timeout: 45}
           - {shard: agent-a, impl: rust, full_only: false, timeout: 45}
           - {shard: agent-b, impl: rust, full_only: false, timeout: 45}
           - {shard: telemetry-brand, impl: rust, full_only: true, timeout: 45}
+          - {shard: migrate-p16, impl: rust, full_only: true, timeout: 60}
+          # v1.4: the Python agent, agent.implementation's fallback (the same rounds, in parallel: no extra wall time)
+          - {shard: agent-a, impl: python, full_only: false, timeout: 45}
+          - {shard: agent-b, impl: python, full_only: false, timeout: 45}
+          - {shard: telemetry-brand, impl: python, full_only: true, timeout: 45}
     env:
       CONFIG: ${{ github.workspace }}/../e2e-config
       MC_SECRET_RCON_PASSWORD: e2e-not-a-secret-rcon-password-0001
@@ -237,8 +238,9 @@ jobs:
           python -m mcctl config set branding.drink.command cocoa -C "$CONFIG"
           python -m mcctl config set branding.holograms '[{at: spawn, help: true}]' -C "$CONFIG"
           python -m mcctl config set branding.map_room '{enabled: true, at: spawn, width: 3, height: 2}' -C "$CONFIG"
-          # v1.4: the rust shards deploy the Rust agent (rendered, so agent_check's own site.yml runs keep it)
-          if [ "$IMPL" = rust ]; then python -m mcctl config set agent.implementation rust -C "$CONFIG"; fi
+          # v1.4: rust is the default; the python shards deploy the fallback (rendered, so agent_check's own
+          # site.yml runs keep it)
+          if [ "$IMPL" = python ]; then python -m mcctl config set agent.implementation python -C "$CONFIG"; fi
           python -m mcctl validate -C "$CONFIG"
           python -m mcctl render -C "$CONFIG" -o "$RUNNER_TEMP/rendered"
 
@@ -376,11 +378,11 @@ jobs:
             -e MC_SECRET_DISCORD_WEBHOOK_URL -e MC_SECRET_AGENT_TOKEN -e MC_SECRET_COMMAND_HMAC_KEY \
             mc-e2e python3 /src/product/tests/e2e/agent_check.py --rounds "$ROUNDS"
 
-      # v1.4: the Rust agent (its telemetry in-process) in its sandbox, live (the core shard checks the Python
-      # agent's): the exposure gate, mcops + the journal group, environment unreadable from minecraft, the running
-      # binary under its seccomp filter with no_new_privs and MemoryDenyWriteExecute.
-      - name: The Rust agent's units (systemd-analyze gate, sandbox, privilege separation)
-        if: matrix.shard == 'agent-a' && matrix.impl == 'rust'
+      # v1.4: the agent (its telemetry in-process) in its sandbox, live, in each implementation (rust: the core
+      # shard scores it too): the exposure gate, mcops + the journal group, environment unreadable from minecraft,
+      # the running process under its seccomp filter with no_new_privs and MemoryDenyWriteExecute.
+      - name: The agent's units (systemd-analyze gate, sandbox, privilege separation)
+        if: matrix.shard == 'agent-a'
         timeout-minutes: 5
         run: docker exec mc-e2e /opt/ansible/bin/python /src/product/tests/e2e/hardening_check.py /src/product --agent
 
@@ -396,14 +398,14 @@ jobs:
         if: matrix.shard == 'telemetry-brand' && env.FULL != 'false'
         timeout-minutes: 25
         env:
-          E2E_AGENT_IMPL: ${{ matrix.impl }}  # v1.4: rust = smallworld-agent's in-process telemetry is what ships
+          E2E_AGENT_IMPL: ${{ matrix.impl }}  # v1.4: rust (the default) or python, the process that must run it
         run: python tests/e2e/telemetry_check.py mc-e2e
 
       # P17 acceptance: the mc-brand plugin on the real Purpur (enabled with the deploy's settings, pinned jar and
       # icon, the icon in the status ping), its commands over RCON (/rules, /discord, /mcbrand selftest: greetings,
       # title, tab list, sidebar, the drink read back through the API, /drink and its own name) and its task's time.
       - name: Branding checks (mc-brand plugin, server icon, commands over RCON)
-        if: matrix.shard == 'telemetry-brand' && matrix.impl != 'rust' && env.FULL != 'false'
+        if: matrix.shard == 'telemetry-brand' && matrix.impl != 'python' && env.FULL != 'false'
         timeout-minutes: 15
         run: python tests/e2e/brand_check.py mc-e2e
 

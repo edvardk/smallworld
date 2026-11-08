@@ -56,9 +56,9 @@ product/config-repo split, GitHub settings and releasing. New here? Start with t
   `smallworld-rcon` (Rust, `rust/`), identical to `mc_rcon.py`'s command line; `ExecStop` falls back to
   `mc_rcon.py stop` only if the binary gives no answer at all ([the stop path](rust/smallworld-rcon.md#the-stop-path)).
 - **Two agent implementations (v1.4).** `server.yml` `agent.implementation` picks what runs as mc-agent:
-  `python` (default; `scripts/mc_agent.py`, the experience telemetry in the same process) or `rust`
-  (`smallworld-agent`, the complete port, proved against the Python agent by the parity harness; the default
-  flips in a later release, after a soak). Every box gets the pinned binary (`/opt/minecraft/bin/smallworld-agent`,
+  `rust` (the default since v1.4.0; `smallworld-agent`, the complete port, proved against the Python agent by
+  the parity harnesses) or `python` (the supported fallback; `scripts/mc_agent.py`, the experience telemetry in
+  the same process). Every box gets the pinned binary (`/opt/minecraft/bin/smallworld-agent`,
   root 0755) and `/opt/minecraft/bin/mc-agent`, a symlink to the chosen implementation that mcctl's actions run
   (`mc-agent cli`; `mc_agent.py cli` on a box older than v1.4). `mc-agent.service` runs the chosen one directly,
   in the same sandbox, as the same user. Both run the experience telemetry in-process (the Rust agent: its

@@ -41,7 +41,7 @@ answer is "everything changed".
   | `agent-b` | `agent_check.py --rounds b`: mc-agent's pushes and first commands, then the rounds backup/restore, world library | always | ~10 min |
   | `telemetry-brand` | experience telemetry, then branding | heavy half | ~11 min |
   | `migrate-p16` | migrate container -> container, then the P16 knobs on the migrated box | heavy half | ~10 min |
-  | `agent-a, rust`, `agent-b, rust`, `telemetry-brand, rust` | v1.4: the same shards with `agent.implementation: rust` (`mcctl config set` before the render): the Rust mc-agent (its telemetry in-process) and `mc-agent cli` through the same black-box rounds; `agent-a, rust` also scores the agent's units live (`hardening_check.py --agent`); `telemetry-brand, rust` runs the telemetry half only | like their Python shard | in parallel: no extra wall time |
+  | `agent-a, python`, `agent-b, python`, `telemetry-brand, python` | v1.4: every shard above deploys the default, `agent.implementation: rust` (the Rust mc-agent, its telemetry in-process, and `mc-agent cli`); these run the same shards with the fallback, `agent.implementation: python` (`mcctl config set` before the render), through the same black-box rounds; `agent-a` scores the agent's units live in both (`hardening_check.py --agent`); `telemetry-brand, python` runs the telemetry half only | like their Rust shard | in parallel: no extra wall time |
 
   The times are a measured full run (v1.2.2: core 10, the one `agent` shard 16, telemetry-brand 11, migrate-p16
   9.5); v1.3 cut `agent` in two by its rounds. Each agent shard repeats the shared part (the agent's sandbox, the

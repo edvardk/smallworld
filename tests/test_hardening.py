@@ -509,6 +509,32 @@ def test_agent_restarts_follow_code_switch_and_product_version() -> None:
     assert "agent_sidecar" not in yaml.safe_load((REPO / "ansible/roles/agent/defaults/main.yml").read_text())
 
 
+def test_a_switch_restarts_the_agent_once() -> None:
+    """v1.4 (rust is the default; a python box upgrading switches): the code-changed pair restarts only a unit that
+    already runs the selected implementation. The minecraft role's mid-play flush comes before the agent role
+    rewrites the unit, whose own handler (Restart mc-agent) then restarts it: once, with the new ExecStart."""
+    handlers = yaml.safe_load((REPO / "ansible/roles/agent/handlers/main.yml").read_text())
+    by_name = {h["name"]: h for h in handlers}
+    probe = by_name["Is mc-agent installed (its code changed)?"]
+    assert probe["ansible.builtin.slurp"]["src"] == "/etc/systemd/system/mc-agent.service"
+    assert probe["failed_when"] is False  # no unit (fresh box, no panel): nothing to restart
+    restart = by_name["Restart mc-agent (its code changed)"]
+    assert restart["when"][0] == "agent_unit_for_code_change.content is defined"
+    assert (
+        "agent_exec_start in (agent_unit_for_code_change.content | b64decode).splitlines()" in restart["when"]
+    )
+    env = jinja2.Environment(undefined=jinja2.StrictUndefined)  # noqa: S701 - not HTML
+    want = {impl: env.from_string(restart["vars"]["agent_exec_start"]).render(
+        mc_bin_dir="/opt/minecraft/bin", mc_agent_implementation=impl) for impl in ("python", "rust")}  # fmt: skip
+    for impl, other in (("python", "rust"), ("rust", "python")):
+        unit = render(UNITS["mc-agent.service"][0], mc_agent_implementation=impl).splitlines()
+        assert want[impl] in unit and want[other] not in unit, impl
+    tasks = yaml.safe_load((REPO / "ansible/roles/agent/tasks/main.yml").read_text())
+    block = next(t for t in tasks if t["name"] == "Install and run mc-agent")["block"]
+    unit_task = next(t for t in block if t["name"] == "Install the mc-agent unit")
+    assert unit_task["notify"] == "Restart mc-agent"
+
+
 TIMELY_UNITS = (
     "mc-agent.service",
     "mc-health.service",

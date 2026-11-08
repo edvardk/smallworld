@@ -7,10 +7,14 @@
 # v1.2.3: the base role's script install notifies this pair. A handler flush can run it before the agent role
 # installed the unit (a fresh box: the minecraft role flushes handlers mid-play), and boxes without the panel
 # (panel.mode other than cloudflare) never have it: restart only an installed mc-agent.
+# v1.4: and only one that already runs the selected implementation. On a switch (agent.implementation, or a box
+# upgrading to the rust default) the minecraft role's mid-play flush comes before the agent role rewrites the unit;
+# the unit change restarts mc-agent itself (Restart mc-agent), so the switch restarts it once, not twice.
 - name: Is mc-agent installed (its code changed)?
-  ansible.builtin.stat:
-    path: /etc/systemd/system/mc-agent.service
+  ansible.builtin.slurp:
+    src: /etc/systemd/system/mc-agent.service
   register: agent_unit_for_code_change
+  failed_when: false
   listen: mc-agent code changed
 
 - name: Restart mc-agent (its code changed)
@@ -18,5 +22,10 @@
     name: mc-agent.service
     state: restarted
     daemon_reload: true
-  when: agent_unit_for_code_change.stat.exists
+  when:
+    - agent_unit_for_code_change.content is defined
+    - agent_exec_start in (agent_unit_for_code_change.content | b64decode).splitlines()
+  vars:
+    agent_exec_start: >-
+      ExecStart={{ mc_bin_dir }}/{{ 'smallworld-agent run' if mc_agent_implementation == 'rust' else 'mc_agent.py' }}
   listen: mc-agent code changed

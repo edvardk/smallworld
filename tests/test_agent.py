@@ -1458,17 +1458,28 @@ def test_ci_gates_every_parity_scenario_on_the_rust_agent() -> None:
     assert "rust/dist/smallworld-agent-x86_64-unknown-linux-musl" in step["run"]
 
 
-def test_e2e_runs_the_agent_shards_with_the_rust_agent_too() -> None:
-    """v1.4: agent-a, agent-b and telemetry-brand again with agent.implementation rust, in the same matrix (so the
-    required `e2e` aggregator needs them), rendered into the deployment before site.yml."""
+def test_e2e_runs_the_agent_shards_with_the_python_agent_too() -> None:
+    """v1.4: every shard deploys the default (agent.implementation rust); agent-a, agent-b and telemetry-brand run
+    again with the fallback, python, in the same matrix (so the required `e2e` aggregator needs them), rendered into
+    the deployment before site.yml. agent-a scores the agent's units live in both."""
     repo = Path(__file__).parent.parent
     wf = yaml.safe_load((repo / ".github/workflows/e2e-mock.yml").read_text())
     shard = wf["jobs"]["e2e-shard"]
-    rust = {m["shard"] for m in shard["strategy"]["matrix"]["include"] if m["impl"] == "rust"}
-    assert rust == {"agent-a", "agent-b", "telemetry-brand"}
+    include = shard["strategy"]["matrix"]["include"]
+    by_impl = {impl: {m["shard"] for m in include if m["impl"] == impl} for impl in ("rust", "python")}
+    assert by_impl["rust"] == {"core", "agent-a", "agent-b", "telemetry-brand", "migrate-p16"}
+    assert by_impl["python"] == {"agent-a", "agent-b", "telemetry-brand"}
+    assert len(include) == 8
     assert "e2e-shard" in wf["jobs"]["e2e"]["needs"]
     render = next(s for s in shard["steps"] if s.get("name") == "mcctl validate + render the new config repo")
     assert render["env"]["IMPL"] == "${{ matrix.impl }}"
-    assert 'python -m mcctl config set agent.implementation rust -C "$CONFIG"' in render["run"]
+    assert (
+        'if [ "$IMPL" = python ]; then python -m mcctl config set agent.implementation python'
+        in render["run"]
+    )
+    assert "agent.implementation rust" not in render["run"]  # rust is the default: nothing to set
     assert render["run"].index("agent.implementation") < render["run"].index("mcctl render")
-    assert any("hardening_check.py /src/product --agent" in s.get("run", "") for s in shard["steps"])
+    units = next(s for s in shard["steps"] if "hardening_check.py /src/product --agent" in s.get("run", ""))
+    assert units["if"] == "matrix.shard == 'agent-a'"
+    telemetry = next(s for s in shard["steps"] if s.get("name", "").startswith("Experience telemetry checks"))
+    assert telemetry["env"]["E2E_AGENT_IMPL"] == "${{ matrix.impl }}"

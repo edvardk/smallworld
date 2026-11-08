@@ -23,11 +23,11 @@ Checks the hardening site.yml applied, on the live systemd, against the product'
     /opt/ansible/bin/python tests/e2e/hardening_check.py /src/product          # everything (core shard)
     /opt/ansible/bin/python tests/e2e/hardening_check.py /src/product --agent  # v1.4: the agent's units only
 
-v1.4 `--agent` (the e2e's rust shards): mc-agent, which runs the experience telemetry in-process in either
-implementation (no telemetry unit of its own): the exposure gate, running as mcops with the journal group, the
-telemetry's state and verdict directories in its sandbox, environment unreadable from minecraft, and the live
-process under its seccomp filter with no_new_privs and MemoryDenyWriteExecute (the Rust binary in that sandbox,
-design §5).
+v1.4 `--agent` (the e2e's agent-a shards, rust and python): mc-agent, which runs the experience telemetry
+in-process in either implementation (no telemetry unit of its own): the exposure gate, running as mcops with the
+journal group, the telemetry's state and verdict directories in its sandbox, environment unreadable from minecraft,
+and the live process under its seccomp filter with no_new_privs and MemoryDenyWriteExecute (the Rust binary in that
+sandbox, design §5).
 """
 
 from __future__ import annotations
