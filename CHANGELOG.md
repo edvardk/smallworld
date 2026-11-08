@@ -20,6 +20,9 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   user's role and is false for a GitHub App installation token, whose push comes from its contents:write grant
   (checked by the "permissions" step). It still decides with an older Worker that reports no permissions. The
   test stays read-only (mc_panel.py and the Rust agent alike).
+- The world map render (`mc-map.service`) has its 4 h cap again: `RuntimeMaxSec=` has no effect in a
+  `Type=oneshot` unit (systemd ignored it, logging so), so the unit now uses `TimeoutStartSec=4h`; a test refuses
+  `RuntimeMaxSec=` in any oneshot unit the product installs.
 
 ## [1.4.0] - 2026-11-08
 

@@ -123,10 +123,23 @@ def test_every_unit_gets_the_sandbox(unit: str) -> None:
         lines = text.splitlines()
         for directive in ("Group=minecraft", "PrivateNetwork=true", "IPAddressDeny=any", "StateDirectory=mc-map",
                           "StateDirectoryMode=0750", "UMask=0027", "RestrictAddressFamilies=AF_UNIX",
-                          "MemoryMax=512M", "RuntimeMaxSec=4h", *GROUP_VARS["mc_helper_priority"]):  # fmt: skip
+                          "MemoryMax=512M", "TimeoutStartSec=4h", *GROUP_VARS["mc_helper_priority"]):  # fmt: skip
             assert directive in lines, directive
         assert "ReadWritePaths" not in text and "SupplementaryGroups" not in text
         assert "-/etc/minecraft" in text  # the credentials' directory isn't even visible
+
+
+def test_oneshot_units_cap_their_run_with_timeout_start_sec() -> None:
+    """v1.4.1: systemd ignores RuntimeMaxSec= in a Type=oneshot unit ("has no effect in combination with
+    Type=oneshot"), so mc-map's 4 h cap did nothing; a oneshot unit caps its run with TimeoutStartSec=."""
+    units = sorted((REPO / "ansible").glob("**/templates/*.service.j2")) + sorted(
+        (REPO / "ansible").glob("**/files/*.service")
+    )
+    assert any(u.name == "mc-map.service.j2" for u in units)
+    for unit in units:
+        lines = [line.strip() for line in unit.read_text().splitlines()]
+        if "Type=oneshot" in lines:
+            assert not any(line.startswith("RuntimeMaxSec=") for line in lines), unit.name
 
 
 FENCE_HONOURING = ("minecraft.service", "mc-backup.service", "mc-prune.service", "mc-agent.service",
