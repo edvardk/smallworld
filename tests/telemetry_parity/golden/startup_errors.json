@@ -16,7 +16,10 @@
  "exits": [],
  "requests": [],
  "files": {},
- "systemd": [],
+ "systemd": {
+  "systemctl": [],
+  "journalctl": []
+ },
  "output": [
   {
    "stdout": [],

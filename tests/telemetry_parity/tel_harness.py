@@ -315,7 +315,10 @@ class TelScenario:
             "exits": self.exits,
             "requests": [self.request_entry(r, rows) for r in self.worker.requests],
             "files": self.files_trace(rows),
-            "systemd": [[c["tool"], *c["argv"]] for c in self.calls()],
+            # per tool: systemctl runs in the telemetry thread, journalctl in the overhead thread (their
+            # interleaving is timing)
+            "systemd": {tool: [c["argv"] for c in self.calls() if c["tool"] == tool]
+                        for tool in ("systemctl", "journalctl")},
             "output": [{"stdout": [norm_line(x) for x in p.stdout], "stderr": [norm_line(x) for x in p.stderr]}
                        for p in self.procs],
         }  # fmt: skip

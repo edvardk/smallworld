@@ -185,17 +185,17 @@
        "stored_bytes": 0
       },
       "stats": {
-       "aaaaaaaa-1111-4111-8111-111111111111": {
-        "play_ticks": 1000,
-        "deaths": 0,
+       "bbbbbbbb-2222-4222-8222-222222222222": {
+        "play_ticks": 2000,
+        "deaths": 3,
         "mob_kills": 0,
         "walk_cm": 12345,
         "sprint_cm": 0,
         "jumps": 7
        },
-       "bbbbbbbb-2222-4222-8222-222222222222": {
-        "play_ticks": 2000,
-        "deaths": 3,
+       "aaaaaaaa-1111-4111-8111-111111111111": {
+        "play_ticks": 1000,
+        "deaths": 0,
         "mob_kills": 0,
         "walk_cm": 12345,
         "sprint_cm": 0,
@@ -582,86 +582,83 @@
    }
   }
  },
- "systemd": [
-  [
-   "systemctl",
-   "is-active",
-   "mc-backup.service",
-   "mc-restore-apply.service",
-   "mc-prune.service"
+ "systemd": {
+  "systemctl": [
+   [
+    "is-active",
+    "mc-backup.service",
+    "mc-restore-apply.service",
+    "mc-prune.service"
+   ],
+   [
+    "show",
+    "-p",
+    "Id",
+    "-p",
+    "CPUUsageNSec",
+    "-p",
+    "MemoryCurrent",
+    "-p",
+    "MemoryPeak",
+    "-p",
+    "IOReadBytes",
+    "-p",
+    "IOWriteBytes",
+    "minecraft.service",
+    "mc-agent.service",
+    "mc-telemetry.service"
+   ],
+   [
+    "is-active",
+    "mc-backup.service",
+    "mc-restore-apply.service",
+    "mc-prune.service"
+   ],
+   [
+    "show",
+    "-p",
+    "Id",
+    "-p",
+    "CPUUsageNSec",
+    "-p",
+    "MemoryCurrent",
+    "-p",
+    "MemoryPeak",
+    "-p",
+    "IOReadBytes",
+    "-p",
+    "IOWriteBytes",
+    "minecraft.service",
+    "mc-agent.service",
+    "mc-telemetry.service"
+   ],
+   [
+    "is-active",
+    "mc-backup.service",
+    "mc-restore-apply.service",
+    "mc-prune.service"
+   ],
+   [
+    "show",
+    "-p",
+    "Id",
+    "-p",
+    "CPUUsageNSec",
+    "-p",
+    "MemoryCurrent",
+    "-p",
+    "MemoryPeak",
+    "-p",
+    "IOReadBytes",
+    "-p",
+    "IOWriteBytes",
+    "minecraft.service",
+    "mc-agent.service",
+    "mc-telemetry.service"
+   ]
   ],
-  [
-   "systemctl",
-   "show",
-   "-p",
-   "Id",
-   "-p",
-   "CPUUsageNSec",
-   "-p",
-   "MemoryCurrent",
-   "-p",
-   "MemoryPeak",
-   "-p",
-   "IOReadBytes",
-   "-p",
-   "IOWriteBytes",
-   "minecraft.service",
-   "mc-agent.service",
-   "mc-telemetry.service"
-  ],
-  [
-   "systemctl",
-   "is-active",
-   "mc-backup.service",
-   "mc-restore-apply.service",
-   "mc-prune.service"
-  ],
-  [
-   "systemctl",
-   "show",
-   "-p",
-   "Id",
-   "-p",
-   "CPUUsageNSec",
-   "-p",
-   "MemoryCurrent",
-   "-p",
-   "MemoryPeak",
-   "-p",
-   "IOReadBytes",
-   "-p",
-   "IOWriteBytes",
-   "minecraft.service",
-   "mc-agent.service",
-   "mc-telemetry.service"
-  ],
-  [
-   "systemctl",
-   "is-active",
-   "mc-backup.service",
-   "mc-restore-apply.service",
-   "mc-prune.service"
-  ],
-  [
-   "systemctl",
-   "show",
-   "-p",
-   "Id",
-   "-p",
-   "CPUUsageNSec",
-   "-p",
-   "MemoryCurrent",
-   "-p",
-   "MemoryPeak",
-   "-p",
-   "IOReadBytes",
-   "-p",
-   "IOWriteBytes",
-   "minecraft.service",
-   "mc-agent.service",
-   "mc-telemetry.service"
-  ]
- ],
+  "journalctl": []
+ },
  "output": [
   {
    "stdout": [
