@@ -17,6 +17,12 @@ exclude it.
 Snapshots normally come from the server (tag "auto"), but any snapshot in the repository works
 (e.g. a world imported by hand with `restic backup`): its own root path is restored, so it can be
 taken from any directory.
+A live restore keeps every top-level entry the snapshot doesn't have, with one exception: when the snapshot's
+world uses the 26.x layout (<level>/dimensions/...) and the server dir still has pre-26 <level>_nether/ or
+<level>_the_end/ folders with region files, those are moved (never deleted) into the safety area
+<server dir>/.restore-staging/aside/<UTC time>/ (excluded from backups), and the move is logged: the server
+would merge their old chunks in or refuse to start.
+
 Prints RESTORED / SKIPPED / NO_SNAPSHOT / VERIFIED on the last line for automation.
 
 A live restore holds an exclusive flock on /var/lib/minecraft/restore.lock for its whole run: health.py's
@@ -57,6 +63,7 @@ from typing import Any
 import backup
 import mc_rcon
 import notify
+import worlds
 from backup import EXCLUDE_PATTERNS
 
 SERVER_DIR = mc_rcon.SERVER_DIR
@@ -67,6 +74,10 @@ APPLY_UNIT = "mc-restore-apply.service"
 SERVER_GROUP = "minecraft"
 MARKER = ".restored-from"
 MARKER_KEYS = ("snapshot_id", "short_id", "snapshot_time", "source_path", "restored_at")
+# The safety area for folders a live restore moves out of the way (stale_legacy_worlds): inside the server dir
+# (mc-restore-apply.service writes only there; a rename, never a copy) and under a path backups exclude
+# (backup.EXCLUDE_PATTERNS), so no snapshot carries those chunks and no later restore clears them.
+ASIDE_DIR = ".restore-staging/aside"
 
 
 def restic_json(*args: str) -> Any:  # noqa: ANN401 - restic JSON
@@ -283,10 +294,12 @@ def apply_staged() -> dict[str, str]:
     if not is_real_dir(STAGING):
         raise SystemExit(f"nothing staged in {STAGING}")
     SERVER_DIR.mkdir(parents=True, exist_ok=True)
-    # Replace each top-level entry the snapshot has; anything else (e.g. a world moved aside) stays.
+    # Replace each top-level entry the snapshot has; anything else (e.g. a world moved aside) stays, except
+    # stale pre-26 dimension folders next to a 26.x world, which go to the safety area (stale_legacy_worlds).
     for entry in STAGING.iterdir():
         clear_except_excluded(SERVER_DIR / entry.name, SERVER_DIR)
     copy_into(STAGING, SERVER_DIR)
+    stale_legacy_worlds(STAGING, SERVER_DIR, level_name("world", SERVER_DIR))
     # Backups exclude logs/, but the JVM's -Xlog:gc:file=logs/gc.log refuses to start without it.
     (SERVER_DIR / "logs").mkdir(mode=0o750, exist_ok=True)
     path = SERVER_DIR / MARKER
@@ -294,6 +307,48 @@ def apply_staged() -> dict[str, str]:
     tmp.write_text(json.dumps(record, sort_keys=True) + "\n")
     tmp.replace(path)
     return record
+
+
+def stale_legacy_worlds(snapshot: Path, root: Path, level: str, now: datetime | None = None) -> list[Path]:
+    """After the snapshot (staged in `snapshot`) is copied into root: when its world uses the 26.x layout
+    (every dimension under <level>/dimensions/, worlds.check_layout) but root still has pre-26
+    <level>_nether/ or <level>_the_end/ folders with region files (the snapshot doesn't have them, so the copy
+    kept them), move those into the safety area (ASIDE_DIR/<UTC time>/). Paper would otherwise merge their
+    old chunks into the restored world at start-up or refuse to start ("already exists"). Never deletes;
+    returns where they went."""
+    try:
+        layout, _, _ = worlds.check_layout(snapshot, level)
+    except worlds.WorldError:
+        return []  # the snapshot itself mixes both layouts: restored as it is, nothing to decide here
+    if layout != "26.x" or not worlds.region_dims(snapshot, level)["26.x"]:
+        return []  # a pre-26 world (Paper migrates its folders) or no region files at all
+    # root's <level>/ is the snapshot's now, so its pre-26 dimensions can only be the split folders'.
+    dims = worlds.region_dims(root, level)
+    stale_dims = dict(zip(worlds.LEGACY_SUFFIXES, ("minecraft:the_nether", "minecraft:the_end"), strict=True))
+    stale = [
+        root / f"{level}{suffix}"
+        for suffix, dim in stale_dims.items()
+        if dim in dims["pre-26"] and is_real_dir(root / f"{level}{suffix}")
+    ]
+    if not stale:
+        return []
+    stamp = (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ")
+    dest, n = root / ASIDE_DIR / stamp, 1
+    while dest.exists():
+        n += 1
+        dest = root / ASIDE_DIR / f"{stamp}-{n}"
+    dest.mkdir(mode=0o750, parents=True)
+    moved = []
+    for folder in stale:
+        folder.rename(dest / folder.name)
+        moved.append(dest / folder.name)
+        print(
+            f"moved stale pre-26 folder {folder.name}/ (region files) aside to "
+            f"{(dest / folder.name).relative_to(root)}: the restored world uses the 26.x layout "
+            f"({level}/dimensions/), and the server would merge or refuse it at start-up",
+            flush=True,
+        )
+    return moved
 
 
 PANEL_STEPS = 6

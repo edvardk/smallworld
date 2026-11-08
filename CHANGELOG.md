@@ -68,6 +68,11 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   instead of every 4 ticks (5 times a second). It still costs nothing while nobody moves, and the boss bar is
   only resent when the line actually changed. The line is drawn by the server, so it trails a turn by the
   player's ping.
+- A live restore of a 26.x world (every dimension under `<level>/dimensions/`) no longer leaves stale pre-26
+  `<level>_nether/` or `<level>_the_end/` folders with region files next to it, which the server would merge
+  into the restored world or refuse to start over ("already exists"): `restore.py` moves them (never deletes
+  them) to `<server dir>/.restore-staging/aside/<UTC time>/`, which backups exclude, and logs the move. Pre-26
+  snapshots and folders without region files are left as before.
 
 ## [1.4.0] - 2026-11-08
 
