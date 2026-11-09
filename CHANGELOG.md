@@ -11,7 +11,11 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 - The v1.5.0 auto-release stopped after `autotag.yml` had created the tag: `ci.yml`'s `gitleaks` job (called by
   `release.yml`) got one HTTP 504 downloading the pinned gitleaks release, so the GitHub release was skipped.
   Every pinned download in the workflows (gitleaks in `ci.yml` and the reusable `server.yml`, cargo-deny,
-  restic) now retries transient errors (`curl --retry 5 --retry-all-errors`); [reference: Releasing](docs/reference.md#releasing)
+  restic) now retries transient errors (`curl --retry 5 --retry-all-errors`), and so does every pinned artifact
+  the scripts fetch (`scripts/lockfile.py` `http_get`, used by `build_plugin.py`'s JDK, `build_client_mod.py`,
+  `map_palette.py`, `config_keys.py` and the lock tools): 5 attempts on 5xx, 429, network errors and timeouts,
+  backoff 2/4/8/16 s or the server's Retry-After, never on a 404 or other 4xx; hashes are still checked. The Rust
+  job raises rustup's, cargo's and apt's retry counts to 5. [reference: Releasing](docs/reference.md#releasing)
   says how to finish a release whose tag exists (re-run the autotag run's failed jobs).
 - `mcctl product-setup` no longer wants a `v*` tag *creation* ruleset (GitHub refused the GitHub Actions app as
   its bypass actor with 422 on a personal repository): the `v*` tag ruleset restricts only moving and deleting
