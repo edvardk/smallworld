@@ -551,7 +551,16 @@ def test_product_upgrade_routes_only_a_pure_patch_bump_through_the_gate(
 def _with_v141_client_lock(ctx: init.Ctx) -> None:
     shutil.copy(V141_CLIENT_LOCK, ctx.root / configrepo.CLIENT_LOCK)
     git(ctx.root, "add", configrepo.CLIENT_LOCK)
-    git(ctx.root, "commit", "-qm", "client lock (v1.4.1's: mod 1.0.0)")
+    git(
+        ctx.root,
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t.test",
+        "commit",
+        "-qm",
+        "client lock (v1.4.1's: mod 1.0.0)",
+    )
     ctx.deps.tools.origin_main = git(ctx.root, "rev-parse", "HEAD").strip()  # type: ignore[attr-defined]
 
 
