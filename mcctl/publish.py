@@ -186,6 +186,7 @@ class Tools:
 
     online: Online = probe_status
     product: upgrade.ProductRunner = upgrade.run_in_product
+    release: upgrade.ReleaseRoot = upgrade.release_root  # v1.5.1: a release's checkout (in-house mod entries)
     whitelist: Callable[[init.Ctx, ServerConfig], LiveWhitelist] = live_whitelist
     max_wait_minutes: int = WAIT_EMPTY_MINUTES
 

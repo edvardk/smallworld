@@ -27,6 +27,14 @@ it the sender of the `synchronize` event, so the gate fails. A branch of a fork 
   the gate job itself runs the reusable workflow named by the PR head's `uses:` line, so for a product bump
   the new product version judges its own pull request; the tag check above is what binds it to a real
   release (SECURITY.md).
+- v1.5.1: the same product patch bump plus client.lock.yml, when the lock's only change is its in-house
+  entries (`source: inhouse`, the Smallworld client mod) and each is exactly the entry the new release
+  ships in its own template/client.lock.yml, read through the contents API at the tag-verified commit and
+  checked against the jar there (`clientpack.release_inhouse`, `inhouse_change_errors`). The in-house jar
+  is committed in the product repository at that tag, so it is exactly as trusted as the pin itself; a
+  release that bumps the mod would otherwise turn every patch bump into an admin merge (and its pin-only
+  PR fails validate: v1.4.1 -> v1.5.0, mod 1.0.0 -> 1.1.0). Anything else in the lock (a Modrinth entry,
+  the loader, the Minecraft version, the set of entries) still needs the admin.
 
 Anything else fails with "needs the admin" (who merges with the ruleset bypass). `automation.auto_merge` and
 the App slugs are read from the BASE (a PR can't raise its own level or name another App).
@@ -45,12 +53,14 @@ from pathlib import Path
 
 import yaml
 
-from mcctl import configrepo, http, panelpr, schema
+from mcctl import clientpack, configrepo, http, panelpr, schema, updates
+from mcctl.providers import ProviderError
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 LOCKS = {configrepo.SERVER_LOCK, configrepo.PLUGINS_LOCK, configrepo.CLIENT_LOCK}  # v1.1: + the client pack
 PANEL_PREFIX, UPDATE_PREFIX = "panel/", "update/"
 WORKFLOW = ".github/workflows/server.yml"
+PRODUCT_WITH_LOCK = sorted([WORKFLOW, configrepo.CLIENT_LOCK])  # v1.5.1: + the in-house client mod entries
 PATCH = re.compile(r"v(\d+)\.(\d+)\.(\d+)")
 
 
@@ -166,6 +176,32 @@ def check_product_bump(old_text: str, new_text: str, token: str, transport: http
     return []
 
 
+def check_inhouse_refresh(
+    root: Path, base: str, head: str, new_text: str, token: str, transport: http.Transport, run: Runner
+) -> list[str]:
+    """client.lock.yml moved only its in-house entries, each exactly the new release's (v1.5.1)."""
+    pin = configrepo.read_pin(new_text)[0]
+    if pin is None:
+        return [f"{WORKFLOW}: no pin"]
+    try:
+        base_lock, head_lock = (
+            _git(root, run, "show", f"{ref}:{configrepo.CLIENT_LOCK}") for ref in (base, head)
+        )
+    except ValueError as e:
+        return [f"{configrepo.CLIENT_LOCK} must exist on both sides: {e}"]
+    try:
+        read = updates.release_reader(pin.repository, pin.sha, token, transport)
+        entries = clientpack.release_inhouse(read)
+    except (clientpack.PackError, ProviderError, http.HttpError) as e:
+        return [f"{configrepo.CLIENT_LOCK}: couldn't read {pin.version}'s in-house client mods: {e}"]
+    if not entries:
+        return [
+            f"{configrepo.CLIENT_LOCK} changed, but {pin.version} ships no in-house client mod: "
+            "needs the admin"
+        ]
+    return clientpack.inhouse_change_errors(base_lock, head_lock, entries)
+
+
 def check_locks(
     root: Path, base: str, head: str, run: Runner, verify: Callable[[Path, Path], list[str]]
 ) -> list[str]:
@@ -222,6 +258,7 @@ def evaluate(
     if not changed:
         return Verdict("admin", ["the pull request changes nothing"])
     level = auto_merge_level(root, base, run)
+    product = changed in ([WORKFLOW], PRODUCT_WITH_LOCK)
     if changed == [configrepo.PLAYERS_YML]:
         if not head_ref.startswith(PANEL_PREFIX):
             return Verdict(
@@ -234,7 +271,7 @@ def evaluate(
         if reasons := check_app(root, base, run, "panel_app", author, sender):
             return Verdict("worlds", reasons)
         return Verdict("worlds", panelpr.check_world(root, base, head, run))
-    if (set(changed) <= LOCKS or changed == [WORKFLOW]) and not head_ref.startswith(UPDATE_PREFIX):
+    if (set(changed) <= LOCKS or product) and not head_ref.startswith(UPDATE_PREFIX):
         return Verdict(
             "admin",
             [
@@ -242,7 +279,7 @@ def evaluate(
                 "needs the admin"
             ],
         )
-    if set(changed) <= LOCKS or changed == [WORKFLOW]:
+    if set(changed) <= LOCKS or product:
         policy = "builds" if set(changed) <= LOCKS else "product"
         if reasons := check_app(root, base, run, "updater_app", author, sender):
             return Verdict(policy, reasons)
@@ -253,14 +290,18 @@ def evaluate(
             return Verdict("builds", check_locks(root, base, head, run, verify))
         except ValueError as e:
             return Verdict("builds", [str(e)])
-    if changed == [WORKFLOW]:
+    if product:
         if level != "builds+patch":
             return Verdict("product", [f"automation.auto_merge is {level}: product updates need the admin"])
         try:
             old, new = (_git(root, run, "show", f"{ref}:{WORKFLOW}") for ref in (base, head))
         except ValueError as e:
             return Verdict("product", [str(e)])
-        return Verdict("product", check_product_bump(old, new, product_token, transport))
+        reasons = check_product_bump(old, new, product_token, transport)
+        if reasons or changed == [WORKFLOW]:
+            return Verdict("product", reasons)
+        lock = check_inhouse_refresh(root, base, head, new, product_token, transport, run)
+        return Verdict("product", lock)
     return Verdict(
         "admin", [f"needs the admin (merge with the ruleset bypass): it changes {', '.join(changed)}"]
     )

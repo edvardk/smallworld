@@ -12,18 +12,22 @@ Terraform or any Cloudflare credential (the Worker stays a local step):
 - the job then checks the **target** release out and runs its `mcctl schema-migrate --from <old>` and
   `mcctl validate` on that checkout (as `mcctl upgrade` does from a laptop; the target is a tag of the same
   product repository, the code the pin is about to run anyway).
-- `prepared` (same job): which files changed (the workflow, server.yml) and whether the Worker's inputs
-  changed between the two releases (`worker_diff`: the files Terraform reads for the Worker and the panel,
-  compared by content); both go to the next job as outputs.
+- `inhouse` (same job, v1.5.1, before the target's validate): client.lock.yml's in-house entries (the
+  Smallworld client mod) taken from the target checkout (`clientpack.refresh_lock_file`), so a release that
+  ships a new mod build validates and pins it in the same pull request (live: v1.4.1 -> v1.5.0).
+- `prepared` (same job): which files changed (the workflow, server.yml, v1.5.1: client.lock.yml) and
+  whether the Worker's inputs changed between the two releases (`worker_diff`: the files Terraform reads
+  for the Worker and the panel, compared by content); both go to the next job as outputs.
 - `pr` (job `product-update-pr`, a fresh runner; the updater GitHub App's key in that one step's env): the
   pin pull request on `update/product-vX.Y.Z`, the branch the weekly updater uses, so the two never collide.
   An open pull request for the release is **reused**: the updater's `update/product-vX.Y.Z` (brought up to
   date with the target's migration when it lacks it) or the admin's `upgrade/product-vX.Y.Z` from
   `mcctl upgrade` (left as it is: the App can't write there). A leftover branch without an open pull
   request is reset to main first. Who merges is unchanged: auto-merge only for a pure patch bump (only the
-  `uses:` line, `automation.auto_merge: builds+patch`, `github.protect_main`), which `server / gate` checks
-  again; anything else waits for the admin. The summary (`$GITHUB_STEP_SUMMARY`) names the old and new
-  version, the pull request and its state, and the exact local command when the Worker changed.
+  `uses:` line, v1.5.1: plus client.lock.yml's in-house entries; `automation.auto_merge: builds+patch`,
+  `github.protect_main`), which `server / gate` checks again (the in-house entries against the release);
+  anything else waits for the admin. The summary (`$GITHUB_STEP_SUMMARY`) names the old and new version,
+  the pull request and its state, and the exact local command when the Worker changed.
 - `previous-pin` (validate) and `deploy-summary` (deploy, always): a push that moved the pin gets the same
   summary on its deploy run, with the deploy's result.
 
@@ -42,7 +46,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from mcctl import configrepo, gate, ghapp, http, updates
+from mcctl import clientpack, configrepo, gate, ghapp, http, updates
 from mcctl.providers import ProviderError
 
 WORKFLOW = configrepo.WORKFLOW
@@ -283,7 +287,12 @@ def pr_body(target: Target, changed: Sequence[str], auto: bool, why: str, worker
         if target.patch
         else "A minor/major release (new features, possibly new server.yml fields)."
     )
-    migrated = [c for c in changed if c != WORKFLOW]
+    migrated = [c for c in changed if c not in (WORKFLOW, configrepo.CLIENT_LOCK)]
+    mods = (
+        f" client.lock.yml takes {target.new}'s in-house client mod entries (the release's own jar)."
+        if configrepo.CLIENT_LOCK in changed
+        else ""
+    )
     todo = (
         "Nothing: it merges by itself once `server / gate` passes (automation.auto_merge builds+patch), and "
         "the merge deploys."
@@ -305,7 +314,7 @@ def pr_body(target: Target, changed: Sequence[str], auto: bool, why: str, worker
         f"{target.new}'s `mcctl schema-migrate --from {target.migrate_from}` and `mcctl validate` ran on "
         "this change (Actions: the manual product-update run)"
         + (f"; the migration also changed {', '.join(migrated)}." if migrated
-           else "; only the pin moved."), "",
+           else "; only the pin moved.") + mods, "",
         "**What it means for players:** usually nothing they notice; if the deploy changes a setting that "
         "needs a restart, the server restarts once with an in-game countdown.", "",
         f"**What to do:** {todo}", "",
@@ -333,6 +342,11 @@ def open_or_reuse(
         got = repo.file(name, "main")
         main_text[name] = got[0] if got else None
     changed = sorted(n for n, t in files.items() if main_text[n] != t)
+    lock = configrepo.CLIENT_LOCK
+    lock_main = main_text.get(lock)
+    lock_ok = lock not in changed or (  # v1.5.1: only the in-house entries (the gate checks them exactly)
+        lock_main is not None and not clientpack.inhouse_change_errors(lock_main, files[lock])
+    )
     wf_main = main_text.get(WORKFLOW)
     try:
         pure = wf_main is not None and files[WORKFLOW] == updates.bump_pin(
@@ -343,7 +357,7 @@ def open_or_reuse(
     reasons = []
     if not target.patch:
         reasons.append(f"{target.old} -> {target.new} is a minor/major release")
-    if changed != [WORKFLOW] or not pure:
+    if [c for c in changed if c != lock] != [WORKFLOW] or not pure or not lock_ok:
         reasons.append(f"{target.new}'s migration changes more than the `uses:` line ({', '.join(changed)})")
     if auto_merge != "builds+patch":
         reasons.append(f"automation.auto_merge is {auto_merge}")
@@ -410,7 +424,11 @@ def run_pr(
     if not re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9._-]+", repository):
         raise ProviderError("GITHUB_REPOSITORY isn't owner/repo")
     files = {}
-    for name, var in ((WORKFLOW, "PREPARED_WORKFLOW"), (configrepo.SERVER_YML, "PREPARED_SERVER_YML")):
+    for name, var in (
+        (WORKFLOW, "PREPARED_WORKFLOW"),
+        (configrepo.SERVER_YML, "PREPARED_SERVER_YML"),
+        (configrepo.CLIENT_LOCK, "PREPARED_CLIENT_LOCK"),  # v1.5.1: the in-house mod entries
+    ):
         if raw := env.get(var, ""):
             files[name] = base64.b64decode(raw).decode()
     cfg = configrepo.load(config_dir).server

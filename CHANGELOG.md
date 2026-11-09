@@ -8,6 +8,21 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ### Fixed
 
+- A product release that ships a new build of the in-house Smallworld client mod no longer breaks the pin move.
+  Live: v1.5.0 shipped mod 1.1.0 while the config repo's `client.lock.yml` pinned 1.0.0, so `mcctl rollout`'s
+  validate failed ("pins another build than the product's client/mod/dist/smallworld.jar") and `mcctl lock
+  update` couldn't fix it (it runs as the old pin, which knows only 1.0.0). Now whatever moves the pin, `mcctl
+  upgrade`, `mcctl rollout`, the update button (task `product-update`, new step `mcctl product-update inhouse`)
+  and the weekly product update, also copies the target release's `source: inhouse` entries into
+  `client.lock.yml` in the same commit or pull request, before the target's validate. The entries come from the
+  target release's own `template/client.lock.yml` (checked against its jar; tests keep it equal to what its lock
+  tool writes): from its checkout, or for the weekly job through the contents API with the read-only product
+  token. `server / gate` (decision in SECURITY.md, "The in-house client mod moves with the pin") still
+  auto-merges such a patch bump when the lock's only change is those entries and each is exactly the new
+  release's (read at the tag-verified commit); any other lock change needs the admin. The fix runs in the code of
+  the pin you move from, so it applies from v1.5.1 on ([operations: The update
+  button](docs/operations.md#the-update-button-v15)).
+
 - The v1.5.0 auto-release stopped after `autotag.yml` had created the tag: `ci.yml`'s `gitleaks` job (called by
   `release.yml`) got one HTTP 504 downloading the pinned gitleaks release, so the GitHub release was skipped.
   Every pinned download in the workflows (gitleaks in `ci.yml` and the reusable `server.yml`, cargo-deny,

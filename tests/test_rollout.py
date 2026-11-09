@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
 import subprocess
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
@@ -13,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from conftest import Replay, make_config_repo
+from conftest import REPO, V141_CLIENT_LOCK, Replay, fake_release, make_config_repo
 
 from mcctl import cli, configrepo, init, publish, remote, rollout, schema, updates, upgrade
 from mcctl.mock import GIT_IDENTITY
@@ -210,6 +211,32 @@ def test_a_minor_release_end_to_end(env: dict[str, Any]) -> None:
     assert all(sha == NEW_SHA for sha, _ in product.calls)
     assert product.calls[-1][1] == ["apply", "-C", str(root)]  # no --yes, ever
     assert "gho_fake" not in text
+
+
+def test_a_release_with_a_new_in_house_mod_rolls_out_with_its_lock_entry(env: dict[str, Any]) -> None:
+    """v1.5.1, the live v1.4.1 -> v1.5.0 case: client.lock.yml pins mod 1.0.0, the release ships 1.1.0. The pin
+    PR carries the release's entry (before its validate), so the merge deploys a lock that validates."""
+    root = env["root"]
+    shutil.copy(V141_CLIENT_LOCK, root / configrepo.CLIENT_LOCK)
+    git(root, "add", configrepo.CLIENT_LOCK)
+    git(root, "commit", "-qm", "client lock (v1.4.1's)")
+    git(root, "push", "-q", "origin", "main")
+    ctx, fake, tools, product, out = make(env, {"confirm_rollout_merge": "v9.0.0", "rollout_apply": False})
+    release = fake_release(env["tmp"] / "v9.0.0")
+    v150 = (REPO / "template/client.lock.yml").read_text()
+    locks: list[str] = []
+
+    def runner(pin: configrepo.Pin, args: Sequence[str]) -> int:
+        if args[0] == "validate":
+            locks.append((root / configrepo.CLIENT_LOCK).read_text())
+        return product(pin, args)
+
+    tools = publish.Tools(online=tools.online, product=runner, release=lambda pin: release)
+    assert rollout.run(ctx, tools=tools) == 0, out.getvalue()
+    assert locks == [v150] and "smallworld 1.0.0 -> 1.1.0" in out.getvalue()
+    assert git(root, "rev-parse", "HEAD") == fake.merged
+    assert (root / configrepo.CLIENT_LOCK).read_text() == v150  # merged with the pin, pulled back
+    assert product.commands() == ["schema-migrate", "validate", "render", "plan"]
 
 
 def test_no_typed_merge_no_merge_no_terraform(env: dict[str, Any]) -> None:

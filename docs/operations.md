@@ -440,13 +440,14 @@ server > Run workflow**, branch `main`, task **`product-update`**, product_versi
 
 1. It resolves the release (`latest` = the newest one). Already pinned there: the run's summary says
    "nothing to do" and that's all. Older than the pin: refused.
-2. It moves the pin and runs the **target release's** `mcctl schema-migrate` and `mcctl validate` on the change
-   (what `mcctl upgrade` does from your computer).
+2. It moves the pin, takes the target release's in-house client mod entries into `client.lock.yml` (v1.5.1, see
+   below), and runs the **target release's** `mcctl schema-migrate` and `mcctl validate` on the change (what
+   `mcctl upgrade` does from your computer).
 3. It opens the pin pull request on `update/product-vX.Y.Z`, or **reuses** the open one for that release (the
    weekly updater's, updated with the migration if it lacks it, or yours from `mcctl upgrade` on
    `upgrade/product-vX.Y.Z`, left untouched).
-   - **Patch release**, only the `uses:` line changed: auto-merge is on; `server / gate` checks the tag and
-     merges it, and the merge deploys.
+   - **Patch release**, only the `uses:` line changed (and, v1.5.1, the in-house client mod entries): auto-merge
+     is on; `server / gate` checks the tag and merges it, and the merge deploys.
    - **Minor or major** (or a migration that changes more): the run stops at "pull request opened", **waiting
      for your merge** (merge it as admin on GitHub, or run the local command below, which merges after you type
      the tag).
@@ -462,6 +463,19 @@ server > Run workflow**, branch `main`, task **`product-update`**, product_versi
 - unchanged: no local step (the panel's Versions row shows the Worker one version behind until your next
   `mcctl render` + `mcctl apply`; that is only the version stamp);
 - couldn't compare: the same command, "run it if the panel or Worker changed".
+
+**The client mod moves with the pin (v1.5.1).** The Smallworld client mod is part of the product (its jar is
+committed in the product repository), so a release can ship a new build of it, as v1.5.0 did (mod 1.1.0). Your
+`client.lock.yml` must then pin the new jar's hashes, and only the new release knows them. Whatever moves the pin
+(`mcctl upgrade`, `mcctl rollout`, the button above, the weekly product update) therefore copies the target
+release's in-house entries (`source: inhouse`, from that release's own `template/client.lock.yml`, checked against
+its jar) into `client.lock.yml` in the same pull request, before the target release's validate. Nothing else in the
+lock changes (Modrinth mods still update through the weekly lock update). `server / gate` lets a patch bump that
+carries such a refresh merge by itself, but only if the lock's in-house entries are exactly the new release's and
+nothing else in the lock changed ([security](../SECURITY.md#the-panels-github-app)). Before v1.5.1 the old pin's
+code did the move and knew nothing of the new mod: v1.4.1 -> v1.5.0 failed validate with "pins another build than
+the product's client/mod/dist/smallworld.jar" until the entry was copied by hand. The fix runs in the code of the
+pin you move **from**, so it applies to moves from v1.5.1 on.
 
 **Getting the button.** Your config repo's workflow is a copy of the template, and a pin pull request changes
 only its `uses:` line, so the new task and input arrive with the upgrade to v1.5: `mcctl upgrade` / `mcctl

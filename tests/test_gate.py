@@ -3,6 +3,7 @@ verification of lock updates (scripts/verify_lock_update.py). No network: git re
 
 from __future__ import annotations
 
+import base64
 import copy
 import hashlib
 import json
@@ -13,9 +14,9 @@ from typing import Any
 import pytest
 import verify_lock_update as vlu
 import yaml
-from conftest import REPO
+from conftest import MOD_JAR, REPO, V141_CLIENT_LOCK
 
-from mcctl import gate, http
+from mcctl import clientpack, gate, http
 
 A = "3f2a0000-0000-4000-8000-000000000c41"
 B = "5c090000-0000-4000-8000-00000000e212"
@@ -194,6 +195,98 @@ def test_product_bumps_need_builds_plus_patch(repo) -> None:
     head = commit(root, {".github/workflows/server.yml": WF.format(sha=NEW_SHA, v="v1.2.4")})
     v = evaluate(root, base, head, transport=tags(), head_ref="update/lock-1")
     assert not v.ok and "auto_merge is builds" in v.reasons[0]
+
+
+# --- v1.5.1: a patch bump that also moves the in-house client mod entries to the new release's --------------
+
+V150_LOCK = (REPO / "template/client.lock.yml").read_text()  # v1.5.0's: mod 1.1.0
+
+
+def release(files: dict[str, bytes] | None = None, sha: str = NEW_SHA) -> http.Transport:
+    """tags() plus the contents API of the release at `sha` (default: v1.5.0's template lock and mod jar)."""
+    files = files if files is not None else {
+        "template/client.lock.yml": V150_LOCK.encode(), MOD_JAR: (REPO / MOD_JAR).read_bytes(),
+    }  # fmt: skip
+    tag = tags(sha)
+
+    def transport(req: http.Request) -> http.Response:
+        prefix = "https://api.github.com/repos/edvardk/smallworld/contents/"
+        if req.url.startswith(prefix):
+            path, _, ref = req.url.removeprefix(prefix).partition("?ref=")
+            if ref == sha and path in files:
+                body = {"encoding": "base64", "content": base64.b64encode(files[path]).decode()}
+                return http.Response(200, {}, json.dumps(body).encode())
+            return http.Response(404, {}, b'{"message": "Not Found"}')
+        return tag(req)
+
+    return transport
+
+
+@pytest.fixture
+def lock_repo(repo) -> tuple[Path, str]:
+    """The base pins v1.2.3 with v1.4.1's client.lock.yml (the live config repo: mod 1.0.0)."""
+    root, _ = repo
+    git(root, "checkout", "-q", "main")
+    base = commit(root, {"client.lock.yml": V141_CLIENT_LOCK.read_text()})
+    git(root, "checkout", "-qb", "bump")
+    return root, base
+
+
+def test_a_patch_bump_with_the_releases_in_house_entries_passes(lock_repo) -> None:
+    """The decision (gate docstring, SECURITY.md): the in-house jar is the product's own, committed at the tag
+    the gate already verifies, so moving its entries to exactly the new release's is as safe as the pin."""
+    root, base = lock_repo
+    wf = WF.format(sha=NEW_SHA, v="v1.2.4")
+    head = commit(root, {".github/workflows/server.yml": wf, "client.lock.yml": V150_LOCK})
+    v = evaluate(root, base, head, transport=release(), head_ref="update/product-v1.2.4")
+    assert v.ok and v.policy == "product", v.reasons
+    # the same lock change with a minor bump, or from another branch/App: the admin
+    git(root, "checkout", "-q", "main")
+    git(root, "checkout", "-qb", "minor")
+    minor = commit(root, {".github/workflows/server.yml": WF.format(sha=NEW_SHA, v="v1.3.0"),
+                          "client.lock.yml": V150_LOCK})  # fmt: skip
+    v = evaluate(root, base, minor, transport=release(), head_ref="update/product-v1.3.0")
+    assert not v.ok and "isn't a patch release" in v.reasons[0]
+    v = evaluate(root, base, head, transport=release(), head_ref="feature/x")
+    assert not v.ok and v.policy == "admin"
+    v = evaluate(root, base, head, transport=release(), head_ref="update/product-v1.2.4", author="octocat")
+    assert not v.ok and "octocat" in v.reasons[0]
+
+
+def test_in_house_entries_that_arent_the_releases_need_the_admin(lock_repo) -> None:
+    root, base = lock_repo
+    wf = WF.format(sha=NEW_SHA, v="v1.2.4")
+    lock = yaml.safe_load(V150_LOCK)
+    next(f for f in lock["files"] if f["slug"] == "smallworld")["sha256"] = "0" * 64  # someone's own jar
+    forged = commit(root, {".github/workflows/server.yml": wf, "client.lock.yml": yaml.safe_dump(lock)})
+    v = evaluate(root, base, forged, transport=release(), head_ref="update/product-v1.2.4")
+    assert not v.ok and "isn't exactly the new release's entry" in " ".join(v.reasons)
+    # a Modrinth entry riding along
+    lock = yaml.safe_load(V150_LOCK)
+    next(f for f in lock["files"] if f["slug"] == "sodium")["url"] = "https://cdn.modrinth.com/data/evil.jar"
+    other = commit(root, {"client.lock.yml": yaml.safe_dump(lock, sort_keys=False)})
+    v = evaluate(root, base, other, transport=release(), head_ref="update/product-v1.2.4")
+    assert not v.ok and "isn't an in-house mod" in " ".join(v.reasons)
+    # the release's entries are read at the tag-verified commit: the tag pointing elsewhere stops it first
+    good = commit(root, {"client.lock.yml": V150_LOCK})
+    v = evaluate(root, base, good, transport=release(sha="d" * 40), head_ref="update/product-v1.2.4")
+    assert not v.ok and "doesn't point at" in v.reasons[0]
+    # a release whose template entry doesn't match its jar, or that ships no in-house mod
+    stale = release({"template/client.lock.yml": V150_LOCK.encode(), MOD_JAR: b"other"})
+    v = evaluate(root, base, good, transport=stale, head_ref="update/product-v1.2.4")
+    assert not v.ok and "couldn't read v1.2.4's in-house client mods" in v.reasons[0]
+    v = evaluate(root, base, good, transport=release({}), head_ref="update/product-v1.2.4")
+    assert not v.ok and "ships no in-house client mod" in v.reasons[0]
+    assert evaluate(root, base, good, transport=release(), head_ref="update/product-v1.2.4").ok
+
+
+def test_a_new_client_lock_with_a_product_bump_needs_the_admin(repo) -> None:
+    root, base = repo
+    head = commit(root, {".github/workflows/server.yml": WF.format(sha=NEW_SHA, v="v1.2.4"),
+                         "client.lock.yml": V150_LOCK})  # fmt: skip
+    v = evaluate(root, base, head, transport=release(), head_ref="update/product-v1.2.4")
+    assert not v.ok and "must exist on both sides" in v.reasons[0]
+    assert clientpack.TEMPLATE_LOCK == "template/client.lock.yml"
 
 
 def test_cli_pr_gate(repo, capsys, tmp_path) -> None:

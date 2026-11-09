@@ -280,3 +280,22 @@ class Replay:
 
     def urls(self) -> list[str]:
         return [r.url for r in self.requests]
+
+
+# --- v1.5.1: the in-house client mod moves with the product pin ---------------------------------------------
+# v1.4.1's template/client.lock.yml, byte for byte: what the live config repo pinned (Smallworld mod 1.0.0)
+# when v1.5.0 shipped mod 1.1.0; v1.5.0's template differs from it only in that entry.
+V141_CLIENT_LOCK = Path(__file__).resolve().parent / "fixtures" / "inhouse" / "client.lock-v1.4.1.yml"
+MOD_JAR = "client/mod/dist/smallworld.jar"
+
+
+def fake_release(dest: Path, *, jar: bytes | None = None, lock: str | None = None) -> Path:
+    """A product release checkout with what the in-house refresh reads: template/client.lock.yml and the
+    in-house jar (default: this checkout's, i.e. v1.5.0's mod 1.1.0)."""
+    (dest / "template").mkdir(parents=True, exist_ok=True)
+    (dest / MOD_JAR).parent.mkdir(parents=True, exist_ok=True)
+    (dest / "template/client.lock.yml").write_text(
+        lock if lock is not None else (REPO / "template/client.lock.yml").read_text()
+    )
+    (dest / MOD_JAR).write_bytes(jar if jar is not None else (REPO / MOD_JAR).read_bytes())
+    return dest
