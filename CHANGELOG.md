@@ -6,6 +6,15 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Fixed
+
+- Switching computers no longer looks like a pending change. The watchdog Worker's static files are staged under
+  the config repo and Terraform stores their absolute path, so the first `mcctl plan` from another computer or
+  folder showed an in-place update of `cloudflare_workers_script.watchdog`, and `mcctl doctor` warned about it.
+  mcctl now recognises an update whose only change is that path while the files' manifest hash is unchanged:
+  `plan`/`apply` mark it "path only" and say the files are identical, and doctor's `terraform plan` row is ok.
+  The next `mcctl apply` records the new path (a no-op upload). Any other change to the Worker still warns.
+
 ## [1.5.0] - 2026-11-09
 
 ### Added

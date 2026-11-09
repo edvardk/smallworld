@@ -416,6 +416,18 @@ def test_doctor_terraform_plan_clean(repo) -> None:
     )
 
 
+def test_doctor_terraform_plan_moved_assets_path_is_ok(repo) -> None:
+    """mcctl ran from another computer: only the Worker's local assets path differs (the same files)."""
+    _applied(repo)
+    w = "cloudflare_workers_script.watchdog"
+    got = _plan_result(doctor.run(repo, deps=deps(*APPLIED, plan=tf.Plan(update=[w], relocated=[w]))))
+    assert (
+        got.level == "ok" and got.detail.startswith(f"{w}: only the local path") and "identical" in got.detail
+    )
+    mixed = tf.Plan(update=[w, "cloudflare_d1_database.watchdog"], relocated=[w])
+    assert _plan_result(doctor.run(repo, deps=deps(*APPLIED, plan=mixed))).level == "warn"
+
+
 def test_doctor_terraform_plan_needs_the_state_credentials(repo) -> None:
     _applied(repo)
     write_env(repo, {k: v for k, v in SECRETS.items() if not k.startswith("AWS_")})

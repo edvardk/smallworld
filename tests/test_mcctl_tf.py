@@ -91,6 +91,78 @@ def test_summarize_actions() -> None:
     assert tf.Plan().empty
 
 
+def _moved_worker(**after_changes: object) -> dict:
+    """The watchdog Worker's update after mcctl ran from another computer, shaped like the live plan that
+    showed it (provider 5.28.1): the assets path differs, the manifest hash doesn't, and the computed
+    attributes the provider resets on every update are unknown."""
+    assets = {"asset_manifest_sha256": "ab" * 32, "config": {"run_worker_first": True}, "jwt": None}
+    before = {
+        "id": "lh-watchdog",
+        "compatibility_date": "2026-10-01",
+        "assets": assets | {"directory": "/home/a/code/cfg/.mcctl/rendered/watchdog"},
+        "bindings": [{"name": "DB", "type": "d1", "id": "d1"}, {"name": "CONTROL", "namespace_id": None}],
+        "etag": "old",
+        "handlers": ["fetch", "scheduled"],
+        "modified_on": "2026-11-09T17:54:27Z",
+        "migration_tag": "v1",
+    }
+    after = {
+        "id": "lh-watchdog",
+        "compatibility_date": "2026-10-01",
+        "assets": assets | {"directory": "/Users/b/code/cfg/.mcctl/rendered/watchdog"},
+        "bindings": [{"name": "DB", "type": "d1", "id": "d1"}, {"name": "CONTROL"}],
+    } | after_changes
+    unknown = {
+        "assets": {},
+        "bindings": [{}, {"namespace_id": True}],
+        "etag": True,
+        "handlers": True,
+        "modified_on": True,
+        "migration_tag": True,
+    }
+    return {
+        "address": "cloudflare_workers_script.watchdog",
+        "type": "cloudflare_workers_script",
+        "change": {"actions": ["update"], "before": before, "after": after, "after_unknown": unknown},
+    }
+
+
+def test_summarize_marks_a_moved_assets_directory(capsys) -> None:
+    rc = _moved_worker()
+    assert tf.relocated_only(rc)
+    plan = tf.summarize({"resource_changes": [rc]})
+    assert plan.update == plan.relocated == ["cloudflare_workers_script.watchdog"]
+    assert plan.only_relocated and not plan.empty  # still applied: the state records the new path
+    assert plan.rows() == [["info: path only", "cloudflare_workers_script.watchdog"]]
+    tf.show_plan(plan, "would")
+    assert "the files are identical" in capsys.readouterr().out
+
+
+def test_summarize_keeps_real_worker_changes() -> None:
+    other = {
+        "assets": {"directory": "/Users/b/x", "asset_manifest_sha256": "cd" * 32, "config": {}, "jwt": None}
+    }
+    for rc in (
+        _moved_worker(compatibility_date="2026-12-01"),  # a configured change besides the path
+        _moved_worker(**other),  # different files
+        _moved_worker(bindings=[{"name": "DB", "type": "d1", "id": "d2"}, {"name": "CONTROL"}]),
+    ):
+        assert not tf.relocated_only(rc)
+    unknown_hash = _moved_worker()
+    unknown_hash["change"]["after_unknown"]["assets"] = {"asset_manifest_sha256": True}
+    same_path = _moved_worker()
+    same_path["change"]["after"]["assets"] = same_path["change"]["before"]["assets"]
+    other_type = _moved_worker() | {"type": "cloudflare_worker", "address": "cloudflare_worker.x"}
+    for rc in (unknown_hash, same_path, other_type):
+        assert not tf.relocated_only(rc)
+    plan = tf.summarize({"resource_changes": [_moved_worker(), *CREATE]})
+    assert plan.relocated and not plan.only_relocated
+    assert (
+        tf.summarize({"resource_changes": [{"address": "b", "change": {"actions": ["update"]}}]}).relocated
+        == []
+    )
+
+
 def test_confirm_needs_the_name(capsys) -> None:
     plan = tf.Plan(create=["x"])
     assert tf.confirm(plan, "lh", lambda _p: "lh")

@@ -889,6 +889,9 @@ def check_plan(report: Report, repo: configrepo.ConfigRepo, env: Mapping[str, st
     if plan.empty:
         report.add(name, "ok", "No changes: the live resources match the configuration")
         return
+    if plan.only_relocated:
+        report.add(name, "ok", f"{', '.join(plan.relocated)}: {tf.RELOCATED_NOTE}")
+        return
     changed = [*plan.delete, *plan.replace, *plan.update, *plan.create]
     report.add(
         name,

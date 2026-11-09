@@ -66,16 +66,29 @@ def environment(config_root: Path, shell: Mapping[str, str] | None = None) -> di
 
 @dataclass
 class Plan:
-    """What a saved plan would do (from `terraform show -json`; addresses and actions only, no values)."""
+    """What a saved plan would do (from `terraform show -json`; addresses and actions only, no values).
+
+    `relocated` is the part of `update` whose only change is a local file path (see `relocated_only`): the
+    same files from another computer or folder. Terraform still applies it (recording the new path)."""
 
     create: list[str] = field(default_factory=list)
     update: list[str] = field(default_factory=list)
     replace: list[str] = field(default_factory=list)
     delete: list[str] = field(default_factory=list)
+    relocated: list[str] = field(default_factory=list)
 
     @property
     def empty(self) -> bool:
         return not (self.create or self.update or self.replace or self.delete)
+
+    @property
+    def only_relocated(self) -> bool:
+        """Nothing but path-only updates: harmless, the live resources already match."""
+        return (
+            bool(self.update)
+            and set(self.update) == set(self.relocated)
+            and not (self.create or self.replace or self.delete)
+        )
 
     def summary(self) -> str:
         parts = [
@@ -93,7 +106,7 @@ class Plan:
         """Action / resource rows for the plan table (destroys first: they matter most)."""
         out = [["fail: destroy", a] for a in self.delete]
         out += [["warn: replace", a] for a in self.replace]
-        out += [["info: change", a] for a in self.update]
+        out += [["info: path only" if a in self.relocated else "info: change", a] for a in self.update]
         out += [["ok: add", a] for a in self.create]
         return out
 
@@ -103,10 +116,14 @@ def show_plan(plan: Plan, verb: str = "will") -> None:
     out = ui.stdout()
     if not out.rich:
         out.say(f"\nTerraform {verb}: {plan.summary()}")
+        if plan.relocated:
+            out.say(f"{', '.join(plan.relocated)}: {RELOCATED_NOTE}")
         return
     out.say()
     out.table(["Action", "Resource"], plan.rows(), title=f"Terraform {verb}", indent=2)
     out.say(f"  {plan.summary().splitlines()[0]}")
+    if plan.relocated:
+        out.say(f"  {RELOCATED_NOTE}")
 
 
 ERROR_START = re.compile(r"^(?:[╷│╵]\s*)?Error: ")
@@ -141,6 +158,63 @@ def log_path(env: Mapping[str, str], command: str, now: datetime.datetime | None
     return path
 
 
+# Attributes that hold a path on the computer running Terraform, per resource type, with the attribute that
+# fingerprints what that path holds. Provider 5.28.1 stores `assets.directory` as given (mcctl render passes
+# an absolute path under the config repo) and hashes the files into `assets.asset_manifest_sha256` from their
+# relative names, sizes and contents only, so the same files staged elsewhere change the path alone.
+LOCAL_PATHS: dict[str, tuple[tuple[str, str], tuple[str, str]]] = {
+    "cloudflare_workers_script": (("assets", "directory"), ("assets", "asset_manifest_sha256")),
+}
+RELOCATED_NOTE = (
+    "only the local path of the Worker's static files changed (mcctl last applied from another computer or "
+    "folder); the files are identical, nothing changes live. The next apply records the new path."
+)
+
+
+def _get(obj: object, keys: tuple[str, ...]) -> object:
+    for k in keys:
+        obj = obj.get(k) if isinstance(obj, dict) else None
+    return obj
+
+
+def _same(before: object, after: object, unknown: object) -> bool:
+    """before == after, where values Terraform only knows after the apply count as the same: they are
+    computed attributes the provider resets on every update (etag, modified_on, ...). A real change to
+    another resource shows up in the plan by itself."""
+    if unknown is True:
+        return True
+    if isinstance(before, dict) and isinstance(after, dict):
+        u = unknown if isinstance(unknown, dict) else {}
+        return all(_same(before.get(k), after.get(k), u.get(k)) for k in before.keys() | after.keys())
+    if isinstance(before, list) and isinstance(after, list):
+        if len(before) != len(after):
+            return False
+        u_list = unknown if isinstance(unknown, list) else [None] * len(after)
+        return all(_same(b, a, u) for b, a, u in zip(before, after, u_list, strict=False))
+    return bool(before == after)
+
+
+def relocated_only(rc: Mapping[str, Any]) -> bool:
+    """An update whose only configured change is a local path (LOCAL_PATHS) while the fingerprint of the
+    files there is known and unchanged. Reads the plan's values, keeps none."""
+    paths = LOCAL_PATHS.get(str(rc.get("type")))
+    change = rc.get("change") or {}
+    before, after = change.get("before"), change.get("after")
+    if paths is None or not isinstance(before, dict) or not isinstance(after, dict):
+        return False
+    (parent, attr), fingerprint = paths
+    if _get(before, (parent, attr)) == _get(after, (parent, attr)):
+        return False
+    unknown = change.get("after_unknown") or {}
+    fp_before, fp_after = _get(before, fingerprint), _get(after, fingerprint)
+    if _get(unknown, fingerprint) is True or not isinstance(fp_after, str) or fp_before != fp_after:
+        return False
+    b, a = dict(before), dict(after)
+    b[parent] = {k: v for k, v in (before.get(parent) or {}).items() if k != attr}
+    a[parent] = {k: v for k, v in (after.get(parent) or {}).items() if k != attr}
+    return _same(b, a, unknown)
+
+
 def summarize(show: Mapping[str, Any]) -> Plan:
     plan = Plan()
     for rc in show.get("resource_changes") or []:
@@ -152,6 +226,8 @@ def summarize(show: Mapping[str, Any]) -> Plan:
             plan.create.append(addr)
         elif actions == ["update"]:
             plan.update.append(addr)
+            if relocated_only(rc):
+                plan.relocated.append(addr)
         elif actions == ["delete"]:
             plan.delete.append(addr)
     return plan
