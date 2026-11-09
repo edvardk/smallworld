@@ -277,7 +277,8 @@ logging; the manifest code is single-use and the installation id isn't secret).
 - **The updater App** (P11) `<name>-updater` has Contents, Pull requests and **Workflows** write (a product update
   changes the workflow file's pin). It is a separate App because Workflows write must never sit with a key outside
   CI: a workflow change pushed to a branch runs with the repository's secrets. Its key is the Actions secret
-  `UPDATER_APP_KEY`, used only by the last step of the scheduled `update` job. p11-review: the boot test runs the
+  `UPDATER_APP_KEY` of the main-only `update` environment, used only by the last step of the update jobs: the
+  scheduled `update` job and (v1.5) the manual run's `product-update-pr`. p11-review: the boot test runs the
   new (third-party) jar and plugins in a **separate job**, `update-test`, which holds no secret beyond the
   read-only product checkout (finished before anything runs); a process a malicious plugin leaves behind dies with
   that runner and can't read the later step's environment. `update` runs on a fresh runner, re-verifies the
