@@ -208,6 +208,40 @@ def test_doctor_dns_and_tailnet(tmp_path, monkeypatch) -> None:
     assert ["tailscale", "ping", "--c", "1", "--timeout", "5s", "example"] in tools.calls
 
 
+def test_doctor_dns_aaaa_ipv4_mapped(tmp_path, monkeypatch) -> None:
+    """macOS without local IPv6 answers AF_INET6 with ::ffff:a.b.c.d: warn, never a false fail."""
+    import socket
+
+    for k in SECRETS:
+        monkeypatch.delenv(k, raising=False)
+    data = yaml.safe_load((make_config_repo(tmp_path / "x", renderable=True) / "server.yml").read_text())
+    data["host"] |= {"ipv4": "9.9.9.9", "ipv6": "2620:fe::fe"}
+    root = make_config_repo(tmp_path / "c", data)
+    write_env(root)
+    fqdn = "mc.tests.mcctl.internal"
+    a = (fqdn, socket.AF_INET)
+    aaaa = (fqdn, socket.AF_INET6)
+
+    only_mapped = {a: {"9.9.9.9"}, aaaa: {"::ffff:9.9.9.9"}}
+    report = doctor.run(root, deps=deps(dns=only_mapped))
+    assert levels(report)["dns AAAA"] == "warn" and "no IPv6" in report.format()
+
+    mixed = {a: {"9.9.9.9"}, aaaa: {"::ffff:9.9.9.9", "2620:fe::fe"}}
+    assert levels(doctor.run(root, deps=deps(dns=mixed)))["dns AAAA"] == "ok"
+
+    wrong = {a: {"9.9.9.9"}, aaaa: {"::ffff:9.9.9.9", "2001:4860:4860::8888"}}
+    report = doctor.run(root, deps=deps(dns=wrong))
+    assert levels(report)["dns AAAA"] == "fail" and "::ffff:" not in report.format()
+
+    data["host"]["ipv6"] = None
+    root = make_config_repo(tmp_path / "n", data)
+    write_env(root)
+    assert levels(doctor.run(root, deps=deps(dns=only_mapped)))["dns AAAA"] == "warn"
+    assert doctor._ipv4_mapped({"::ffff:192.0.2.1", "2620:fe::fe", "192.0.2.1", "fe80::1%en0"}) == {
+        "::ffff:192.0.2.1"
+    }
+
+
 def test_doctor_discord_and_api_key(repo, monkeypatch) -> None:
     data = yaml.safe_load((repo / "server.yml").read_text())
     data["alerts"] = {"discord": True}

@@ -6,6 +6,12 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Fixed
+
+- `mcctl doctor`: the "dns AAAA" check no longer fails on controllers without local IPv6 (macOS answers with
+  IPv4-mapped `::ffff:a.b.c.d` addresses); those are ignored, and if nothing else comes back it warns that the
+  AAAA record couldn't be checked from this computer.
+
 ## [1.5.0] - 2026-11-09
 
 ### Added

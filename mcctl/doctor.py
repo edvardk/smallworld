@@ -15,6 +15,7 @@ tools. Credential values are never printed.
 from __future__ import annotations
 
 import datetime
+import ipaddress
 import json
 import os
 import shutil
@@ -699,6 +700,18 @@ def check_domain(
     report.add("domain expiry", level, f"{zone} registered until {when} ({days} days)")
 
 
+def _ipv4_mapped(addrs: set[str]) -> set[str]:
+    """The IPv4-mapped IPv6 addresses (`::ffff:a.b.c.d`) among `addrs`, never real AAAA records."""
+    out = set()
+    for addr in addrs:
+        try:
+            if ipaddress.IPv6Address(addr.split("%", 1)[0]).ipv4_mapped is not None:
+                out.add(addr)
+        except ValueError:
+            continue
+    return out
+
+
 def check_dns(report: Report, cfg: schema.ServerConfig, deps: Deps) -> None:
     fqdn = f"{cfg.dns.hostname}.{cfg.dns.zone}"
     if cfg.host.ipv4 is None:
@@ -709,6 +722,17 @@ def check_dns(report: Report, cfg: schema.ServerConfig, deps: Deps) -> None:
         ("AAAA", socket.AF_INET6, cfg.host.ipv6),
     ):
         got = deps.resolve(fqdn, family)
+        mapped = _ipv4_mapped(got) if family == socket.AF_INET6 else set()
+        got -= mapped
+        if mapped and not got:
+            # macOS synthesizes ::ffff:a.b.c.d from the A record when the local network has no IPv6
+            report.add(
+                f"dns {label}",
+                "warn",
+                f"{fqdn} {label}: this computer's network has no IPv6 (got only IPv4-mapped "
+                f"{sorted(mapped)}); couldn't check {label} locally",
+            )
+            continue
         if want is None:
             level: Level = "warn" if got else "ok"
             detail = f"{fqdn} {label} {sorted(got)} but host.ipv6 is null" if got else f"{fqdn} {label}: none"
