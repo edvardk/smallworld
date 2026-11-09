@@ -328,7 +328,8 @@ VPS shares its vCores with other customers and costs less. Minecraft runs its wo
 to stolen CPU time, so dedicated cores are the recommendation; a VPS works for a small group (`mc-health` reports
 CPU steal and suggests a move if it hurts). Any provider works: a public IPv4 (IPv6 recommended), Debian 13/12 or
 Ubuntu 24.04, amd64 or arm64, at least 4 GB RAM (8 GB recommended; on 2-4 GB set `performance.vm: small`,
-[operations](operations.md#small-vm-preset-v15)).
+[operations](operations.md#small-vm-preset-v15); its heap figures are computed, not yet measured on a real 4 GB VM:
+measure first).
 
 The steps below use netcup as the example provider (its control panel is the SCP, Server Control Panel); other
 providers have the same steps under other names.

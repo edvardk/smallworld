@@ -16,6 +16,13 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   up (start + ok heartbeats, a new snapshot, the skip count reset). Its verdicts are unit-tested against what
   `scripts/backup.py` really prints and sends.
 
+### Changed
+
+- [operations: Small-VM preset](docs/operations.md#small-vm-preset-v15): the heap figures of `performance.vm:
+  small` are marked **measure first**: the 2304 MB heap on a 4 GB host is computed from the stated assumptions
+  and hasn't been run on a real 4 GB VM yet; the section says what to watch after switching and how to set a
+  smaller `jvm.heap_mb` (also in [setup](docs/setup.md)).
+
 ### Fixed
 
 - A product release that ships a new build of the in-house Smallworld client mod no longer breaks the pin move.

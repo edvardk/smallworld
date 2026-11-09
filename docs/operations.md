@@ -732,7 +732,7 @@ below only fills in what you haven't set yourself:
 
 | What | default | small |
 |---|---|---|
-| Heap (`jvm.heap_mb: auto`) | RAM - max(2816 MB, 30 %) | RAM - max(1024 MB, 40 %): 2304 MB on a 4 GB host (3.9 GB usable), 1536 MB on 3 GB, 768 MB on 2 GB |
+| Heap (`jvm.heap_mb: auto`) | RAM - max(2816 MB, 30 %) | RAM - max(1024 MB, 40 %): 2304 MB on a 4 GB host (3.9 GB usable; **measure first**, see below), 1536 MB on 3 GB, 768 MB on 2 GB |
 | restic (`mc-backup`, `mc-prune`, `mc-backup-check`) | restic's defaults | one core (`GOMAXPROCS=1`), one file read at a time (`RESTIC_READ_CONCURRENCY=1`), 2 S3 connections instead of 5, Go memory limit 192 MiB, cgroup `MemoryHigh=256M`; `mc-backup` also `MemoryMax=512M` |
 | `mc-health` | no cap | `MemoryMax=128M` (health.py needs 30-40 MB) |
 | Map renderer (`mc-map`) | `MemoryMax=512M` | 64 MB per `map.threads` + 64 MB (128 MB at the default 1 thread: the renderer's design budget) |
@@ -748,6 +748,13 @@ not more; 4 GB is the recommended minimum ([setup](setup.md)). The map renderer 
 stays inside its cap; restic on one core takes longer but leaves the other core to the server (it already runs at
 a tenth of the server's CPU weight). The garbage collector stays `jvm.gc` (ZGC by default); on a heap under 2 GB
 G1 (`jvm.gc: g1`) uses less memory for the same world, at the cost of its 20-60 ms pauses.
+
+**Measure first.** These heap figures are computed from the assumptions above, not measured: the 2304 MB heap on a
+4 GB host in particular has not been run on a real 4 GB VM yet. After switching, watch the box for a few days of
+normal play before you rely on it: `mcctl metrics -C $C --days 7` (tick p99 and the worst hours), and on the
+server `free -m` while players are on and `journalctl -k | grep -i oom`. If the kernel kills anything, or swap
+fills while players are on, set a smaller heap yourself (`mcctl config set jvm.heap_mb 2048 -C
+$C`, which the preset never overrides) and push.
 
 **Switch**: `mcctl config set performance.vm small -C $C`, push (a deploy with an announced restart, since the
 heap and view distance change).
