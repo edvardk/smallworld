@@ -170,17 +170,28 @@ impl Pending {
     /// # Errors
     /// `update`'s.
     pub fn record(&self, op: &str, name: &str, uuid: &str, login: &str, now: f64) -> AResult<()> {
-        self.update(|data| {
-            let mut entries: Vec<Value> = data
-                .get("entries")
-                .and_then(Value::as_array)
-                .map(|a| a.iter().filter(|e| e.get("uuid").and_then(Value::as_str) != Some(uuid)).cloned().collect())
-                .unwrap_or_default();
-            entries.push(json!({"uuid": uuid, "name": name, "op": op, "ts": now, "login": login, "pr": null}));
-            data.insert("entries".into(), Value::Array(entries));
-            data.insert("changed".into(), json!(now));
-        })
+        self.update(|data| record_entry(data, op, name, uuid, login, now))
     }
+}
+
+/// mc_panel.py `record_entry(data, op, name, uuid, login, now)`: `record` on pending.json already read under the
+/// lock (`update`): the panel's whitelist action holds the lock across its RCON command and this (v1.5, the
+/// revert race).
+pub fn record_entry(data: &mut Obj, op: &str, name: &str, uuid: &str, login: &str, now: f64) {
+    let mut entries: Vec<Value> = data
+        .get("entries")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter(|e| e.get("uuid").and_then(Value::as_str) != Some(uuid))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    entries
+        .push(json!({"uuid": uuid, "name": name, "op": op, "ts": now, "login": login, "pr": null}));
+    data.insert("entries".into(), Value::Array(entries));
+    data.insert("changed".into(), json!(now));
 }
 
 #[cfg(test)]

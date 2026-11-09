@@ -11,9 +11,9 @@ checkout and, only on a typed `yes`, moves it forward:
     unknown     the running checkout is dirty / not git, or the pinned commit isn't in it: never offered
 
 Moving rewrites the single `uses:` line (`updates.bump_pin`: SHA + version comment), adds the secrets the new
-product's template passes and the workflow doesn't yet (v1.2, `mcctl/wfsecrets.py`), commits only the
-workflow file, and pushes that one commit to main when the config repo exists on GitHub (the admin bypasses
-the main ruleset). Guards (P15 review):
+product's template passes and the workflow doesn't yet (v1.2, `mcctl/wfsecrets.py`) and its manual-run inputs
+(v1.5), commits only the workflow file, and pushes that one commit to main when the config repo exists on
+GitHub (the admin bypasses the main ruleset). Guards (P15 review):
 
 - **released line only**: the new SHA must be on `<remote>/main` of the product checkout's remote whose URL
   is the pin's repository (https or ssh form; fetched first, best effort), and the old pin an ancestor of
@@ -236,6 +236,9 @@ def offer(
     extra = _missing_secrets(moved, product_root, talk)  # v1.2: secrets the new product's template passes
     if extra:
         talk.info(f"    the new product also needs these secrets passed: {', '.join(extra)} (same commit)")
+    inputs = _missing_inputs(moved, product_root, talk)  # v1.5: its manual-run inputs (task product-update)
+    if inputs:
+        talk.info(f"    and the manual run gets {', '.join(inputs)} (same commit)")
     answer = talk.typed(ANSWER_KEY)(
         f"Move the pin to {new[:12]} ({version}): commit {configrepo.WORKFLOW}"
         " and push it to main? Type yes to move it: "
@@ -245,11 +248,15 @@ def offer(
         return False
     if extra:
         moved = wfsecrets.add(moved, extra)
+    if inputs:
+        moved = wfsecrets.add_dispatch(moved, wfsecrets.template_text(product_root))
     wf.write_text(moved)
     message = f"mcctl: move the product pin {pin.version or pin.sha[:12]} -> {version} ({new[:12]})"
     body = f"{pin.repository}@{pin.sha} -> {new}: {st.behind} commit(s) forward on the product's history."
     if extra:
         body += f" Passes the secrets the new product's template does: + {', '.join(extra)}."
+    if inputs:
+        body += f" The manual run gets what the new product's template has: + {', '.join(inputs)}."
     commit = run(
         ["git", "-C", str(root), "commit", "-q", "-m", message, "-m", body, "--", configrepo.WORKFLOW]
     )
@@ -285,6 +292,19 @@ def _missing_secrets(text: str, product_root: Path, talk: UI) -> list[str]:
         return []
     except (OSError, wfsecrets.WorkflowError) as e:
         talk.warn(f"couldn't compare the workflow's secrets with the product's template: {e}")
+        return []
+
+
+def _missing_inputs(text: str, product_root: Path, talk: UI) -> list[str]:
+    try:
+        template = wfsecrets.template_text(product_root)
+        lacking = wfsecrets.missing_dispatch(text, template)
+        wfsecrets.add_dispatch(text, template)  # editable (else: reported, the pin still moves)
+        return lacking
+    except FileNotFoundError:  # not a product checkout with a template (tests' fake products)
+        return []
+    except (OSError, wfsecrets.WorkflowError) as e:
+        talk.warn(f"couldn't compare the workflow's manual-run inputs with the product's template: {e}")
         return []
 
 

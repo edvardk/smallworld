@@ -144,3 +144,28 @@ def test_max_age_is_two_backup_periods(schedule: str, hours: str) -> None:
     expr = yaml.safe_load((REPO / "ansible/roles/backups/defaults/main.yml").read_text())
     env = jinja2.Environment(undefined=jinja2.StrictUndefined)  # noqa: S701 - not HTML
     assert env.from_string(expr["backups_check_max_age_hours"]).render(mc_backup_schedule=schedule) == hours
+
+
+def test_a_recent_skip_allows_an_older_snapshot(tmp_path: Path, monkeypatch) -> None:
+    """v1.5: the timer skipped an unchanged world -> backups haven't stopped; a stale skip or none: the plain limit."""
+    import json
+    import time
+
+    state = tmp_path / "backup-state.json"
+    now = 1_800_000_000.0
+    assert bc.allowed_age_hours(2.0, state, now) == 2.0  # no record
+    state.write_text(
+        json.dumps({"last_backup": now - 20 * 3600, "fingerprint": "f", "last_skip": now - 1800})
+    )
+    assert bc.allowed_age_hours(2.0, state, now) == 2.0 + bc.notify.BACKUP_SKIP_MAX_HOURS
+    state.write_text(json.dumps({"last_backup": now - 30 * 3600, "last_skip": now - 3 * 3600}))
+    assert bc.allowed_age_hours(2.0, state, now) == 2.0  # the timer stopped skipping (and backing up)
+    state.write_text("{not json")
+    assert bc.allowed_age_hours(2.0, state, now) == 2.0
+
+    seen: list[float] = []
+    monkeypatch.setattr(bc.notify, "restore_running", lambda: False)
+    monkeypatch.setattr(bc.notify, "BACKUP_STATE_FILE", state)
+    monkeypatch.setattr(bc, "check", lambda **kw: seen.append(kw["max_age_hours"]))
+    state.write_text(json.dumps({"last_skip": time.time() - 60}))
+    assert bc.main(["--max-age-hours", "2"]) == 0 and seen == [2.0 + bc.notify.BACKUP_SKIP_MAX_HOURS]

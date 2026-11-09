@@ -44,6 +44,39 @@ def test_the_plugin_uses_the_client_mods_wire_class_verbatim() -> None:
     assert body(BRAND / "Wire.java") == body(CLIENT_WIRE)
 
 
+def test_the_compass_strip_is_shared_verbatim() -> None:
+    """v1.5: the boss bar and the client compass lay out the strip with the same class (WIRE.md "The client
+    compass"): mc-brand's CompassStrip.java and the mod's differ only in the package line."""
+    client = REPO / "client/mod/src/main/java/io/github/edvardk/smallworld/client/CompassStrip.java"
+    assert (BRAND / "CompassStrip.java").read_text().startswith("package io.github.edvardk.mcbrand;\n")
+    assert client.read_text().startswith("package io.github.edvardk.smallworld.client;\n")
+    assert body(BRAND / "CompassStrip.java") == body(client)
+    for java in (BRAND / "CompassStrip.java", BRAND / "Wire.java"):  # plain JDK only: both JVMs, the fixtures
+        assert not re.search(r"^import (org\.bukkit|net\.kyori|net\.minecraft)", java.read_text(), re.M)
+
+
+def test_client_compass_channels_in_mc_brand() -> None:
+    """v1.5: mc-brand sends the two compass channels (Paper sends only on channels the client registered) and
+    decides by the hello's capability, re-deciding on late registrations."""
+    sw = (BRAND / "Smallworld.java").read_text()
+    for channel in ("smallworld:compass", "smallworld:friends"):
+        assert f"`{channel}`" in WIRE_MD
+    assert 'COMPASS = "smallworld:compass"' in sw and 'FRIENDS = "smallworld:friends"' in sw
+    assert "registerOutgoingPluginChannel(plugin, COMPASS)" in sw
+    assert "registerOutgoingPluginChannel(plugin, FRIENDS)" in sw
+    assert "channels.contains(COMPASS) && channels.contains(FRIENDS)" in sw
+    assert "token(h.pack()), h.capabilities())" in sw
+    compass = (BRAND / "Compass.java").read_text()
+    assert "p.sendPluginMessage(plugin, Smallworld.COMPASS, state(true));" in compass
+    assert "v.sendPluginMessage(plugin, Smallworld.FRIENDS, b);" in compass
+    assert "if (force || !Arrays.equals(b, sentFriends.get(v.getUniqueId())))" in compass  # only changes
+    assert "runTaskLater(plugin, this::flushFriends, FRIENDS_TICKS)" in compass  # rate-limited, one-shot
+    assert re.search(r"static final long FRIENDS_TICKS = 4L;", compass)
+    # one list of visible players for both compasses (the boss bar's exclusions)
+    assert compass.count("visible(v)") == 2
+    assert "o == v || hidden(o) || !XaeroMap.shown(o) || !v.canSee(o)" in compass
+
+
 def test_channels_are_the_ones_wire_md_names() -> None:
     sw = (BRAND / "Smallworld.java").read_text()
     tel = (TELEMETRY / "TelemetryPlugin.java").read_text()

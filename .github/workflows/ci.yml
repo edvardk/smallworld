@@ -9,7 +9,8 @@ name: ci
 # (a workflow that never starts leaves its required checks pending forever); the `changes` job decides what is
 # heavy work:
 #   - lint always runs; a docs-only change (scripts/ci_changes.py) runs ruff, yamllint and the tests that read
-#     the docs, and skips the rest of the job's steps;
+#     the docs, and skips the rest of the job's steps; so does a version bump alone (v1.5), plus
+#     `release.py check` (and e2e-mock.yml skips e2e for it);
 #   - actionlint runs when a workflow changed, else it is skipped (a skipped job reports success);
 #   - gitleaks, publication and config-repo / validate always run (all cheap; a skipped reusable-workflow call
 #     would report under another check name);
@@ -23,6 +24,11 @@ on:
   schedule:
     - cron: "7 22 * * *" # nightly: everything
   workflow_call: # release.yml
+    inputs:
+      full:
+        description: Run everything, whatever the last diff touched (release.yml)
+        type: boolean
+        default: false
     secrets:
       PUBLISH_DENYLIST: # the publication job's private denylist (release.yml passes it explicitly)
         required: false
@@ -49,16 +55,19 @@ jobs:
       plugin: ${{ steps.changes.outputs.plugin }}
       rust: ${{ steps.changes.outputs.rust }}
       seeds: ${{ steps.changes.outputs.seeds }}
+      release: ${{ steps.changes.outputs.release }} # v1.5: a version bump alone (release.py ship --standalone)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # a pull request's merge commit and its base; the weekly run's last 7 days
           persist-credentials: false
 
+      # `full` (release.yml, also when autotag.yml calls it from a push to main): the event "release", which
+      # ci_changes.py doesn't scope, so everything runs.
       - name: What changed
         id: changes
         env:
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ inputs.full && 'release' || github.event_name }}
           BEFORE: ${{ github.event.before }}
         run: python3 scripts/ci_changes.py --event "$EVENT" --before "$BEFORE"
 
@@ -113,6 +122,12 @@ jobs:
         run: |
           pytest -q tests/test_docs.py tests/test_release.py tests/test_dashlane.py tests/test_consistency.py tests/test_ci_changes.py
           pytest -q tests/test_watchdog.py -k no_health
+
+      # v1.5: a version bump alone (scripts/ci_changes.py `release`; code is then off, so the step above ran the
+      # release tests): the versions agree and the CHANGELOG section is there, as autotag.yml will check.
+      - name: release.py check (version bump only)
+        if: needs.changes.outputs.release == 'true'
+        run: python3 scripts/release.py check
 
       # Before pytest: the terraform-console tests (tests/test_tf_drift.py, the migration locals) need it. No
       # wrapper: they pipe stdin into `terraform console` and parse its stdout.

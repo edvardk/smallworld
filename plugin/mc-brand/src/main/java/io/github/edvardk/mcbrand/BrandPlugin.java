@@ -407,6 +407,11 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
                 || p.getListeningPluginChannels().stream().anyMatch(Wayfinding::isOurs);
     }
 
+    /** v1.5: can this player's client draw the compass itself (Wayfinding.capability)? */
+    Wayfinding.Capability clientCapability(Player p) {
+        return smallworld.capability(p);
+    }
+
     /** v1.3: the client has Xaero's minimap or world map (it registered one of their channels). */
     boolean hasXaero(Player p) {
         return p.getListeningPluginChannels().stream().anyMatch(Wayfinding::isXaero);
@@ -745,13 +750,14 @@ public final class BrandPlugin extends JavaPlugin implements Listener, CommandEx
                         + " TPS %.1f, MSPT %.1f (p95 %.1f) = %s; modpack requests=%d codes=%d failures=%d;"
                         + " view checks=%d raised=%d (now %d) lowered=%d; smallworld hellos=%d"
                         + " fps reports=%d malformed=%d outdated=%d; xaero handshakes=%d updates=%d fair play=%d;"
-                        + " compass showing=%d renders=%d updates=%d; pocket maps given=%d removed=%d recentres=%d",
+                        + " compass showing=%d renders=%d updates=%d client=%d friends sent=%d; pocket maps given=%d removed=%d recentres=%d",
                 s.name(), hud.runs, hud.lastNs / 1000, hud.maxNs / 1000, hud.writeErrors, Hud.words(s.hudParts()),
                 glass.drinks, glass.removed,
                 sp.tps(), sp.mspt(), sp.p95(), sp.health().word, modpack.requests, modpack.codes, modpack.failures,
                 view.checks, view.raisedCount, view.raisedNow(), view.lowered, smallworld.hellos,
                 smallworld.fpsReports, smallworld.malformed, smallworld.outdatedPrompts, xaero.handshakes, xaero.updates,
-                xaero.fairPlay, compass.showing(), compass.renders, compass.updates, pocketMap.given,
+                xaero.fairPlay, compass.showing(), compass.renders, compass.updates, compass.clientShowing(),
+                compass.friendsSent, pocketMap.given,
                 pocketMap.removed, pocketMap.recentres)));
     }
 }

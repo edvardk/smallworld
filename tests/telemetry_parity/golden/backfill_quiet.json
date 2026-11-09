@@ -1643,7 +1643,7 @@
   },
   {
    "route": "POST /ingest/experience",
-   "status": 200,
+   "status": 413,
    "auth": true,
    "user_agent": "smallworld mc-agent",
    "content_type": "application/json",
@@ -1791,7 +1791,7 @@
       },
       "backlog": {
        "segments": 1,
-       "rows": 1,
+       "rows": 4,
        "bytes": "<bytes>",
        "oldest": "20260115T1000",
        "stored_segments": 1,
@@ -1899,13 +1899,64 @@
       },
       "backlog": {
        "segments": 1,
-       "rows": 1,
+       "rows": 4,
        "bytes": "<bytes>",
        "oldest": "20260115T1000",
        "stored_segments": 1,
        "stored_bytes": "<bytes>"
       },
       "stats": {}
+     }
+    ]
+   }
+  },
+  {
+   "route": "POST /ingest/experience",
+   "status": 200,
+   "auth": true,
+   "user_agent": "smallworld mc-agent",
+   "content_type": "application/json",
+   "body": {
+    "agent": "1",
+    "live": false,
+    "rows": [
+     {
+      "ref": "0badc0de:9",
+      "backfill": true
+     }
+    ]
+   }
+  },
+  {
+   "route": "POST /ingest/experience",
+   "status": 413,
+   "auth": true,
+   "user_agent": "smallworld mc-agent",
+   "content_type": "application/json",
+   "body": {
+    "agent": "1",
+    "live": false,
+    "rows": [
+     {
+      "ref": "0badc0de:10",
+      "backfill": true
+     }
+    ]
+   }
+  },
+  {
+   "route": "POST /ingest/experience",
+   "status": 200,
+   "auth": true,
+   "user_agent": "smallworld mc-agent",
+   "content_type": "application/json",
+   "body": {
+    "agent": "1",
+    "live": false,
+    "rows": [
+     {
+      "ref": "0badc0de:11",
+      "backfill": true
      }
     ]
    }
@@ -2010,6 +2061,20 @@
     ]
    }
   },
+  "/var/lib/mc-telemetry/segments/20260115T1015-0badc0de-15-16.ndjson.gz": {
+   "type": "file",
+   "mode": "0o600",
+   "content": {
+    "ndjson": [
+     {
+      "ref": "0badc0de:15"
+     },
+     {
+      "ref": "0badc0de:16"
+     }
+    ]
+   }
+  },
   "/var/lib/mc-telemetry/segments/state.json": {
    "type": "file",
    "mode": "0o600",
@@ -2019,9 +2084,14 @@
       "r2": true,
       "rows": 15,
       "todo": []
+     },
+     "20260115T1015-0badc0de-15-16.ndjson.gz": {
+      "r2": false,
+      "rows": 2,
+      "todo": []
      }
     },
-    "bytes": "{\"20260115T1000-0badc0de-0-14.ndjson.gz\": {\"r2\": true, \"rows\": 15, \"todo\": []}}"
+    "bytes": "{\"20260115T1000-0badc0de-0-14.ndjson.gz\": {\"r2\": true, \"rows\": 15, \"todo\": []}, \"20260115T1015-0badc0de-15-16.ndjson.gz\": {\"r2\": false, \"rows\": 2, \"todo\": []}}"
    }
   }
  },
@@ -2441,7 +2511,9 @@
  "output": [
   {
    "stdout": [
-    "mc-telemetry <version>: pushing to 127.0.0.1"
+    "mc-telemetry <version>: pushing to 127.0.0.1",
+    "backfill: gave up row 0badc0de:10: the Worker refused it (POST /ingest/experience: HTTP 413)",
+    "telemetry: saved 20260115T1015-0badc0de-15-16.ndjson.gz at shutdown"
    ],
    "stderr": []
   }

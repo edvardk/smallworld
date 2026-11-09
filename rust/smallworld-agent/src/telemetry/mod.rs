@@ -55,6 +55,10 @@ pub const VERDICT_DIR: &str = messages::VERDICT_DIR;
 pub const SEGMENT_DIR: &str = "/var/lib/mc-telemetry/segments";
 pub const MINUTE_MS: i64 = 60_000;
 pub const SEGMENT_S: i64 = 300;
+/// telemetry.py `QUIET_MS` (v1.5): the plugin went quiet; the minute closes and `latest` becomes the quiet view.
+pub const QUIET_MS: i64 = 75_000;
+/// telemetry.py `MAX_INBOX` (v1.5).
+pub const MAX_INBOX: usize = 360;
 
 /// A Python exception as telemetry's loop prints it (`f"{type(e).__name__}: {e}"`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -217,9 +221,12 @@ pub fn write_verdicts(dir: &Path, verdicts: &OMap, now_ms: i64) -> TResult<std::
 
 // --- config and identity -----------------------------------------------------------------------------------
 
-/// `(\d\d:\d\d-\d\d:\d\d)?` with `re.fullmatch` (`\d`: any `Nd`).
-static WINDOW: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\A(?:\d\d:\d\d-\d\d:\d\d)?\z").expect("WINDOW"));
+/// telemetry.py `valid_window`: empty or `HH:MM-HH:MM` with real times (v1.5: ASCII digits, hours 00-23,
+/// minutes 00-59).
+static WINDOW: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\A(?:(?:[01][0-9]|2[0-3]):[0-5][0-9]-(?:[01][0-9]|2[0-3]):[0-5][0-9])?\z")
+        .expect("WINDOW")
+});
 static SRC: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\A[0-9a-f]{8}\z").expect("SRC"));
 
 /// `float(text)`: Python's spelling (surrounding whitespace, `_` between digits, any `Nd` digit, `inf`, `nan`).
@@ -409,6 +416,10 @@ pub struct Core {
     pub src: String,
     pub seq: i64,
     minute_snaps: Vec<Arc<Snapshot>>,
+    /// Read, not yet in a minute (kept when a round fails; v1.5).
+    inbox: Vec<Arc<Snapshot>>,
+    /// When `latest` was read (0: never, or already the quiet view; v1.5).
+    latest_at: f64,
     minute: Option<i64>,
     pending_events: Vec<J>,
     pub buffer: Vec<J>,
@@ -495,6 +506,17 @@ pub fn link_io(link: crate::link::Link, server_dir: PathBuf) -> Io {
     }
 }
 
+/// telemetry.py `QUIET_VIEW`: nobody online, no readings (see `QUIET_MS`).
+fn quiet_view() -> Snapshot {
+    Snapshot {
+        seq: 0,
+        ts: 0,
+        win_ms: 0,
+        srv: snapshot::Srv::default(),
+        pl: Vec::new(),
+    }
+}
+
 /// `{p["u"]: p for p in snapshot["pl"]}` in Python's order (a repeated uuid: first position, last value).
 fn online_of(s: Option<&Snapshot>) -> OMap {
     let mut m = OMap::new();
@@ -531,6 +553,8 @@ impl Telemetry {
             src,
             seq,
             minute_snaps: Vec::new(),
+            inbox: Vec::new(),
+            latest_at: 0.0,
             minute: None,
             pending_events: Vec::new(),
             buffer: Vec::new(),
@@ -569,9 +593,18 @@ impl Telemetry {
     /// What Python's `poll` raises (the loop logs it).
     pub fn poll(&self, c: &mut Core) -> TResult<Option<J>> {
         let snaps = c.reader.read()?;
+        if !snaps.is_empty() {
+            c.latest_at = (self.clock)();
+        }
+        c.inbox.extend(snaps.into_iter().map(Arc::new));
+        if c.inbox.len() > MAX_INBOX {
+            let extra = c.inbox.len() - MAX_INBOX;
+            println!("telemetry: dropped {extra} snapshot(s) after failed rounds");
+            c.inbox.drain(..extra);
+        }
         let mut row = None;
-        for s in snaps {
-            let s = Arc::new(s);
+        // v1.5: a snapshot leaves the inbox only once it is in the minute
+        while let Some(s) = c.inbox.first().cloned() {
             *lock(&self.latest) = Some(Arc::clone(&s));
             let minute = s.ts.div_euclid(MINUTE_MS) * MINUTE_MS;
             if c.minute.is_some_and(|m| m != minute) && !c.minute_snaps.is_empty() {
@@ -581,17 +614,24 @@ impl Telemetry {
             c.minute_snaps.push(Arc::clone(&s));
             let ev = c.sessions.feed(std::slice::from_ref(&*s));
             c.pending_events.extend(ev);
+            c.inbox.remove(0);
         }
         #[allow(clippy::cast_precision_loss)]
         if row.is_none()
             && !c.minute_snaps.is_empty()
-            && (self.clock)() * 1000.0 - c.minute.unwrap_or(0) as f64 >= (MINUTE_MS + 15000) as f64
+            && (self.clock)() * 1000.0 - c.minute.unwrap_or(0) as f64 >= QUIET_MS as f64
         {
             row = Some(self.close_minute(c)?); // the plugin went quiet (server stopped): close it anyway
         }
         #[allow(clippy::cast_precision_loss)]
+        if c.latest_at > 0.0 && (self.clock)() - c.latest_at >= QUIET_MS as f64 / 1000.0 {
+            // v1.5: nobody is online any more by what we know (telemetry.py QUIET_VIEW)
+            *lock(&self.latest) = Some(Arc::new(quiet_view()));
+            c.latest_at = 0.0;
+        }
+        #[allow(clippy::cast_precision_loss)]
         if (self.clock)() - c.segment_start >= c.cfg.segment_s as f64 {
-            self.flush_segment(c)?;
+            self.flush_segment(c, true)?;
         }
         Ok(row)
     }
@@ -601,10 +641,8 @@ impl Telemetry {
     /// # Errors
     /// What Python's `close_minute` raises.
     pub fn close_minute(&self, c: &mut Core) -> TResult<J> {
-        let snaps: Vec<Snapshot> = std::mem::take(&mut c.minute_snaps)
-            .into_iter()
-            .map(|s| (*s).clone())
-            .collect();
+        // v1.5: the minute's snapshots and events are cleared only once the row is in the buffer
+        let snaps: Vec<Snapshot> = c.minute_snaps.iter().map(|s| (**s).clone()).collect();
         let running = (c.io.running)();
         let raw: Vec<J> = snaps
             .iter()
@@ -659,7 +697,6 @@ impl Telemetry {
                 srv.insert(k, v);
             }
         }
-        c.pending_events.clear();
         let events: Vec<(String, String)> = match row.get("ev") {
             Some(J::List(ev)) => ev
                 .iter()
@@ -693,10 +730,12 @@ impl Telemetry {
                 row.insert("stats", changed);
             }
         }
+        save_identity(&c.id_file, &c.src, c.seq + 1)?;
         c.seq += 1;
-        save_identity(&c.id_file, &c.src, c.seq)?;
         let row = J::Obj(row);
         c.buffer.push(row.clone());
+        c.minute_snaps.clear();
+        c.pending_events.clear();
         self.ship_live(c, &row)?;
         Ok(row)
     }
@@ -729,14 +768,16 @@ impl Telemetry {
         Ok(())
     }
 
-    /// `flush_segment()`.
+    /// `flush_segment(upload)`: the buffered rows as one segment (v1.5: removed from the buffer only once it is
+    /// written), then its upload unless `upload` is false or the Worker is failing.
     ///
     /// # Errors
-    /// The `OSError` of writing the segment (the rows are dropped, as in Python).
-    pub fn flush_segment(&self, c: &mut Core) -> TResult<Option<String>> {
-        let rows = std::mem::take(&mut c.buffer);
+    /// The `OSError` of writing the segment (the rows stay in the buffer).
+    pub fn flush_segment(&self, c: &mut Core, upload: bool) -> TResult<Option<String>> {
+        let rows = c.buffer.clone();
         c.segment_start = (self.clock)();
         let name = c.segments.write(&rows, &c.acked, &c.src)?;
+        c.buffer.drain(..rows.len());
         let ids: Vec<String> = rows
             .iter()
             .filter_map(|r| r.as_obj().and_then(|m| m.get("id")).and_then(J::as_str))
@@ -745,6 +786,7 @@ impl Telemetry {
         c.acked.retain(|a| !ids.contains(a));
         if let Some(name) = &name
             && c.ok
+            && upload
         {
             let path = c.segments.directory.join(name);
             let sent = std::fs::read(&path)
@@ -861,6 +903,27 @@ impl Telemetry {
             drop(c);
             self.stop.wait(wait);
         }
+        self.shutdown(&mut lock(&self.core));
+    }
+
+    /// `shutdown()` (v1.5, SIGTERM): the rows still in RAM (not delivered live, not yet in a segment) go to a
+    /// segment on disk, without an upload (the next start's backfill delivers them). The open minute stays open:
+    /// its snapshots are read again after the restart.
+    pub fn shutdown(&self, c: &mut Core) {
+        if c.buffer.is_empty() {
+            return;
+        }
+        match catch_unwind(AssertUnwindSafe(|| self.flush_segment(c, false))) {
+            Ok(Ok(name)) => println!(
+                "telemetry: saved {} at shutdown",
+                name.unwrap_or_else(|| "None".into())
+            ),
+            Ok(Err(e)) => println!("telemetry: rows lost at shutdown: {}: {}", e.class, e.text),
+            Err(p) => println!(
+                "telemetry: rows lost at shutdown: panic: {}",
+                crate::daemon::panic_text(&*p)
+            ),
+        }
     }
 }
 
@@ -926,4 +989,208 @@ pub fn make_telemetry_with(
     let mut io = link_io(link, server_dir);
     io.stats = Box::new(stats);
     Ok(Telemetry::new(cfg, &s.state_dir, io, msgs, crate::sys::now))
+}
+
+#[cfg(test)]
+mod tests {
+    //! v1.5: the Python issues kept for parity in v1.4, fixed in both (tests/test_telemetry.py has the same).
+    use super::*;
+    use std::cell::Cell;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const T0: i64 = 1_793_000_000_000 / 60_000 * 60_000;
+    const ED: &str = "3f2a0000-0000-4000-8000-000000000c41";
+
+    thread_local! {
+        static CLOCK: Cell<f64> = const { Cell::new(0.0) };
+    }
+
+    fn clock() -> f64 {
+        CLOCK.with(Cell::get)
+    }
+
+    fn set_clock(t: f64) {
+        CLOCK.with(|c| c.set(t));
+    }
+
+    struct Tmp(PathBuf);
+
+    impl Tmp {
+        fn new(tag: &str) -> Self {
+            static N: AtomicUsize = AtomicUsize::new(0);
+            let d = std::env::temp_dir().join(format!(
+                "sw-tel-{tag}-{}-{}",
+                std::process::id(),
+                N.fetch_add(1, Ordering::Relaxed)
+            ));
+            let _ = std::fs::remove_dir_all(&d);
+            for sub in ["snap", "verd", "seg", "state"] {
+                std::fs::create_dir_all(d.join(sub)).unwrap();
+            }
+            Self(d)
+        }
+    }
+
+    impl Drop for Tmp {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// A Telemetry over `tmp` whose Worker is down when `down` is set and whose `stats` fail `stats_fail` times.
+    fn make(
+        tmp: &Tmp,
+        down: Arc<std::sync::atomic::AtomicBool>,
+        stats_fail: Arc<AtomicUsize>,
+    ) -> Telemetry {
+        let cfg = Config {
+            snap_dir: tmp.0.join("snap"),
+            verdict_dir: tmp.0.join("verd"),
+            segment_dir: tmp.0.join("seg"),
+            stats_dir: None,
+            segment_days: 30,
+            segment_cap_mb: 200,
+            backfill_window: String::new(),
+            backfill_pause_s: 0.0,
+            read_s: 5.0,
+            segment_s: SEGMENT_S,
+        };
+        let (d1, d2) = (Arc::clone(&down), down);
+        let io = Io {
+            post: Box::new(move |_, _| {
+                if d1.load(Ordering::SeqCst) {
+                    Err("POST /ingest/experience: URLError".into())
+                } else {
+                    Ok(J::Obj(OMap::new()))
+                }
+            }),
+            put: Box::new(move |_, _| {
+                if d2.load(Ordering::SeqCst) {
+                    Err("down".into())
+                } else {
+                    Ok(())
+                }
+            }),
+            running: Box::new(Vec::new),
+            stats: Box::new(move || {
+                if stats_fail.load(Ordering::SeqCst) > 0 {
+                    stats_fail.fetch_sub(1, Ordering::SeqCst);
+                    return Err(NotUtf8);
+                }
+                Ok(Vec::new())
+            }),
+            extra: Box::new(OMap::new),
+        };
+        let msgs = Messages::new(tmp.0.join("verd"));
+        Telemetry::new(cfg, &tmp.0.join("state"), io, msgs, clock)
+    }
+
+    fn write_snap(tmp: &Tmp, seq: i64, ts: i64, players: bool) {
+        let pl = if players {
+            format!(
+                r#"[{{"u": "{ED}", "n": "Em_K", "ping": 40, "join": {}}}]"#,
+                T0 - 600_000
+            )
+        } else {
+            "[]".into()
+        };
+        let body = format!(
+            r#"{{"v": 1, "seq": {seq}, "ts": {ts}, "win_ms": 10000, "srv": {{"ticks": 200, "mean": 10.0, "p99": 20.0}}, "pl": {pl}}}"#
+        );
+        std::fs::write(tmp.0.join("snap").join(format!("snap-{seq}.json")), body).unwrap();
+    }
+
+    /// Six snapshots a minute, read as the agent would.
+    #[allow(clippy::cast_precision_loss)]
+    fn run_minutes(
+        t: &Telemetry,
+        tmp: &Tmp,
+        first_seq: i64,
+        minutes: i64,
+        players: bool,
+    ) -> TResult<()> {
+        let mut seq = first_seq;
+        for m in 0..minutes {
+            for k in 0..6 {
+                let ts = T0 + m * 60_000 + k * 10_000;
+                write_snap(tmp, seq, ts, players);
+                seq += 1;
+                set_clock(ts as f64 / 1000.0 + 1.0);
+                t.poll(&mut lock(&t.core))?;
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn latest_is_cleared_once_the_plugin_goes_quiet() {
+        let tmp = Tmp::new("quiet");
+        let t = make(&tmp, Arc::default(), Arc::default());
+        run_minutes(&t, &tmp, 1, 1, true).unwrap();
+        assert_eq!(t.online_map().keys().collect::<Vec<_>>(), [ED]);
+        assert!(!t.may_backfill(&lock(&t.core)));
+        set_clock(clock() + 70.0);
+        t.poll(&mut lock(&t.core)).unwrap();
+        assert_eq!(t.online_map().len(), 1);
+        set_clock(clock() + 10.0);
+        t.poll(&mut lock(&t.core)).unwrap();
+        assert!(t.online_map().is_empty());
+        assert!(t.may_backfill(&lock(&t.core)));
+    }
+
+    #[test]
+    fn a_failed_close_or_flush_keeps_the_rows() {
+        let tmp = Tmp::new("keep");
+        let fail = Arc::new(AtomicUsize::new(1));
+        let t = make(&tmp, Arc::default(), Arc::clone(&fail));
+        run_minutes(&t, &tmp, 1, 1, true).unwrap();
+        write_snap(&tmp, 7, T0 + 60_000, true);
+        assert!(t.poll(&mut lock(&t.core)).is_err());
+        {
+            let c = lock(&t.core);
+            assert_eq!(
+                (c.minute_snaps.len(), c.inbox.len(), c.buffer.len(), c.seq),
+                (6, 1, 0, 0)
+            );
+        }
+        t.poll(&mut lock(&t.core)).unwrap();
+        let mut c = lock(&t.core);
+        assert_eq!(c.buffer.len(), 1);
+        assert!(
+            matches!(c.buffer[0].as_obj().and_then(|m| m.get("raw")), Some(J::List(r)) if r.len() == 6)
+        );
+        assert_eq!(c.minute_snaps[0].ts, T0 + 60_000);
+        // a segment write that fails keeps the buffer (a file where the directory should be)
+        let seg_dir = c.segments.directory.clone();
+        std::fs::remove_dir_all(&seg_dir).unwrap();
+        std::fs::write(&seg_dir, b"x").unwrap();
+        assert!(t.flush_segment(&mut c, true).is_err());
+        assert_eq!(c.buffer.len(), 1);
+        std::fs::remove_file(&seg_dir).unwrap();
+        assert!(t.flush_segment(&mut c, true).unwrap().is_some());
+        assert!(c.buffer.is_empty());
+    }
+
+    #[test]
+    fn shutdown_saves_the_ram_buffer_to_a_segment() {
+        let tmp = Tmp::new("shutdown");
+        let down = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let t = make(&tmp, down, Arc::default());
+        run_minutes(&t, &tmp, 1, 3, true).unwrap();
+        assert_eq!(lock(&t.core).buffer.len(), 2);
+        t.stop.set();
+        t.run();
+        let c = lock(&t.core);
+        assert!(c.buffer.is_empty());
+        let state = c.segments.load();
+        let (name, st) = state.iter().next().expect("a segment");
+        assert!(smallworld_core::fsx::exists(
+            &c.segments.directory.join(name)
+        ));
+        assert_eq!(
+            st.as_obj().and_then(|m| m.get("todo")),
+            Some(&J::List(vec![J::Int(0), J::Int(1)]))
+        );
+        assert_eq!(st.as_obj().and_then(|m| m.get("r2")), Some(&J::Bool(false)));
+    }
 }

@@ -96,7 +96,8 @@ when a fixture moves. gitleaks 8.30.1 checks a finding's global fingerprint befo
 
 ## 4. Tag and build the repository
 
-Cut the release as usual ([reference: Releasing](reference.md#releasing)): bump the version and the
+Cut the release as usual ([reference: Releasing](reference.md#releasing); since v1.5 a merged version bump
+is tagged and released by `autotag.yml`, which this one-time export predates): bump the version and the
 changelog (`scripts/release.py bump`), merge, tag `vX.Y.Z` on main (`scripts/release.py tag`: the private
 repository's tag; it only prints the push command, so don't push it if the old repository's release workflow
 shouldn't run). Then:
@@ -193,6 +194,12 @@ gh secret set PUBLISH_DENYLIST -R edvardk/smallworld < /path/to/private-config/p
 - Update the `PUBLISH_DENYLIST` secret whenever the denylist file changes (the same `gh secret set`).
 - Never bypass a hook (`git commit --no-verify`, `git push --no-verify`). A hit is fixed in the change; if it
   slipped into a local commit, amend or rebase it before pushing.
+
+**Releases** in the public repository (v1.5, [reference: Releasing](reference.md#releasing)): `python3
+scripts/release.py ship X.Y.Z` on the last feature branch (or `--standalone`), then merge the pull request: a
+merge to main that raises the version is tagged and released by `autotag.yml` (it calls `release.yml`; a tag made
+with `GITHUB_TOKEN` starts no workflow by itself). The release commit passes the same hooks and the `publication`
+check as any other.
 
 ## Does anything depend on the repository's numeric id?
 

@@ -23,7 +23,8 @@ name: e2e-mock
 # did. Wall time is the slowest shard's (~11 min) instead of the sum.
 #
 # What runs when (docs/ci.md; the product repo is public, so GitHub's runners cost no minutes here):
-#   - every pull request to main: `e2e` (a required check). The essential half (1-5, reboot gate, deploy checks,
+#   - every pull request to main but a version bump alone (v1.5, scripts/ci_changes.py `release`: skipped, which
+#     reports success): `e2e` (a required check). The essential half (1-5, reboot gate, deploy checks,
 #     firewall, 6's dry runs) always; the heavy half (telemetry, branding, migrate container -> container, P16
 #     knobs) when the change touches what those exercise (scripts/ci_changes.py group `e2e_full`). Never the
 #     benches.
@@ -88,10 +89,13 @@ jobs:
           SCOPE: ${{ inputs.scope }}
           IN_BENCH: ${{ inputs.bench }}
           CHG_FULL: ${{ steps.changes.outputs.e2e_full }}
+          CHG_RELEASE: ${{ steps.changes.outputs.release }}
         run: |
           bench=false
           case "$EVENT" in
-            pull_request) e2e=true; full="$CHG_FULL" ;;
+            pull_request)
+              if [ "$CHG_RELEASE" = true ]; then e2e=false; full=false;
+              else e2e=true; full="$CHG_FULL"; fi ;;
             workflow_dispatch)
               e2e=true; full=true; bench="$IN_BENCH"
               if [ "$SCOPE" = essential ]; then full=false; fi

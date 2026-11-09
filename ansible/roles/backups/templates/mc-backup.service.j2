@@ -14,6 +14,23 @@ Group={{ mc_ops_user }}
 SupplementaryGroups=minecraft
 EnvironmentFile={{ mc_etc_dir }}/restic.env
 Environment=RESTIC_CACHE_DIR={{ backups_cache_dir }} PYTHONDONTWRITEBYTECODE=1
+# v1.5 smooth backups (server.yml backups.*): what scripts/backup.py does on a run the timer started (skip an
+# idle, unchanged world; defer while players see lag), how it saves, and restic's upload limit (KiB/s, 0 = none).
+Environment=BACKUP_SKIP_WHEN_IDLE={{ '1' if backups_skip_when_idle else '0' }} BACKUP_DEFER_WHEN_BUSY={{ '1' if backups_defer_when_busy else '0' }} BACKUP_MAX_DEFER_MINUTES={{ backups_max_defer_minutes }}
+Environment=BACKUP_GENTLE_SAVE={{ '1' if backups_gentle_save else '0' }} BACKUP_UPLOAD_LIMIT_KIB={{ backups_upload_limit_kib }}
+{% if backups_restic_read_concurrency %}
+Environment=RESTIC_READ_CONCURRENCY={{ backups_restic_read_concurrency }}
+{% endif %}
+{% if backups_restic_s3_connections %}
+Environment=BACKUP_S3_CONNECTIONS={{ backups_restic_s3_connections }}
+{% endif %}
+{% if backups_restic_gomaxprocs %}
+# v1.5 performance.vm small: restic (Go) on {{ backups_restic_gomaxprocs }} core(s), its GC aiming below the memory limit.
+Environment=GOMAXPROCS={{ backups_restic_gomaxprocs }}
+{% endif %}
+{% if backups_restic_memory_limit_mb %}
+Environment=GOMEMLIMIT={{ backups_restic_memory_limit_mb }}MiB
+{% endif %}
 CacheDirectory=mc-restic
 CacheDirectoryMode=0750
 ExecStart={{ mc_bin_dir }}/backup.py
@@ -24,6 +41,12 @@ StateDirectory=mc-snapshots
 StateDirectoryMode=0750
 # If memory runs out, sacrifice restic rather than the server.
 OOMScoreAdjust=500
+{% if backups_memory_high_mb %}
+MemoryHigh={{ backups_memory_high_mb }}M
+{% endif %}
+{% if backups_memory_max_mb %}
+MemoryMax={{ backups_memory_max_mb }}M
+{% endif %}
 # P13: timely priority (has a deadline; the JVM still wins 10:1), see mc_timely_priority.
 {{ mc_timely_priority | join('\n') }}
 {% if mc_helper_cpus %}

@@ -1,0 +1,85 @@
+{
+ "_source": "Shaped from the Cloudflare API v4 reference (GET /zones?name=, list D1 databases, query), as cloudflare_d1_watchdog.json; ids are fake. v1.5: mc-agent's inventory with a live whitelist and a pending panel add, for `mcctl publish`'s whitelist warning.",
+ "exchanges": [
+  {
+   "request": {
+    "method": "GET",
+    "url": "https://api.cloudflare.com/client/v4/zones?name=tests.mcctl.internal"
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/json"
+    },
+    "body": {
+     "success": true,
+     "errors": [],
+     "messages": [],
+     "result": [
+      {
+       "id": "023e105f4ecef8ad9ca31a8372d0c353",
+       "name": "tests.mcctl.internal",
+       "account": {
+        "id": "0123456789abcdef0123456789abcdef",
+        "name": "Alex"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "url": "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/d1/database?name=example-watchdog"
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/json"
+    },
+    "body": {
+     "success": true,
+     "errors": [],
+     "messages": [],
+     "result": [
+      {
+       "name": "example-watchdog",
+       "uuid": "7a9e8d1c-0000-4000-8000-00000000d1d2",
+       "created_at": "2026-11-01T00:00:00Z",
+       "version": "production"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "POST",
+    "url": "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/d1/database/7a9e8d1c-0000-4000-8000-00000000d1d2/query"
+   },
+   "response": {
+    "status": 200,
+    "headers": {
+     "content-type": "application/json"
+    },
+    "body": {
+     "success": true,
+     "errors": [],
+     "messages": [],
+     "result": [
+      {
+       "results": [
+        {
+         "value": "{\"ts\": 1793426400000, \"whitelist\": [{\"name\": \"Alex\", \"uuid\": \"00000000-0000-4000-8000-0000000000a1\"}, {\"name\": \"Kept_Guest\", \"uuid\": \"00000000-0000-4000-8000-0000000000a2\", \"unmanaged\": true}, {\"name\": \"PanelAdd\", \"uuid\": \"00000000-0000-4000-8000-0000000000a3\"}, {\"name\": \"Removed\", \"uuid\": \"00000000-0000-4000-8000-0000000000a4\"}], \"pending\": [{\"uuid\": \"00000000-0000-4000-8000-0000000000a3\", \"name\": \"PanelAdd\", \"op\": \"add\", \"ts\": 1793426300.0, \"login\": \"alex@x\", \"pr\": 7}]}"
+        }
+       ],
+       "success": true,
+       "meta": {}
+      }
+     ]
+    }
+   }
+  }
+ ]
+}

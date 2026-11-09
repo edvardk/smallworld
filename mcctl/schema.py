@@ -484,7 +484,7 @@ class Performance:
         "overrides its profile value on its own (docs/operations.md 'Performance profile').",
     )
     view_distance: int | None = opt(
-        doc="View distance in chunks (vanilla profile 10, balanced 8).",
+        doc="View distance in chunks (vanilla profile 10, balanced 8; performance.vm small: at most 8).",
         derived=PROFILE,
         minimum=2,
         maximum=32,
@@ -531,6 +531,14 @@ class Performance:
         minimum=-1,
         maximum=65535,
     )
+    vm: Literal["default", "small"] = opt(
+        "default",
+        doc="v1.5: memory preset. small = for 2-4 GB hosts: jvm.heap_mb auto = RAM - max(1024 MB, "
+        "40% of RAM); restic on one core, one file at a time, 2 upload connections, a 192 MiB soft and "
+        "512 MB hard memory cap; health check and map renderer capped (map: 64 MB per thread + 64); "
+        "Paper's chunk workers 1 (pre-generation pace) unless chunk_threads is set; view distance at most 8 "
+        'unless set (docs/operations.md "Small-VM preset"). default = unchanged.',
+    )
     noatime: bool = opt(
         False,
         doc="P16: mount the filesystem holding the server directory with noatime (its /etc/fstab entry + a "
@@ -569,6 +577,41 @@ class Backups:
     lock_days: int = opt(7, doc="R2 bucket lock on snapshots/ and data/ (keep_within = lock + 1).", minimum=1)
     schedule: str = opt("hourly", doc="Backup timer (systemd OnCalendar).", pattern=CALENDAR)
     prune_schedule: str = opt("Sun 03:30", doc="Prune timer (systemd OnCalendar).", pattern=CALENDAR)
+    # v1.5 smooth backups (scripts/backup.py; docs/operations.md "Smooth backups"). Only timer runs are
+    # skipped or deferred; `mcctl backup now`, the panel, Discord and every backup the product takes first run
+    # at once.
+    skip_when_idle: bool = opt(
+        True,
+        doc="v1.5: skip a scheduled backup when nobody played since the last successful one, no "
+        "pre-generation runs and no file it would read changed (the watchdog and the weekly backup test "
+        "count the skip as fresh); a real backup still runs at least every 24 h.",
+    )
+    defer_when_busy: bool = opt(
+        True,
+        doc="v1.5: with players online and the server lagging (TPS < 18 or MSPT > 40 ms over a minute, or a "
+        "tick spike in the last 5 s), wait a minute at a time before a scheduled backup, at most "
+        "max_defer_minutes, then back up anyway.",
+    )
+    max_defer_minutes: int = opt(
+        15,
+        doc="v1.5: the longest defer_when_busy waits. Must leave room in the watchdog's grace (it alerts "
+        "after monitoring.alerts.backup_period_minutes + 30 without a backup).",
+        minimum=1,
+        maximum=120,
+    )
+    gentle_save: bool = opt(
+        True,
+        doc="v1.5: `save-all` without `flush` (no main-thread wait for the disk), then wait until the "
+        "world's files are quiet; `save-all flush` only if they aren't within 15 s. false = always "
+        "`save-all flush` (before v1.5).",
+    )
+    upload_limit_kib: int = opt(
+        0,
+        doc="v1.5: restic --limit-upload in KiB/s; 0 = unlimited. A limit spares a thin uplink but lengthens "
+        "each backup, and saving stays off for the whole run.",
+        minimum=0,
+        maximum=10000000,
+    )
 
 
 @dataclass(frozen=True)
@@ -1637,9 +1680,16 @@ def _fill(obj: Any, values: dict[str, Any]) -> Any:
     return dataclasses.replace(obj, **changes)
 
 
+# v1.5 performance.vm small: view distance at most this (chunks kept per player: (2v+1)^2, 441 at 10 -> 289).
+SMALL_VM_VIEW_DISTANCE = 8
+
+
 def _derive_profile(cfg: ServerConfig) -> ServerConfig:
     perf = cfg.performance
     values = dict(PROFILES[perf.profile])
+    if perf.vm == "small":
+        values["view_distance"] = min(values["view_distance"], SMALL_VM_VIEW_DISTANCE)
+        values["simulation_distance"] = min(values["simulation_distance"], values["view_distance"])
     if perf.view_distance is not None and perf.simulation_distance is None:
         # only the view distance set: the profile's simulation distance never exceeds it
         values["simulation_distance"] = min(values["simulation_distance"], perf.view_distance)
@@ -1889,6 +1939,18 @@ def _cross_validate(cfg: ServerConfig, product_root: Path, i_know: bool, errors:
             f"monitoring.alerts.backup_period_minutes: backups.schedule {cfg.backups.schedule!r} runs every "
             f"{shorthand} minutes; the watchdog would report every backup as late (set >= {shorthand})"
         )
+    if shorthand is not None and cfg.backups.defer_when_busy:
+        # The watchdog alerts after backup_period_minutes + 30 without an OK; a deferred run starts up to the
+        # timer's 5 min random delay + max_defer_minutes late, and its duration varies (5 min margin).
+        room = cfg.monitoring.alerts.backup_period_minutes + 30 - shorthand - 10
+        if cfg.backups.max_defer_minutes > room:
+            errors.append(
+                f"backups.max_defer_minutes: {cfg.backups.max_defer_minutes} would let a deferred backup "
+                f"look late to the watchdog (at most {max(room, 0)} with backups.schedule "
+                f"{cfg.backups.schedule!r} "
+                "and monitoring.alerts.backup_period_minutes "
+                f"{cfg.monitoring.alerts.backup_period_minutes}; raise that, or set defer_when_busy: false)"
+            )
     start, end = cfg.automation.reboot_window.split("-")
     if start == end:
         errors.append("automation.reboot_window: start and end are the same")

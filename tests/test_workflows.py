@@ -149,6 +149,7 @@ def test_product_ci_validates_the_example_config_repo() -> None:
 def test_no_deploy_workflows_left_in_the_product() -> None:
     names = {p.name for p in WORKFLOWS}
     assert names == {
+        "autotag.yml",
         "ci.yml",
         "e2e-mock.yml",
         "release.yml",
@@ -156,6 +157,64 @@ def test_no_deploy_workflows_left_in_the_product() -> None:
         "update-lock.yml",
         "dependabot-automerge.yml",
     }
+
+
+def test_autotag_tags_a_merged_version_bump_and_calls_release() -> None:
+    """v1.5: a push to main whose version is new is tagged (GitHub API, GITHUB_TOKEN) and released. A tag made
+    with GITHUB_TOKEN starts no workflow, so release.yml is called (workflow_call) with the tag; a person's tag
+    push still starts it."""
+    wf = load(REPO / ".github/workflows/autotag.yml")
+    assert wf["on"] == {"push": {"branches": ["main"]}} and wf["permissions"] == {"contents": "read"}
+    assert wf["concurrency"] == {"group": "autotag", "cancel-in-progress": False}
+    tag, rel = wf["jobs"]["tag"], wf["jobs"]["release"]
+    assert tag["permissions"] == {"contents": "write"}
+    steps = {s.get("id") or s.get("name") or s["uses"]: s for s in tag["steps"]}
+    checkout = next(s for s in tag["steps"] if "uses" in s)
+    assert checkout["with"]["persist-credentials"] is False
+    assert steps["plan"]["run"].strip() == "python3 scripts/release.py autotag"
+    create = steps["Create the annotated tag"]
+    assert create["if"] == "steps.plan.outputs.action == 'tag'"
+    assert "repos/$REPO/git/tags" in create["run"] and "repos/$REPO/git/refs" in create["run"]
+    assert "release.py tag $TAG --push" in create["run"]  # the fallback, named in the error
+    assert steps["release"]["if"] == "steps.plan.outputs.action != 'none'"
+    assert 'gh release view "$TAG"' in steps["release"]["run"]
+    assert rel["uses"] == "./.github/workflows/release.yml" and rel["needs"] == "tag"
+    assert rel["if"] == "needs.tag.outputs.release == 'true'"
+    assert rel["with"] == {"tag": "${{ needs.tag.outputs.tag }}"}
+    release = load(REPO / ".github/workflows/release.yml")
+    # the ceiling release.yml needs: what its `ci` job grants ci.yml, plus actions read for `reuse`
+    assert rel["permissions"] == {**release["jobs"]["ci"]["permissions"], "actions": "read"}
+    for name, job in release["jobs"].items():
+        for scope, level in job.get("permissions", {}).items():
+            allowed = {"read": ("read", "write"), "write": ("write",)}[level]
+            assert rel["permissions"].get(scope) in allowed, (name, scope)
+    assert set(release["on"]) == {"push", "workflow_call"} and release["on"]["push"] == {"tags": ["v*.*.*"]}
+    assert release["on"]["workflow_call"]["inputs"]["tag"]["required"] is True
+    assert release["jobs"]["ci"]["with"] == {"full": True}
+    # v1.5 housekeeping: autotag's call reuses the merged PR's passed full CI run (release.py ci-reuse, read-only),
+    # a pushed tag never does; any doubt (no reuse=true, a failed `reuse` job) runs CI.
+    reuse = release["jobs"]["reuse"]
+    assert reuse["if"] == "${{ inputs.tag != '' && github.ref_type != 'tag' }}"
+    assert reuse["permissions"] == {"contents": "read", "pull-requests": "read", "actions": "read"}
+    assert reuse["steps"][0]["with"] == {"ref": "${{ inputs.tag }}", "persist-credentials": False}
+    decide = reuse["steps"][1]
+    assert decide["run"] == 'python3 scripts/release.py ci-reuse --repo "$REPO" --sha "$(git rev-parse HEAD)"'
+    assert decide["env"]["GH_TOKEN"] == "${{ github.token }}"
+    ci = release["jobs"]["ci"]
+    assert ci["needs"] == "reuse"
+    assert (
+        ci["if"] == "${{ !cancelled() && (github.ref_type == 'tag' || needs.reuse.outputs.reuse != 'true') }}"
+    )
+    gate = " ".join(release["jobs"]["release"]["if"].split())
+    assert release["jobs"]["release"]["needs"] == ["reuse", "ci"]
+    assert gate == (
+        "${{ !cancelled() && (needs.ci.result == 'success' || (needs.ci.result == 'skipped' && "
+        "needs.reuse.outputs.reuse == 'true' && github.ref_type != 'tag')) }}"
+    )
+    job = release["jobs"]["release"]
+    assert job["steps"][0]["with"]["ref"] == "${{ inputs.tag || github.ref }}"
+    for step in job["steps"][1:]:
+        assert step["env"]["TAG"] == "${{ inputs.tag || github.ref_name }}"
 
 
 def test_e2e_mock_workflow() -> None:

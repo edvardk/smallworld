@@ -134,10 +134,8 @@ mod tests {
     use super::*;
     use std::process::Command;
 
-    fn tmp(name: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("swcore-flock-{}", std::process::id()));
-        std::fs::create_dir_all(&d).unwrap();
-        d.join(name)
+    fn tmp(name: &str) -> crate::testutil::TmpDir {
+        crate::testutil::TmpDir::new("swcore-flock").child(name)
     }
 
     #[test]
@@ -191,7 +189,8 @@ mod tests {
 
     #[test]
     fn process_lock_serialises_threads() {
-        let l = std::sync::Arc::new(ProcessFileLock::new(tmp("pending.json.lock")));
+        let p = tmp("pending.json.lock");
+        let l = std::sync::Arc::new(ProcessFileLock::new(p.to_path_buf()));
         let counter = std::sync::Arc::new(Mutex::new(Vec::new()));
         let handles: Vec<_> = (0..4)
             .map(|i| {

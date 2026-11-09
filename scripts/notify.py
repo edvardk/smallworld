@@ -59,6 +59,12 @@ SNAPSHOTS_FILE = Path("/var/lib/mc-snapshots/snapshots.json")
 # nothing for long.
 PREGEN_HOLD_FILE = SNAPSHOTS_FILE.with_name("pregen-hold.json")
 PREGEN_HOLD_MAX_S = 4 * 3600
+# v1.5 smooth backups: what the last successful `auto` backup saw (a fingerprint of the files it read) and
+# the scheduled runs skipped since (backup.py, as mc-backup: the ops user, 0640). backup_check.py reads it: a
+# skip within its max age means backups haven't stopped, the world just hasn't changed. A skip never stretches
+# the gap between real backups beyond BACKUP_SKIP_MAX_HOURS.
+BACKUP_STATE_FILE = SNAPSHOTS_FILE.with_name("backup-state.json")
+BACKUP_SKIP_MAX_HOURS = 24
 CHECKS = ("health", "backup")
 STATUSES = ("", "start", "fail")
 MAX_MAINTENANCE_MINUTES = 1440  # = the Worker's limit

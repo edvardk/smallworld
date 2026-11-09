@@ -201,8 +201,46 @@ pub fn telemetry_loop(d: &Daemon) -> AResult<()> {
 /// adapts a loop with its own signature.
 pub type LoopFn = Box<dyn Fn(&Daemon) -> AResult<()> + Send>;
 
+/// mc_agent.py `WS_CLOSE_WAIT_S` (v1.5): at shutdown, how long the Worker has to answer our close frame.
+pub const WS_CLOSE_WAIT_S: f64 = 5.0;
+/// mc_agent.py `TELEMETRY_STOP_WAIT_S` (v1.5): at shutdown, the telemetry's last round and its segment.
+pub const TELEMETRY_STOP_WAIT_S: f64 = 30.0;
+
+/// `thread.join(timeout)`: true when the thread finished in time.
+pub fn join_within(h: &std::thread::JoinHandle<()>, secs: f64) -> bool {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs_f64(secs);
+    while !h.is_finished() {
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    true
+}
+
+/// `Agent.shutdown(threads)` (v1.5, after SIGTERM): the WebSocket closed gracefully (1000; the session ends on
+/// the Worker's answer), then the telemetry's RAM buffer saved to a segment (its loop ends with `shutdown`).
+/// Each wait is bounded.
+pub fn shutdown(daemon: &Daemon, threads: &[(&'static str, std::thread::JoinHandle<()>)]) {
+    if let Some(ws) = daemon.ws_sender() {
+        ws.send_close(&1000u16.to_be_bytes());
+    }
+    for (name, wait) in [
+        ("control", WS_CLOSE_WAIT_S),
+        ("telemetry", TELEMETRY_STOP_WAIT_S),
+    ] {
+        if let Some((_, h)) = threads.iter().find(|(n, _)| *n == name) {
+            join_within(h, wait);
+        }
+    }
+}
+
 /// Runs `f` on its own thread, restarted (after 5 s) if it panics or fails; a stub (`NotPorted`) ends it.
-fn spawn_loop(name: &'static str, daemon: &Arc<Daemon>, f: LoopFn) -> std::io::Result<()> {
+fn spawn_loop(
+    name: &'static str,
+    daemon: &Arc<Daemon>,
+    f: LoopFn,
+) -> std::io::Result<std::thread::JoinHandle<()>> {
     let d = Arc::clone(daemon);
     std::thread::Builder::new()
         .name(name.into())
@@ -222,7 +260,6 @@ fn spawn_loop(name: &'static str, daemon: &Arc<Daemon>, f: LoopFn) -> std::io::R
                 }
             }
         })
-        .map(|_| ())
 }
 
 /// `Agent.run()`: the loops (with telemetry's when `EXPERIENCE=1`), then wait for `stop`.
@@ -261,10 +298,12 @@ pub fn run(daemon: &Arc<Daemon>) -> std::io::Result<()> {
             Ok((configured, product, selftest))
         }));
     }
+    let mut threads = Vec::new();
     for (name, f) in loops {
-        spawn_loop(name, daemon, f)?;
+        threads.push((name, spawn_loop(name, daemon, f)?));
     }
     while !daemon.stop.wait(3600.0) {}
+    shutdown(daemon, &threads);
     Ok(())
 }
 

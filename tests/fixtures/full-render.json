@@ -1,5 +1,16 @@
 {
  "group_vars": {
+  "backups_defer_when_busy": true,
+  "backups_gentle_save": true,
+  "backups_max_defer_minutes": 15,
+  "backups_memory_high_mb": 0,
+  "backups_memory_max_mb": 0,
+  "backups_restic_gomaxprocs": 0,
+  "backups_restic_memory_limit_mb": 0,
+  "backups_restic_read_concurrency": 0,
+  "backups_restic_s3_connections": 0,
+  "backups_skip_when_idle": true,
+  "backups_upload_limit_kib": 0,
   "firewall_mc_max_concurrent": 10,
   "health_alert_repeat_hours": 6,
   "health_disk_alert_pct": 85,
@@ -10,6 +21,7 @@
   "health_mspt_alert_checks": 3,
   "health_steal_alert_checks": 3,
   "health_steal_alert_pct": 10,
+  "map_memory_max_mb": 512,
   "mc_accept_eula": true,
   "mc_activation_range": {
    "animals": 0,
@@ -279,6 +291,7 @@
   },
   "mc_world_expected": false,
   "mc_world_library": [],
+  "monitoring_health_memory_max_mb": 0,
   "monitoring_pregen_enabled": true,
   "monitoring_pregen_frontier": true,
   "monitoring_pregen_margin": 1024,

@@ -568,7 +568,7 @@
           "default": "vanilla"
         },
         "view_distance": {
-          "description": "View distance in chunks (vanilla profile 10, balanced 8). Default: performance.profile.",
+          "description": "View distance in chunks (vanilla profile 10, balanced 8; performance.vm small: at most 8). Default: performance.profile.",
           "type": "integer",
           "minimum": 2,
           "maximum": 32
@@ -768,6 +768,14 @@
           "maximum": 65535,
           "default": 256
         },
+        "vm": {
+          "description": "v1.5: memory preset. small = for 2-4 GB hosts: jvm.heap_mb auto = RAM - max(1024 MB, 40% of RAM); restic on one core, one file at a time, 2 upload connections, a 192 MiB soft and 512 MB hard memory cap; health check and map renderer capped (map: 64 MB per thread + 64); Paper's chunk workers 1 (pre-generation pace) unless chunk_threads is set; view distance at most 8 unless set (docs/operations.md \"Small-VM preset\"). default = unchanged.",
+          "enum": [
+            "default",
+            "small"
+          ],
+          "default": "default"
+        },
         "noatime": {
           "description": "P16: mount the filesystem holding the server directory with noatime (its /etc/fstab entry + a live remount). false leaves the mount untouched.",
           "type": "boolean",
@@ -855,6 +863,35 @@
           "type": "string",
           "pattern": "^[^\\x00-\\x20\\x7f-][^\\x00-\\x1f\\x7f]{0,99}$",
           "default": "Sun 03:30"
+        },
+        "skip_when_idle": {
+          "description": "v1.5: skip a scheduled backup when nobody played since the last successful one, no pre-generation runs and no file it would read changed (the watchdog and the weekly backup test count the skip as fresh); a real backup still runs at least every 24 h.",
+          "type": "boolean",
+          "default": true
+        },
+        "defer_when_busy": {
+          "description": "v1.5: with players online and the server lagging (TPS < 18 or MSPT > 40 ms over a minute, or a tick spike in the last 5 s), wait a minute at a time before a scheduled backup, at most max_defer_minutes, then back up anyway.",
+          "type": "boolean",
+          "default": true
+        },
+        "max_defer_minutes": {
+          "description": "v1.5: the longest defer_when_busy waits. Must leave room in the watchdog's grace (it alerts after monitoring.alerts.backup_period_minutes + 30 without a backup).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120,
+          "default": 15
+        },
+        "gentle_save": {
+          "description": "v1.5: `save-all` without `flush` (no main-thread wait for the disk), then wait until the world's files are quiet; `save-all flush` only if they aren't within 15 s. false = always `save-all flush` (before v1.5).",
+          "type": "boolean",
+          "default": true
+        },
+        "upload_limit_kib": {
+          "description": "v1.5: restic --limit-upload in KiB/s; 0 = unlimited. A limit spares a thin uplink but lengthens each backup, and saving stays off for the whole run.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000000,
+          "default": 0
         }
       }
     },

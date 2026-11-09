@@ -710,7 +710,8 @@ def test_hud_parts_docs() -> None:
     assert "+fps,-mspt" in ops
     features = (REPO / "docs/features.md").read_text()
     assert "`branding.hud.parts`" in features and "`/hud minimal`" in features
-    changelog = (REPO / "CHANGELOG.md").read_text().split("## [1.4.0]", 1)[0]
+    # 1.4.1's own section: later releases have their own headings
+    changelog = (REPO / "CHANGELOG.md").read_text().split("## [1.4.0]", 1)[0].split("## [1.4.1]", 1)[1]
     assert "`branding.hud.parts`" in changelog and "`/hud minimal`" in changelog
     for heading in ("### Added", "### Fixed", "### Security"):
         assert changelog.count(heading) <= 1, heading

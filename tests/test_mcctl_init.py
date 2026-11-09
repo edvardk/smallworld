@@ -102,7 +102,8 @@ def test_full_mock_run_then_idempotent_rerun(tmp_path) -> None:
     assert (env["TAILSCALE_OAUTH_CLIENT_ID"], env["TAILSCALE_OAUTH_CLIENT_SECRET"]) == (cid, csecret)
     # The product repo's settings (product-setup) were applied
     prod = deps.cloud.gh_settings[configrepo.PRODUCT_REPOSITORY]
-    assert prod["allow_auto_merge"] and prod["vulnerability-alerts"] and len(prod["rulesets"]) == 2
+    # main, v* tags (move/delete), v1.5: v* tag creation
+    assert prod["allow_auto_merge"] and prod["vulnerability-alerts"] and len(prod["rulesets"]) == 3
     assert "Checklist:" in out and "[x] 17 First backup" in out  # numbered 1..17 like the headers
     assert "[1/17] Prerequisites" in out and "[0/" not in out and "[x]  0 " not in out
     # P14: Discord slash commands: ids + public key in server.yml, commands registered, endpoint = the Worker

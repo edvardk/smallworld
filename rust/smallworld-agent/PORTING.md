@@ -343,11 +343,14 @@ harness's black-box runs (`pytest tests/agent_parity --impl=rust --agent-bin=PAT
   text), the agent scenario `experience` (the daemon with `EXPERIENCE=1`: minute rows, player_message's online view
   and limits, messages.tsv), e2e `telemetry_check.py` on both telemetry shards (`E2E_AGENT_IMPL`: rust, the
   default, and python).
-- Python issues kept for parity (the goldens and vectors lock them in; fix in both later, with a test on each side):
-  `NaN`/`Infinity` in a snapshot's integer field raises from `int()` (`ValueError`/`OverflowError`: the round fails
-  and the reader never moves past that file; Rust raises the same exception, `snapshot::py_int`, vectors
-  `python_raises`); a backfill row the Worker refuses with a 4xx is retried forever (the Pacer never gives it up);
-  `latest` is never cleared after the plugin goes quiet (`quiet()` and `online()` keep the last snapshot).
+- v1.5 fixed, in both implementations, the Python issues v1.4 kept for parity (each with a test on both sides,
+  goldens and vectors regenerated from Python): a number no snapshot field can hold (`NaN`, an infinity, `1e400`,
+  an integer field beyond 64 bits) is a `BadSnapshot` (skipped, logged once, vectors `bad_snapshot`); a bool is no
+  int and `ts` stays in 0..=`MAX_TS_MS`; snapshots stay in time order within one read; a permanent 4xx gives the
+  row (or the segment PUT) up (`row_refused`, not 429/401/403/404/408); `latest` becomes the quiet view after
+  `QUIET_MS` without a snapshot; the minute's snapshots, events and the buffer are cleared only after a successful
+  write (`inbox`); the RAM buffer goes to a segment at shutdown; the weighted mean, UINT64_MAX, `prune`'s save,
+  `_median`'s overflow and `BACKFILL_WINDOW`'s range.
 
 ## Parity gate (tests/agent_parity)
 
@@ -380,13 +383,14 @@ with `scripts/parity_vectors.py --check`). CI runs the scenarios listed in `RUST
 | 23 | `locks` | jobs (needs the daemon) |
 | 24 | `state_roundtrip` | everyone (integration) |
 
-Gotchas the goldens encode (keep them; both are logged as known issues to fix in Python and Rust together):
+Gotchas the goldens encode:
 - error texts carry Python exception names (`IsADirectoryError`, `CalledProcessError`, `TimeoutExpired`): use
   `AgentError::Os(class)` / `errno::io_class`;
-- `Jobs._run` reports the final state **before** releasing `job.lock` (jobs.rs does: `work` reports, then `run`
-  drops the guard);
-- `verify` accepts `iat: NaN` (vector case `nan`). serde_json can't parse a bare `NaN`; the vector feeds it
-  through Python's parser, so match the vector's expected result for that case explicitly.
+- v1.5: `Jobs._run` releases `job.lock`, then reports the final state (jobs.rs: `run` drops the guard, then
+  reports); `verify` refuses a non-finite `iat` as a bad field (vector cases `nan`, `iat_infinity`); at SIGTERM
+  both daemons close the WebSocket with 1000 (one close frame per session: `close_sent`), wait for the Worker's
+  answer (at most `WS_CLOSE_WAIT_S`) and the telemetry's last segment (`TELEMETRY_STOP_WAIT_S`), then exit; the
+  fake Worker records every `ws-close` with `by` (worker or agent).
 - The harness's TLS fake now uses a CA-signed leaf (rustls refuses a self-signed CA certificate as the server's;
   `fakes.make_cert`).
 
@@ -443,11 +447,9 @@ Gotchas the goldens encode (keep them; both are logged as known issues to fix in
   (UTF-8, with or without a BOM, is); the server writes UTF-8.
 - telemetry: a minute row's `stats` object lists its players in sorted order; Python's comes from iterating a set
   (`online().keys() | {...}`), which varies with the hash seed. Same content.
-- telemetry: a snapshot's integer beyond 64 bits (Python: a big int) saturates where Python `int()`s it, and makes
-  a `ts` invalid (the snapshot is skipped); one beyond a float's range reads as an infinity (Python's `float()`
-  raises `OverflowError: int too large to convert to float` in `_num` itself); a `NaN` among the values `sorted()`
-  or `sort(key=...)` orders may come out in another order; a boolean `ts` (an int to Python) reads as 0/1 where Python echoes
-  `true` in the row's `raw`. The plugin writes neither (a hot chunk's boolean `cx`/`cz` is echoed as Python does).
+- telemetry: a float field's finite value beyond 64 bits that Python `int()`s (`ticks`, `budget_skips`) saturates
+  here (Python: a big int). Since v1.5 a snapshot's integer fields, `ts`, bools and non-finite numbers are checked
+  the same way in both (`BadSnapshot`), so no `NaN` reaches a sort any more.
 - telemetry: a segment with a corrupt deflate stream is unreadable (given up, a gap), as a truncated or non-gzip
   one is in both; Python raises an uncaught `zlib.error` for it (the round fails). The segments are the agent's own.
 - telemetry: `telemetry-id.json` with a non-finite `seq` reads as invalid (a new id); Python's `int()` raises an

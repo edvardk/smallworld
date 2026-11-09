@@ -4,6 +4,9 @@
 # deploy (when server.yml deploy.enabled is true and something deploy-relevant changed since the last successful
 # deploy), the weekly slot (automation.update_day, 04:17 UTC) opens the update PRs and deploys main if it changed,
 # Mondays expiry-check (the weekly backup test runs on the server; `backup-check` here is for a manual run).
+# v1.5: Actions > server > Run workflow > task `product-update` (product_version `latest` or vX.Y.Z) pins that
+# product release now: a pin pull request (a patch bump merges itself through `server / gate` and deploys;
+# minor/major wait for your merge), and the run's summary shows the local command if the Worker changed.
 # Actions minutes: batch config changes into one push (docs/ci.md "Keeping a config repo's minutes low").
 name: server
 
@@ -16,12 +19,16 @@ on:
       task:
         description: What to run
         type: choice
-        options: [deploy, update, backup-check, expiry-check]
+        options: [deploy, update, product-update, backup-check, expiry-check]
         default: deploy
       force_restart:
         description: "deploy: restart Minecraft now, even outside server.yml maintenance.window"
         type: boolean
         default: false
+      product_version:
+        description: "product-update: the product release to pin and deploy (latest, or vX.Y.Z)"
+        type: string
+        default: latest
   schedule:
     - cron: "17 4 * * 2"   # update + deploy (automation.update_day, Tue; 04:17 UTC)
     - cron: "41 9 * * 1"   # expiry-check (Mon)

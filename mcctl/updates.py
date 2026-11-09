@@ -94,18 +94,17 @@ class Repo:
         self.call("DELETE", f"/repos/{self.repository}/git/refs/heads/{branch}", ok=(204, 200, 422))
         self.log.append(f"closed #{number} ({branch}): {why}")
 
-    def propose(
-        self,
-        branch: str,
-        files: Mapping[str, str],
-        title: str,
-        body: str,
-        auto_merge: bool,
-        base: str = "main",
-    ) -> dict[str, Any]:
-        """Branch from base, one commit per file (contents API), a pull request, and auto-merge if asked."""
-        head = self.call("GET", f"/repos/{self.repository}/git/ref/heads/{base}")["object"]["sha"]
-        self.call("POST", f"/repos/{self.repository}/git/refs", {"ref": f"refs/heads/{branch}", "sha": head})
+    def ref_sha(self, branch: str) -> str | None:
+        """The commit a branch points at, or None (no such branch)."""
+        try:
+            data = self.call("GET", f"/repos/{self.repository}/git/ref/heads/{branch}")
+        except ProviderError:
+            return None
+        sha = (data.get("object") or {}).get("sha") if isinstance(data, dict) else None
+        return str(sha) if sha else None
+
+    def commit_files(self, branch: str, files: Mapping[str, str], title: str) -> None:
+        """One commit per file on branch (contents API)."""
         for path, text in files.items():
             current = self.file(path, branch)
             self.call("PUT", f"/repos/{self.repository}/contents/{urllib.parse.quote(path)}", {
@@ -114,16 +113,44 @@ class Repo:
                 "branch": branch,
                 **({"sha": current[1]} if current else {}),
             })  # fmt: skip
+
+    def enable_auto_merge(self, pr: Mapping[str, Any]) -> None:
+        self.graphql(
+            "mutation($id: ID!) { enablePullRequestAutoMerge("
+            "input: {pullRequestId: $id, mergeMethod: SQUASH}) { clientMutationId } }",
+            {"id": pr["node_id"]},
+        )
+        self.log.append(f"auto-merge on for #{pr['number']} (merges once `server / gate` passes)")
+
+    def propose(
+        self,
+        branch: str,
+        files: Mapping[str, str],
+        title: str,
+        body: str,
+        auto_merge: bool,
+        base: str = "main",
+        *,
+        reset: bool = False,
+    ) -> dict[str, Any]:
+        """Branch from base, one commit per file (contents API), a pull request, and auto-merge if asked.
+        `reset` (v1.5): the branch exists already without an open pull request (a leftover): moved to base."""
+        head = self.call("GET", f"/repos/{self.repository}/git/ref/heads/{base}")["object"]["sha"]
+        if reset:
+            self.call(
+                "PATCH", f"/repos/{self.repository}/git/refs/heads/{branch}", {"sha": head, "force": True}
+            )
+            self.log.append(f"{branch} existed without an open pull request: reset to {base}")
+        else:
+            self.call(
+                "POST", f"/repos/{self.repository}/git/refs", {"ref": f"refs/heads/{branch}", "sha": head}
+            )
+        self.commit_files(branch, files, title)
         pr = self.call("POST", f"/repos/{self.repository}/pulls",
                        {"title": title, "head": branch, "base": base, "body": body})  # fmt: skip
         self.log.append(f"opened #{pr['number']} {title}")
         if auto_merge:
-            self.graphql(
-                "mutation($id: ID!) { enablePullRequestAutoMerge("
-                "input: {pullRequestId: $id, mergeMethod: SQUASH}) { clientMutationId } }",
-                {"id": pr["node_id"]},
-            )
-            self.log.append(f"auto-merge on for #{pr['number']} (merges once `server / gate` passes)")
+            self.enable_auto_merge(pr)
         return pr
 
 
@@ -325,6 +352,8 @@ def run(
         existing = repo.open_pulls("update/product-")
         if any(p["head"]["ref"] == branch for p in existing):
             repo.log.append(f"{branch}: already proposed")
+        elif any(p["head"]["ref"] == f"upgrade/product-{tag}" for p in repo.open_pulls("upgrade/product-")):
+            repo.log.append(f"upgrade/product-{tag}: already proposed (`mcctl upgrade`), not duplicated")
         else:
             for pr in existing:
                 repo.close(pr, f"Superseded by {tag}.")
@@ -333,7 +362,7 @@ def run(
             merge = patch and auto_merge == "builds+patch"
             body = product_body(pin.version or pin.sha[:12], tag, pin.repository, sha, patch, merge)
             repo.propose(branch, {WORKFLOW: text}, f"Product update to {tag}", body,
-                         auto_merge=merge)  # fmt: skip
+                         auto_merge=merge, reset=repo.ref_sha(branch) is not None)  # fmt: skip
     else:
         repo.log.append(f"product: {pin.version or pin.sha[:12]} is the latest release")
     return repo.log

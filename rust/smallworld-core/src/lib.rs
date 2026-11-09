@@ -25,3 +25,6 @@ pub mod properties;
 pub mod pyjson;
 pub mod pystr;
 pub mod rcon;
+
+#[cfg(test)]
+mod testutil;

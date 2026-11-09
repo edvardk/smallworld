@@ -6,6 +6,117 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Added
+
+- Shipping an update in two steps ([operations: Shipping an update](docs/operations.md#shipping-an-update)).
+  `scripts/release.py ship X.Y.Z` on the last feature branch merges a freshly fetched `origin/main` in (never a
+  rebase), bumps the version and the changelog, commits "Release X.Y.Z", pushes and opens the pull request (or
+  names the open one) through `gh`; `--standalone` cuts `release-X.Y.Z` from the fetched `origin/main` when no
+  feature PR is pending, `--auto-merge` turns on auto-merge. It refuses a dirty tree, an empty `[Unreleased]`, a
+  version not greater than the latest tag and an existing tag, each with the fix.
+- Auto-tag on merge: the new `autotag.yml` tags `vX.Y.Z` when a push to main raises `pyproject.toml`'s version
+  above every `v*` tag and `release.py check` passes, then calls `release.yml` (now also `workflow_call`); a
+  re-run or a push without a version change does nothing. `release.py tag` stays as the manual fallback.
+  `mcctl product-setup` splits the `v*` tag ruleset: creation for the admin and GitHub Actions, moving and
+  deleting for the admin only (run `mcctl product-setup` once).
+- CI for a version bump alone (only version lines of `pyproject.toml` / `mcctl/__init__.py`, plus docs): lint's
+  docs half and `release.py check`, no full suite, controller matrix or e2e (`scripts/ci_changes.py` `release`).
+- `mcctl rollout [--to vX.Y.Z] [--dry-run]` in a config repo: fetch and fast-forward main (refused when dirty,
+  ahead or diverged), open the pin PR (or use the open one), follow its checks, merge after a typed tag (or report
+  the gate's auto-merge), watch the deploy, pull, then the new pin's `render`, `plan` and `apply` (its own typed
+  confirmation). For minor/major releases and Worker changes; patch releases still roll out by themselves. In
+  the dashboard's command palette as "Updates: rollout preview" and "Terminal: roll out the latest release".
+- No repeat CI run on release: when `autotag.yml` calls `release.yml` for a clean merge (the pull request's head
+  already contained main, so the merge commit's tree is the head's) whose head's latest `ci.yml` run passed with
+  every job a full run has, `release.yml` reuses that run instead of running the full CI again
+  (`scripts/release.py ci-reuse`, read-only API calls with `GITHUB_TOKEN`; [ci: Releases](docs/ci.md#releases-no-repeat-ci-run)).
+  Any doubt, an API error included, runs CI as before; a tag pushed by a person always runs it.
+  `gh workflow run ci.yml --ref <branch>` gives a release PR the full run it needs.
+- The update button: the config repo's workflow gets task `product-update` and input `product_version`
+  (`latest` or `vX.Y.Z`) under Actions > server > Run workflow
+  ([operations: The update button](docs/operations.md#the-update-button-v15)). It pins that release now, without
+  Terraform: the target release's `schema-migrate` and `validate`, then the pin pull request on
+  `update/product-vX.Y.Z` (an open one for the release is reused: the weekly updater's, or `mcctl upgrade`'s
+  `upgrade/product-vX.Y.Z`). A patch bump merges itself through `server / gate` and deploys; minor and major
+  releases wait for your merge, as before. The run's summary shows old -> new, the pull request and its state,
+  and the exact local command (`mcctl rollout --to vX.Y.Z`) when the Worker's inputs changed between the two
+  releases, else that no local step is needed; the deploy run after the merge repeats it with the deploy's result.
+  Your config repo gets the new task and input with the upgrade to this release (`mcctl upgrade`/`rollout`: the
+  target's `schema-migrate` now adds the template's missing manual-run inputs, as it adds missing secrets);
+  `mcctl doctor` reports a workflow without them ("workflow inputs") and `--fix` adds them in one commit.
+- `mcctl upgrade` uses the open pull request when its branch already exists on GitHub (the updater pushed
+  `update/product-vX.Y.Z` first: the push used to be rejected), and names the fix for a leftover branch without
+  one; the weekly updater no longer opens a duplicate of an open `upgrade/product-vX.Y.Z` and resets a leftover
+  `update/product-vX.Y.Z` branch instead of failing.
+- `mcctl publish`'s preview warns about players on the live whitelist (mc-agent's last inventory, read from the
+  watchdog's D1 with the admin token in `.env`) that the new `players.yml` doesn't list and the panel has no
+  pending change for: a deploy removes those `players.yml` had before (or every one with
+  `minecraft.strict_whitelist`); the rest are kept by the whitelist guard, outside Git.
+- Smooth backups (docs/operations.md "Smooth backups"). Only runs `mc-backup.timer` starts are affected; `mcctl
+  backup now`, the panel, Discord, a restart's "back up first", a migration's final backup and a world switch back
+  up at once, as before. New `server.yml` fields under `backups`:
+  - `skip_when_idle` (default `true`): skip the hourly run when nobody is online, no pre-generation task runs and
+    no file the backup would read changed since the last successful backup (a fingerprint in
+    `/var/lib/mc-snapshots/backup-state.json`); a real backup still runs at least every 24 h. The skip sends the
+    watchdog an OK heartbeat, and the weekly backup test then accepts a snapshot up to 24 h older, so neither
+    reports a skip as stopped backups.
+  - `defer_when_busy` (default `true`) and `max_defer_minutes` (default 15, at most what the watchdog's grace
+    allows: 20 with the hourly defaults): with players online and the server lagging (TPS < 18 or MSPT > 40 ms over
+    a minute, or a tick spike in the last 5 s) the run waits a minute at a time, then backs up anyway.
+  - `upload_limit_kib` (default 0 = unlimited): restic's `--limit-upload`.
+- `performance.vm: small` (default `default`, unchanged): a memory preset for 2-4 GB hosts (docs/operations.md
+  "Small-VM preset", with its assumptions): heap auto = RAM - max(1024 MB, 40 %) (2304 MB on a 4 GB host instead
+  of 1024), restic on one core with one reader, 2 S3 connections, a 192 MiB Go memory limit and cgroup caps
+  (`MemoryHigh=256M`; `mc-backup` `MemoryMax=512M`), `mc-health` `MemoryMax=128M`, the map renderer capped at
+  64 MB per thread + 64 MB, one Paper chunk worker (pre-generation's pace) and view distance at most 8, each
+  only where `server.yml` doesn't set the value itself.
+- A smooth friend compass for players with the Smallworld client mod: the mod (1.1.0, in the client pack) draws
+  the compass itself every frame from where the player looks, so it no longer trails a turn by the ping or moves
+  in GUI-pixel steps, and nearby friends move every frame. Same place (the boss-bar compass's row, under the HUD
+  bar when that is shown), same look and layout (one `CompassStrip.java`, shared verbatim by mc-brand and the
+  mod), same `branding.compass` settings (`max_range`, `distance_rounding`, `height_threshold`, colours) and the
+  same `/compass on|off|auto|hide|show`. mc-brand then shows that player no boss-bar compass. Players without
+  the mod, or with mod 1.0.0, keep the server-drawn compass exactly as before. Defaults are unchanged: the
+  compass stays off by default for the mod together with Xaero's maps (`/compass on` gives them the smooth one).
+- Two new mod channels and a hello capability (`client/mod/WIRE.md` "The client compass"): the hello appends
+  `capabilities` (bit 0: the mod draws the compass; a 1.0.0 hello decodes as none), `smallworld:compass` (on/off
+  and the settings) and `smallworld:friends` (exactly whom the boss bar would show: same visibility and range,
+  positions in 1/16 block; rate-limited to every 4 ticks while someone moves, only when changed). `/mcbrand
+  status` counts client compasses and position messages; the selftest prints the decision and both payloads.
+
+### Changed
+
+- The backup saves the world with `save-all` instead of `save-all flush` and waits until the world's files are
+  quiet (2 s), falling back to `save-all flush` when they are still being written after 15 s. In the pinned
+  Purpur, `flush` is what makes the main thread wait for the disk (a tick spike on every backup). New field
+  `backups.gentle_save` (default `true`; `false` = `save-all flush` as before). The journal says which one ran
+  (`save: gentle ...` / `save: flush ...`). The golden render (`tests/fixtures/full-render.json`) gains the new
+  role variables; no existing value moves.
+
+### Fixed
+
+- Whitelist revert race: when the panel's pull request was closed unmerged while the same player was changed
+  again in the panel, the revert came from a stale view and undid the newer change on the live server (pending
+  changes still had it). The revert now runs under the pending lock, which the panel's whitelist action holds
+  across its own RCON command, and only for entries nobody changed since.
+- Telemetry (both agents): `NaN`, an infinity or `1e400` in a snapshot no longer stops the read loop or reaches
+  the Worker as non-standard JSON (the snapshot is skipped and logged once); a bool is no longer read as a number;
+  snapshot times stay in order and in range; a row the Worker refuses for good (400, 413) is given up instead of
+  blocking the backfill forever; 75 s after the plugin goes quiet nobody is shown online any more and backfill
+  may run; a failure while closing a minute or writing a segment keeps the rows; rows still in memory are saved
+  to a segment on shutdown; plus the tick-weighted mean, `UINT64_MAX` from systemd, state of hand-deleted
+  segments, a median overflow and out-of-range `BACKFILL_WINDOW` times.
+- mc-agent (both agents): a command with a non-finite `iat` is refused; a job releases `job.lock` before it
+  reports its final state; SIGTERM closes the WebSocket gracefully (1000) before the agent exits.
+- A live restore of a 26.x world (every dimension under `<level>/dimensions/`) no longer leaves stale pre-26
+  `<level>_nether/` or `<level>_the_end/` folders with region files next to it, which the server would merge
+  into the restored world or refuse to start over ("already exists"): `restore.py` moves them (never deletes
+  them) to `<server dir>/.restore-staging/aside/<UTC time>/`, which backups exclude, and logs the move. Pre-26
+  snapshots and folders without region files are left as before.
+- `cargo test` no longer leaves `sw-rej-*`, `swagent-*` and `swcore-*` folders and lock files in TMPDIR: the
+  agent and core crates' tests use a std-only drop guard (`testutil::TmpDir`, compiled for tests alone, like
+  smallworld-map's), also on a failing test. The binaries in `rust/dist/` are unchanged.
+
 ## [1.4.1] - 2026-11-08
 
 ### Added

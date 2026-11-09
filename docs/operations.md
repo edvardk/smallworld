@@ -14,10 +14,12 @@ Contents:
 [mcctl commands](#mcctl-commands) ·
 [What runs by itself](#what-runs-by-itself) ·
 [Backups and restore drills](#backups-and-restore-drills) ·
+[Smooth backups](#smooth-backups-v15) ·
 [The Experience tab](#the-experience-tab) ·
 [What telemetry costs](#what-telemetry-costs) ·
 [Performance profile](#performance-profile) ·
 [Performance tuning](#performance-tuning) ·
+[Small-VM preset](#small-vm-preset-v15) ·
 [The client modpack and /view](#the-client-modpack-and-view) ·
 [Day-to-day tasks](#day-to-day) ·
 [Alerts](#alerts) ·
@@ -86,6 +88,12 @@ deploy stays too (remove them in the panel). Ops always come from Git only.
 
 **Strict mode:** `minecraft.strict_whitelist: true` in `server.yml` makes `players.yml` the whole whitelist: a
 deploy removes every live player it doesn't list (pending panel adds still count until they merge or expire).
+
+**Before it happens (v1.5):** `mcctl publish` shows the same rule in its preview. It reads mc-agent's last
+inventory (the live whitelist and the panel's pending changes) from the watchdog's D1 with the admin token in
+`.env`, and warns about every live player the new `players.yml` doesn't list and the panel has no pending change
+for: "a deploy removes NAME" (`players.yml` had them on origin/main, or strict mode), or "NAME isn't in
+players.yml: the whitelist guard keeps them". Without the token or the panel it says the live whitelist is unknown.
 
 ### Switching the agent's implementation (v1.4)
 
@@ -388,6 +396,7 @@ The ones you will use (all take `-C $C`; the complete list is in [reference.md](
 | `mcctl restore --list \| --to /var/tmp/DIR \| --live ID` | list snapshots (the last pre-upgrade one marked), restore into a scratch directory and verify, or restore the live world (typed confirmation, safety snapshot first) |
 | `mcctl stop [--reason T]`, `mcctl start` | stop on purpose (self-heal, the watchdog and deploys leave it stopped; the reason is recorded) / start again |
 | `mcctl upgrade [--to vX.Y.Z] \| --minecraft-version V [--dry-run]` | a pull request moving the product pin, or upgrading Minecraft (boot-tested; you merge) |
+| `mcctl rollout [--to vX.Y.Z] [--dry-run]` | v1.5: a product release end to end: pull, pin PR, its checks, your typed merge (or the gate's), the deploy, then `render`, `plan` and `apply` (typed) ([Shipping an update](#shipping-an-update); the GitHub-only half is the [update button](#the-update-button-v15)) |
 | `mcctl migrate --to IP [--ipv6 IP] [--dry-run]`, `mcctl retire-old` | move to a new machine, resumable, with rollback ([reference.md](reference.md#move-to-a-new-vps)) |
 | `mcctl secrets rotate NAME [--dry-run]` | replace a generated secret (`rcon`, `heartbeat`, `agent-token`, `command-hmac`, `r2`, `restic-key`): typed apply, then a deploy |
 | `mcctl secrets show-restic` | print the restic password once, to a terminal only |
@@ -402,21 +411,79 @@ pinned one (`~/.cache/mcctl/<sha>`). A product `upgrade` (`--to`) runs the check
 the *target* release's schema migration and validation itself. When the checkout you run is *newer* than the pin, `mcctl setup` and `mcctl doctor
 --fix` offer to move the pin forward to it (typed `yes`; forward only, pushed commits only).
 
+## Shipping an update
+
+v1.5, for whoever develops the product: two steps from a finished feature branch to a running server.
+
+1. **Release it** (product repo, on the last feature branch):
+   `python3 scripts/release.py ship X.Y.Z` (add `--auto-merge` to merge once CI is green). It merges a freshly
+   fetched `origin/main` in, moves `## [Unreleased]` to `## [X.Y.Z] - <today>`, sets the version, commits
+   "Release X.Y.Z", pushes and opens (or reuses) the pull request. **Merge it**: `autotag.yml` tags `vX.Y.Z` and
+   `release.yml` publishes the release. Nothing left to tag by hand. With no feature PR pending,
+   `ship X.Y.Z --standalone` makes a `release-X.Y.Z` branch from `origin/main` (its CI is lint plus the release
+   check).
+2. **Roll it out** (config repo), only for a **minor or major** release or one that changes the **Worker**:
+   `mcctl rollout`. It fetches and fast-forwards main (refusing a dirty, ahead or diverged one), opens the pin
+   PR (`mcctl upgrade`), follows its checks, merges after you type the tag (or reports the gate's auto-merge),
+   watches the deploy, pulls again, runs `render` and `plan` from the new pin and, after a yes, `apply` with its
+   own typed confirmation. `--dry-run` shows the steps.
+
+**Patch releases** need no step 2: the weekly update task opens the pin PR, `server / gate` merges it and the
+merge deploys ([What runs by itself](#what-runs-by-itself)). If a patch changes the Worker, run `mcctl rollout`
+afterwards (it sees the pin is current and goes straight to render, plan and apply).
+
+### The update button (v1.5)
+
+To pin a release **now** instead of waiting for the weekly slot, from the config repo on GitHub: **Actions >
+server > Run workflow**, branch `main`, task **`product-update`**, product_version **`latest`** (or a tag such as
+`v1.5.1`), **Run workflow**. It runs no Terraform and needs no Cloudflare credential:
+
+1. It resolves the release (`latest` = the newest one). Already pinned there: the run's summary says
+   "nothing to do" and that's all. Older than the pin: refused.
+2. It moves the pin and runs the **target release's** `mcctl schema-migrate` and `mcctl validate` on the change
+   (what `mcctl upgrade` does from your computer).
+3. It opens the pin pull request on `update/product-vX.Y.Z`, or **reuses** the open one for that release (the
+   weekly updater's, updated with the migration if it lacks it, or yours from `mcctl upgrade` on
+   `upgrade/product-vX.Y.Z`, left untouched).
+   - **Patch release**, only the `uses:` line changed: auto-merge is on; `server / gate` checks the tag and
+     merges it, and the merge deploys.
+   - **Minor or major** (or a migration that changes more): the run stops at "pull request opened", **waiting
+     for your merge** (merge it as admin on GitHub, or run the local command below, which merges after you type
+     the tag).
+4. The run's **summary** (the run page, below the jobs) shows the old and new version, the pull request and its
+   state, and **Run locally**. The deploy run that follows the merge repeats it with the deploy's result.
+
+**Run locally** is the Worker step. The run compares what Terraform reads for the Worker and the panel
+(`watchdog/` without its tests, `terraform/`, `mcctl/render.py`) between the two releases, by content:
+
+- changed: in your clone of the config repo, after the deploy,
+  `git pull --ff-only && mcctl rollout --to vX.Y.Z` (it sees the pin is current and runs `render`, `plan` and,
+  after a yes, `apply` with its typed confirmation; before the merge it also merges and watches the deploy);
+- unchanged: no local step (the panel's Versions row shows the Worker one version behind until your next
+  `mcctl render` + `mcctl apply`; that is only the version stamp);
+- couldn't compare: the same command, "run it if the panel or Worker changed".
+
+**Getting the button.** Your config repo's workflow is a copy of the template, and a pin pull request changes
+only its `uses:` line, so the new task and input arrive with the upgrade to v1.5: `mcctl upgrade` / `mcctl
+rollout` (the target release's `schema-migrate` adds them to the same pull request, which then needs your merge
+anyway, being a minor release). If the pin reached v1.5 another way (the weekly updater's PR), `mcctl doctor`
+reports "workflow inputs" and `mcctl doctor --fix` adds them in one commit (push it to main).
+
 ## What runs by itself
 
 | What | When | Notes |
 |---|---|---|
-| Hourly backup | every hour (+ up to 5 min random delay) | restic to R2; the lock keeps every snapshot at least 7 days |
+| Hourly backup | every hour (+ up to 5 min random delay) | restic to R2; the lock keeps every snapshot at least 7 days. v1.5: skipped while nobody plays and nothing changed (a real backup at least daily), deferred up to 15 min while players see lag ([Smooth backups](#smooth-backups-v15)) |
 | Prune | Sundays 03:30 | between backups |
 | Health check + self-heal | every 5 minutes | restarts a crashed server, dumps and restarts a frozen one; at most 3 restarts a day, then Discord |
 | Chunk pre-generation | every 5 minutes, only with nobody online | each bordered dimension up to its border, then the frontier ahead of the players; paused around backups ([Pre-generation](#pre-generation)) |
 | Watchdog | every 5 minutes, outside the box | status pings over IPv4 and IPv6 separately; heartbeat lateness; alerts on Discord |
 | Server build and plugin updates | weekly, `automation.update_day` (Tuesday) 04:17 UTC | the newest builds of the same Minecraft version are boot-tested in CI, then the updater App opens a pull request that merges itself once `server / gate` re-verified every hash |
 | Weekly deploy | the same slot | deploys `main` as it is; restarts only if something changed |
-| Product updates | the same slot | a newer **patch** release moves the pin by itself; minor and major releases open a pull request for you |
+| Product updates | the same slot (or now: the [update button](#the-update-button-v15)) | a newer **patch** release moves the pin by itself; minor and major releases open a pull request for you |
 | A restart a deploy left for the maintenance window | `maintenance.window`'s start (then every 15 minutes inside it) | only with a window and a pending restart ([Maintenance window](#maintenance-window-v13)); any earlier start of the server applies it too |
 | Reboots for OS updates | checked every 30 minutes | only inside `automation.reboot_window` (04:30-06:00 local), with nobody online, no backup or restore running and the server not stopped on purpose; **never forced**: still pending after 3 days, Discord reminds you daily |
-| Backup check + expiry check | Mondays | `restic check` on 5 % of the data and a restore of the newest snapshot (must be < 2 h old); credential expiry (`expiry.yml`), domain expiry (RDAP) and the watchdog's freshness. Problems go to Discord and the run turns red |
+| Backup check + expiry check | Mondays | `restic check` on 5 % of the data and a restore of the newest snapshot (must be < 2 h old, or < 26 h right after the hourly backup skipped an unchanged world); credential expiry (`expiry.yml`), domain expiry (RDAP) and the watchdog's freshness. Problems go to Discord and the run turns red |
 | World map pre-render (v1.4) | nightly, `map.schedule` (`*-*-* 04:23` host time, up to 10 min random delay) | reads only the regions that changed since the last run, at idle priority ([World map](#world-map-v14)) |
 | Security updates on the box | daily (Debian unattended upgrades) | Tailscale is held at its pinned version (bump the pin for Tailscale security fixes: [reference.md](reference.md#bumping-versions)) |
 
@@ -482,6 +549,39 @@ the pre-render wherever a held map redraws, so a stale tile only lasts until the
   show-restic -C $C`).
 - **A new machine** restores the newest snapshot automatically before its first start; with `world.expected:
   true` (set by setup after the first backup) the deploy fails rather than generate a new world when it can't.
+
+## Smooth backups (v1.5)
+
+The hourly backup used to be the same spike every hour: `save-off`, `save-all flush` (the server's main thread
+waits until every chunk is on disk), restic reading and uploading, `save-on`. Since v1.5 a run **the timer
+started** is smoother; everything else that starts `mc-backup.service` (`mcctl backup now`, the panel, Discord's
+`/backup now`, a restart's "back up first", `mcctl migrate`'s final backup, a world switch) still backs up at once.
+The `server.yml` fields, all under `backups` (defaults first):
+
+| Field | Default | What it does |
+|---|---|---|
+| `skip_when_idle` | `true` | skip the run when nobody is online, no pre-generation task runs and no file the backup would read changed (path, size and modification time, the same metadata restic uses) since the last successful backup. The skip counts as fresh: the watchdog gets an OK heartbeat and the weekly backup test accepts a snapshot up to 24 h older. A real backup still runs at least every 24 h |
+| `defer_when_busy` | `true` | with players online and the server lagging (TPS under 18 or MSPT over 40 ms over the last minute, or a tick spike in the last 5 s: average over 50 ms or one tick of 100 ms or more), look again every minute ... |
+| `max_defer_minutes` | `15` | ... at most this long, then back up anyway. The schema keeps it inside the watchdog's grace (it alerts after `monitoring.alerts.backup_period_minutes` + 30 minutes without a backup): at most 20 with the hourly defaults |
+| `gentle_save` | `true` | `save-all` without `flush`: the chunks are serialized and the server's IO threads write them while the main thread goes on. The backup waits until the world's files have been quiet for 2 s; only if they are still being written after 15 s (players exploring keep writing chunks as they unload) does it fall back to `save-all flush`. `false` = always `save-all flush`, as before |
+| `upload_limit_kib` | `0` | restic's `--limit-upload` in KiB/s; 0 = unlimited. Spares a thin uplink, but saving stays off for the whole run, so a slower upload is a longer window in which a crash loses progress |
+
+Why these defaults: the skip only ever leaves out a snapshot identical to the last one, the deferral is bounded and
+never applies with nobody online, and the gentle save falls back to the old flush whenever it can't confirm the
+writes have landed, so none of them weakens what a snapshot contains; an upload limit has a real cost (above) and
+the right value depends on the host, so it stays off.
+
+**What you see.** `journalctl -u mc-backup` says `backup skipped: nobody played and nothing changed since the last
+backup 3.0 h ago (812 files)`, `backup deferred: TPS 16.2 (1 min); next look in 60 s` and, for every backup, `save:
+gentle (save-all, files quiet after 0.6 s)` or `save: flush (world files still being written 15 s after save-all)`
+before the `save-off window:` line. The record lives in `/var/lib/mc-snapshots/backup-state.json`. A pre-generation
+task still pauses for the backup and continues after it ([Pre-generation](#pre-generation)); a running task counts
+as a change, so it never lets a run skip.
+
+**Caveats.** A manual "back up now" while a scheduled run is deferring joins that run (systemd runs one at a time),
+so it can wait up to `max_defer_minutes`. The skip relies on the server's own pause when empty (vanilla
+`pause-when-empty-seconds`, 60 s, which the product leaves at its default): a world that keeps ticking with nobody
+online changes its files and is backed up every hour, as before.
 
 ## The Experience tab
 
@@ -611,6 +711,33 @@ you really want `relatime` back, then `sudo mount -o remount,relatime /`.
 CI measures the collectors on every product change (`bench-gc` in the e2e-mock workflow: G1 vs ZGC, with and
 without the CPU split where the runner has 3+ CPUs, same synthetic load); the job's summary has the numbers and the recommendation.
 
+## Small-VM preset (v1.5)
+
+`performance.vm: small` (default `default`, which changes nothing) tunes the box for 2-4 GB of RAM. Each value
+below only fills in what you haven't set yourself:
+
+| What | default | small |
+|---|---|---|
+| Heap (`jvm.heap_mb: auto`) | RAM - max(2816 MB, 30 %) | RAM - max(1024 MB, 40 %): 2304 MB on a 4 GB host (3.9 GB usable), 1536 MB on 3 GB, 768 MB on 2 GB |
+| restic (`mc-backup`, `mc-prune`, `mc-backup-check`) | restic's defaults | one core (`GOMAXPROCS=1`), one file read at a time (`RESTIC_READ_CONCURRENCY=1`), 2 S3 connections instead of 5, Go memory limit 192 MiB, cgroup `MemoryHigh=256M`; `mc-backup` also `MemoryMax=512M` |
+| `mc-health` | no cap | `MemoryMax=128M` (health.py needs 30-40 MB) |
+| Map renderer (`mc-map`) | `MemoryMax=512M` | 64 MB per `map.threads` + 64 MB (128 MB at the default 1 thread: the renderer's design budget) |
+| Pre-generation pace | Paper's chunk workers (`auto`) | 1 chunk worker (`performance.chunk_threads` still wins) |
+| View distance | the profile's (vanilla 10, balanced 8) | at most 8 (the simulation distance never above it) |
+
+**Assumptions** behind the heap: the JVM needs about 0.5-0.6 GB outside the heap that doesn't grow with it
+(metaspace, code cache, thread stacks, network buffers) plus 10-15 % of the heap for the garbage collector (the
+1.5 GB measured next to a 5.75 GB G1 heap on the 8 GB box, [reference](reference.md#design-notes), fits that line);
+the OS about 250 MB, tailscaled 50 MB, the Rust agent 14 MB (v1.4's parity runs; the telemetry sidecar is gone), and
+restic is held near 192 MiB. On 2 GB that leaves a 768 MB heap: enough for one or two players at view distance 8,
+not more; 4 GB is the recommended minimum ([setup](setup.md)). The map renderer runs at idle priority at night and
+stays inside its cap; restic on one core takes longer but leaves the other core to the server (it already runs at
+a tenth of the server's CPU weight). The garbage collector stays `jvm.gc` (ZGC by default); on a heap under 2 GB
+G1 (`jvm.gc: g1`) uses less memory for the same world, at the cost of its 20-60 ms pauses.
+
+**Switch**: `mcctl config set performance.vm small -C $C`, push (a deploy with an announced restart, since the
+heap and view distance change).
+
 ## The client modpack and /view
 
 v1.1: an optional client for players (Fabric with Sodium, Lithium, FerriteCore, Mod Menu, and in the higher tiers
@@ -704,7 +831,18 @@ picture). The compass is a boss bar of its own (under or over the HUD's top bar)
 turns or moves (v1.4.1: on the next tick, up to 20 times a second; it was every 4 ticks) or someone else moves (at most once a second); nothing runs while nobody
 moves (`/mcbrand status`: `compass showing/renders/updates`). Who gets it by default follows the client: off for
 the Smallworld mod together with Xaero's maps, on otherwise (`branding.compass.default_on: false` makes it
-opt-in for everyone); players override it with `/compass on|off`. The pocket map is one map id per player (kept
+opt-in for everyone); players override it with `/compass on|off`. v1.5, the client compass: who gets a compass is
+decided exactly as above; who *draws* it is the client's. A client whose Smallworld mod (1.1.0+, the client pack)
+announced the compass capability in its hello gets no boss bar: mc-brand tells the mod to draw
+(`smallworld:compass`, with `max_range`, `distance_rounding`, `height_threshold` and the branding colours) and
+sends it the positions of exactly the players the boss bar would show (`smallworld:friends`: same visibility
+rules, same range; at most every 4 ticks while someone moves, only when changed). The mod draws the same strip
+(the same `CompassStrip.java`) every frame, in the same row. Vanilla clients and mod 1.0.0 keep the boss bar.
+The default is unchanged (off for mod + Xaero's: Xaero's minimap already shows friends; `/compass on` gives them
+the smooth compass). `/compass` (`on`, `off`, `auto`, `hide`, `show`, and bare `/compass` to toggle) works the
+same for both; `/compass auto` says "drawn by the Smallworld mod" when it is. `/mcbrand status`: `compass
+showing/renders/updates` (boss bars) and `client`/`friends sent` (the mod's); the selftest prints the decision
+table and both payloads ([WIRE.md](../client/mod/WIRE.md#the-client-compass-v15)). The pocket map is one map id per player (kept
 in the player's data), so `/map` never piles up map files; while it is held mc-brand re-centres it and draws the
 old picture shifted until vanilla has redrawn the terrain (vanilla only draws while a map is held, 128 blocks
 around the player). The client-mod detection reads the channels the client registers (`smallworld:*` = the
@@ -815,7 +953,7 @@ To use your own icon, commit a 64x64 PNG to the config repo and set `branding.ic
 | Plugins (CLI) | `mcctl plugins -C $C list`; `enable\|disable NAME [--countdown S]` (v1.3): the panel's plugin switch (only plugins in the deployed lock; typed `enable NAME` / `disable NAME`), then a countdown restart |
 | Restore (CLI) | `mcctl restore -C $C --list` (marks the last Minecraft upgrade's pre-upgrade snapshot); `--to /var/tmp/DIR [--snapshot ID]` (`/var/tmp` or `/tmp` only: restic runs sandboxed as mcops) restores into a scratch dir on the server and verifies it; `--live ID` runs the panel's restore (`mc-restore@ID`: maintenance window, **safety snapshot**, stop, fetch as mcops, apply as minecraft, start) after a typed `restore <first 8 hex>` (P12) |
 | Rotate a secret | `mcctl secrets rotate -C $C rcon\|heartbeat\|agent-token\|command-hmac\|r2\|restic-key [--dry-run]` (P12): `apply -replace` (typed) then a deploy; restic-key: the deploy itself adds the new password as a key before writing it (whichever deploy comes first after the apply, CI's included; the password on stdin), then mcctl removes the old key, which the bucket lock refuses (`keys/` is locked forever): the old password then stays valid |
-| Restore the live world | `sudo /opt/minecraft/bin/admin.py stop "restore"`, move the world folders aside, `sudo mc-restic /opt/minecraft/bin/restore.py --snapshot <id>`, then `sudo /opt/minecraft/bin/admin.py start`. `restore.py --snapshot` refuses unless the server is stopped **and** admin-stopped (or a maintenance window is open), and holds `/var/lib/minecraft/restore.lock` while it runs: self-heal never starts the server mid-restore and backups skip. It fetches the snapshot as `mcops` into `/var/lib/mc-restore/staging`, then `mc-restore-apply.service` copies it in as `minecraft` (needs free space for a second copy of the world). Top-level entries in the snapshot are replaced; paths backups exclude (plugin jars, `server.jar`, `logs/`, caches) are kept. `/opt/minecraft/server/.restored-from` then names the snapshot |
+| Restore the live world | `sudo /opt/minecraft/bin/admin.py stop "restore"`, move the world folders aside, `sudo mc-restic /opt/minecraft/bin/restore.py --snapshot <id>`, then `sudo /opt/minecraft/bin/admin.py start`. `restore.py --snapshot` refuses unless the server is stopped **and** admin-stopped (or a maintenance window is open), and holds `/var/lib/minecraft/restore.lock` while it runs: self-heal never starts the server mid-restore and backups skip. It fetches the snapshot as `mcops` into `/var/lib/mc-restore/staging`, then `mc-restore-apply.service` copies it in as `minecraft` (needs free space for a second copy of the world). Top-level entries in the snapshot are replaced; paths backups exclude (plugin jars, `server.jar`, `logs/`, caches) are kept. Restoring a 26.x world (every dimension under `<level>/dimensions/`) over a box that still has pre-26 `<level>_nether/` or `<level>_the_end/` folders with region files moves those (never deletes them) to `/opt/minecraft/server/.restore-staging/aside/<UTC time>/` (excluded from backups) and logs it: Paper would merge their old chunks in or refuse to start; delete them once the restored world looks right. `/opt/minecraft/server/.restored-from` then names the snapshot |
 | Where did this world come from? | `cat /opt/minecraft/server/.restored-from`: `{"restored_at", "short_id", "snapshot_id", "snapshot_time", "source_path"}` (absent = generated on this box) |
 | Reboot for updates | Automatic (P11): `mc-reboot-gate.timer` reboots inside `automation.reboot_window` (04:30-06:00 local) when `/var/run/reboot-required` exists, nobody is online, no backup/restore runs and the server isn't admin-stopped; Discord before and after, a watchdog maintenance window. **Never forced**: still pending after 3 days, Discord says so daily; then `sudo systemctl reboot` by hand when convenient. `sudo -u mcops /opt/minecraft/bin/reboot_gate.py --status` shows what it would do (or `journalctl -u mc-reboot-gate`) |
 | Profile | `mc spark profiler start --timeout 600`, then record in [`docs/perf-baseline.md`](perf-baseline.md) |

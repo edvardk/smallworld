@@ -384,10 +384,14 @@ impl Jobs {
         Ok(job)
     }
 
-    /// `_run`: the work, then the file lock is released whatever happened.
+    /// `_run`: the work, then the file lock is released whatever happened, then (v1.5) the final state is
+    /// reported: whoever acts on the report finds job.lock free.
     fn run(&self, job: &Arc<Job>, work: Work, skip_if_empty: bool) -> AResult<()> {
         let r = self.work(job, work, skip_if_empty);
         lock(&self.held).take();
+        if r.is_ok() {
+            self.report_job(job);
+        }
         r
     }
 
@@ -395,11 +399,11 @@ impl Jobs {
         (self.report_fn())(&job.public());
     }
 
-    /// `_work`: the countdown, then the work; the job ends done, failed or cancelled.
+    /// `_work`: the countdown, then the work; the job ends done, failed or cancelled (reported by `run`).
     fn work(&self, job: &Arc<Job>, work: Work, skip_if_empty: bool) -> AResult<()> {
         let outcome = self.countdown_then(job, work, skip_if_empty);
         match outcome {
-            Ok(true) => return Ok(()), // cancelled: already reported
+            Ok(true) => return Ok(()), // cancelled: state set
             Ok(false) => {}
             Err(AgentError::Action(m)) => job.with(|s| {
                 s.state = "failed".into();
@@ -421,11 +425,10 @@ impl Jobs {
             Err(other) => return Err(other),
         }
         job.with(|s| s.finished = (self.clock)());
-        self.report_job(job);
         Ok(())
     }
 
-    /// The countdown and the work. Ok(true) = cancelled (reported), Ok(false) = done (state set, not reported).
+    /// The countdown and the work. Ok(true) = cancelled, Ok(false) = done (state set; neither reported).
     fn countdown_then(&self, job: &Arc<Job>, work: Work, skip_if_empty: bool) -> AResult<bool> {
         let players = if job.countdown != 0 {
             self.players()?
@@ -469,7 +472,6 @@ impl Jobs {
                     s.step = "cancelled during the countdown".into();
                     s.finished = now;
                 });
-                self.report_job(job);
                 return Ok(true);
             }
             left = next;
@@ -735,7 +737,7 @@ mod tests {
 
     #[test]
     fn the_file_lock_is_shared_across_runners() {
-        let path = std::env::temp_dir().join(format!("swagent-joblock-{}", std::process::id()));
+        let path = crate::testutil::TmpDir::new("swagent-joblock").child("job.lock");
         let guard = take_job_lock(&path).unwrap();
         let j = Jobs::new(Arc::new(|_v: &Value| {}), Some(path.clone()), false);
         let e = j
@@ -769,6 +771,50 @@ mod tests {
             assert!(Instant::now() < deadline, "the job lock wasn't released");
             std::thread::sleep(Duration::from_millis(10));
         }
+    }
+
+    /// v1.5: the final state is reported after job.lock is released (whoever acts on it finds the lock free).
+    #[test]
+    fn the_final_report_comes_after_the_lock_is_released() {
+        let path = std::env::temp_dir().join(format!("swagent-joblock-rep-{}", std::process::id()));
+        let free_at_report = Arc::new(Mutex::new(Vec::<(String, bool)>::new()));
+        let (seen, p2) = (free_at_report.clone(), path.clone());
+        let j = Jobs::new(
+            Arc::new(move |v: &Value| {
+                // retried briefly: a concurrent test's fork may share the descriptor until its exec
+                let deadline = Instant::now() + Duration::from_millis(500);
+                let free = loop {
+                    if take_job_lock(&p2).is_ok() {
+                        break true;
+                    }
+                    if Instant::now() >= deadline {
+                        break false;
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                };
+                let state = v["state"].as_str().unwrap_or_default().to_string();
+                seen.lock().unwrap().push((state, free));
+            }),
+            Some(path.clone()),
+            false,
+        );
+        j.start(
+            "c",
+            "restart",
+            "Restart",
+            "x",
+            0,
+            Box::new(|_| Ok("ok".into())),
+            true,
+        )
+        .unwrap();
+        let seen = free_at_report.lock().unwrap().clone();
+        assert_eq!(seen.last(), Some(&("done".to_string(), true)), "{seen:?}");
+        assert!(
+            seen[..seen.len() - 1].iter().all(|(_, free)| !free),
+            "{seen:?}"
+        );
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

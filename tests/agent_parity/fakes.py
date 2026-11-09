@@ -191,14 +191,14 @@ class WsSession:
                 if op == 0xA:
                     continue
                 if op == 0x8:
-                    # Recorded only as the agent's answer to the Worker's close (ws_reconnect). A close the agent
-                    # starts itself happens at shutdown, where whether it is sent at all depends on timing: the
-                    # Python agent's control loop is a daemon thread that may or may not reach `ws.close()`
-                    # before the process exits after SIGTERM.
-                    if self.worker_closed:
-                        self.worker.event("ws-close", session=self.index, code=data[:2].hex())
-                    with contextlib.suppress(OSError):
-                        self.send(0x8, data[:2])
+                    # The agent's answer to the Worker's close (ws_reconnect: by "worker"), or the close the agent
+                    # starts itself (by "agent"): v1.5, deterministic at shutdown in both implementations (SIGTERM
+                    # closes the socket with 1000, then the process exits). Answered unless it was the answer.
+                    by = "worker" if self.worker_closed else "agent"
+                    self.worker.event("ws-close", session=self.index, code=data[:2].hex(), by=by)
+                    if not self.worker_closed:
+                        with contextlib.suppress(OSError):
+                            self.send(0x8, data[:2])
                     return
                 parts.append(data)
                 if not fin:

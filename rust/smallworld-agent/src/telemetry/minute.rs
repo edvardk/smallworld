@@ -104,12 +104,11 @@ pub fn median(values: &[f64]) -> Option<f64> {
     // sorted() compares with `<`; NaN never occurs (`_num` refuses it)
     s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let mid = s.len() / 2;
-    // `(a + b) / 2` as written (f64::midpoint avoids an overflow Python has)
-    #[allow(clippy::manual_midpoint)]
+    // v1.5: `a / 2 + b / 2` in both (no overflow near the float maximum; the same result elsewhere)
     Some(if s.len() % 2 == 1 {
         s[mid]
     } else {
-        (s[mid - 1] + s[mid]) / 2.0
+        s[mid - 1] / 2.0 + s[mid] / 2.0
     })
 }
 
@@ -124,12 +123,16 @@ pub fn r(v: Option<f64>, nd: usize) -> J {
 /// Python's `int()` of a non-finite `ticks` or sum.
 pub fn summarize_server(snaps: &[Snapshot]) -> TResult<OMap> {
     let mut ticks = 0_i64;
+    let mut mean_ticks = 0_i64; // v1.5: the weighted mean's divisor counts only windows with a mean
     for s in snaps {
         let t = match s.srv.get("ticks") {
             Some(t) if t != 0.0 => py_int(t)?,
             _ => 0,
         };
         ticks = ticks.saturating_add(t);
+        if s.srv.get("mean").is_some() {
+            mean_ticks = mean_ticks.saturating_add(t);
+        }
     }
     let vals = |k: &str| -> Vec<f64> { snaps.iter().filter_map(|s| s.srv.get(k)).collect() };
     let or0 = |v: Option<f64>| v.filter(|x| *x != 0.0).map_or(Num::I(0), Num::F);
@@ -139,7 +142,7 @@ pub fn summarize_server(snaps: &[Snapshot]) -> TResult<OMap> {
             .map(|s| or0(s.srv.get("mean")).mul(or0(s.srv.get("ticks")))),
     );
     #[allow(clippy::cast_precision_loss)]
-    let mean = (ticks != 0).then(|| weighted.as_f64() / ticks as f64);
+    let mean = (mean_ticks != 0).then(|| weighted.as_f64() / mean_ticks as f64);
     let empty: Vec<World> = Vec::new();
     let last_worlds = snaps.last().map_or(&empty, |s| &s.srv.worlds);
     let sum_w = |f: fn(&World) -> i64| {
@@ -457,6 +460,7 @@ mod tests {
     #[test]
     fn median_and_extremes() {
         assert_eq!(median(&[3.0, 1.0, 2.0, 10.0]), Some(2.5));
+        assert_eq!(median(&[f64::MAX, f64::MAX]), Some(f64::MAX)); // v1.5: no overflow
         assert_eq!(median(&[]), None);
         let m = py_max(&[0.0, -0.0]).unwrap();
         assert!(m.is_sign_positive());

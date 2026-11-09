@@ -30,7 +30,8 @@ blocks away and higher up than you (`↓` lower). Players in the Nether or the E
 the edge for players off the map); hold it in your other hand and it becomes a small minimap. The map draws the
 land as you walk around, like any Minecraft map. Lost it or dropped it? `/map` again, it's free. With the optional
 client (below) your friends are on Xaero's minimap instead, so the compass starts switched off there; `/compass
-on` brings it back.
+on` brings it back, and with the client it is drawn by your own game: it turns smoothly with your mouse, without
+any lag.
 
 Right after you join, the status bar says **Settling in…** for about ten seconds: your connection and the
 world around you are still loading, so the numbers wouldn't mean much yet.

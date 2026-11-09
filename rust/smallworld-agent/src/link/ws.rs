@@ -15,6 +15,7 @@ use rustls::pki_types::{CertificateDer, ServerName, pem::PemObject};
 use sha1::{Digest, Sha1};
 use std::io::{self, Read, Write};
 use std::net::{Shutdown, TcpStream, ToSocketAddrs};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
@@ -143,9 +144,19 @@ enum Incoming {
 /// The sending half of a session: frames are masked here and written by the I/O thread, in order.
 pub struct WsHandle {
     tx: Sender<Out>,
+    /// v1.5: one close frame per session (an echo or our own 1000; mc_agent.py `WebSocket.close_sent`).
+    close_sent: Arc<AtomicBool>,
 }
 
 impl WsHandle {
+    /// `send_close(payload)`: the session's one close frame (RFC 6455 5.5.1: nothing is sent after it).
+    pub fn send_close(&self, payload: &[u8]) -> bool {
+        if self.close_sent.swap(true, Ordering::SeqCst) {
+            return false;
+        }
+        self.send(OP_CLOSE, payload)
+    }
+
     fn send(&self, opcode: u8, payload: &[u8]) -> bool {
         self.tx
             .send(Out::Frame(encode_frame(opcode, payload, random_bytes())))
@@ -353,6 +364,7 @@ struct Io {
     out_rx: Receiver<Out>,
     in_tx: Sender<Incoming>,
     last_rx: Arc<Mutex<Instant>>,
+    close_sent: Arc<AtomicBool>,
 }
 
 enum Step {
@@ -385,7 +397,10 @@ impl Io {
             OP_PONG => return Step::Go,
             OP_CLOSE => {
                 let echo = &data[..data.len().min(2)];
-                let _ = self.write_frame(&encode_frame(OP_CLOSE, echo, random_bytes()));
+                // the echo; none if we closed first (this is the answer)
+                if !self.close_sent.swap(true, Ordering::SeqCst) {
+                    let _ = self.write_frame(&encode_frame(OP_CLOSE, echo, random_bytes()));
+                }
                 let _ = self.in_tx.send(Incoming::Closed);
                 return Step::Stop;
             }
@@ -585,6 +600,7 @@ impl WebSocket {
         let (out_tx, out_rx) = mpsc::channel();
         let (in_tx, in_rx) = mpsc::channel();
         let last_rx = Arc::new(Mutex::new(Instant::now()));
+        let close_sent = Arc::new(AtomicBool::new(false));
         let io = Io {
             conn,
             parser: Parser { buf: rest },
@@ -592,13 +608,17 @@ impl WebSocket {
             out_rx,
             in_tx,
             last_rx: Arc::clone(&last_rx),
+            close_sent: Arc::clone(&close_sent),
         };
         let thread = std::thread::Builder::new()
             .name("websocket".into())
             .spawn(move || io.run())
             .ok();
         Self {
-            handle: Arc::new(WsHandle { tx: out_tx }),
+            handle: Arc::new(WsHandle {
+                tx: out_tx,
+                close_sent,
+            }),
             events: in_rx,
             last_rx,
             io: thread,
@@ -633,7 +653,7 @@ impl WebSocket {
 
     /// `close()`: a close frame (1000), then the socket goes.
     pub fn close(&mut self) {
-        let _ = self.handle.send(OP_CLOSE, &1000u16.to_be_bytes());
+        let _ = self.handle.send_close(&1000u16.to_be_bytes());
         let _ = self.handle.tx.send(Out::Shutdown);
         if let Some(t) = self.io.take() {
             let _ = t.join();
@@ -823,8 +843,11 @@ mod tests {
             // the tail's send from another thread
             assert_eq!(read_client_frame(&mut s), (OP_TEXT, b"from tail".to_vec()));
             s.write_all(&[0x88, 0x02, 0x03, 0xE8]).unwrap();
+            // v1.5: the echo is the session's one close frame (close() sends no second one)
             assert_eq!(read_client_frame(&mut s), (OP_CLOSE, vec![0x03, 0xE8]));
-            assert_eq!(read_client_frame(&mut s), (OP_CLOSE, vec![0x03, 0xE8]));
+            let mut rest = Vec::new();
+            s.read_to_end(&mut rest).unwrap();
+            assert!(rest.is_empty(), "{rest:?}");
         });
         let mut ws = WebSocket::connect(&url, &[("User-Agent", "t")], 5.0).unwrap();
         assert!(ws.handle().send_text("hello"));
@@ -838,6 +861,24 @@ mod tests {
         let head = h.join().unwrap();
         assert!(head.starts_with("GET /agent/ws HTTP/1.1\r\nHost: 127.0.0.1:"));
         assert!(head.contains("\r\nSec-WebSocket-Version: 13\r\nUser-Agent: t\r\n\r\n"));
+    }
+
+    /// v1.5 (shutdown): our close (1000) first; the server's answer ends the session, nothing is echoed.
+    #[test]
+    fn a_close_we_start_is_answered_and_not_echoed() {
+        let (url, h) = server(|mut s| {
+            assert_eq!(read_client_frame(&mut s), (OP_CLOSE, vec![0x03, 0xE8]));
+            s.write_all(&[0x88, 0x02, 0x03, 0xE8]).unwrap();
+            let mut rest = Vec::new();
+            s.read_to_end(&mut rest).unwrap();
+            assert!(rest.is_empty(), "{rest:?}");
+        });
+        let mut ws = WebSocket::connect(&url, &[("User-Agent", "t")], 5.0).unwrap();
+        assert!(ws.handle().send_close(&1000u16.to_be_bytes()));
+        assert!(!ws.handle().send_close(&1000u16.to_be_bytes()));
+        assert_eq!(ws.recv(Duration::from_secs(5)), Ok(None));
+        ws.close();
+        h.join().unwrap();
     }
 
     #[test]

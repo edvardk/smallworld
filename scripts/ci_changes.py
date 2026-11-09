@@ -4,6 +4,7 @@
     ci_changes.py --event EVENT [--before SHA] [--since-days N]  # in a job: `<group>=true|false` to
                                                                  # $GITHUB_OUTPUT
     ci_changes.py --files a.py docs/x.md ...                     # offline: the groups for these paths
+                                                                 # (never `release`: that needs the diff)
 
 A pull request is diffed as GitHub tests it: its merge commit against that commit's first parent (the base
 branch tip; the checkout needs fetch-depth 2). A push to a branch is diffed against `--before` (fetched here).
@@ -11,6 +12,12 @@ A schedule with `--since-days N` takes every file the commits of the last N days
 the history: fetch-depth 0), so a scheduled run of an idle repository does nothing heavy. Anything else (a
 schedule without it, workflow_dispatch, a tag push through release.yml, a new branch, or any git error) runs
 everything: when in doubt, the answer is "everything changed", never "nothing changed".
+
+A version bump alone (v1.5, `release.py ship --standalone`: pyproject.toml and mcctl/__init__.py changed in
+their version lines only, plus docs such as CHANGELOG.md and README.md) sets `release` and turns every heavy
+group off: lint's docs-only half and `release.py check` run, not the full suite, the controller matrix or e2e.
+Git's diff is per path, so the version lines are checked in `git diff -U0` of those two files; anything else
+in them (a dependency, a pytest option) is code as before.
 
 The groups only decide whether heavy work runs; the jobs that are required checks always run and report (a
 skipped job counts as passed, a never-started workflow leaves the check pending forever).
@@ -21,6 +28,7 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Callable, Iterable
@@ -136,6 +144,11 @@ GROUPS: dict[str, tuple[str, ...]] = {
 }
 
 
+# v1.5: what a version bump changes besides docs (CHANGELOG.md, README.md), and the only lines it changes
+VERSION_FILES = ("pyproject.toml", "mcctl/__init__.py")
+VERSION_LINE = re.compile(r'(version|__version__) = "\d+\.\d+\.\d+"')
+
+
 def _match(path: str, patterns: Iterable[str]) -> bool:
     return any(fnmatch.fnmatchcase(path, p) for p in patterns)
 
@@ -148,13 +161,36 @@ def is_docs(path: str) -> bool:
     return _match(path, DOCS)
 
 
-def groups(files: Iterable[str] | None) -> dict[str, bool]:
-    """`None` = unknown change set: every group is on."""
+def version_only(diff: str | None) -> bool:
+    """A `git diff -U0` of VERSION_FILES that changes nothing but their version lines (and changes one)."""
+    if not diff:
+        return False
+    changed = [
+        line[1:] for line in diff.splitlines() if line[:1] in "+-" and not line.startswith(("+++ ", "--- "))
+    ]
+    return bool(changed) and all(VERSION_LINE.fullmatch(line) for line in changed)
+
+
+def is_bump(paths: list[str], version_diff: str | None) -> bool:
+    """Only a version bump: pyproject.toml changed, nothing but docs and VERSION_FILES, version lines only."""
+    return (
+        "pyproject.toml" in paths
+        and all(p in VERSION_FILES or is_docs(p) for p in paths)
+        and version_only(version_diff)
+    )
+
+
+def groups(files: Iterable[str] | None, version_diff: str | None = None) -> dict[str, bool]:
+    """`None` = unknown change set: every group is on (and `release` off). `version_diff`: `git diff -U0` of
+    VERSION_FILES, which tells a version bump from other changes to them."""
     if files is None:
-        return dict.fromkeys(GROUPS, True)
+        return dict.fromkeys(GROUPS, True) | {"release": False}
     paths = [f for f in files if f]
+    if is_bump(paths, version_diff):
+        return dict.fromkeys(GROUPS, False) | {"release": True}
     out = {name: any(_match(p, pats) for p in paths) for name, pats in GROUPS.items()}
     out["code"] = any(not is_docs(p) for p in paths)
+    out["release"] = False
     return out
 
 
@@ -165,20 +201,40 @@ def _git(argv: list[str]) -> str:
     return subprocess.run(["git", *argv], capture_output=True, text=True, check=True).stdout
 
 
+def _base(event: str, before: str) -> str | None:
+    """What a pull request or a push is diffed against (None: not diffed)."""
+    if event == "pull_request":
+        return "HEAD^1"
+    if event == "push" and before and before.strip("0"):
+        return before
+    return None
+
+
 def changed_files(event: str, before: str, git: Runner = _git, since_days: int = 0) -> list[str] | None:
     """The changed paths, or None when they can't be known (then everything runs)."""
     try:
         if event == "schedule" and since_days > 0:
             out = git(["log", f"--since={since_days} days ago", "--name-only", "--format=", "HEAD"])
             return sorted({line for line in out.splitlines() if line})
-        if event == "pull_request":
-            return git(["diff", "--name-only", "HEAD^1", "HEAD"]).splitlines()
-        if event == "push" and before and before.strip("0"):
-            git(["fetch", "--no-tags", "--depth=1", "origin", before])
-            return git(["diff", "--name-only", before, "HEAD"]).splitlines()
+        base = _base(event, before)
+        if base is not None:
+            if event == "push":
+                git(["fetch", "--no-tags", "--depth=1", "origin", base])
+            return git(["diff", "--name-only", base, "HEAD"]).splitlines()
     except (subprocess.CalledProcessError, OSError) as e:
         print(f"::warning::cannot list the changed files ({e}): running everything")
     return None
+
+
+def version_diff(event: str, before: str, git: Runner = _git) -> str | None:
+    """`git diff -U0` of VERSION_FILES for a pull request or a push (None: unknown, so not a bump)."""
+    base = _base(event, before)
+    if base is None:
+        return None
+    try:
+        return git(["diff", "-U0", base, "HEAD", "--", *VERSION_FILES])
+    except (subprocess.CalledProcessError, OSError):
+        return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -188,11 +244,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--since-days", type=int, default=0)
     ap.add_argument("--files", nargs="*")
     args = ap.parse_args(argv)
+    diff: str | None = None
     if args.files is not None:
-        files: list[str] | None = args.files
+        files: list[str] | None = args.files  # offline: no diff, so never a bump
     else:
         files = changed_files(args.event, args.before, since_days=args.since_days)
-    result = groups(files)
+        if files is not None and "pyproject.toml" in files:
+            diff = version_diff(args.event, args.before)
+    result = groups(files, diff)
     print("changed files:", "(unknown: everything)" if files is None else len(files))
     for f in (files or [])[:200]:
         print("  ", f)

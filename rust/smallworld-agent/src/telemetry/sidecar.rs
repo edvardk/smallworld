@@ -190,6 +190,10 @@ pub fn main() -> u8 {
         }
     }
     while !t.stop.wait(3600.0) {}
+    // v1.5: the telemetry loop's shutdown() saves the RAM buffer to a segment
+    if let Some(Ok(h)) = spawned.first() {
+        crate::daemon::join_within(h, crate::daemon::TELEMETRY_STOP_WAIT_S);
+    }
     0
 }
 

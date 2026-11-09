@@ -40,8 +40,8 @@ TIMEOUT = 3.0  # seconds per socket operation of the one request
 BUDGET_S = 3.0  # how long a finished command waits for a lookup still running
 # CI and machine-facing commands (their output is parsed or logged), and `upgrade` itself (it is the fix).
 QUIET_COMMANDS = frozenset(
-    {"update-prs", "expiry-check", "panel-pr-check", "pr-gate", "client-publish", "schema", "schema-migrate",
-     "render", "upgrade"}
+    {"update-prs", "product-update", "expiry-check", "panel-pr-check", "pr-gate", "client-publish", "schema",
+     "schema-migrate", "render", "upgrade"}
 )  # fmt: skip
 VERSION = re.compile(r"v(\d+)\.(\d+)\.(\d+)")
 

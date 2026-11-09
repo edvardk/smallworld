@@ -36,11 +36,13 @@ without a version, `lock update` refreshes the builds of the current version)
 from __future__ import annotations
 
 import datetime
+import json
 import os
 import re
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from mcctl import configrepo, gate, init, migrations, product, schema, updates, yamledit
@@ -103,12 +105,21 @@ def _publish(ctx: init.Ctx, branch: str, title: str, body: str, paths: Sequence[
     ctx.git("add", "--", *paths)
     ctx.git("commit", "-q", "-m", title)
     proc = ctx.git("push", "-q", "-u", "origin", f"{branch}:{branch}", check=False)
+    cfg = ctx.repo().server
     if proc.returncode != 0:
+        # v1.5: the updater (weekly, or the Actions "product-update" run) may have pushed this branch first;
+        # its open PR proposes the same pin, so it is the one to use (seen live: the push was rejected).
+        existing = open_pin_pr(ctx, f"{cfg.github.owner}/{cfg.github.config_repo}", [branch])
+        if existing is not None:
+            ctx.git("checkout", "-q", "-f", start, check=False)
+            ctx.git("branch", "-q", "-D", branch, check=False)
+            ctx.ui.info(f"{branch} exists on GitHub with an open pull request: using it")
+            return existing
         raise init.StepError(
             f"`git push` of {branch} failed: {(proc.stderr or '').strip()}",
-            "check `gh auth status`; if the branch exists already (the updater's PR?), use that PR",
+            f"check `gh auth status`; if {branch} exists on GitHub without an open pull request, delete it "
+            f"there (`git push origin --delete {branch}`) and run this again",
         )
-    cfg = ctx.repo().server
     pr = ctx.gh(
         "pr",
         "create",
@@ -129,7 +140,31 @@ def _publish(ctx: init.Ctx, branch: str, title: str, body: str, paths: Sequence[
     return pr.stdout.strip()
 
 
+def open_pin_pr(ctx: init.Ctx, repository: str, branches: Sequence[str]) -> str | None:
+    """The URL of the first open pull request whose head is one of `branches`, or None."""
+    for branch in branches:
+        view = ctx.gh("pr", "view", branch, "-R", repository, "--json", "url,state")
+        try:
+            data = json.loads(view.stdout) if view.returncode == 0 else None
+        except ValueError:
+            data = None
+        if isinstance(data, dict) and data.get("state") == "OPEN" and data.get("url"):
+            return str(data["url"])
+    return None
+
+
 # --- product -------------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Upgraded:
+    """The pull request a product upgrade opened (v1.5: `mcctl rollout` follows it)."""
+
+    url: str
+    branch: str
+    to: str
+    sha: str
+    unattended: bool  # a pure patch bump on update/*: `server / gate` merges it (auto-merge on)
 
 
 def product_upgrade(
@@ -140,6 +175,19 @@ def product_upgrade(
     dry_run: bool = False,
     runner: ProductRunner = run_in_product,
 ) -> int:
+    product_upgrade_pr(ctx, to, sha, dry_run=dry_run, runner=runner)
+    return 0
+
+
+def product_upgrade_pr(
+    ctx: init.Ctx,
+    to: str | None,
+    sha: str | None,
+    *,
+    dry_run: bool = False,
+    runner: ProductRunner = run_in_product,
+) -> Upgraded | None:
+    """`mcctl upgrade [--to vX.Y.Z]`: the pull request moving the pin, or None for a dry run."""
     ui = ctx.ui
     repo = ctx.repo()
     pin = repo.pin
@@ -174,7 +222,7 @@ def product_upgrade(
         ui.say(f"  {n}. {line}")
     if dry_run:
         ui.say("(dry run: nothing was changed)")
-        return 0
+        return None
     start = _clean(ctx)
     _branch(ctx, branch)
     new_pin = configrepo.Pin(pin.repository, sha, to)
@@ -195,7 +243,7 @@ def product_upgrade(
         unattended = (
             changed == [configrepo.WORKFLOW]
             and wf.read_text()
-            == bumped  # v1.2: schema-migrate may add secrets to it (the gate wants `uses:` only)
+            == bumped  # schema-migrate may add secrets (v1.2) or inputs (v1.5) to it (the gate: `uses:` only)
             and updates.is_patch(pin.version, to)
             and repo.server.automation.auto_merge == "builds+patch"
         )
@@ -210,7 +258,7 @@ def product_upgrade(
             + (
                 ": this one also migrates server.yml)."
                 if changed != [configrepo.WORKFLOW]
-                else ": this one also adds secrets to the workflow)."
+                else ": this one also adds secrets or manual-run inputs to the workflow)."
                 if wf.read_text() != bumped
                 else ")."
             )
@@ -235,12 +283,13 @@ def product_upgrade(
         _abandon(ctx, start, branch)
         raise
     ui.ok(f"pull request: {url}")
-    return 0
+    return Upgraded(url, branch, to, sha, unattended)
 
 
 def schema_migrate(root: Path, old: str, product_root: Path | None = None) -> list[str]:
     """This product's migrations from `old` applied to root/server.yml (idempotent), and (v1.2) the secrets
-    its template passes added to the config repo's workflow. Returns what changed."""
+    its template passes added to the config repo's workflow, (v1.5) and its manual-run inputs. Returns what
+    changed."""
     from mcctl import wfsecrets
 
     path = root / configrepo.SERVER_YML
@@ -252,12 +301,22 @@ def schema_migrate(root: Path, old: str, product_root: Path | None = None) -> li
     if wf.is_file():
         current = wf.read_text()
         try:
-            absent = wfsecrets.missing(current, wfsecrets.template_text(product_root or schema.PRODUCT_ROOT))
+            template = wfsecrets.template_text(product_root or schema.PRODUCT_ROOT)
+            absent = wfsecrets.missing(current, template)
+            text = wfsecrets.add(current, absent)
+            lacking = wfsecrets.missing_dispatch(text, template)  # v1.5: the manual run's new inputs
+            text = wfsecrets.add_dispatch(text, template) if lacking else text
         except wfsecrets.WorkflowError as e:
             raise init.StepError(str(e)) from None
         if absent:
-            wf.write_text(wfsecrets.add(current, absent))
             applied.append(f"{configrepo.WORKFLOW}: passes {', '.join(absent)} (the product's template does)")
+        if lacking:
+            applied.append(
+                f"{configrepo.WORKFLOW}: the manual run gets {', '.join(lacking)} "
+                "(the product's template has them)"
+            )
+        if text != current:
+            wf.write_text(text)
     return applied
 
 

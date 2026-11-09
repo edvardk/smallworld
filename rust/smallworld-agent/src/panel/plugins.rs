@@ -143,10 +143,8 @@ pub fn read_snapshots(path: &Path) -> AResult<Vec<Obj>> {
 mod tests {
     use super::*;
 
-    fn tmp(name: &str, text: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("swagent-plugins-{}", std::process::id()));
-        std::fs::create_dir_all(&d).unwrap();
-        let p = d.join(name);
+    fn tmp(name: &str, text: &str) -> crate::testutil::TmpDir {
+        let p = crate::testutil::TmpDir::new("swagent-plugins").child(name);
         std::fs::write(&p, text).unwrap();
         p
     }
