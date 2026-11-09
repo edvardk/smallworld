@@ -331,7 +331,6 @@ def test_product_setup_plan_apply_idempotent() -> None:
     assert {c.name for c in p.changes} == {
         "allow_auto_merge", "delete_branch_on_merge", "actions access", "actions may create pull requests",
         "dependabot alerts", "dependabot security updates", "ruleset on main", "ruleset on v* tags",
-        "ruleset on v* tag creation",
     }  # fmt: skip
     # a private personal repository: GitHub has no forking setting (422 on org-only), so it's a note
     assert any("only collaborators can fork" in n for n in p.notes)
@@ -341,18 +340,17 @@ def test_product_setup_plan_apply_idempotent() -> None:
         "default_workflow_permissions": "read",
         "can_approve_pull_request_reviews": True,
     }
-    rs, tags, create = st["rulesets"].values()
+    rs, tags = st["rulesets"].values()
     # security review: moving or deleting a v* tag only for the admin
     assert tags["target"] == "tag" and tags["conditions"]["ref_name"]["include"] == ["refs/tags/v*"]
     assert [r["type"] for r in tags["rules"]] == ["update", "deletion"]
     assert tags["bypass_actors"] == [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}]
-    # v1.5: creating one, the admin or GitHub Actions (autotag.yml), in a ruleset with that one rule
-    assert create["target"] == "tag" and create["conditions"] == tags["conditions"]
-    assert [r["type"] for r in create["rules"]] == ["creation"]
-    assert create["bypass_actors"] == [
-        {"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"},
-        {"actor_id": 15368, "actor_type": "Integration", "bypass_mode": "always"},
-    ]
+    # v1.5.1: creating one isn't restricted (autotag.yml tags with GITHUB_TOKEN; GitHub refuses the Actions app
+    # as a bypass actor on a personal repository, 422), so no ruleset carries a creation rule
+    assert not any(
+        r["type"] == "creation" for ruleset in st["rulesets"].values() for r in ruleset.get("rules", [])
+    )
+    assert not hasattr(productsetup, "desired_tag_create_ruleset")
     assert rs["bypass_actors"] == []  # the admin doesn't bypass main's checks either
     assert rs["rules"][3]["type"] == "pull_request"
     assert rs["rules"][3]["parameters"]["required_approving_review_count"] == 0
@@ -360,13 +358,13 @@ def test_product_setup_plan_apply_idempotent() -> None:
     assert [c["context"] for c in checks] == list(productsetup.REQUIRED_CHECKS)
     assert {c["integration_id"] for c in checks} == {15368}
     again = productsetup.plan("t", PRODUCT, cloud)
-    assert again.changes == [] and len(again.in_sync) == 9
+    assert again.changes == [] and len(again.in_sync) == 8
     # drift in the ruleset is noticed and fixed in place (PUT, same id)
     rs["rules"] = rs["rules"][:2]
     drift = productsetup.plan("t", PRODUCT, cloud)
     assert [c.name for c in drift.changes] == ["ruleset on main"]
     productsetup.apply(drift)
-    assert list(st["rulesets"]) == [rs["id"], tags["id"], create["id"]]
+    assert list(st["rulesets"]) == [rs["id"], tags["id"]]
     assert len(st["rulesets"][rs["id"]]["rules"]) == 4
 
 

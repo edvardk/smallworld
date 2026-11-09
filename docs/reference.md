@@ -880,7 +880,7 @@ The product repo started out private, in the same personal account as the config
 | Repo | Setting | Why |
 |---|---|---|
 | product | *Private product only:* Actions **Access**: "Accessible from repositories owned by the user '<owner>'" (`mcctl product-setup` / init) | Otherwise the config repo can't call the reusable workflow. GitHub allows this only from **private** repos, so the config repo must stay private |
-| product | `mcctl product-setup`: tag rulesets **`v*`** (update/delete: admin only; v1.5, create: the admin or GitHub Actions, for `autotag.yml`), forking off while private, allow auto-merge, delete merged branches, "Allow GitHub Actions to create and approve pull requests" (update-lock), Dependabot alerts + security updates, secret scanning + push protection (public repository), ruleset **main: CI must pass** (`lint`, `gitleaks`, `publication`, `actionlint`, `config-repo / validate`, `e2e` from the GitHub Actions app; pull requests only (no approvals required); no force-push/deletion; no bypass, the admin included) | `--check` shows the diff without changing anything; idempotent |
+| product | `mcctl product-setup`: tag ruleset **`v*`** (update/delete: admin only; creation unrestricted, for `autotag.yml`'s `GITHUB_TOKEN`), forking off while private, allow auto-merge, delete merged branches, "Allow GitHub Actions to create and approve pull requests" (update-lock), Dependabot alerts + security updates, secret scanning + push protection (public repository), ruleset **main: CI must pass** (`lint`, `gitleaks`, `publication`, `actionlint`, `config-repo / validate`, `e2e` from the GitHub Actions app; pull requests only (no approvals required); no force-push/deletion; no bypass, the admin included) | `--check` shows the diff without changing anything; idempotent |
 | product | Actions secret `PUBLISH_DENYLIST`: the content of the private anonymity denylist (set by the maintainer with `gh secret set`, never by Terraform; passed explicitly by `release.yml` to `ci.yml`) | The `publication` check ([publishing](publishing.md#after-publishing-safeguards-on-every-commit)); without it (fork pull requests) only the generic checks run |
 | config | *Private product only:* Actions secret `PRODUCT_READ_TOKEN` (Terraform creates it from `TF_VAR_product_read_token`: fine-grained PAT, Contents read on the product) | The reusable workflow checks out the product's code; the Access setting covers calling the workflow, not reading the repo with the config repo's `GITHUB_TOKEN` [unverified, so the PAT is used] |
 | config | Rulesets (Terraform, `github.protect_main: true`): **main** only through pull requests whose `server / validate` and `server / gate` checks passed (pinned to the GitHub Actions app), no force-push or deletion, the repository admin bypasses; **every other branch but `panel/**` and `update/**`** only for the admin (an App can't be a bypass actor on a personal repo; `server / gate` accepts panel/update PRs only from the matching App's bot user, server.yml `github.panel_app`/`updater_app`) | P10 review: the GitHub Apps can't change what gets deployed beyond what the gate allows. **Rulesets on a private repo of a personal account need GitHub Pro** (`mcctl init`/`doctor` probe it); on GitHub Free set `github.protect_main: false` and read SECURITY.md |
@@ -912,8 +912,8 @@ v1.5: **merging a version bump to main releases it.** One command on the branch,
    the tag as an input): a tag created with the workflow's `GITHUB_TOKEN` starts no other workflow, so the
    tag-push trigger can't be relied on there. A push without a version change, an older version, or a re-run
    does nothing (a re-run on the tagged commit only calls `release.yml` if the GitHub release is missing); a new
-   version that fails `check` fails the run. The tag ruleset lets GitHub Actions create `v*` tags; moving or
-   deleting one stays the admin's (`mcctl product-setup`).
+   version that fails `check` fails the run. Creating a `v*` tag isn't restricted; moving or deleting one
+   stays the admin's (the `v*` tag ruleset, `mcctl product-setup`).
 
 `release.yml` (from autotag, or from a tag push): CI with everything (`full`), `scripts/release.py check`, and
 the GitHub release with the changelog section and the source archive's SHA-256. From autotag, CI isn't repeated
@@ -927,7 +927,12 @@ runs it.
 `## [Unreleased]`. Text edits only, formatting kept; nothing is written when it refuses: a version not greater
 than the current one (semver), an empty Unreleased section, an existing `## [X.Y.Z]` section, a dirty tree.
 
-**Fallback** (autotag failed, e.g. the tag ruleset refused it): on the merged main
+**Tag made, release missing** (a job of `release.yml` failed in autotag's run, as v1.5.0's did on a 504 from a
+download): re-run that autotag run's failed jobs (`gh run rerun <run-id> --failed`, or "Re-run failed jobs" in
+the Actions tab). The tag job's outputs are kept, so `release.yml` runs again for the existing tag; a full re-run
+works too (the tag already names the commit and the release is missing). Don't delete the tag.
+
+**Fallback** (autotag failed before it made the tag): on the merged main
 (`git fetch origin && git switch --detach origin/main`), `python3 scripts/release.py tag [vX.Y.Z] [--remote
 origin] [--push]` (default: `v` + pyproject's version). It refuses unless HEAD **is** the fetched tip of
 `<remote>/main` (a tag on the release branch's commit, as happened to v1.2.1, is refused), the tree is clean,

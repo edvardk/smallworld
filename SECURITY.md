@@ -302,8 +302,9 @@ logging; the manifest code is single-use and the installation id isn't secret).
   product repository (one that can create release tags) is outside what the gate can catch, as it is for any
   pinned dependency.
 - **Release tags are created by CI (v1.5):** `autotag.yml` tags a merged version bump on main with the workflow's
-  `GITHUB_TOKEN`, so the product's tag rulesets (`mcctl product-setup`) let the GitHub Actions app *create* `v*`
-  tags (a ruleset with only the creation rule); moving or deleting one stays the admin's. Any product workflow job
+  `GITHUB_TOKEN`, so creating a `v*` tag isn't restricted (v1.5.1: GitHub refuses the GitHub Actions app as a
+  ruleset bypass actor on a personal repository, 422, so a creation rule would block `autotag.yml`); the `v*` tag
+  ruleset (`mcctl product-setup`) keeps moving or deleting one the admin's. Any product workflow job
   holding `contents: write` could therefore create a new `v*` tag: those jobs run only on pushes to main, the
   schedule or dispatches (a fork's pull request gets a read-only token), main changes only through a pull request
   whose required checks passed, and an existing tag can't be moved. A patch tag still reaches deployments only

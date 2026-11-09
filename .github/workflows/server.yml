@@ -185,7 +185,7 @@ jobs:
           CONFIG_DIR: ${{ github.workspace }}/config/${{ inputs.config-path }}
           CONFIG_PATH: ${{ inputs.config-path }}
         run: |
-          curl -sSfL -o "$RUNNER_TEMP/gitleaks.tgz" \
+          curl -sSfL --retry 5 --retry-all-errors --retry-delay 10 -o "$RUNNER_TEMP/gitleaks.tgz" \
             "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
           echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/gitleaks.tgz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/gitleaks.tgz" -C "$RUNNER_TEMP" gitleaks
@@ -604,7 +604,8 @@ jobs:
 
       - name: Install pinned restic
         run: |
-          curl -fsSL -o restic.bz2 "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_amd64.bz2"
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 -o restic.bz2 \
+            "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_amd64.bz2"
           echo "${RESTIC_SHA256}  restic.bz2" | sha256sum -c -
           bunzip2 -c restic.bz2 > restic && chmod +x restic && sudo mv restic /usr/local/bin/
 

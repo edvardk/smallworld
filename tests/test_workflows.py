@@ -286,6 +286,15 @@ def test_pip_installs_are_hash_pinned(path) -> None:
         assert (REPO / req).is_file(), req
 
 
+@pytest.mark.parametrize("path", WORKFLOWS, ids=lambda p: p.name)
+def test_downloads_retry_transient_errors(path) -> None:
+    """v1.5.1: the v1.5.0 release stopped on a single HTTP 504 from GitHub's release downloads (ci.yml's gitleaks,
+    called by release.yml from autotag.yml): every curl download retries before the job fails."""
+    for line in re.findall(r"\bcurl [^\n]*", path.read_text()):
+        if " -o " in line:
+            assert "--retry 5" in line and "--retry-all-errors" in line, f"{path.name}: {line.strip()}"
+
+
 def _product_step() -> dict:
     steps = load(REUSABLE)["jobs"]["validate"]["steps"]
     return next(s for s in steps if s.get("id") == "product")
