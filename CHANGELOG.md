@@ -6,6 +6,8 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-09
+
 ### Added
 
 - Shipping an update in two steps ([operations: Shipping an update](docs/operations.md#shipping-an-update)).
