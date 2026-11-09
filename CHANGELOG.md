@@ -6,6 +6,16 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Added
+
+- e2e: the smooth-backup skip, live (`tests/e2e/backup_skip_check.py`, `agent_check.py`'s round `backup-skip` in
+  the `agent-b` shards). A drop-in gives `mc-backup.service` the timer's `TRIGGER_UNIT=mc-backup.timer` and points
+  its heartbeats at a local HTTPS mock of the watchdog; timer-style runs on the empty server until one is skipped
+  (the server pauses 60 s after it is empty, so an earlier run may still back up), which must be recorded in
+  `backup-state.json`, make no snapshot and send exactly one OK heartbeat; then a changed world file must be backed
+  up (start + ok heartbeats, a new snapshot, the skip count reset). Its verdicts are unit-tested against what
+  `scripts/backup.py` really prints and sends.
+
 ### Fixed
 
 - A product release that ships a new build of the in-house Smallworld client mod no longer breaks the pin move.
