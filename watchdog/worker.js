@@ -914,14 +914,18 @@ function cleanInventory(inv) {
 // process runs (a difference: it wasn't restarted after the deploy).
 const VERSION_TEXT = /^[0-9A-Za-z.+-]{1,40}$/;
 const COMMIT = /^[0-9a-f]{40}$/;
+const FINGERPRINT = /^[0-9a-f]{64}$/; // v1.5.2: the Worker fingerprint (mcctl/fingerprint.py, sha256 hex)
 function cleanProduct(p) {
   if (!p || typeof p !== "object" || !VERSION_TEXT.test(str(p.version))) return null;
-  return {
+  const out = {
     version: p.version,
     commit: COMMIT.test(str(p.commit)) ? p.commit : "",
     running: VERSION_TEXT.test(str(p.running)) ? p.running : "",
     running_commit: COMMIT.test(str(p.running_commit)) ? p.running_commit : "",
   };
+  // v1.5.2: the Worker fingerprint the installed release expects (an agent from before v1.5.2 sends none)
+  if (FINGERPRINT.test(str(p.worker_fingerprint))) out.worker_fingerprint = p.worker_fingerprint;
+  return out;
 }
 
 // v1.3: the agent's last Panel -> Git self-test (the steps it passed, the one that failed; never a token).
@@ -2910,7 +2914,9 @@ function warnings(sample, history, watchdog, now, inv = null) {
 // `mcctl render` stamps the product version (and the config repo's pin) into the Worker's static assets as
 // version.json, which `mcctl apply` uploads with worker.js: what this Worker runs. The box's version comes from the
 // agent's inventory (each deploy writes it). Read through the ASSETS binding only (never served: ASSET_PATHS),
-// cached per isolate (a new upload is a new isolate).
+// cached per isolate (a new upload is a new isolate). v1.5.2: version.json also carries the Worker fingerprint
+// (mcctl/fingerprint.py: a sha256 over worker.js, the panel's files and terraform/, never the version label), and
+// each deploy records the fingerprint its release expects next to the installed version.
 let workerStampCache = null;
 
 async function workerStamp(env) {
@@ -2924,6 +2930,7 @@ async function workerStamp(env) {
         const pin = d.pin && typeof d.pin === "object" ? d.pin : {};
         stamp = {
           version: d.product,
+          fingerprint: FINGERPRINT.test(str(d.fingerprint)) ? d.fingerprint : "",
           pin_sha: COMMIT.test(str(pin.sha)) ? pin.sha : "",
           pin_version: /^v?[0-9A-Za-z.+-]{1,40}$/.test(str(pin.version)) ? pin.version : "",
           repository: /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(str(d.repository)) ? d.repository : "",
@@ -2954,16 +2961,32 @@ function cmpVersion(a, b) {
 }
 
 // The panel's Versions row: server (deployed), Worker (applied), the pin the Worker was applied with; each mismatch
-// with its fix.
+// with its fix. v1.5.2: when both sides carry a Worker fingerprint (`fingerprint`: "same" | "differs"), the Worker
+// is out of date only when the fingerprints differ: a release that changed nothing the Worker runs leaves it on
+// its older version label, shown neutrally. Without one on either side (a Worker applied or an agent/deploy from
+// before v1.5.2: `fingerprint` null) the versions are compared, as before.
 function versions(product, stamp) {
-  const out = { server: product || null, worker: stamp || null, problems: [] };
+  const out = { server: product || null, worker: stamp || null, fingerprint: null, problems: [] };
   const sv = product && product.version;
   const wv = stamp && stamp.version;
   const c = cmpVersion(wv, sv);
-  if (c === -1) out.problems.push({ level: "warn", text: `The Worker is v${wv}, the server is v${sv}: run \`mcctl render\` + \`mcctl apply\` to update the Worker.` });
-  if (c === 1) out.problems.push({ level: "warn", text: `The server is v${sv}, the Worker is v${wv}: deploy (push to the config repo's main, or \`mcctl deploy\`) to update the server.` });
-  if (c === 0 && product.commit && stamp.pin_sha && product.commit !== stamp.pin_sha) {
-    out.problems.push({ level: "info", text: `The server runs commit ${product.commit.slice(0, 12)}, the Worker was applied for the pin ${stamp.pin_sha.slice(0, 12)} (same version v${sv}).` });
+  const expected = product && FINGERPRINT.test(str(product.worker_fingerprint)) ? product.worker_fingerprint : "";
+  const running = stamp && FINGERPRINT.test(str(stamp.fingerprint)) ? stamp.fingerprint : "";
+  if (expected && running) {
+    out.fingerprint = expected === running ? "same" : "differs";
+    if (c === 1) {
+      out.problems.push({ level: "warn", text: `The server is v${sv}, the Worker is v${wv}: deploy (push to the config repo's main, or \`mcctl deploy\`) to update the server.` });
+    } else if (out.fingerprint === "differs") {
+      out.problems.push({ level: "warn", text: `The Worker is out of date for v${sv} (its code or Terraform changed): run \`mcctl rollout\` or \`mcctl render\` + \`mcctl apply\`.` });
+    } else if (c === -1) {
+      out.problems.push({ level: "info", text: `Worker v${wv} (unchanged in v${sv}): nothing it runs changed, no apply needed.` });
+    }
+  } else {
+    if (c === -1) out.problems.push({ level: "warn", text: `The Worker is v${wv}, the server is v${sv}: run \`mcctl render\` + \`mcctl apply\` to update the Worker.` });
+    if (c === 1) out.problems.push({ level: "warn", text: `The server is v${sv}, the Worker is v${wv}: deploy (push to the config repo's main, or \`mcctl deploy\`) to update the server.` });
+    if (c === 0 && product.commit && stamp.pin_sha && product.commit !== stamp.pin_sha) {
+      out.problems.push({ level: "info", text: `The server runs commit ${product.commit.slice(0, 12)}, the Worker was applied for the pin ${stamp.pin_sha.slice(0, 12)} (same version v${sv}).` });
+    }
   }
   if (product && product.running && cmpVersion(product.running, product.version) !== 0) {
     out.problems.push({ level: "warn", text: `mc-agent still runs v${product.running} code although v${product.version} is installed: restart it (a deploy does: \`mcctl deploy\`).` });

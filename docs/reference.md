@@ -66,7 +66,7 @@ product/config-repo split, GitHub settings and releasing. New here? Start with t
   minute rows, segments and verdicts out, `player_message` reading who is online from it, no unit of its own. Both
   implementations share every state file (`telemetry-id.json` and the segments included), so a switch either way
   is a deploy; a new binary, a switch or a new product version restarts the agent. `product-version.json` records
-  `agent: {implementation, sha256}`. Operations: [operations.md](operations.md#switching-the-agents-implementation-v14).
+  `agent: {implementation, sha256}` and, v1.5.2, `worker_fingerprint`, which both implementations report. Operations: [operations.md](operations.md#switching-the-agents-implementation-v14).
 - **Verified keys.** `scripts/config_keys.py` rebuilds the pinned Purpur jar from the vanilla jar and Purpur's
   patch (hash-checked), then lists every config key via `javap`. No server code is run. `pytest` fails if an
   overlay uses a key that doesn't exist in the pinned version. spark is bundled with Paper, so it isn't a plugin.
@@ -341,7 +341,8 @@ had a questionary menu here); `mcctl -C DIR` opens it on DIR. It is the web pane
   admin), UNREACHABLE or the unit's state.
 - **Tabs** (keys 1-9; alt+1-9 from anywhere, the console's prompt too; or a click): **Overview** (server state and who is online; TPS and MSPT with sparklines of
   the last ten minutes; last backup; last deploy and its result; versions: the pin, the deployed product, the
-  Worker's stamp from the last doctor run, this mcctl, a mismatch flagged with its fix; "needs attention": open
+  Worker's stamp from the last doctor run (v1.5.2: "unchanged in vX.Y.Z" when its fingerprint matches the
+  release's), this mcctl, a mismatch flagged with its fix; "needs attention": open
   panel PRs, disabled plugins, credentials that expire within 30 days (expiry.yml), the update notice; and the
   server controls restart (countdown, backup first), stop (reason), start, back up now), **Players** (whitelist,
   operators and who is online in one table; whitelist add/remove and op/deop open a players.yml pull request as
@@ -944,6 +945,17 @@ origin] [--push]` (default: `v` + pyproject's version). It refuses unless HEAD *
 Config repos then move their pin to the tag's commit SHA: patch releases by themselves (the weekly update task
 and `server / gate`); minor and major releases, and any release that changes the Worker, with `mcctl rollout`
 ([operations: Shipping an update](operations.md#shipping-an-update)).
+
+"Changes the Worker" means the release changes its **Worker fingerprint** (v1.5.2, `mcctl/fingerprint.py`): a
+sha256 over `watchdog/worker.js`, `watchdog/panel/` (not `pack/`) and `terraform/` (`*.tf`, `*.tf.json`,
+`*.tftpl`, `.terraform.lock.hcl`). It leaves out the version label, the pin, `mcctl/render.py` and every rendered
+deployment value, so a release that leaves all of these files alone needs no local apply. `mcctl render` stamps it
+into the Worker's `version.json` and into group_vars `mc_worker_fingerprint`. The deploy records the group_vars
+value in `product-version.json`, mc-agent reports it, and the Worker compares the two. The `product-update` and
+deploy summaries (`productupdate.worker_diff`) and `mcctl doctor` use the same files. Only product files are
+fingerprinted, so both sides get the same value for the same release, whatever `server.yml` holds at the moment
+each one is rendered. Changing the definition (its `PREFIX` names the version) changes every fingerprint once,
+so expect one apply after such a change.
 
 ## Example deployment
 

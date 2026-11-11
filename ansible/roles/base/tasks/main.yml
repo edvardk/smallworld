@@ -394,12 +394,13 @@
 
 # v1.4: also which agent implementation runs, and for rust the binary's pin. A change (a release, a switch) restarts
 # mc-agent: it reads the file once at start, so without a restart a release that changed no script showed
-# installed != running in the panel's Versions row.
+# installed != running in the panel's Versions row. v1.5.2: also the Worker fingerprint this release expects
+# (rendered: mcctl/fingerprint.py); the panel compares it with the Worker's own instead of the version labels.
 - name: Record the installed product version
   ansible.builtin.copy:
     dest: "{{ mc_product_version_file }}"
     content: "{{ {'product': 'smallworld', 'version': base_product_version, 'commit': base_commit,
-                  'agent': base_agent_record} | to_nice_json }}\n"
+                  'agent': base_agent_record, 'worker_fingerprint': mc_worker_fingerprint | default('')} | to_nice_json }}\n"
     owner: root
     group: root
     mode: "0644"

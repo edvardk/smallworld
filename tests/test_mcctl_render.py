@@ -3,12 +3,14 @@
 import json
 import os
 import re
+import shutil
+from pathlib import Path
 
 import pytest
 import yaml
 from conftest import REPO, TEST_SHA, make_config_repo
 
-from mcctl import cli, configrepo, render, schema
+from mcctl import cli, configrepo, fingerprint, render, schema
 
 CONSTANTS = yaml.safe_load((REPO / "ansible/group_vars/all/main.yml").read_text())
 GOLDEN = REPO / "tests/fixtures/full-render.json"
@@ -385,7 +387,9 @@ def test_render_writes_every_file(config_repo, tmp_path) -> None:
         "mc_brand_icon_file",  # P17 (the config repo's own icon, rendered next to the inventory)
         "mc_brand_pack_sha1",  # v1.2: the pack is built from the config's art
         "mc_client_packs",  # v1.2: the current pack version per tier (from the client lock)
+        "mc_worker_fingerprint",  # v1.5.2: what this release's Worker runs (mcctl/fingerprint.py)
     }
+    assert gv["mc_worker_fingerprint"] == fingerprint.worker_fingerprint(REPO)
     assert gv["server_lock"] == repo.server_lock and gv["plugins_lock"] == repo.plugins_lock
     assert gv["mc_hostname"] == "example"
     assert gv["mc_watchdog_url"] == "https://hb.mc.tests.mcctl.internal"
@@ -724,10 +728,54 @@ def test_render_stamps_the_product_version_for_the_worker(config_repo, tmp_path)
     assert out / render.VERSION_STAMP not in written  # staged with the product's files, not a rendered input
     stamp = json.loads((out / render.VERSION_STAMP).read_text())
     assert stamp == {"product": mcctl.__version__, "pin": {"sha": TEST_SHA, "version": "v0.0.0"},
-                     "repository": configrepo.PRODUCT_REPOSITORY}  # fmt: skip
+                     "repository": configrepo.PRODUCT_REPOSITORY,
+                     "fingerprint": fingerprint.worker_fingerprint(REPO)}  # fmt: skip
+    assert re.fullmatch(r"[0-9a-f]{64}", stamp["fingerprint"])
     worker = (REPO / "watchdog/worker.js").read_text()
     assert "version.json" not in worker.split("const ASSET_PATHS = ", 1)[1].split("\n", 1)[0]
     assert '"https://assets.invalid/version.json"' in worker
+
+
+def _product_copy(dest: Path) -> Path:
+    """The fingerprinted parts of this checkout (and a file outside them) in a scratch product tree."""
+    shutil.copytree(REPO / "watchdog", dest / "watchdog", ignore=shutil.ignore_patterns("node_modules"))
+    shutil.copytree(REPO / "terraform", dest / "terraform", ignore=shutil.ignore_patterns(".terraform"))
+    (dest / "mcctl").mkdir()
+    shutil.copy2(REPO / "mcctl" / "__init__.py", dest / "mcctl" / "__init__.py")
+    shutil.copy2(REPO / "mcctl" / "render.py", dest / "mcctl" / "render.py")
+    return dest
+
+
+def test_worker_fingerprint_follows_the_code_not_the_version(tmp_path) -> None:
+    """v1.5.2: the fingerprint covers worker.js, the panel's files and terraform/; a version-only release
+    (mcctl/__init__.py, CHANGELOG, render.py comments, tests) leaves it as it is, so the panel doesn't ask for an
+    apply; a change to the Worker's code or assets does."""
+    root = _product_copy(tmp_path / "p")
+    base = fingerprint.worker_fingerprint(root)
+    assert base == fingerprint.worker_fingerprint(REPO) and re.fullmatch(r"[0-9a-f]{64}", base or "")
+    init = root / "mcctl" / "__init__.py"
+    init.write_text(init.read_text().replace(f'"{mcctl_version()}"', '"9.9.9"'))
+    (root / "mcctl" / "render.py").write_text((root / "mcctl/render.py").read_text() + "# a comment\n")
+    (root / "watchdog/test/worker.test.mjs").write_text("// another test\n")
+    (root / "CHANGELOG.md").write_text("## [9.9.9]\n")
+    assert fingerprint.worker_fingerprint(root) == base
+    for rel in ("watchdog/worker.js", "watchdog/panel/panel.js", "watchdog/panel/fonts/OFL.txt",
+                "terraform/watchdog.tf"):  # fmt: skip
+        f = root / rel
+        before = f.read_bytes()
+        f.write_bytes(before + b"\n")
+        assert fingerprint.worker_fingerprint(root) != base, rel
+        f.write_bytes(before)
+    assert fingerprint.worker_fingerprint(root) == base
+    (root / "watchdog/panel/new.svg").write_text("<svg/>")
+    assert fingerprint.worker_fingerprint(root) != base
+    assert fingerprint.worker_fingerprint(tmp_path / "nothing") is None
+
+
+def mcctl_version() -> str:
+    import mcctl
+
+    return mcctl.__version__
 
 
 # --- v1.5: smooth backups, the small-VM preset --------------------------------------------------------------------

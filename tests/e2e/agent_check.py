@@ -37,7 +37,8 @@ failing to reach it since: this script now starts a mock of the Worker there and
     directory -> the agent asks the Worker (POST /agent/client-code, bearer token) -> the code file in the verdict
     directory, which minecraft can read but not write; the code never reaches the journal.
 
-  - v1.3, versions everywhere: the deploy's /opt/minecraft/product-version.json (root, 0644, the product version)
+  - v1.3, versions everywhere: the deploy's /opt/minecraft/product-version.json (root, 0644, the product version;
+    v1.5.2: and the rendered Worker fingerprint, which the agent reports)
     and the agent's report of it in the inventory (installed = running); the Panel -> Git self-test (`selftest`)
     against the GitHub mock, read-only, its steps in the inventory, one run a minute from the panel; `lookup` of a
     Java name from the box against a mock Mojang (first endpoint 403, the fallback answers; unknown and malformed
@@ -976,6 +977,18 @@ def versions_round() -> None:
     prod = (inv or {}).get("product") or {}
     expect(prod.get("version") == data.get("version") and prod.get("running") == data.get("version"),
            f"mc-agent reports it, and runs that version's code ({prod})")  # fmt: skip
+    # v1.5.2: the Worker fingerprint this release expects (rendered: mc_worker_fingerprint, mcctl/fingerprint.py),
+    # recorded by the deploy and reported by the agent: what the panel compares with the Worker's own
+    gv = Path("/src/rendered/ansible/group_vars/all.yml")
+    rendered = (
+        re.search(r"^mc_worker_fingerprint: '?([0-9a-f]{64})'?$", gv.read_text(), re.M)
+        if gv.exists()
+        else None
+    )
+    fp = data.get("worker_fingerprint")
+    expect(bool(rendered) and fp == rendered.group(1),  # type: ignore[union-attr]
+           f"it records the rendered Worker fingerprint ({fp})")  # fmt: skip
+    expect(prod.get("worker_fingerprint") == fp, f"mc-agent reports the Worker fingerprint ({prod})")
     with github_mock():
         before = (len(GitHubMock.prs), sorted(GitHubMock.files), GitHubMock.listed)
         r = send("selftest", {}, "e2e-selftest")

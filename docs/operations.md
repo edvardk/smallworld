@@ -172,11 +172,26 @@ used to drift apart silently (v1.2.2 reached the server and the Worker in separa
   static assets (`version.json`, not served), which `mcctl apply` uploads with `worker.js`.
 - **Config repo pin:** as of the last apply.
 
+**The Worker fingerprint (v1.5.2).** The Worker is compared by what it runs, not by its version label. A
+fingerprint (sha256, `mcctl/fingerprint.py`) covers the product files that decide what the Worker runs and what
+Terraform applies: `watchdog/worker.js`, the panel's files (`watchdog/panel/`) and `terraform/` (every `.tf`,
+`.tftpl` and the provider lock file). It leaves out the product version, the pin and your `server.yml`'s rendered
+values. `mcctl render` writes it into `version.json` (the Worker's own) and into the rendered group_vars
+(`mc_worker_fingerprint`). Each deploy records it in `product-version.json` next to the version, and mc-agent
+reports it. When both match, a Worker on an older label is in step: the row reads "Worker v1.5.0 (unchanged in
+v1.5.1)", with no warning and no apply needed. A Worker applied before v1.5.2, or a server deployed before it
+(no fingerprint on one side), is compared by version, as before.
+
 | Warning | Fix |
 |---|---|
-| The Worker is older than the server | `mcctl render` + `mcctl apply` |
+| The Worker is out of date for vX.Y.Z (its code or Terraform changed) | `mcctl rollout` or `mcctl render` + `mcctl apply` |
+| The Worker is older than the server (no fingerprint on one side: before v1.5.2) | `mcctl render` + `mcctl apply` |
 | The server is older than the Worker | deploy (push to main, or `mcctl deploy`) |
 | mc-agent runs older code than installed | restart it (a deploy does) |
+
+The fingerprint can't see one change: a change to how `mcctl render` maps an existing `server.yml` field onto a
+Terraform variable without any change in `terraform/`. `mcctl doctor`'s `terraform plan` row shows that as a
+pending change. Your own `server.yml` edits are yours to apply, as always.
 
 `mcctl doctor` checks the same against the config repo's pin as it is now (rows `versions` and `panel → git`,
 read from the watchdog's D1 with the Cloudflare token), and the dashboard and `mcctl status` show the deployed
@@ -454,14 +469,18 @@ server > Run workflow**, branch `main`, task **`product-update`**, product_versi
 4. The run's **summary** (the run page, below the jobs) shows the old and new version, the pull request and its
    state, and **Run locally**. The deploy run that follows the merge repeats it with the deploy's result.
 
-**Run locally** is the Worker step. The run compares what Terraform reads for the Worker and the panel
-(`watchdog/` without its tests, `terraform/`, `mcctl/render.py`) between the two releases, by content:
+**Run locally** is the Worker step. The run compares the files of the Worker fingerprint (v1.5.2, see
+[Versions](#versions-v13): `watchdog/worker.js`, `watchdog/panel/`, `terraform/`) between the two releases, by
+content. That is the same comparison the panel's Versions row makes, so the two always agree. Before v1.5.2 it
+also counted `mcctl/render.py`, which asked for a local apply after v1.5.1 even though v1.5.1 changed only a
+comment in it:
 
 - changed: in your clone of the config repo, after the deploy,
   `git pull --ff-only && mcctl rollout --to vX.Y.Z` (it sees the pin is current and runs `render`, `plan` and,
-  after a yes, `apply` with its typed confirmation; before the merge it also merges and watches the deploy);
-- unchanged: no local step (the panel's Versions row shows the Worker one version behind until your next
-  `mcctl render` + `mcctl apply`; that is only the version stamp);
+  after a yes, `apply` with its typed confirmation; before the merge it also merges and watches the deploy).
+  Until then the panel warns "The Worker is out of date for vX.Y.Z";
+- unchanged: no local step. The panel's Versions row shows the Worker's older version as unchanged in the new
+  release, with no warning (once the Worker and the server both run v1.5.2 or later);
 - couldn't compare: the same command, "run it if the panel or Worker changed".
 
 **The client mod moves with the pin (v1.5.1).** The Smallworld client mod is part of the product (its jar is

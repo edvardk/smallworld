@@ -17,7 +17,9 @@ group_vars. Everything comes from here, written into one directory (default <con
                                       from the config repo's art (mcctl/brandpack.py; mc_brand_pack_sha1)
                                       and v1.3's version.json: the product version and the config repo's
                                       pin, which `mcctl apply` uploads with worker.js (the panel's Versions
-                                      row, `mcctl doctor`)
+                                      row, `mcctl doctor`), and v1.5.2's Worker fingerprint
+                                      (mcctl/fingerprint.py; also group_vars mc_worker_fingerprint, which
+                                      each deploy records next to the installed version)
 
 Only variables today's roles and root module read are rendered. Fields whose consumers arrive in later phases
 (Grafana, automation, overrides) are validated but not rendered yet; the panel's (P9) and gamerules (v1.2)
@@ -36,7 +38,7 @@ from typing import Any
 
 import yaml
 
-from mcctl import __version__, brandpack, clientpack
+from mcctl import __version__, brandpack, clientpack, fingerprint
 from mcctl.configrepo import ConfigRepo
 from mcctl.schema import (
     BrandingHologram,
@@ -702,6 +704,10 @@ def ansible_vars(repo: ConfigRepo) -> dict[str, Any]:
         "mc_brand_icon_file": ICON_FILE.relative_to("ansible").as_posix() if icon(repo) else "",
         "mc_brand_pack_sha1": brandpack.sha1(pack) if pack is not None else "",
         "mc_client_packs": client_packs(repo),  # v1.2: mc-brand's client.packs (the outdated-pack line)
+        # v1.5.2: the Worker fingerprint of this product release (the code that renders is the code that
+        # deploys); the base role records it in product-version.json, the agent reports it, the panel compares
+        # it with the Worker's own (version.json) instead of the version labels
+        "mc_worker_fingerprint": fingerprint.worker_fingerprint() or "",
     }
     return group_vars(repo.server) | players_vars(repo.players) | own | locks
 
@@ -770,8 +776,10 @@ def render(repo: ConfigRepo, out_dir: Path) -> list[Path]:
 
 def version_stamp(repo: ConfigRepo) -> dict[str, Any]:
     """v1.3: what the Worker reports as its version: this product's (the code that renders is the code `mcctl
-    apply` uploads: both run from the pin) and the config repo's pin at render time."""
+    apply` uploads: both run from the pin) and the config repo's pin at render time. v1.5.2: plus the Worker
+    fingerprint (what it runs; the panel compares it, the version is for display)."""
     return {
+        "fingerprint": fingerprint.worker_fingerprint() or "",
         "product": __version__,
         "pin": {"sha": repo.pin.sha, "version": repo.pin.version},
         "repository": repo.pin.repository,

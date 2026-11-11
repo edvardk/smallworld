@@ -1017,15 +1017,22 @@ class ConsoleTail:
 
 
 def read_product(path: Path | None = None) -> dict[str, str] | None:
-    """v1.3: the product version the last deploy installed ({version, commit}), or None (no file yet: a box
-    deployed before v1.3, or not deployed by the product)."""
+    """v1.3: the product version the last deploy installed ({version, commit[, worker_fingerprint]}), or None
+    (no file yet: a box deployed before v1.3, or not deployed by the product)."""
     data = read_json_obj(path or PRODUCT_VERSION_FILE)
     version = data.get("version")
     if not isinstance(version, str) or not re.fullmatch(r"[0-9A-Za-z.+-]{1,40}", version):
         return None
     commit = data.get("commit")
     commit = commit if isinstance(commit, str) and re.fullmatch(r"[0-9a-f]{40}", commit) else ""
-    return {"version": version, "commit": commit}
+    out = {"version": version, "commit": commit}
+    # v1.5.2: the Worker fingerprint this release expects (mcctl/fingerprint.py, rendered, written by the
+    # deploy); only when the file has a valid one, so a box deployed before v1.5.2 reports what it did (the
+    # Worker then compares versions, as before)
+    worker = data.get("worker_fingerprint")
+    if isinstance(worker, str) and re.fullmatch(r"[0-9a-f]{64}", worker):
+        out["worker_fingerprint"] = worker
+    return out
 
 
 def lookup_urls(env: dict[str, str] | None = None) -> tuple[str, ...]:
