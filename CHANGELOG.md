@@ -6,6 +6,8 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-11-11
+
 ### Fixed
 
 - The panel no longer asks for a local `mcctl render` + `mcctl apply` after a release that didn't change the
