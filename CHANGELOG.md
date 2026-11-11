@@ -6,6 +6,8 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-11-11
+
 ### Added
 
 - e2e: the smooth-backup skip, live (`tests/e2e/backup_skip_check.py`, `agent_check.py`'s round `backup-skip` in
