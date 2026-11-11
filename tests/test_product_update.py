@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 import yaml
-from conftest import EXAMPLE, REPO, TEST_SHA, make_config_repo
+from conftest import EXAMPLE, REPO, TEST_SHA, V141_CLIENT_LOCK, fake_release, make_config_repo
 from test_updates import FakeGitHub
 
 from mcctl import cli, configrepo, doctor, http, productupdate, updates, upgrade, wfsecrets
@@ -257,6 +257,107 @@ def test_run_pr_needs_the_app_and_never_prints_the_key(cfg: Path) -> None:
     assert "PRIVATE" not in text + "".join(log) and "ghs-fake" not in text + "".join(log)
     assert "| Product | `v0.0.0` -> **`v0.0.1`**" in text and "will merge itself" in text
     assert "mcctl rollout --to v0.0.1" in text and "`watchdog/worker.js`" in text
+
+
+# --- v1.5.1: a release that ships a new in-house client mod ------------------------------------------------
+
+V150_LOCK = (REPO / "template/client.lock.yml").read_text()
+
+
+def test_the_pin_pr_carries_the_targets_in_house_entries_and_still_auto_merges(cfg: Path) -> None:
+    """The live v1.4.1 -> v1.5.0 case on the update button: main pins mod 1.0.0; the prepared change (the
+    `inhouse` step, from the target checkout) has 1.1.0. Pin + in-house entries is still a pure patch bump."""
+    (cfg / configrepo.CLIENT_LOCK).write_text(V141_CLIENT_LOCK.read_text())
+    gh = GitHub(cfg)
+    t = target()
+    files = prepared(cfg, t) | {configrepo.CLIENT_LOCK: V150_LOCK}
+    out = productupdate.open_or_reuse(updates.Repo(gh.repo, "t", gh), t, files, auto_merge="builds+patch",
+                                      protected=True, worker=[])  # fmt: skip
+    assert out.auto and gh.auto_merge == ["PR_1"]
+    assert gh.branches["update/product-v0.0.1"][configrepo.CLIENT_LOCK] == V150_LOCK
+    assert (
+        "in-house client mod entries" in gh.pulls[0]["body"] and "only the pin moved" in gh.pulls[0]["body"]
+    )
+    # anything else in the lock: the admin
+    gh2 = GitHub(cfg)
+    other = V150_LOCK.replace("mc26.3-0.9.2-fabric", "mc26.3-0.9.3-fabric", 1)
+    assert other != V150_LOCK
+    out2 = productupdate.open_or_reuse(updates.Repo(gh2.repo, "t", gh2), t,
+                                       prepared(cfg, t) | {configrepo.CLIENT_LOCK: other},
+                                       auto_merge="builds+patch", protected=True, worker=[])  # fmt: skip
+    assert not out2.auto and "more than the `uses:` line" in out2.why and gh2.auto_merge == []
+    # the weekly updater's pin-only PR for the release is brought up to date with the lock
+    gh3 = GitHub(cfg)
+    gh3.pulls.append({"number": 1, "node_id": "PR_1", "state": "open", "title": "Product update to v0.0.1",
+                      "head": {"ref": "update/product-v0.0.1"}, "body": ""})  # fmt: skip
+    gh3.branches["update/product-v0.0.1"] = dict(gh3.branches["main"]) | prepared(cfg, t)
+    out3 = productupdate.open_or_reuse(updates.Repo(gh3.repo, "t", gh3), t, files, auto_merge="builds+patch",
+                                       protected=True, worker=[])  # fmt: skip
+    assert out3.reused and out3.auto
+    assert gh3.branches["update/product-v0.0.1"][configrepo.CLIENT_LOCK] == V150_LOCK
+    assert any("brought client.lock.yml up to date" in line for line in out3.log)
+
+
+def test_run_pr_reads_the_prepared_client_lock(cfg: Path) -> None:
+    (cfg / configrepo.CLIENT_LOCK).write_text(V141_CLIENT_LOCK.read_text())
+    gh = GitHub(cfg)
+
+    def transport(req: http.Request) -> http.Response:
+        if req.url.endswith("/installation"):
+            return http.Response(200, {}, b'{"id": 7}')
+        if req.url.endswith("/app/installations/7/access_tokens"):
+            return http.Response(201, {}, b'{"token": "ghs-fake", "expires_at": "2026-11-08T05:00:00Z"}')
+        return gh(req)
+
+    def b64(text: str) -> str:
+        return base64.b64encode(text.encode()).decode()
+
+    env = {
+        "UPDATER_APP_ID": "42", "UPDATER_APP_KEY": "-----BEGIN RSA PRIVATE KEY-----\nZmFrZQ==\n-----END RSA "
+        "PRIVATE KEY-----\n", "GITHUB_REPOSITORY": gh.repo,
+        "PREPARED_WORKFLOW": b64(prepared(cfg, target())[configrepo.WORKFLOW]),
+        "PREPARED_CLIENT_LOCK": b64(V150_LOCK),
+    }  # fmt: skip
+    code, text, _ = productupdate.run_pr(cfg, env, target(), [], transport, sign=lambda key, data: b"sig")
+    assert code == 0 and "will merge itself" in text
+    assert gh.branches["update/product-v0.0.1"][configrepo.CLIENT_LOCK] == V150_LOCK
+
+
+def test_cli_inhouse_then_prepared_hands_the_lock_on(cfg: Path, tmp_path: Path) -> None:
+    (cfg / configrepo.CLIENT_LOCK).write_text(V141_CLIENT_LOCK.read_text())
+    for argv in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-qm", "seed"]):
+        _git(cfg, *argv)
+    wf = cfg / configrepo.WORKFLOW
+    wf.write_text(updates.bump_pin(wf.read_text(), configrepo.PRODUCT_REPOSITORY, NEW_SHA, "v0.0.1"))
+    release = fake_release(tmp_path / "target")
+    assert cli.main(["product-update", "inhouse", "-C", str(cfg), "--new-product", str(release)]) == 0
+    assert (cfg / configrepo.CLIENT_LOCK).read_text() == V150_LOCK
+    assert cli.main(["product-update", "inhouse", "-C", str(cfg), "--new-product", str(release)]) == 0
+    prep = tmp_path / "prep"
+    old, new = product_tree(tmp_path / "p-old"), product_tree(tmp_path / "p-new")
+    assert cli.main(["product-update", "prepared", "-C", str(cfg), "--old-product", str(old),
+                     "--new-product", str(new), "--github-output", str(prep)]) == 0  # fmt: skip
+    got = dict(line.split("=", 1) for line in prep.read_text().splitlines())
+    assert got["changed"] == f"{configrepo.WORKFLOW},{configrepo.CLIENT_LOCK}"
+    assert base64.b64decode(got["client_lock"]).decode() == V150_LOCK
+    # a release whose template doesn't match its jar stops the run before the target's validate
+    _git(cfg, "checkout", "-q", "--", configrepo.CLIENT_LOCK)
+    stale = fake_release(tmp_path / "stale", jar=b"other")
+    assert cli.main(["product-update", "inhouse", "-C", str(cfg), "--new-product", str(stale)]) == 1
+    assert (cfg / configrepo.CLIENT_LOCK).read_text() == V141_CLIENT_LOCK.read_text()
+
+
+def test_the_inhouse_step_runs_before_the_targets_validate() -> None:
+    jobs = load(REUSABLE)["jobs"]
+    names = [s.get("name", "") for s in jobs["product-update"]["steps"]]
+    inhouse = names.index("The target release's in-house client mod entries (client.lock.yml)")
+    assert names.index("Check out the target release") < inhouse
+    assert inhouse < names.index("The target release's schema-migrate and validate")
+    step = jobs["product-update"]["steps"][inhouse]
+    assert step["working-directory"] == "product" and "secrets" not in yaml.safe_dump(step)
+    assert jobs["product-update"]["outputs"]["client_lock"] == "${{ steps.prepared.outputs.client_lock }}"
+    last = jobs["product-update-pr"]["steps"][-1]
+    assert last["env"]["PREPARED_CLIENT_LOCK"] == "${{ needs.product-update.outputs.client_lock }}"
 
 
 # --- the summaries -----------------------------------------------------------------------------------------

@@ -8,8 +8,10 @@ name: autotag
 #   - anything else (a feature merge, an older version): nothing. A new version that fails `check` fails here.
 # A tag created with GITHUB_TOKEN starts no workflow (GitHub doesn't trigger runs from GITHUB_TOKEN events), so
 # release.yml isn't started by the tag: it is called here (workflow_call) with the tag as an input. A tag a person
-# pushes (the fallback, `release.py tag --push`) still starts release.yml by itself. The v* tag ruleset lets
-# GitHub Actions create v* tags (`mcctl product-setup`); moving or deleting one stays the admin's.
+# pushes (the fallback, `release.py tag --push`) still starts release.yml by itself. Creating a v* tag isn't
+# restricted; the v* tag ruleset (`mcctl product-setup`) keeps moving or deleting one the admin's.
+# If release.yml fails after the tag was made (v1.5.0: a 504 on a download), re-run this run's failed jobs: the
+# tag job's outputs are kept, and a full re-run sees the tag on this commit and calls release.yml again.
 on:
   push:
     branches: [main]
@@ -52,7 +54,7 @@ jobs:
           obj=$(gh api "repos/$REPO/git/tags" -f tag="$TAG" -f message="Smallworld $TAG" -f object="$SHA" \
             -f type=commit --jq .sha)
           if ! gh api "repos/$REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$obj" --silent; then
-            echo "::error::couldn't create $TAG (the v* tag ruleset? \`mcctl product-setup --check\`). Fallback:" \
+            echo "::error::couldn't create $TAG (a tag ruleset? \`mcctl product-setup --check\`). Fallback:" \
               "python3 scripts/release.py tag $TAG --push on this commit"
             exit 1
           fi

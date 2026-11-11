@@ -73,8 +73,8 @@ ONSERVER_STACK_MB = 768  # mc-obs.slice budget for the onserver panel / Grafana 
 # heap is ~0.5-0.6 GB that doesn't scale (metaspace, code cache, thread stacks, Netty buffers) + ~10-15 % of
 # the heap (GC structures; the 1.5 GB measured at a 5.75 GB G1 heap fits that line), the OS ~250 MB,
 # tailscaled ~50 MB, the Rust agent ~14 MB (v1.4 parity runs), restic held near 192 MiB (GOMEMLIMIT below). 4
-# GB host (3.9 GB usable): heap 2304 MB; 3 GB: 1536 MB; 2 GB: 768 MB, the bare minimum (1-2 players, view
-# distance 8).
+# GB host (3.9 GB usable): heap 2304 MB (computed, not yet measured on a real 4 GB VM: the docs say "measure
+# first"); 3 GB: 1536 MB; 2 GB: 768 MB, the bare minimum (1-2 players, view distance 8).
 SMALL_HEAP_RESERVE_MB = 1024
 SMALL_HEAP_RESERVE_PCT = 40
 # v1.5: per-preset resource settings of the product's helpers (role variables; 0 = no limit / restic's

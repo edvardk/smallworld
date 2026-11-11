@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 import yaml
-from conftest import REPO, TEST_SHA, make_config_repo
+from conftest import MOD_JAR, REPO, TEST_SHA, V141_CLIENT_LOCK, make_config_repo
 
 from mcctl import configrepo, expirycheck, http, updates
 
@@ -35,6 +35,7 @@ class FakeGitHub:
         self.auto_merge: list[str] = []
         self.calls: list[tuple[str, str]] = []
         self.auth: set[str] = set()
+        self.product_files: dict[str, bytes] = {}  # v1.5.1: the release's files (contents API at its sha)
 
     @staticmethod
     def _files(root: Path) -> dict[str, str]:
@@ -59,6 +60,12 @@ class FakeGitHub:
             return ok({"tag_name": self.release[0]}) if self.release else ok({"message": "Not Found"}, 404)
         if self.release and path == f"/repos/edvardk/smallworld/git/ref/tags/{self.release[0]}":
             return ok({"object": {"type": "commit", "sha": self.release[1]}})
+        if self.release and path.startswith("/repos/edvardk/smallworld/contents/"):
+            name = urllib.parse.unquote(path.removeprefix("/repos/edvardk/smallworld/contents/"))
+            if q.get("ref") == [self.release[1]] and name in self.product_files:
+                data = base64.b64encode(self.product_files[name]).decode()
+                return ok({"encoding": "base64", "content": data})
+            return ok({"message": "Not Found"}, 404)
         if path == f"{r}/git/ref/heads/main":
             return ok({"object": {"sha": "c" * 40}})
         if path.startswith(f"{r}/contents/"):
@@ -127,6 +134,52 @@ def test_a_lock_update_and_a_patch_release_become_auto_merged_prs(cfg) -> None:
         cfg, updates.Repo(gh.repo, "t", gh), auto_merge="builds+patch", product_token="", today=TODAY
     )
     assert len(gh.pulls) == 2 and any("already" in line for line in again)
+
+
+V150_LOCK = (REPO / "template/client.lock.yml").read_text()
+
+
+def v150_files() -> dict[str, bytes]:
+    """v1.5.0's template lock and its mod jar (Smallworld 1.1.0), as the contents API serves them."""
+    return {"template/client.lock.yml": V150_LOCK.encode(), MOD_JAR: (REPO / MOD_JAR).read_bytes()}
+
+
+def test_the_product_pr_takes_the_releases_in_house_mod_entries(cfg) -> None:
+    """v1.5.1, the live case: main's client.lock.yml pins v1.4.1's mod 1.0.0, the release ships 1.1.0. The
+    product PR carries main's lock with the release's in-house entry (not the checkout's, which holds this
+    run's lock update), read with the read-only product token, and a patch still auto-merges."""
+    (cfg / configrepo.CLIENT_LOCK).write_text(V141_CLIENT_LOCK.read_text())
+    gh = FakeGitHub(cfg)
+    gh.product_files = v150_files()
+    checkout = V141_CLIENT_LOCK.read_text().replace("mc26.3-0.9.2-fabric", "mc26.3-0.9.3-fabric", 1)
+    (cfg / configrepo.CLIENT_LOCK).write_text(checkout)  # this week's lock update (its own PR)
+    repo = updates.Repo(gh.repo, "installation-token", gh)
+    log = updates.run(cfg, repo, auto_merge="builds+patch", product_token="prt", today=TODAY)
+    assert [p["head"]["ref"] for p in gh.pulls] == ["update/lock-20261103", "update/product-v0.0.1"]
+    product = gh.branches["update/product-v0.0.1"]
+    assert product[configrepo.CLIENT_LOCK] == V150_LOCK
+    assert gh.branches["update/lock-20261103"][configrepo.CLIENT_LOCK] == checkout
+    assert gh.auto_merge == ["PR_1", "PR_2"] and "in-house client mod" in gh.pulls[1]["body"]
+    assert any("client.lock.yml: v0.0.1's in-house entries (smallworld)" in line for line in log)
+    reads = [r for r in gh.calls if r[1].startswith("/repos/edvardk/smallworld/contents/")]
+    assert reads and "Bearer prt" in gh.auth
+
+
+def test_a_release_whose_mod_entries_cant_be_read_gets_a_pin_only_pr(cfg) -> None:
+    (cfg / configrepo.CLIENT_LOCK).write_text(V141_CLIENT_LOCK.read_text())
+    gh = FakeGitHub(cfg)
+    gh.product_files = v150_files() | {MOD_JAR: b"not the jar"}
+    log = updates.run(cfg, updates.Repo(gh.repo, "t", gh), auto_merge="builds+patch", product_token="",
+                      today=TODAY)  # fmt: skip
+    assert configrepo.CLIENT_LOCK not in [
+        n for n, t in gh.branches["update/product-v0.0.1"].items() if t != gh.branches["main"].get(n)
+    ]
+    assert any("couldn't take v0.0.1's in-house entries" in line for line in log)
+    # a release without in-house mods (or the same entry): nothing to take
+    gh2 = FakeGitHub(cfg)
+    updates.run(cfg, updates.Repo(gh2.repo, "t", gh2), auto_merge="builds+patch", product_token="",
+                today=TODAY)  # fmt: skip
+    assert gh2.branches["update/product-v0.0.1"][configrepo.CLIENT_LOCK] == V141_CLIENT_LOCK.read_text()
 
 
 def test_auto_merge_levels_and_minor_releases(cfg) -> None:

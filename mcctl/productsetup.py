@@ -23,8 +23,9 @@ docs checked 2026-11-01):
   no bypass actor: the admin too goes through a pull request whose checks passed (the ruleset can still be
   edited in Settings in an emergency). Private repos of personal accounts need a paid plan for rulesets
   (403 "Upgrade to GitHub Pro"). A second ruleset (target `tag`, `refs/tags/v*`): update and deletion for
-  the admin only (security review: config repos pin releases by tag); v1.5, a third: creation for the admin
-  and the GitHub Actions app (`actor_type` `Integration`, its app id: autotag.yml tags merged version bumps).
+  the admin only (security review: config repos pin releases by tag). Creating a v* tag isn't restricted
+  (v1.5.1): autotag.yml creates it with GITHUB_TOKEN, and GitHub refuses the GitHub Actions app as a bypass
+  actor on a personal repository (422), so a creation rule would block autotag.yml.
 
 The token: `GH_TOKEN` from the environment, else the output of `gh auth token` (captured, never on a command
 line), else a hidden prompt. It is never stored or printed.
@@ -43,11 +44,10 @@ from mcctl.providers import ProviderError
 API = "https://api.github.com"
 RULESET_NAME = "main: CI must pass (mcctl product-setup)"
 # Security review: release tags are what config repos pin (`uses: ...@<sha> # vX.Y.Z`, `mcctl upgrade`), so
-# only the admin may move or delete a v* tag. v1.5: the admin or GitHub Actions may create one (autotag.yml
-# tags the merge of a version bump to main, itself a pull request whose checks passed), in a ruleset of its
-# own so the Actions bypass covers creation only.
+# only the admin may move or delete a v* tag. Creation is unrestricted (v1.5.1): autotag.yml tags the merge of
+# a version bump to main (itself a pull request whose checks passed) with GITHUB_TOKEN, and GitHub refuses the
+# GitHub Actions app as a ruleset bypass actor on a personal repository (422): no creation ruleset.
 TAG_RULESET_NAME = "v* tags: admin only (mcctl product-setup)"
-TAG_CREATE_RULESET_NAME = "v* tags: created by the admin or autotag.yml (mcctl product-setup)"
 GITHUB_ACTIONS_APP_ID = 15368  # = terraform/github.tf local.github_actions_app_id (tests/test_consistency.py)
 ADMIN_ROLE_ID = 5  # repository role "admin" (GitHub REST rulesets: bypass_actors)
 # Check-run names: ci.yml jobs lint/gitleaks/publication/actionlint, its reusable call config-repo ->
@@ -115,21 +115,6 @@ def desired_tag_ruleset() -> dict[str, Any]:
             {"actor_id": ADMIN_ROLE_ID, "actor_type": "RepositoryRole", "bypass_mode": "always"}
         ],
         "rules": [{"type": "update"}, {"type": "deletion"}],
-    }
-
-
-def desired_tag_create_ruleset() -> dict[str, Any]:
-    """v1.5: v* tag creation, for the admin and the GitHub Actions app (autotag.yml's GITHUB_TOKEN)."""
-    return {
-        "name": TAG_CREATE_RULESET_NAME,
-        "target": "tag",
-        "enforcement": "active",
-        "conditions": {"ref_name": {"include": ["refs/tags/v*"], "exclude": []}},
-        "bypass_actors": [
-            {"actor_id": ADMIN_ROLE_ID, "actor_type": "RepositoryRole", "bypass_mode": "always"},
-            {"actor_id": GITHUB_ACTIONS_APP_ID, "actor_type": "Integration", "bypass_mode": "always"},
-        ],
-        "rules": [{"type": "creation"}],
     }
 
 
@@ -288,7 +273,6 @@ def plan(token: str, repository: str, transport: http.Transport) -> Plan:
     rulesets = (
         ("ruleset on main", desired_ruleset(), f"required checks {', '.join(REQUIRED_CHECKS)}"),
         ("ruleset on v* tags", desired_tag_ruleset(), "update/delete: admin only"),
-        ("ruleset on v* tag creation", desired_tag_create_ruleset(), "create: admin and autotag.yml"),
     )
     for label, want, summary in rulesets:
         found = [r for r in existing if r.get("name") == want["name"]]

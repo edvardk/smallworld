@@ -185,7 +185,7 @@ jobs:
           CONFIG_DIR: ${{ github.workspace }}/config/${{ inputs.config-path }}
           CONFIG_PATH: ${{ inputs.config-path }}
         run: |
-          curl -sSfL -o "$RUNNER_TEMP/gitleaks.tgz" \
+          curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o "$RUNNER_TEMP/gitleaks.tgz" \
             "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
           echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/gitleaks.tgz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/gitleaks.tgz" -C "$RUNNER_TEMP" gitleaks
@@ -604,7 +604,8 @@ jobs:
 
       - name: Install pinned restic
         run: |
-          curl -fsSL -o restic.bz2 "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_amd64.bz2"
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o restic.bz2 \
+            "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_amd64.bz2"
           echo "${RESTIC_SHA256}  restic.bz2" | sha256sum -c -
           bunzip2 -c restic.bz2 > restic && chmod +x restic && sudo mv restic /usr/local/bin/
 
@@ -653,7 +654,8 @@ jobs:
   # texts on, as job outputs set before the boot test starts.
   # update: a fresh runner. It re-verifies those locks against the upstream APIs (verify_lock_update.py: hashes,
   # newer builds and versions; it never runs a jar), and only then gets the updater App's key, in the last step's
-  # env, to open the PRs (lock update; product update when the product has a newer release) with auto-merge per
+  # env, to open the PRs (lock update; product update when the product has a newer release, v1.5.1 with that
+  # release's in-house client mod entries, read through the contents API) with auto-merge per
   # automation.auto_merge (off without github.protect_main). The required `server / gate` check verifies each
   # PR again before it can merge, and the App's merge pushes to main, which deploys.
   update-test:
@@ -840,9 +842,10 @@ jobs:
   # `latest` or vX.Y.Z), in two jobs like update-test/update. No Terraform, no Cloudflare credential: the Worker
   # stays a local step, which the summary names (mcctl/productupdate.py).
   # product-update: no secret beyond the read-only product token. Resolves the release (already pinned there:
-  # the summary says so, nothing else runs), moves the pin in its checkout, runs the TARGET release's
-  # schema-migrate and validate on it (a tag of the same product repository: the code the pin is about to run),
-  # compares the Worker's inputs between the two releases, and hands the prepared files on as outputs.
+  # the summary says so, nothing else runs), moves the pin in its checkout, takes the target's in-house client mod
+  # entries into client.lock.yml (v1.5.1), runs the TARGET release's schema-migrate and validate on it (a tag of
+  # the same product repository: the code the pin is about to run), compares the Worker's inputs between the two
+  # releases, and hands the prepared files on as outputs.
   # product-update-pr: a fresh runner. The updater App's key only in its last step's env: it opens the pin pull
   # request on update/product-vX.Y.Z, or reuses the open one (the weekly updater's, or `mcctl upgrade`'s
   # upgrade/product-vX.Y.Z). Who merges is unchanged: auto-merge only for a pure patch bump, which the required
@@ -863,6 +866,7 @@ jobs:
       sha: ${{ steps.target.outputs.sha }}
       workflow: ${{ steps.prepared.outputs.workflow }}
       server_yml: ${{ steps.prepared.outputs.server_yml }}
+      client_lock: ${{ steps.prepared.outputs.client_lock }}
       worker: ${{ steps.prepared.outputs.worker }}
       worker_paths: ${{ steps.prepared.outputs.worker_paths }}
     steps:
@@ -911,6 +915,15 @@ jobs:
           token: ${{ secrets.PRODUCT_READ_TOKEN || github.token }}
           path: target
           persist-credentials: false
+
+      # v1.5.1: a release that ships a new build of the in-house client mod changes what client.lock.yml must pin;
+      # its entries come from the target checkout (data only: the running product's code), before its validate.
+      - name: The target release's in-house client mod entries (client.lock.yml)
+        if: steps.target.outputs.state == 'upgrade'
+        working-directory: product
+        env:
+          CONFIG_DIR: ${{ github.workspace }}/config
+        run: python -m mcctl product-update inhouse -C "$CONFIG_DIR" --new-product "$GITHUB_WORKSPACE/target"
 
       # As `mcctl upgrade` does from a laptop: the target's migrations (server.yml, the workflow's secrets and
       # manual-run inputs) and its validation, with its own hash-pinned dependencies in a venv of their own.
@@ -987,6 +1000,7 @@ jobs:
           WORKER_PATHS: ${{ needs.product-update.outputs.worker_paths }}
           PREPARED_WORKFLOW: ${{ needs.product-update.outputs.workflow }}
           PREPARED_SERVER_YML: ${{ needs.product-update.outputs.server_yml }}
+          PREPARED_CLIENT_LOCK: ${{ needs.product-update.outputs.client_lock }}
           UPDATER_APP_ID: ${{ secrets.UPDATER_APP_ID }}
           UPDATER_APP_KEY: ${{ secrets.UPDATER_APP_KEY }}
         run: >-

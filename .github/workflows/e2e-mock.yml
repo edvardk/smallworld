@@ -115,7 +115,7 @@ jobs:
   #                    site.yml (changed=0), hardening, reboot gate, deploy checks, firewall, P12 dry runs;
   #   agent-a/agent-b: mc-agent and the P10 panel actions, split by rounds (agent_check.py --rounds a|b: a = rcon,
   #                    client code, stop/start, whitelist, restart, plugin, restore guard, versions; b = backup/restore,
-  #                    world);
+  #                    v1.5.1's backup skip (timer-style runs: skipped when idle and unchanged, OK heartbeat), world);
   #   telemetry-brand: telemetry, then branding (heavy half only);
   #   migrate-p16:     migrate container -> container, then P16 on the migrated box (heavy half only);
   #   impl:            (v1.4) every shard deploys the default, agent.implementation rust (the Rust mc-agent, its

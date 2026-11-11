@@ -225,17 +225,32 @@ def cmd_product_update(args: argparse.Namespace) -> int:
             kind = "patch" if target.patch else "minor/major"
             print(f"{target.old} -> {target.new} ({target.sha[:12]}, {kind}): pin moved in the checkout")
             return 0
+        if args.step == "inhouse":  # v1.5.1: before the target's validate
+            from mcctl import clientpack
+
+            try:
+                lines = clientpack.refresh_lock_file(
+                    args.config_dir, lambda: clientpack.directory_reader(args.new_product)
+                )
+            except clientpack.PackError as e:
+                raise pu.UpdateError(f"the target's in-house client mod entries: {e}") from None
+            for line in lines:
+                print(f"{configrepo.CLIENT_LOCK}: {line} (the target release's in-house client mod)")
+            if not lines:
+                print(f"{configrepo.CLIENT_LOCK}: no in-house entry to change")
+            return 0
         if args.step == "prepared":
             status = subprocess.run(
                 ["git", "-C", str(args.config_dir), "status", "--porcelain"],
                 capture_output=True, text=True, check=True,
             ).stdout  # fmt: skip
             changed = sorted(line[3:].strip() for line in status.splitlines() if line.strip())
-            allowed = {configrepo.WORKFLOW, configrepo.SERVER_YML}
+            allowed = {configrepo.WORKFLOW, configrepo.SERVER_YML, configrepo.CLIENT_LOCK}
             if not changed or set(changed) - allowed:
                 raise pu.UpdateError(
                     f"the migration changed {', '.join(sorted(set(changed) - allowed)) or 'nothing'}: "
-                    "only the workflow and server.yml can go in the pin pull request (use `mcctl upgrade`)"
+                    "only the workflow, server.yml and client.lock.yml's in-house entries can go in the pin "
+                    "pull request (use `mcctl upgrade`)"
                 )
             worker = pu.worker_diff(args.old_product, args.new_product)
 
@@ -248,6 +263,7 @@ def cmd_product_update(args: argparse.Namespace) -> int:
                 "changed": ",".join(changed),
                 "workflow": b64(configrepo.WORKFLOW),
                 "server_yml": b64(configrepo.SERVER_YML) if configrepo.SERVER_YML in changed else "",
+                "client_lock": b64(configrepo.CLIENT_LOCK) if configrepo.CLIENT_LOCK in changed else "",
                 "worker": pu.worker_state(worker),
                 "worker_paths": ",".join(worker or []),
             }
@@ -1093,6 +1109,11 @@ def build_parser() -> argparse.ArgumentParser:
     step.add_argument("--version", default="latest", help="latest (default) or vX.Y.Z")
     step.add_argument("--github-output", type=Path)
     step.add_argument("--summary", type=Path, help="append the run summary here ($GITHUB_STEP_SUMMARY)")
+    step = pu_sub.add_parser(
+        "inhouse", help="v1.5.1: client.lock.yml's in-house client mod entries from the target release"
+    )
+    with_config(step)
+    step.add_argument("--new-product", type=Path, required=True, help="the target release's checkout")
     step = pu_sub.add_parser("prepared", help="the changed files and whether the Worker's inputs changed")
     with_config(step)
     step.add_argument("--old-product", type=Path, required=True, help="the running product's checkout")

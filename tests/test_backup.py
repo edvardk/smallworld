@@ -444,3 +444,117 @@ def test_mspt_and_tps_parsers_read_the_pinned_servers_replies() -> None:
     assert backup.parse_mspt("Unknown command") is None
     assert backup.parse_tps("TPS from last 5s, 1m, 5m, 15m: 19.5, *20.0, 20.0, 20.0") == 20.0
     assert backup.parse_tps("nope") is None
+
+
+# --- v1.5.1: the live e2e of the skip path (tests/e2e/backup_skip_check.py), its logic here -----------------
+
+
+def _skip_check(monkeypatch):
+    import importlib
+    from pathlib import Path
+
+    monkeypatch.syspath_prepend(str(Path(__file__).parent / "e2e"))
+    return importlib.import_module("backup_skip_check")
+
+
+def test_the_e2e_skip_check_judges_what_backup_py_really_does(
+    fake_server, tmp_path, monkeypatch, capsys
+) -> None:
+    """The e2e round's verdicts, fed with scripts/backup.py's own output, heartbeats and state: a timer run on
+    an idle, unchanged server is a recorded skip with one OK heartbeat; after a world file changed, the next
+    timer run backs up (start + ok, recorded, skips reset)."""
+    check = _skip_check(monkeypatch)
+    fake_server(lambda c: "There are 0 of a max of 20 players online:" if c == "list" else "")
+    srv = tmp_path / "srv"  # not tmp_path: the state file lives there (the autouse fixture)
+    (srv / "world" / "region").mkdir(parents=True)
+    (srv / "world" / "region" / "r.0.0.mca").write_bytes(b"x")
+    monkeypatch.setattr(backup, "SERVER_DIR", str(srv))
+    monkeypatch.setattr(backup, "world_dir", lambda: str(srv / "world"))
+    monkeypatch.setattr(backup, "restic", lambda *a: print("snapshot 1a2b3c4d saved"))
+    monkeypatch.setattr(backup, "forget_world_archives", lambda: None)
+    hits: list = []
+
+    def heartbeat(name: str, status: str = "", message: str = "") -> bool:  # what notify.py posts
+        hits.append(
+            check.Hit(f"/hb/{name}" + (f"/{status}" if status else ""), message, f"Bearer {check.TOKEN}")
+        )
+        return True
+
+    monkeypatch.setattr(backup, "heartbeat", heartbeat)
+    for line in check.env_file("https://127.0.0.1:1", tmp_path / "ca.pem").splitlines():
+        name, value = line.split("=", 1)
+        if name in ("TRIGGER_UNIT", "BACKUP_SKIP_WHEN_IDLE", "BACKUP_DEFER_WHEN_BUSY"):
+            monkeypatch.setenv(name, value)
+    backup.record_backup(backup.fingerprint(), backup.time.time() - 600)  # the last backup, 10 min ago
+    capsys.readouterr()
+
+    before = backup.load_state()
+    assert backup.main([]) == 0
+    journal = capsys.readouterr().out
+    assert check.outcome(journal) == "skipped" and check.finished(journal), journal
+    assert check.skip_problems(journal, hits, before, backup.load_state(), 0) == []
+    assert check.skip_problems(journal, hits, before, backup.load_state(), 1) == [
+        "a skipped run made 1 snapshot(s)"
+    ]
+
+    (srv / "world" / "e2e-backup-skip.txt").write_text("changed")
+    before, hits[:] = backup.load_state(), []
+    assert backup.main([]) == 0
+    journal = capsys.readouterr().out
+    assert check.outcome(journal) == "backed-up" and check.finished(journal)
+    assert check.backup_problems(journal, hits, before, backup.load_state(), 1) == []
+    # and the verdicts catch the opposite case each way
+    assert check.skip_problems(journal, hits, before, backup.load_state(), 1)
+    assert check.backup_problems("backup skipped: x", [], before, before, 0)
+
+
+def test_the_e2e_skip_check_drop_in_and_verdicts(monkeypatch) -> None:
+    check = _skip_check(monkeypatch)
+    env = dict(
+        line.split("=", 1) for line in check.env_file("https://127.0.0.1:4443", check.CERT).splitlines()
+    )
+    assert env["TRIGGER_UNIT"] == backup.TIMER_UNIT  # what backup.scheduled() looks for
+    assert backup.scheduled(env) and backup.Settings.from_env(env) == backup.Settings(defer_when_busy=False)
+    assert env["WATCHDOG_URL"].startswith("https://127.0.0.1:")  # notify.py posts to https only
+    assert env["SSL_CERT_FILE"] == str(check.CERT) and env["HEARTBEAT_TOKEN"] == check.TOKEN
+    # a second EnvironmentFile (read after restic.env: it wins), nothing else changed in the unit
+    assert check.dropin() == f"[Service]\nEnvironmentFile={check.ENV_FILE}\n"
+    assert str(check.DROPIN).startswith("/run/systemd/system/mc-backup.service.d/")
+    assert not str(check.ETC).startswith("/etc/minecraft")  # InaccessiblePaths in the backup unit
+    assert check.outcome("Traceback (most recent call last):") == "failed"
+    assert check.outcome("x\n(start failed: Job failed)") == "failed"
+    assert not check.finished("save: gentle (save-all, files quiet after 0.6 s)")
+    assert check.level_name("motd=x\nlevel-name=atlas\n") == "atlas" and check.level_name("") == "world"
+    assert check.ATTEMPTS >= 3
+
+
+def test_the_e2e_watchdog_mock_takes_notify_pys_https_heartbeat(tmp_path, monkeypatch) -> None:
+    """The mock's self-signed certificate, trusted through SSL_CERT_FILE, carries notify.py's real POST."""
+    import shutil
+
+    import notify
+
+    if shutil.which("openssl") is None:
+        pytest.skip("no openssl")
+    check = _skip_check(monkeypatch)
+    monkeypatch.setattr(check, "ETC", tmp_path / "etc")
+    monkeypatch.setattr(check, "CERT", tmp_path / "etc" / "watchdog.pem")
+    monkeypatch.setattr(check, "KEY", tmp_path / "etc" / "watchdog.key")
+    check.make_cert()
+    mock = check.Watchdog()
+    import urllib.request
+
+    for name in (
+        "HTTPS_PROXY",
+        "https_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+    ):  # straight to 127.0.0.1, as in the box
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(urllib.request, "_opener", None)  # no opener another test installed
+    with mock.serving():
+        monkeypatch.setenv("SSL_CERT_FILE", str(check.CERT))
+        monkeypatch.setenv("WATCHDOG_URL", f"https://127.0.0.1:{mock.port}")
+        monkeypatch.setenv("HEARTBEAT_TOKEN", check.TOKEN)
+        assert notify.heartbeat("backup", "", "backup skipped: nobody played")
+    assert mock.hits == [check.Hit("/hb/backup", "backup skipped: nobody played", f"Bearer {check.TOKEN}")]

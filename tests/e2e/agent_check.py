@@ -22,6 +22,9 @@ failing to reach it since: this script now starts a mock of the Worker there and
       plugin disable -> the jar moves to plugins/disabled/ (mc-plugins-apply.service, as minecraft) -> the server
       restarts without it -> enable brings it back;
       backup now -> restic's snapshot list for the panel;
+      (v1.5.1) the smooth-backup skip: timer-style runs (TRIGGER_UNIT=mc-backup.timer by a drop-in) on the empty
+      server until one is skipped, recorded and reported as an OK heartbeat; then a changed world file is backed
+      up (backup_skip_check.py);
       restore round trip: a snapshot, a change to the world, restore of that snapshot through
       mc-restore@<id>.service -> the change is gone, .restored-from names it, and a pre-restore safety snapshot
       holding the change exists;
@@ -48,7 +51,7 @@ Rounds (v1.3): the shared part always runs (the agent's sandbox, the buffered an
 first poll's status/console/denied/replay, the final checks); `--rounds` picks the rest, so CI runs them as two
 shards on two boxes (docs/ci.md): `a` = rcon, client-code, stop-start, whitelist, restart, plugin, restore-guard,
 versions, cli;
-`b` = backup-restore, world. Round names (comma-separated) work too; whitelist brings stop-start along (it seeds
+`b` = unmanaged, backup-restore, backup-skip (v1.5.1), world. Round names (comma-separated) work too; whitelist brings stop-start along (it seeds
 the profile cache). Without `--rounds`, every round, in the order above with backup-restore before restore-guard.
 Each round prints its wall time (`round <name>: N s`).
 
@@ -743,6 +746,14 @@ def backup_and_restore_round() -> None:
     expect(server_answers(), "the restored server accepts connections")
 
 
+def backup_skip_round() -> None:
+    """v1.5.1: a timer-started run on the empty, unchanged server is skipped (recorded, one OK heartbeat to a
+    local HTTPS mock of the watchdog); after a world file changes, the next one backs up (backup_skip_check.py)."""
+    import backup_skip_check
+
+    backup_skip_check.check(expect, lambda: {s["id"] for s in restic_snapshots()})
+
+
 def deploy_minecraft(*extra: str) -> subprocess.CompletedProcess[str]:
     """A deploy's minecraft role, as the real playbook runs it."""
     return subprocess.run(
@@ -1180,6 +1191,7 @@ ROUNDS: dict[str, Callable[[], None]] = {
     "restart": restart_round,
     "plugin": plugin_round,
     "backup-restore": backup_and_restore_round,
+    "backup-skip": backup_skip_round,  # v1.5.1: the smooth-backup skip, live (~1-3 min)
     "restore-guard": restore_guard_round,
     "world": world_round,  # v1.2
     "versions": versions_round,  # v1.3: version file, self-test, lookup (~20 s)
@@ -1197,7 +1209,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "versions",
         "cli",
     ),
-    "b": ("unmanaged", "backup-restore", "world"),  # unmanaged: two players-only deploys, ~30 s
+    # unmanaged: two players-only deploys, ~30 s; backup-skip (v1.5.1): one to a few backup runs, ~1-3 min
+    "b": ("unmanaged", "backup-restore", "backup-skip", "world"),
 }
 NEEDS: dict[str, str] = {"whitelist": "stop-start"}
 

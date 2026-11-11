@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from conftest import REPO, TEST_SHA, Replay
+from conftest import REPO, TEST_SHA, V141_CLIENT_LOCK, Replay, fake_release
 
 from mcctl import cli, configrepo, init, migrate, migrations, mock, players, restorecmd, rotate, serverops
 from mcctl import upgrade as upgrade_mod
@@ -546,6 +546,76 @@ def test_product_upgrade_routes_only_a_pure_patch_bump_through_the_gate(
     gh2 = [c for c in ctx2.deps.tools.calls if c[:2] == ["gh", "pr"]]  # type: ignore[attr-defined]
     assert len(gh2) == 1 and f"upgrade/product-{to}" in gh2[0]  # no auto-merge: the admin merges
     assert "Needs the admin" in " ".join(gh2[0])
+
+
+def _with_v141_client_lock(ctx: init.Ctx) -> None:
+    shutil.copy(V141_CLIENT_LOCK, ctx.root / configrepo.CLIENT_LOCK)
+    git(ctx.root, "add", configrepo.CLIENT_LOCK)
+    git(
+        ctx.root,
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t.test",
+        "commit",
+        "-qm",
+        "client lock (v1.4.1's: mod 1.0.0)",
+    )
+    ctx.deps.tools.origin_main = git(ctx.root, "rev-parse", "HEAD").strip()  # type: ignore[attr-defined]
+
+
+def test_product_upgrade_takes_the_targets_in_house_mod_v141_to_v150(deployed: Path, tmp_path: Path) -> None:
+    """v1.5.1, the live case: the config repo's client.lock.yml pins v1.4.1's Smallworld mod 1.0.0, the
+    target release ships 1.1.0. The pin PR carries the target's entry, written before the target's validate,
+    and a patch bump still goes through the gate (pin + in-house entries only)."""
+    ctx, out = fresh(deployed, tmp_path)
+    _with_v141_client_lock(ctx)
+    release = fake_release(tmp_path / "release")  # v1.5.0's template lock and jar
+    pin = configrepo.load(ctx.root).pin
+    major, minor, patch = (int(x) for x in str(pin.version).lstrip("v").split("."))
+    to = f"v{major}.{minor}.{patch + 1}"
+    seen: list[str] = []
+
+    def runner(p: configrepo.Pin, args: list[str]) -> int:
+        if args[0] == "validate":  # the target's validate sees the refreshed lock
+            seen.append((ctx.root / configrepo.CLIENT_LOCK).read_text())
+        return 0
+
+    asked: list[str] = []
+
+    def release_root(p: configrepo.Pin) -> Path:
+        asked.append(p.sha)
+        return release
+
+    assert upgrade_mod.product_upgrade(ctx, to, "d" * 40, runner=runner, release=release_root) == 0
+    v150 = (REPO / "template/client.lock.yml").read_text()
+    assert seen == [v150] and asked == ["d" * 40]
+    assert "smallworld 1.0.0 -> 1.1.0" in out.getvalue()
+    branch = f"update/product-{to}"
+    assert git(ctx.root, "show", f"{branch}:{configrepo.CLIENT_LOCK}") == v150
+    changed = git(ctx.root, "diff", "--name-only", f"main...{branch}").split()
+    assert changed == [".github/workflows/server.yml", configrepo.CLIENT_LOCK]
+    gh = [c for c in ctx.deps.tools.calls if c[:2] == ["gh", "pr"]]  # type: ignore[attr-defined]
+    assert gh[1][:3] == ["gh", "pr", "merge"] and "--auto" in gh[1]
+    assert "in-house client mod" in " ".join(gh[0])
+    assert git(ctx.root, "status", "--porcelain") == ""
+
+    # a minor release: the same refresh, the admin merges; a broken release: nothing is left behind
+    ctx2, _ = fresh(deployed, tmp_path / "minor")
+    _with_v141_client_lock(ctx2)
+    to2 = f"v{major}.{minor + 1}.0"
+    assert (
+        upgrade_mod.product_upgrade(ctx2, to2, "e" * 40, runner=lambda p, a: 0, release=lambda p: release)
+        == 0
+    )
+    assert git(ctx2.root, "show", f"upgrade/product-{to2}:{configrepo.CLIENT_LOCK}") == v150
+    ctx3, _ = fresh(deployed, tmp_path / "broken")
+    _with_v141_client_lock(ctx3)
+    stale = fake_release(tmp_path / "stale", jar=b"not the jar")
+    head = git(ctx3.root, "rev-parse", "HEAD")
+    with pytest.raises(init.StepError, match="in-house client mod entries"):
+        upgrade_mod.product_upgrade(ctx3, to, "d" * 40, runner=lambda p, a: 0, release=lambda p: stale)
+    assert git(ctx3.root, "rev-parse", "HEAD") == head and git(ctx3.root, "status", "--porcelain") == ""
 
 
 def test_product_upgrade_refuses_downgrades_and_rolls_back_a_failed_migration(

@@ -775,9 +775,10 @@ renders from it with `rendered_at` 0. The Rust renderer must produce the same fi
 - **Tailscale / Temurin / restic:** bump the pins in `ansible/group_vars/all/main.yml`. For restic and Tailscale, also bump `.github/workflows/server.yml` (backup-check / deploy jobs; `pytest` checks they match); the Tailscale upgrade runs detached on the server and Ansible reconnects, since the deploy itself goes over Tailscale SSH.
   Tailscale is held at its pin, so **security fixes need this manual bump**.
 - **Product (config repos):** `mcctl upgrade -C $C [--to vX.Y.Z] [--dry-run]` (P12): moves the
-  `uses:` pin to the release's commit on `upgrade/product-vX.Y.Z`, runs that release's `mcctl schema-migrate`
+  `uses:` pin to the release's commit on `upgrade/product-vX.Y.Z`, copies that release's in-house client mod
+  entries into `client.lock.yml` (v1.5.1, `clientpack.refresh_lock_file`), runs its `mcctl schema-migrate`
   (server.yml migrations, `mcctl/migrations.py`) and `validate`, and opens a PR. Only a **pure patch bump** (just
-  the `uses:` line changed, `auto_merge: builds+patch`) goes on `update/product-vX.Y.Z` with auto-merge on, where
+  the `uses:` line changed, plus those in-house entries; `auto_merge: builds+patch`) goes on `update/product-vX.Y.Z` with auto-merge on, where
   `server / gate` checks the release tag and merges it; anything else (minor/major, or server.yml migrated) is on
   `upgrade/product-vX.Y.Z` and **you merge it**. No downgrades.
 - **Rust toolchain:** set the exact version in `rust/rust-toolchain.toml` (a stable release at least two weeks
@@ -860,7 +861,7 @@ Hands-off by default (design §6; `automation.*` in server.yml):
 |---|---|---|
 | Server build + plugin updates (same Minecraft version) | weekly slot, `automation.update_day` (Tue) 04:17 UTC | `update_lock.py` resolves the newest builds; if anything changed, the **boot test** (`scripts/boot_test.py`) starts the new jar with the locked plugins on the runner (Temurin `java_major`, throwaway world, 127.0.0.1) until "Done" + a status ping + every plugin enabled (job `update-test`, no secrets); then a separate job on a fresh runner re-verifies the locks against the APIs and the **updater GitHub App** opens `update/lock-<date>` and enables auto-merge (`auto_merge: builds` or `builds+patch`). The required `server / gate` check (only for `update/*` branches) re-verifies every changed entry against the Purpur/Paper/Modrinth/Hangar APIs and the downloaded hashes before it can merge; the App's merge pushes to main, which deploys (countdown skipped with nobody online, else 5 min). A newer update closes the older PR |
 | Weekly deploy | the same slot | main as it stands (`deploy.enabled`): restarts only if something changed |
-| Product updates | the same slot | the product's latest release newer than the pin → `update/product-vX.Y.Z` moving the `uses:` line; **patch releases auto-merge** (`builds+patch`), minor/major wait for you (`mcctl upgrade`, P12) |
+| Product updates | the same slot | the product's latest release newer than the pin → `update/product-vX.Y.Z` moving the `uses:` line (v1.5.1: and `client.lock.yml`'s in-house client mod entries, the release's own, read through the contents API); **patch releases auto-merge** (`builds+patch`), minor/major wait for you (`mcctl upgrade`, P12) |
 | Minecraft version | never automatic | `mcctl lock update --minecraft-version X` / `update_lock.py --minecraft-version` (needs a product release with `keys/X/`) |
 | Restarts | when a deploy needs one; with `maintenance.window` (v1.3) only inside it | outside the window the deploy stages the change and `mc-restart-window.timer` restarts inside it, on an empty server or in its last `maintenance.force_after_minutes_before_end` minutes with the countdown (any earlier start applies it: `minecraft.service` `ExecStartPre=restart_window.py apply`); forced: `mcctl deploy --force-restart`, the workflow's `force_restart` ([operations.md](operations.md#maintenance-window-v13)) |
 | Reboots | every 30 min (`mc-reboot-gate.timer`) | see [operations.md](operations.md#day-to-day) "Reboot for updates": only inside `automation.reboot_window`, nobody online, never forced, Discord after 3 days |
@@ -880,7 +881,7 @@ The product repo started out private, in the same personal account as the config
 | Repo | Setting | Why |
 |---|---|---|
 | product | *Private product only:* Actions **Access**: "Accessible from repositories owned by the user '<owner>'" (`mcctl product-setup` / init) | Otherwise the config repo can't call the reusable workflow. GitHub allows this only from **private** repos, so the config repo must stay private |
-| product | `mcctl product-setup`: tag rulesets **`v*`** (update/delete: admin only; v1.5, create: the admin or GitHub Actions, for `autotag.yml`), forking off while private, allow auto-merge, delete merged branches, "Allow GitHub Actions to create and approve pull requests" (update-lock), Dependabot alerts + security updates, secret scanning + push protection (public repository), ruleset **main: CI must pass** (`lint`, `gitleaks`, `publication`, `actionlint`, `config-repo / validate`, `e2e` from the GitHub Actions app; pull requests only (no approvals required); no force-push/deletion; no bypass, the admin included) | `--check` shows the diff without changing anything; idempotent |
+| product | `mcctl product-setup`: tag ruleset **`v*`** (update/delete: admin only; creation unrestricted, for `autotag.yml`'s `GITHUB_TOKEN`), forking off while private, allow auto-merge, delete merged branches, "Allow GitHub Actions to create and approve pull requests" (update-lock), Dependabot alerts + security updates, secret scanning + push protection (public repository), ruleset **main: CI must pass** (`lint`, `gitleaks`, `publication`, `actionlint`, `config-repo / validate`, `e2e` from the GitHub Actions app; pull requests only (no approvals required); no force-push/deletion; no bypass, the admin included) | `--check` shows the diff without changing anything; idempotent |
 | product | Actions secret `PUBLISH_DENYLIST`: the content of the private anonymity denylist (set by the maintainer with `gh secret set`, never by Terraform; passed explicitly by `release.yml` to `ci.yml`) | The `publication` check ([publishing](publishing.md#after-publishing-safeguards-on-every-commit)); without it (fork pull requests) only the generic checks run |
 | config | *Private product only:* Actions secret `PRODUCT_READ_TOKEN` (Terraform creates it from `TF_VAR_product_read_token`: fine-grained PAT, Contents read on the product) | The reusable workflow checks out the product's code; the Access setting covers calling the workflow, not reading the repo with the config repo's `GITHUB_TOKEN` [unverified, so the PAT is used] |
 | config | Rulesets (Terraform, `github.protect_main: true`): **main** only through pull requests whose `server / validate` and `server / gate` checks passed (pinned to the GitHub Actions app), no force-push or deletion, the repository admin bypasses; **every other branch but `panel/**` and `update/**`** only for the admin (an App can't be a bypass actor on a personal repo; `server / gate` accepts panel/update PRs only from the matching App's bot user, server.yml `github.panel_app`/`updater_app`) | P10 review: the GitHub Apps can't change what gets deployed beyond what the gate allows. **Rulesets on a private repo of a personal account need GitHub Pro** (`mcctl init`/`doctor` probe it); on GitHub Free set `github.protect_main: false` and read SECURITY.md |
@@ -912,8 +913,8 @@ v1.5: **merging a version bump to main releases it.** One command on the branch,
    the tag as an input): a tag created with the workflow's `GITHUB_TOKEN` starts no other workflow, so the
    tag-push trigger can't be relied on there. A push without a version change, an older version, or a re-run
    does nothing (a re-run on the tagged commit only calls `release.yml` if the GitHub release is missing); a new
-   version that fails `check` fails the run. The tag ruleset lets GitHub Actions create `v*` tags; moving or
-   deleting one stays the admin's (`mcctl product-setup`).
+   version that fails `check` fails the run. Creating a `v*` tag isn't restricted; moving or deleting one
+   stays the admin's (the `v*` tag ruleset, `mcctl product-setup`).
 
 `release.yml` (from autotag, or from a tag push): CI with everything (`full`), `scripts/release.py check`, and
 the GitHub release with the changelog section and the source archive's SHA-256. From autotag, CI isn't repeated
@@ -927,7 +928,12 @@ runs it.
 `## [Unreleased]`. Text edits only, formatting kept; nothing is written when it refuses: a version not greater
 than the current one (semver), an empty Unreleased section, an existing `## [X.Y.Z]` section, a dirty tree.
 
-**Fallback** (autotag failed, e.g. the tag ruleset refused it): on the merged main
+**Tag made, release missing** (a job of `release.yml` failed in autotag's run, as v1.5.0's did on a 504 from a
+download): re-run that autotag run's failed jobs (`gh run rerun <run-id> --failed`, or "Re-run failed jobs" in
+the Actions tab). The tag job's outputs are kept, so `release.yml` runs again for the existing tag; a full re-run
+works too (the tag already names the commit and the release is missing). Don't delete the tag.
+
+**Fallback** (autotag failed before it made the tag): on the merged main
 (`git fetch origin && git switch --detach origin/main`), `python3 scripts/release.py tag [vX.Y.Z] [--remote
 origin] [--push]` (default: `v` + pyproject's version). It refuses unless HEAD **is** the fetched tip of
 `<remote>/main` (a tag on the release branch's commit, as happened to v1.2.1, is refused), the tree is clean,

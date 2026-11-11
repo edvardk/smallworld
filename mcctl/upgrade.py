@@ -3,13 +3,17 @@
 Product: `mcctl upgrade [--to vX.Y.Z [--sha SHA]] [--dry-run]`
   1. the target release: `--to` (its tag's commit from the GitHub API unless `--sha`), else releases/latest;
      no downgrades, no re-pin to the same version
-  2. on a branch `upgrade/product-vX.Y.Z`: the workflow's `uses:` line moved to that commit (`# vX.Y.Z`)
+  2. on a branch `upgrade/product-vX.Y.Z`: the workflow's `uses:` line moved to that commit (`# vX.Y.Z`), and
+     (v1.5.1) client.lock.yml's in-house entries (the Smallworld client mod) taken from the target release's
+     checkout (`clientpack.refresh_lock_file`: its template/client.lock.yml, checked against its jar), so a
+     release that ships a new mod build validates (live: v1.4.1 -> v1.5.0 pinned mod 1.0.0)
   3. the **target** product's `mcctl schema-migrate --from <old>` (server.yml migrations, mcctl/migrations.py)
      and its `mcctl validate`, run from its pinned checkout (`~/.cache/mcctl/<sha>`, as every pinned command)
   4. commit, push the branch, open a pull request. Who merges (P12 review): only a **pure patch bump** (the
      migration changed nothing but the `uses:` line, vX.Y.Z -> vX.Y.Z+n, `automation.auto_merge:
-     builds+patch`) goes on `update/product-vX.Y.Z` with auto-merge on, exactly the updater's product PR, so
-     `server / gate`'s product policy (update/* branch, workflow only, patch, tag -> SHA) lets it merge;
+     builds+patch`; v1.5.1: plus client.lock.yml's in-house entries from step 2) goes on
+     `update/product-vX.Y.Z` with auto-merge on, exactly the updater's product PR, so `server / gate`'s
+     product policy (update/* branch, workflow only, patch, tag -> SHA) lets it merge;
      anything else (minor/major, or server.yml migrated) stays on `upgrade/product-vX.Y.Z` and the admin
      merges it (gate: "needs the admin")
 
@@ -45,10 +49,11 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from mcctl import configrepo, gate, init, migrations, product, schema, updates, yamledit
+from mcctl import clientpack, configrepo, gate, init, migrations, product, schema, updates, yamledit
 from mcctl.providers import ProviderError
 
 ProductRunner = Callable[[configrepo.Pin, Sequence[str]], int]
+ReleaseRoot = Callable[[configrepo.Pin], Path]  # v1.5.1: the checkout of the release a pin names
 # (product root, config root, Minecraft version, allow Paper, v1.2: create client.lock.yml if missing)
 Locker = Callable[[Path, Path, str, bool, bool], subprocess.CompletedProcess[str]]
 MC_VERSION = re.compile(r"\d+(?:\.\d+){1,3}")
@@ -63,6 +68,21 @@ def run_in_product(pin: configrepo.Pin, args: Sequence[str]) -> int:
 
         return cli.main(list(args))
     return subprocess.run(argv, env=prod.env(os.environ), check=False).returncode
+
+
+def release_root(pin: configrepo.Pin) -> Path:
+    """The pinned checkout of `pin` (the cache `run_in_product` uses, built if needed)."""
+    return product.resolve(pin, os.environ).root
+
+
+def refresh_inhouse(root: Path, pin: configrepo.Pin, release: ReleaseRoot) -> list[str]:
+    """v1.5.1: root/client.lock.yml's in-house entries from the release `pin` names (see the module doc)."""
+    try:
+        return clientpack.refresh_lock_file(root, lambda: clientpack.directory_reader(release(pin)))
+    except (clientpack.PackError, product.ProductError, OSError) as e:
+        raise init.StepError(
+            f"couldn't take {pin.version}'s in-house client mod entries into {configrepo.CLIENT_LOCK}: {e}"
+        ) from None
 
 
 def update_lock(
@@ -174,8 +194,9 @@ def product_upgrade(
     *,
     dry_run: bool = False,
     runner: ProductRunner = run_in_product,
+    release: ReleaseRoot = release_root,
 ) -> int:
-    product_upgrade_pr(ctx, to, sha, dry_run=dry_run, runner=runner)
+    product_upgrade_pr(ctx, to, sha, dry_run=dry_run, runner=runner, release=release)
     return 0
 
 
@@ -186,6 +207,7 @@ def product_upgrade_pr(
     *,
     dry_run: bool = False,
     runner: ProductRunner = run_in_product,
+    release: ReleaseRoot = release_root,
 ) -> Upgraded | None:
     """`mcctl upgrade [--to vX.Y.Z]`: the pull request moving the pin, or None for a dry run."""
     ui = ctx.ui
@@ -210,11 +232,12 @@ def product_upgrade_pr(
     ui.say(f"mcctl upgrade: {pin.repository} {pin.version or pin.sha[:12]} -> {to} ({sha[:12]})")
     for n, line in enumerate(
         [
-            f"branch {branch}: .github/workflows/server.yml `uses:` -> @{sha[:12]} # {to}",
+            f"branch {branch}: .github/workflows/server.yml `uses:` -> @{sha[:12]} # {to}"
+            + (f", and {to}'s in-house client mod entries in client.lock.yml" if repo.client_lock else ""),
             f"{to}'s `mcctl schema-migrate --from {pin.version or 'start'}` on server.yml"
             + (f" (this mcctl knows {len(pending)} pending)" if pending else ""),
             f"{to}'s `mcctl validate` on the result",
-            "commit, push, pull request: a pure patch bump (workflow only, builds+patch) on "
+            "commit, push, pull request: a pure patch bump (pin + in-house mod entries; builds+patch) on "
             f"update/product-{to} merges itself via `server / gate`; else {branch}: your merge",
         ],
         1,
@@ -230,6 +253,11 @@ def product_upgrade_pr(
         wf = ctx.root / configrepo.WORKFLOW
         bumped = updates.bump_pin(wf.read_text(), pin.repository, sha, to)
         wf.write_text(bumped)
+        inhouse = refresh_inhouse(ctx.root, new_pin, release)
+        lock_path = ctx.root / configrepo.CLIENT_LOCK
+        refreshed = lock_path.read_text(encoding="utf-8") if inhouse else None
+        for line in inhouse:
+            ui.ok(f"{configrepo.CLIENT_LOCK}: {line} ({to}'s in-house client mod)")
         root = str(ctx.root)
         if runner(new_pin, ["schema-migrate", "-C", root, "--from", pin.version or "0.0.0"]) != 0:
             raise init.StepError(f"{to}'s schema migration failed (see above)")
@@ -240,8 +268,16 @@ def product_upgrade_pr(
         changed = sorted(
             line[3:].strip() for line in ctx.git("status", "--porcelain").stdout.splitlines() if line.strip()
         )
+        # v1.5.1: the in-house refresh alone may join the pin (the gate checks it against the release)
+        lock_ok = configrepo.CLIENT_LOCK not in changed or (
+            refreshed is not None
+            and lock_path.is_file()
+            and lock_path.read_text(encoding="utf-8") == refreshed
+        )
+        pin_only = sorted(set(changed) - {configrepo.CLIENT_LOCK}) == [configrepo.WORKFLOW]
         unattended = (
-            changed == [configrepo.WORKFLOW]
+            pin_only
+            and lock_ok
             and wf.read_text()
             == bumped  # schema-migrate may add secrets (v1.2) or inputs (v1.5) to it (the gate: `uses:` only)
             and updates.is_patch(pin.version, to)
@@ -251,13 +287,16 @@ def product_upgrade_pr(
             ctx.git("branch", "-q", "-M", f"update/product-{to}")
             branch = f"update/product-{to}"
         who = (
-            "A pure patch bump (only the `uses:` line): `server / gate` checks the tag and merges it by "
-            "itself (auto-merge on)."
+            "A pure patch bump (only the `uses:` line"
+            + (", and the release's in-house client mod entries" if inhouse else "")
+            + "): `server / gate` checks the tag and merges it by itself (auto-merge on)."
             if unattended
             else "Needs the admin's merge (`server / gate` only auto-merges a workflow-only patch bump"
             + (
                 ": this one also migrates server.yml)."
-                if changed != [configrepo.WORKFLOW]
+                if not pin_only
+                else f": this one also changes {configrepo.CLIENT_LOCK} beyond the in-house mod entries)."
+                if not lock_ok
                 else ": this one also adds secrets or manual-run inputs to the workflow)."
                 if wf.read_text() != bumped
                 else ")."
@@ -268,8 +307,17 @@ def product_upgrade_pr(
             branch,
             f"mcctl upgrade: product {to}",
             f"Moves the product pin from {pin.version or pin.sha[:12]} to {to} ({sha}).\n\n"
-            f"server.yml migrated and validated by the target release. {who}",
-            [configrepo.WORKFLOW, configrepo.SERVER_YML],
+            f"server.yml migrated and validated by the target release. {who}"
+            + (
+                f"\n\n{configrepo.CLIENT_LOCK}: {to}'s in-house client mod entries ({'; '.join(inhouse)})."
+                if inhouse
+                else ""
+            ),
+            [
+                configrepo.WORKFLOW,
+                configrepo.SERVER_YML,
+                *([configrepo.CLIENT_LOCK] if lock_path.is_file() else []),
+            ],
             start,
         )
         if unattended:

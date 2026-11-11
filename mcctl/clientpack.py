@@ -206,6 +206,146 @@ def lock_errors(lock: Any, minecraft_version: str, definition: dict[str, Any] | 
     return out
 
 
+# --- v1.5.1: the in-house entries move with the product pin ---------------------------------------------
+# A release that ships a new in-house jar (v1.5.0: the Smallworld mod 1.1.0) changes what client.lock.yml must
+# pin, and only that release knows the new hashes. So whatever moves the pin (`mcctl upgrade`/`rollout`, the
+# update button, the weekly update job) also copies the target release's in-house entries into the config
+# repo's client.lock.yml, in the same change, before the target's validate (live: v1.4.1 -> v1.5.0 failed
+# validate, and the v1.4.1 lock tool couldn't fix it). The entries come from the release's own
+# template/client.lock.yml: what its lock tool writes (tests/test_client.py keeps the two equal), as data, so
+# the running product needs none of the target's code.
+
+TEMPLATE_LOCK = f"template/{LOCK_FILE}"
+Reader = Callable[[str], bytes | None]  # a product release's file by repository path (None: no such file)
+
+
+def directory_reader(root: Path) -> Reader:
+    """A Reader for a product checkout on disk (the target release's)."""
+
+    def read(rel: str) -> bytes | None:
+        path = root / rel
+        return path.read_bytes() if path.is_file() else None
+
+    return read
+
+
+def release_inhouse(read: Reader) -> dict[str, dict[str, Any]]:
+    """The `source: inhouse` entries of a product release's template/client.lock.yml, by slug, each checked
+    against the jar that release ships (its `path`, sha256). {} for a release without either."""
+    raw = read(TEMPLATE_LOCK)
+    if raw is None:
+        return {}
+    try:
+        lock = yaml.safe_load(raw)
+    except yaml.YAMLError as e:
+        raise PackError(f"the release's {TEMPLATE_LOCK} doesn't parse: {e}") from None
+    files = lock.get("files") if isinstance(lock, dict) else None
+    if not isinstance(files, list):
+        raise PackError(f"the release's {TEMPLATE_LOCK} has no `files:` list")
+    out: dict[str, dict[str, Any]] = {}
+    for f in files:
+        if not isinstance(f, dict) or f.get("source") != "inhouse":
+            continue
+        slug, path = str(f.get("slug") or ""), str(f.get("path") or "")
+        safe = path and not path.startswith("/") and ".." not in Path(path).parts
+        jar = read(path) if safe else None
+        if jar is None:
+            raise PackError(f"the release's {TEMPLATE_LOCK} {slug}: its jar {path!r} isn't in the release")
+        if hashlib.sha256(jar).hexdigest() != f.get("sha256"):
+            raise PackError(f"the release's {TEMPLATE_LOCK} {slug}: sha256 isn't its {path}'s")
+        out[slug] = f
+    return out
+
+
+def _lock_files(text: str, what: str) -> dict[str, Any]:
+    try:
+        lock = yaml.safe_load(text)
+    except yaml.YAMLError as e:
+        raise PackError(f"{what} doesn't parse: {e}") from None
+    if not isinstance(lock, dict) or not isinstance(lock.get("files"), list):
+        raise PackError(f"{what}: expected a mapping with `files:`")
+    return lock
+
+
+def _inhouse(f: object) -> bool:
+    return isinstance(f, dict) and f.get("source") == "inhouse"
+
+
+def refresh_inhouse(text: str, entries: dict[str, dict[str, Any]]) -> tuple[str, list[str]]:
+    """client.lock.yml's text with each in-house entry replaced by the release's entry of the same slug
+    (`release_inhouse`); (new text, the slugs that changed). Nothing changed: the same text. Otherwise the
+    lock is written as the lock tool writes it (its header comments kept). An entry the release doesn't have
+    stays as it is (the target's validate says what to do); none is added or removed."""
+    lock = _lock_files(text, LOCK_FILE)
+    changed: list[str] = []
+    files = []
+    for f in lock["files"]:
+        new = entries.get(str(f.get("slug"))) if _inhouse(f) else None
+        if new is not None and new != f:
+            changed.append(str(f.get("slug")))
+            f = json.loads(json.dumps(new))  # a copy
+        files.append(f)
+    if not changed:
+        return text, []
+    lock["files"] = files
+    header = []
+    for line in text.splitlines(keepends=True):
+        if not line.startswith("#"):
+            break
+        header.append(line)
+    return "".join(header) + yaml.safe_dump(lock, sort_keys=False, default_flow_style=False), changed
+
+
+def refresh_lock_file(config_root: Path, release: Callable[[], Reader]) -> list[str]:
+    """`refresh_inhouse` on config_root/client.lock.yml with the target release's entries; `release` is
+    called only when the lock has an in-house entry (it may have to fetch the release). Returns
+    "<slug> <old version> -> <new version>" per changed entry ([] when nothing changed)."""
+    path = config_root / LOCK_FILE
+    if not path.is_file():
+        return []
+    text = path.read_text(encoding="utf-8")
+    lock = _lock_files(text, LOCK_FILE)
+    if not any(_inhouse(f) for f in lock["files"]):
+        return []
+    new, slugs = refresh_inhouse(text, release_inhouse(release()))
+    if not slugs:
+        return []
+    path.write_text(new, encoding="utf-8")
+    before = {str(f.get("slug")): f for f in lock["files"] if _inhouse(f)}
+    after = {str(f.get("slug")): f for f in _lock_files(new, LOCK_FILE)["files"]}
+    return [f"{s} {before[s].get('version')} -> {after[s].get('version')}" for s in slugs]
+
+
+def inhouse_change_errors(
+    base_text: str, head_text: str, entries: dict[str, dict[str, Any]] | None = None
+) -> list[str]:
+    """[] when head's client.lock.yml is base's with only in-house entries changed (same Minecraft version,
+    loader, pending list, entries and order; every other entry identical) and, given the release's
+    `entries`, each in-house entry exactly the release's; else why not."""
+    try:
+        base, head = _lock_files(base_text, f"the base's {LOCK_FILE}"), _lock_files(head_text, LOCK_FILE)
+    except PackError as e:
+        return [str(e)]
+    rest = {k: v for k, v in base.items() if k != "files"}
+    if rest != {k: v for k, v in head.items() if k != "files"}:
+        return [f"{LOCK_FILE}: more than its in-house entries changed (Minecraft version, loader or pending)"]
+
+    def slugs(lock: dict[str, Any]) -> list[str]:
+        return [str(f.get("slug")) if isinstance(f, dict) else "" for f in lock["files"]]
+
+    if slugs(base) != slugs(head):
+        return [f"{LOCK_FILE}: the set or order of its entries changed"]
+    out = []
+    for old, new in zip(base["files"], head["files"], strict=True):
+        name = new.get("slug") if isinstance(new, dict) else "?"
+        if not (_inhouse(old) and _inhouse(new)):
+            if old != new:
+                out.append(f"{LOCK_FILE} {name}: changed, and it isn't an in-house mod of the product")
+        elif entries is not None and new != entries.get(str(name)):
+            out.append(f"{LOCK_FILE} {name}: isn't exactly the new release's entry ({TEMPLATE_LOCK})")
+    return out
+
+
 def tier_files(lock: dict[str, Any], tier: str) -> list[dict[str, Any]]:
     return [f for f in lock["files"] if tier in f.get("tiers", TIERS)]
 

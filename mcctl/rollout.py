@@ -10,7 +10,8 @@ change the Worker (Terraform: `mcctl apply` from your computer). In the config r
 2. **Pin PR.** The target is `--to` or the product's latest release. Already pinned there: straight to 5. An
    open pin PR for it (the weekly updater's `update/product-vX.Y.Z`, or an earlier `upgrade/product-vX.Y.Z`)
    is used; otherwise `mcctl upgrade --to` opens one (`upgrade.product_upgrade_pr`: the target's migration
-   and validation, a pure patch bump on update/* with auto-merge).
+   and validation, a pure patch bump on update/* with auto-merge; v1.5.1: client.lock.yml's in-house client
+   mod entries from the target release in the same commit).
 3. **Checks and merge.** Its checks are followed (`publish.wait_checks`). A PR the gate merges (auto-merge
    on) is reported as auto-merged; any other one is merged by the admin (`gh pr merge --merge --admin`, the
    gate says "needs the admin") after typing the release tag.
@@ -190,7 +191,7 @@ def run(
         if pr is not None:
             ui.ok(f"using the open pull request {pr.url}")
         else:
-            made = upgrade.product_upgrade_pr(ctx, to, sha, runner=tools.product)
+            made = upgrade.product_upgrade_pr(ctx, to, sha, runner=tools.product, release=tools.release)
             assert made is not None  # not a dry run
             pr = made
         if not merge(ctx, pr):

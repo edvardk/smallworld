@@ -7,8 +7,11 @@ checkout (same Minecraft version only) and the boot test passed. It opens, with 
 - **lock update**: the changed `server.lock.yml`/`plugins.lock.yml` on a branch `update/lock-<date>`;
   auto-merge when `automation.auto_merge` is `builds` or `builds+patch`.
 - **product update**: when the product has a newer release than the pin, the workflow file's `uses:` line
-  moved to that release's commit (`# vX.Y.Z`) on `update/product-vX.Y.Z`; auto-merge only for a patch release
-  and `builds+patch`. A minor/major release waits for the admin (`mcctl upgrade` runs schema migrations, P12).
+  moved to that release's commit (`# vX.Y.Z`) on `update/product-vX.Y.Z`, and (v1.5.1) main's client.lock.yml
+  with its in-house entries taken from that release (`clientpack.refresh_inhouse`, read through the contents
+  API at the release's commit with the read-only product token) when they differ; auto-merge only for a
+  patch release and `builds+patch`. A minor/major release waits for the admin (`mcctl upgrade` runs schema
+  migrations, P12).
 
 Auto-merge is GitHub's native one (GraphQL `enablePullRequestAutoMerge`, squash), enabled by the App, so the
 merge commit is the App's and its push starts the deploy (a GITHUB_TOKEN merge wouldn't). Whether anything
@@ -30,7 +33,7 @@ from typing import Any
 
 import yaml
 
-from mcctl import configrepo, ghapp, http
+from mcctl import clientpack, configrepo, ghapp, http
 from mcctl.providers import ProviderError
 
 API = "https://api.github.com"
@@ -208,7 +211,15 @@ def lock_body(files: Mapping[str, str], auto_merge: bool) -> str:
     ])  # fmt: skip
 
 
-def product_body(old: str, tag: str, repository: str, sha: str, patch: bool, auto_merge: bool) -> str:
+def product_body(
+    old: str,
+    tag: str,
+    repository: str,
+    sha: str,
+    patch: bool,
+    auto_merge: bool,
+    inhouse: list[str] | None = None,
+) -> str:
     notes = f"https://github.com/{repository}/releases/tag/{tag}"
     if patch:
         kind = "A patch release (fixes only)."
@@ -224,12 +235,52 @@ def product_body(old: str, tag: str, repository: str, sha: str, patch: bool, aut
             f"Read the release notes ({notes}), then run `mcctl upgrade -C <config> --to {tag}` (its own "
             "pull request, with the schema migrations), or merge this one as admin if the notes list none."
         )
+    mods = (
+        f" client.lock.yml takes {tag}'s in-house client mod entries ({', '.join(inhouse)}), as the release"
+        " ships them."
+        if inhouse
+        else ""
+    )
     return "\n".join([
-        f"**What changed:** the product {old} -> {tag} ({repository}@{sha[:12]}). {kind}", "",
+        f"**What changed:** the product {old} -> {tag} ({repository}@{sha[:12]}). {kind}{mods}", "",
         "**What it means for players:** usually nothing they notice; if the deploy changes a setting that "
         "needs a restart, the server restarts once with an in-game countdown.", "",
         f"**What to do:** {todo}",
     ])  # fmt: skip
+
+
+def release_reader(repository: str, sha: str, token: str, transport: http.Transport) -> clientpack.Reader:
+    """A clientpack.Reader for the product release at `sha` (GitHub REST contents API, read-only token)."""
+    headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    def read(path: str) -> bytes | None:
+        url = f"{API}/repos/{repository}/contents/{urllib.parse.quote(path)}?ref={sha}"
+        resp = http.get(transport, url, headers)
+        if resp.status == 404:
+            return None
+        data = resp.json() if resp.status == 200 else None
+        if not isinstance(data, dict) or data.get("encoding") != "base64":
+            raise ProviderError(
+                f"GitHub contents {path}@{sha[:12]}: HTTP {resp.status}"
+                + (" (not a file under 1 MB)" if resp.status == 200 else "")
+            )
+        return base64.b64decode(str(data.get("content") or ""))
+
+    return read
+
+
+def refreshed_client_lock(
+    main_lock: str | None, repository: str, sha: str, token: str, transport: http.Transport
+) -> tuple[str | None, list[str]]:
+    """main's client.lock.yml with the release's in-house entries ((None, []) when nothing changes)."""
+    if main_lock is None or "source: inhouse" not in main_lock:
+        return None, []
+    text, slugs = clientpack.refresh_inhouse(
+        main_lock, clientpack.release_inhouse(release_reader(repository, sha, token, transport))
+    )
+    return (text, slugs) if slugs else (None, [])
 
 
 def latest_tag(
@@ -358,10 +409,21 @@ def run(
             for pr in existing:
                 repo.close(pr, f"Superseded by {tag}.")
             text = bump_pin((config_dir / WORKFLOW).read_text(), pin.repository, sha, tag)
+            proposed = {WORKFLOW: text}
+            try:  # v1.5.1: main's lock (the checkout's may hold this run's lock update), not the checkout's
+                lock, inhouse = refreshed_client_lock(
+                    on_main(configrepo.CLIENT_LOCK), pin.repository, sha, product_token, repo.transport
+                )
+            except (clientpack.PackError, ProviderError, http.HttpError) as e:
+                lock, inhouse = None, []
+                repo.log.append(f"client.lock.yml: couldn't take {tag}'s in-house entries ({e}): pin only")
+            if lock is not None:
+                proposed[configrepo.CLIENT_LOCK] = lock
+                repo.log.append(f"client.lock.yml: {tag}'s in-house entries ({', '.join(inhouse)})")
             patch = is_patch(pin.version, tag)
             merge = patch and auto_merge == "builds+patch"
-            body = product_body(pin.version or pin.sha[:12], tag, pin.repository, sha, patch, merge)
-            repo.propose(branch, {WORKFLOW: text}, f"Product update to {tag}", body,
+            body = product_body(pin.version or pin.sha[:12], tag, pin.repository, sha, patch, merge, inhouse)
+            repo.propose(branch, proposed, f"Product update to {tag}", body,
                          auto_merge=merge, reset=repo.ref_sha(branch) is not None)  # fmt: skip
     else:
         repo.log.append(f"product: {pin.version or pin.sha[:12]} is the latest release")

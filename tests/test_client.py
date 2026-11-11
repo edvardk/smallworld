@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from conftest import REPO, example_server, make_config_repo
+from conftest import MOD_JAR, REPO, V141_CLIENT_LOCK, example_server, fake_release, make_config_repo
 
 from mcctl import clientpack, clientpublish, configrepo, http, render, schema
 
@@ -114,6 +114,106 @@ def test_template_lock_pins_26_3_with_hashes_and_licences() -> None:
     bad = json.loads(json.dumps(LOCK))
     bad["files"][-1]["mirror"] = True  # the shader: its licence doesn't allow it
     assert any("doesn't allow mirroring" in e for e in clientpack.lock_errors(bad, "26.3", DEF))
+
+
+def test_the_template_in_house_entries_are_what_the_lock_tool_writes() -> None:
+    """v1.5.1: a pin move copies a release's in-house entries from its template/client.lock.yml (as data), so
+    that file must hold exactly what its lock tool writes for its jar (and the verify gate accepts), and be
+    written exactly as the lock tool writes it (a refresh re-dumps the lock)."""
+    text = (REPO / "template/client.lock.yml").read_text()
+    for f in LOCK["files"]:
+        if f.get("source") == "inhouse":
+            entry = next(m for m in DEF["mods"] if m["slug"] == f["slug"])
+            assert f == client_pack.inhouse_entry(entry, DEF)
+    header = "".join(line for line in text.splitlines(keepends=True) if line.startswith("#"))
+    assert text == header + yaml.safe_dump(LOCK, sort_keys=False, default_flow_style=False)
+    assert clientpack.release_inhouse(clientpack.directory_reader(REPO))["smallworld"] == next(
+        f for f in LOCK["files"] if f["slug"] == "smallworld"
+    )
+
+
+def test_refresh_inhouse_v141_to_v150(tmp_path: Path) -> None:
+    """The live case: a config repo on v1.4.1's lock (mod 1.0.0) moving to v1.5.0 (mod 1.1.0)."""
+    old = V141_CLIENT_LOCK.read_text()
+    release = fake_release(tmp_path / "v1.5.0")
+    entries = clientpack.release_inhouse(clientpack.directory_reader(release))
+    assert list(entries) == ["smallworld"] and entries["smallworld"]["version"] == "1.1.0"
+    assert any("pins another build" in e for e in clientpack.lock_errors(yaml.safe_load(old), "26.3", DEF))
+    new, slugs = clientpack.refresh_inhouse(old, entries)
+    assert slugs == ["smallworld"]
+    assert new == (REPO / "template/client.lock.yml").read_text()  # exactly what v1.5.0 ships
+    assert clientpack.lock_errors(yaml.safe_load(new), "26.3", DEF) == []
+    assert clientpack.refresh_inhouse(new, entries) == (new, [])  # idempotent
+    assert clientpack.inhouse_change_errors(old, new, entries) == []
+    assert clientpack.inhouse_change_errors(old, new) == []
+    # the file form: only when there is an in-house entry, and the release is read only then
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    called: list[int] = []
+
+    def reader() -> clientpack.Reader:
+        called.append(1)
+        return clientpack.directory_reader(release)
+
+    assert clientpack.refresh_lock_file(cfg, reader) == [] and not called  # no client.lock.yml
+    (cfg / "client.lock.yml").write_text(old)
+    assert clientpack.refresh_lock_file(cfg, reader) == ["smallworld 1.0.0 -> 1.1.0"]
+    assert clientpack.refresh_lock_file(cfg, reader) == [] and len(called) == 2
+    no_inhouse = yaml.safe_load(old)
+    no_inhouse["files"] = [f for f in no_inhouse["files"] if f.get("source") != "inhouse"]
+    (cfg / "client.lock.yml").write_text(yaml.safe_dump(no_inhouse))
+    assert clientpack.refresh_lock_file(cfg, reader) == [] and len(called) == 2
+
+
+def test_release_inhouse_refuses_a_stale_or_missing_jar(tmp_path: Path) -> None:
+    stale = fake_release(tmp_path / "a", jar=b"not the jar")
+    with pytest.raises(clientpack.PackError, match="sha256 isn't its"):
+        clientpack.release_inhouse(clientpack.directory_reader(stale))
+    gone = fake_release(tmp_path / "b")
+    (gone / MOD_JAR).unlink()
+    with pytest.raises(clientpack.PackError, match="isn't in the release"):
+        clientpack.release_inhouse(clientpack.directory_reader(gone))
+    escape = fake_release(tmp_path / "c", lock=(REPO / "template/client.lock.yml").read_text().replace(
+        f"path: {MOD_JAR}", "path: ../../etc/passwd"
+    ))  # fmt: skip
+    with pytest.raises(clientpack.PackError, match="isn't in the release"):
+        clientpack.release_inhouse(clientpack.directory_reader(escape))
+    assert clientpack.release_inhouse(clientpack.directory_reader(tmp_path / "none")) == {}  # pre-v1.2
+
+
+def test_inhouse_change_errors_allow_only_the_in_house_entries(tmp_path: Path) -> None:
+    old = V141_CLIENT_LOCK.read_text()
+    entries = clientpack.release_inhouse(clientpack.directory_reader(fake_release(tmp_path / "r")))
+    new = clientpack.refresh_inhouse(old, entries)[0]
+
+    def edited(change: object) -> str:
+        lock = yaml.safe_load(new)
+        change(lock)  # type: ignore[operator]
+        return yaml.safe_dump(lock, sort_keys=False)
+
+    def sodium(lock: dict) -> None:
+        next(f for f in lock["files"] if f["slug"] == "sodium")["version"] = "9.9.9"
+
+    def mod(lock: dict) -> None:
+        next(f for f in lock["files"] if f["slug"] == "smallworld")["sha256"] = "0" * 64
+
+    def loader(lock: dict) -> None:
+        lock["loader"]["version"] = "0.99.0"
+
+    def order(lock: dict) -> None:
+        lock["files"].reverse()
+
+    assert "isn't an in-house mod" in clientpack.inhouse_change_errors(old, edited(sodium), entries)[0]
+    assert (
+        "isn't exactly the new release's entry"
+        in clientpack.inhouse_change_errors(old, edited(mod), entries)[0]
+    )
+    assert clientpack.inhouse_change_errors(old, edited(mod)) == []  # structure only (the PR job's check)
+    assert (
+        "more than its in-house entries" in clientpack.inhouse_change_errors(old, edited(loader), entries)[0]
+    )
+    assert "set or order" in clientpack.inhouse_change_errors(old, edited(order), entries)[0]
+    assert "doesn't parse" in clientpack.inhouse_change_errors(old, "files: [", entries)[0]
 
 
 def test_every_tier_has_its_dependencies() -> None:

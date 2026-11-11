@@ -6,6 +6,53 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Added
+
+- e2e: the smooth-backup skip, live (`tests/e2e/backup_skip_check.py`, `agent_check.py`'s round `backup-skip` in
+  the `agent-b` shards). A drop-in gives `mc-backup.service` the timer's `TRIGGER_UNIT=mc-backup.timer` and points
+  its heartbeats at a local HTTPS mock of the watchdog; timer-style runs on the empty server until one is skipped
+  (the server pauses 60 s after it is empty, so an earlier run may still back up), which must be recorded in
+  `backup-state.json`, make no snapshot and send exactly one OK heartbeat; then a changed world file must be backed
+  up (start + ok heartbeats, a new snapshot, the skip count reset). Its verdicts are unit-tested against what
+  `scripts/backup.py` really prints and sends.
+
+### Changed
+
+- [operations: Small-VM preset](docs/operations.md#small-vm-preset-v15): the heap figures of `performance.vm:
+  small` are marked **measure first**: the 2304 MB heap on a 4 GB host is computed from the stated assumptions
+  and hasn't been run on a real 4 GB VM yet; the section says what to watch after switching and how to set a
+  smaller `jvm.heap_mb` (also in [setup](docs/setup.md)).
+
+### Fixed
+
+- A product release that ships a new build of the in-house Smallworld client mod no longer breaks the pin move.
+  Live: v1.5.0 shipped mod 1.1.0 while the config repo's `client.lock.yml` pinned 1.0.0, so `mcctl rollout`'s
+  validate failed ("pins another build than the product's client/mod/dist/smallworld.jar") and `mcctl lock
+  update` couldn't fix it (it runs as the old pin, which knows only 1.0.0). Now whatever moves the pin, `mcctl
+  upgrade`, `mcctl rollout`, the update button (task `product-update`, new step `mcctl product-update inhouse`)
+  and the weekly product update, also copies the target release's `source: inhouse` entries into
+  `client.lock.yml` in the same commit or pull request, before the target's validate. The entries come from the
+  target release's own `template/client.lock.yml` (checked against its jar; tests keep it equal to what its lock
+  tool writes): from its checkout, or for the weekly job through the contents API with the read-only product
+  token. `server / gate` (decision in SECURITY.md, "The in-house client mod moves with the pin") still
+  auto-merges such a patch bump when the lock's only change is those entries and each is exactly the new
+  release's (read at the tag-verified commit); any other lock change needs the admin. The fix runs in the code of
+  the pin you move from, so it applies from v1.5.1 on ([operations: The update
+  button](docs/operations.md#the-update-button-v15)).
+
+- The v1.5.0 auto-release stopped after `autotag.yml` had created the tag: `ci.yml`'s `gitleaks` job (called by
+  `release.yml`) got one HTTP 504 downloading the pinned gitleaks release, so the GitHub release was skipped.
+  Every pinned download in the workflows (gitleaks in `ci.yml` and the reusable `server.yml`, cargo-deny,
+  restic) now retries transient errors (`curl --retry 5 --retry-all-errors`), and so does every pinned artifact
+  the scripts fetch (`scripts/lockfile.py` `http_get`, used by `build_plugin.py`'s JDK, `build_client_mod.py`,
+  `map_palette.py`, `config_keys.py` and the lock tools): 5 attempts on 5xx, 429, network errors and timeouts,
+  backoff 2/4/8/16 s or the server's Retry-After, never on a 404 or other 4xx; hashes are still checked. The Rust
+  job raises rustup's, cargo's and apt's retry counts to 5. [reference: Releasing](docs/reference.md#releasing)
+  says how to finish a release whose tag exists (re-run the autotag run's failed jobs).
+- `mcctl product-setup` no longer wants a `v*` tag *creation* ruleset (GitHub refused the GitHub Actions app as
+  its bypass actor with 422 on a personal repository): the `v*` tag ruleset restricts only moving and deleting
+  (admin bypass), and creating a `v*` tag is unrestricted, as `autotag.yml` needs.
+
 ## [1.5.0] - 2026-11-09
 
 ### Added
