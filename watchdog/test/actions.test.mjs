@@ -521,7 +521,7 @@ test("v1.3 versions: the Worker's stamp against the server's version, each misma
   assert.equal(W.cmpVersion("1.2.2", "1.3.0"), -1);
   assert.equal(W.cmpVersion("", "1.3.0"), null);
   const pin = "b".repeat(40);
-  const stamp = { version: "1.2.1", pin_sha: pin, pin_version: "v1.2.1", repository: "edvardk/smallworld" };
+  const stamp = { version: "1.2.1", fingerprint: "", pin_sha: pin, pin_version: "v1.2.1", repository: "edvardk/smallworld" };
   const stale = W.versions({ version: "1.2.2", commit: "c".repeat(40), running: "1.2.2" }, stamp);
   assert.deepEqual(stale.problems.map((p) => p.text), ["The Worker is v1.2.1, the server is v1.2.2: run `mcctl render` + `mcctl apply` to update the Worker."]);
   const behind = W.versions({ version: "1.2.1", commit: "c".repeat(40), running: "1.2.1" }, { ...stamp, version: "1.2.2" });
@@ -530,6 +530,7 @@ test("v1.3 versions: the Worker's stamp against the server's version, each misma
   assert.deepEqual(commit.problems.map((p) => p.level), ["info"]);
   assert.deepEqual(W.versions({ version: "1.2.1", commit: pin, running: "1.2.1" }, stamp).problems, []);
   assert.deepEqual(W.versions(null, null).problems, []);
+  assert.equal(stale.fingerprint, null, "no fingerprint on either side: the versions decide");
 
   // through the panel: the stamp from the staged assets (version.json, never served), the header's product version
   W.resetIsolate();
@@ -551,7 +552,60 @@ test("v1.3 versions: the Worker's stamp against the server's version, each misma
     return results[0] || null;
   };
   await W.runChecks(cronEnv, NOW, rt);
-  assert.deepEqual(JSON.parse((await worker()).value), { version: "1.2.1", pin_sha: pin, pin_version: "v1.2.1", repository: "" });
+  assert.deepEqual(JSON.parse((await worker()).value), { version: "1.2.1", fingerprint: "", pin_sha: pin, pin_version: "v1.2.1", repository: "" });
   await W.runChecks(cronEnv, NOW + 300000, rt);
   assert.equal((await worker()).updated_at, NOW, "unchanged: not written again");
+});
+
+test("v1.5.2 versions: the Worker fingerprint decides, the version label is only shown", async () => {
+  const pin = "b".repeat(40);
+  const fp = "f".repeat(64);
+  const other = "0".repeat(64);
+  const stamp = { version: "1.5.0", fingerprint: fp, pin_sha: pin, pin_version: "v1.5.0", repository: "edvardk/smallworld" };
+  const server = (version, worker_fingerprint) => ({ version, commit: "c".repeat(40), running: version, running_commit: "c".repeat(40), worker_fingerprint });
+  // a patch release that changed nothing the Worker runs: no warning, the older label shown neutrally
+  const same = W.versions(server("1.5.1", fp), stamp);
+  assert.equal(same.fingerprint, "same");
+  assert.deepEqual(same.problems, [{ level: "info", text: "Worker v1.5.0 (unchanged in v1.5.1): nothing it runs changed, no apply needed." }]);
+  // same version, same code: nothing at all (not even the old "other commit" note)
+  assert.deepEqual(W.versions(server("1.5.0", fp), stamp).problems, []);
+  // the release changed the Worker's code or Terraform: out of date, with the fix
+  const changed = W.versions(server("1.5.1", other), stamp);
+  assert.equal(changed.fingerprint, "differs");
+  assert.deepEqual(changed.problems.map((p) => [p.level, p.text]), [["warn", "The Worker is out of date for v1.5.1 (its code or Terraform changed): run `mcctl rollout` or `mcctl render` + `mcctl apply`."]]);
+  // an apply from a newer pin than the server's deploy: the server is behind, whatever the fingerprints say
+  for (const f of [fp, other]) assert.match(W.versions(server("1.4.1", f), stamp).problems[0].text, /^The server is v1\.4\.1, the Worker is v1\.5\.0: deploy/);
+  // same version, other code (applied from a branch): out of date
+  assert.equal(W.versions(server("1.5.0", other), stamp).problems[0].level, "warn");
+
+  // backwards compatibility: an agent (or deploy) from before v1.5.2 sends no fingerprint, a Worker applied before
+  // v1.5.2 has none in its version.json: the versions decide, as before
+  const oldAgent = W.versions({ version: "1.5.1", commit: "c".repeat(40), running: "1.5.1" }, stamp);
+  assert.equal(oldAgent.fingerprint, null);
+  assert.match(oldAgent.problems[0].text, /^The Worker is v1\.5\.0, the server is v1\.5\.1: run `mcctl render` \+ `mcctl apply`/);
+  const oldWorker = W.versions(server("1.5.1", fp), { ...stamp, fingerprint: "" });
+  assert.equal(oldWorker.fingerprint, null);
+  assert.equal(oldWorker.problems[0].level, "warn");
+  assert.equal(W.versions(server("1.5.1", "F".repeat(64)), stamp).fingerprint, null, "not a fingerprint: ignored");
+
+  // end to end: the agent's inventory and the staged version.json; the overview's warnings stay empty
+  W.resetIsolate();
+  const env = withStamp(makePanelEnv(), { product: "1.5.0", fingerprint: fp, pin: { sha: pin, version: "v1.5.0" }, repository: "edvardk/smallworld" });
+  await seed(env, NOW);
+  const inv = await kvInventory(env);
+  const post = (product) =>
+    W.handle(new Request("https://hb.mc.example.com/ingest/inventory", { method: "POST", headers: { Authorization: `Bearer ${env.AGENT_TOKEN}` }, body: JSON.stringify({ inventory: { ...inv, product } }) }), env, NOW, rt);
+  assert.equal((await post({ version: "1.5.1", commit: "c".repeat(40), running: "1.5.1", worker_fingerprint: fp })).status, 200);
+  let o = (await call(env, "/api/overview")).body;
+  assert.equal(o.versions.server.worker_fingerprint, fp, "kept through the inventory's cleaning");
+  assert.equal(o.versions.worker.fingerprint, fp);
+  assert.equal(o.versions.fingerprint, "same");
+  assert.ok(!o.warnings.some((w) => /Worker/.test(w.text)), JSON.stringify(o.warnings));
+  assert.equal((await post({ version: "1.5.1", commit: "c".repeat(40), running: "1.5.1", worker_fingerprint: "<b>" })).status, 200);
+  o = (await call(env, "/api/overview")).body;
+  assert.equal("worker_fingerprint" in o.versions.server, false, "an invalid one is dropped");
+  assert.ok(o.warnings.some((w) => w.text.includes("run `mcctl render` + `mcctl apply`")), "and the versions decide");
+  assert.equal((await post({ version: "1.5.1", commit: "c".repeat(40), running: "1.5.1", worker_fingerprint: other })).status, 200);
+  o = (await call(env, "/api/overview")).body;
+  assert.ok(o.warnings.some((w) => w.text.startsWith("The Worker is out of date for v1.5.1")));
 });

@@ -17,6 +17,7 @@ from __future__ import annotations
 import datetime
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -26,10 +27,12 @@ from pathlib import Path
 from typing import Any, Literal
 
 from mcctl import (
+    __version__,
     configrepo,
     deploy,
     envfile,
     expiry,
+    fingerprint,
     galaxy,
     ghapp,
     hostnet,
@@ -768,23 +771,49 @@ def check_watchdog(report: Report, repo: configrepo.ConfigRepo, deps: Deps) -> N
 SELFTEST_STALE_H = 36  # the agent runs it daily
 
 
-def assess_versions(product: object, worker: object, pin: configrepo.Pin) -> tuple[Level, str]:
+FINGERPRINT = re.compile(r"[0-9a-f]{64}")
+
+
+def _fingerprint(d: dict[str, Any] | None, key: str) -> str:
+    v = d.get(key) if d else None
+    return v if isinstance(v, str) and FINGERPRINT.fullmatch(v) else ""
+
+
+def assess_versions(
+    product: object, worker: object, pin: configrepo.Pin, expected: str | None = None
+) -> tuple[Level, str]:
     """(level, detail) of the deployed product (the agent's inventory), the Worker's stamp (`mcctl render` ->
-    `mcctl apply`) and the config repo's pin as it is now."""
+    `mcctl apply`) and the config repo's pin as it is now. v1.5.2: with a Worker fingerprint in the stamp, the
+    Worker is out of date only when it differs from the one the pinned release expects (the server's report
+    when it is on the pin, else `expected`: this mcctl's own, mcctl/fingerprint.py), as in the panel; a Worker
+    applied before v1.5.2 is compared by its pin, as before."""
     prod = product if isinstance(product, dict) else None
     stamp = worker if isinstance(worker, dict) else None
     pinned = f"{pin.version or '?'} ({pin.sha[:12]})"
     server = remote.product_text(prod) if prod and prod.get("version") else "unknown"
     applied = f"v{stamp.get('version')}" if stamp and stamp.get("version") else "unknown"
     problems = []
+    drift = remote.product_drift(prod, pin) if prod is not None else None
     if prod is None:
         problems.append("the server reports no version (deployed before v1.3? deploy)")
-    elif (drift := remote.product_drift(prod, pin)) is not None:
+    elif drift is not None:
         problems.append(f"server: {drift}")
+    running = _fingerprint(stamp, "fingerprint")
+    want = (_fingerprint(prod, "worker_fingerprint") if prod is not None and drift is None else "") or (
+        expected if expected and FINGERPRINT.fullmatch(expected) else ""
+    )
     if stamp is None:
         problems.append(
             "the Worker has no version stamp: `mcctl render` + `mcctl apply` (applied before v1.3?)"
         )
+    elif running and want:
+        if running != want:
+            problems.append(
+                f"the Worker is out of date for {pin.version or pin.sha[:12]} (its code or Terraform "
+                "changed): `mcctl rollout` or `mcctl render` + `mcctl apply`"
+            )
+        elif stamp.get("version") and pin.version and str(stamp["version"]) != pin.version.lstrip("v"):
+            applied += f" (unchanged in {pin.version})"
     elif stamp.get("pin_sha") and stamp["pin_sha"] != pin.sha:
         problems.append(
             f"the Worker was applied for {str(stamp['pin_sha'])[:12]}, the pin is {pin.sha[:12]}: "
@@ -848,7 +877,10 @@ def check_panel_link(
         report.add("versions", "warn", f"couldn't read the watchdog's D1: {e}")
         return
     inv = kv.get("inventory") if isinstance(kv.get("inventory"), dict) else {}
-    report.add("versions", *assess_versions(inv.get("product"), kv.get("worker"), repo.pin))
+    # this mcctl's release's fingerprint, only when it is the pinned release (else the server's report alone)
+    on_pin = bool(repo.pin.version) and repo.pin.version.lstrip("v") == __version__
+    expected = fingerprint.worker_fingerprint() if on_pin else None
+    report.add("versions", *assess_versions(inv.get("product"), kv.get("worker"), repo.pin, expected))
     report.add("panel → git", *assess_selftest(inv.get("selftest"), deps.now()))
 
 

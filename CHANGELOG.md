@@ -6,6 +6,24 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Fixed
+
+- The panel no longer asks for a local `mcctl render` + `mcctl apply` after a release that didn't change the
+  Worker. Live, v1.5.1 changed only a comment in `mcctl/render.py`, yet Health > Versions warned "The Worker is
+  v1.5.0, the server is v1.5.1: run `mcctl render` + `mcctl apply`" because it compared version labels. The Worker
+  is now compared by what it runs: a **Worker fingerprint** (`mcctl/fingerprint.py`, a sha256 over
+  `watchdog/worker.js`, the panel's files and `terraform/`; never the version, the pin or rendered deployment
+  values). `mcctl render` stamps it into the Worker's `version.json` and into group_vars `mc_worker_fingerprint`.
+  Each deploy records it in `product-version.json`, and mc-agent (Python and Rust; the agent binaries are rebuilt
+  and re-pinned) reports it. The Worker warns "The Worker is out of date for vX.Y.Z (its code or Terraform
+  changed)" only when the two fingerprints differ. When only the label differs, the row reads "Worker v1.5.0
+  (unchanged in v1.5.1)" with no warning. A Worker applied before this release, or an agent or deploy older
+  than it (no fingerprint on one side), still compares versions, as before. `mcctl doctor`'s `versions` row (and
+  the dashboard's Worker line) make the same comparison. The `product-update` and deploy summaries decide "no
+  local step needed" from the same files, so they no longer count `mcctl/render.py`. The summary's note "the
+  Versions row shows the Worker one version behind" is gone. The first deploy and apply of this release change
+  the Worker and record the fingerprint; from then on, releases that leave those files alone need no apply.
+
 ## [1.5.1] - 2026-11-11
 
 ### Added

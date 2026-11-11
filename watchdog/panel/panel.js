@@ -1917,6 +1917,16 @@ V.health = () => {
 
 // --- v1.3: versions everywhere and the Panel -> Git self-test (Health tab) ----------------------------------------
 
+// v1.5.2: the Worker row's note from the fingerprints (worker.js versions()): an older label on unchanged code is
+// in step, said neutrally; null = no fingerprint on one side (before v1.5.2), the versions decide.
+function workerNote(v) {
+  const sv = v.server && v.server.version;
+  const wv = v.worker && v.worker.version;
+  if (v.fingerprint === "same") return sv && wv && sv.replace(/^v/, "") !== wv.replace(/^v/, "") ? ` (unchanged in v${sv})` : " (current)";
+  if (v.fingerprint === "differs") return sv ? ` (out of date for v${sv})` : " (out of date)";
+  return "";
+}
+
 function versionsPanel(o) {
   const v = o.versions || { server: null, worker: null, problems: [] };
   const sv = v.server;
@@ -1931,7 +1941,7 @@ function versionsPanel(o) {
       <header><h2 id="h-ver">Versions</h2>${pill(bad ? "warn" : sv && wv ? "ok" : "off", bad ? "Mismatch" : sv && wv ? "In step" : "Partly known")}</header>
       <div class="body"><dl class="kv">
         <dt>Server (deployed)</dt><dd class="wrap">${sv ? `v${esc(sv.version)}${esc(short(sv.commit))}` : "unknown (deployed before v1.3, or no agent report yet)"}</dd>
-        <dt>Worker (applied)</dt><dd class="wrap">${wv ? `v${esc(wv.version)}` : "unknown (applied before v1.3: `mcctl render` + `mcctl apply`)"}</dd>
+        <dt>Worker (applied)</dt><dd class="wrap">${wv ? `v${esc(wv.version)}${esc(workerNote(v))}` : "unknown (applied before v1.3: `mcctl render` + `mcctl apply`)"}</dd>
         <dt>Config repo pin</dt><dd class="wrap">${wv && wv.pin_sha ? `${esc(wv.pin_version || "")}${esc(short(wv.pin_sha))} (at the last apply)` : "unknown"}</dd>
       </dl>
       ${(v.problems || []).map((p) => `<p class="note">${pill(p.level === "warn" ? "warn" : "off", p.level === "warn" ? "Fix" : "Note")} ${esc(p.text)}</p>`).join("")}</div>

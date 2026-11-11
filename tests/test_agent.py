@@ -1365,6 +1365,16 @@ def test_read_product(tmp_path: Path) -> None:
     assert mc_agent.read_product(f) == {"version": "1.3.0", "commit": ""}
     f.write_text(json.dumps({"version": "<script>"}))
     assert mc_agent.read_product(f) is None
+    # v1.5.2: the Worker fingerprint the release expects, passed on only when it is one (64 hex)
+    f.write_text(json.dumps({"version": "1.5.2", "commit": "a" * 40, "worker_fingerprint": "d" * 64}))
+    assert mc_agent.read_product(f) == {
+        "version": "1.5.2",
+        "commit": "a" * 40,
+        "worker_fingerprint": "d" * 64,
+    }
+    for bad in ("", "D" * 64, "d" * 63, 64, "<b>" + "d" * 61):
+        f.write_text(json.dumps({"version": "1.5.2", "commit": "a" * 40, "worker_fingerprint": bad}))
+        assert mc_agent.read_product(f) == {"version": "1.5.2", "commit": "a" * 40}, bad
     # = the base role's file (ansible mc_product_version_file)
     gv = (Path(__file__).parent.parent / "ansible/group_vars/all/main.yml").read_text()
     assert 'mc_product_version_file: "{{ mc_root }}/product-version.json"' in gv
@@ -1379,9 +1389,10 @@ def test_inventory_reports_the_installed_and_the_running_version(tmp_path: Path,
     assert agent.product_state() == {"version": "1.2.2", "commit": "b" * 40, "running": "1.2.2",
                                      "running_commit": "b" * 40}  # fmt: skip
     # a deploy installed new code but the process kept running (v1.2.3's incident): the inventory shows both
-    f.write_text(json.dumps({"version": "1.3.0", "commit": "c" * 40}))
+    f.write_text(json.dumps({"version": "1.3.0", "commit": "c" * 40, "worker_fingerprint": "e" * 64}))
     state = agent.panel_state()
     assert state["product"]["version"] == "1.3.0" and state["product"]["running"] == "1.2.2"
+    assert state["product"]["worker_fingerprint"] == "e" * 64  # v1.5.2
     assert state["selftest"] is None  # not run yet
 
 

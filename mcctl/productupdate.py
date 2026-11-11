@@ -16,8 +16,9 @@ Terraform or any Cloudflare credential (the Worker stays a local step):
   Smallworld client mod) taken from the target checkout (`clientpack.refresh_lock_file`), so a release that
   ships a new mod build validates and pins it in the same pull request (live: v1.4.1 -> v1.5.0).
 - `prepared` (same job): which files changed (the workflow, server.yml, v1.5.1: client.lock.yml) and
-  whether the Worker's inputs changed between the two releases (`worker_diff`: the files Terraform reads
-  for the Worker and the panel, compared by content); both go to the next job as outputs.
+  whether the Worker's inputs changed between the two releases (`worker_diff`: the files of the Worker
+  fingerprint, mcctl/fingerprint.py: worker.js, the panel's files and terraform/, compared by content; the
+  same comparison the panel's Versions row makes, v1.5.2); both go to the next job as outputs.
 - `pr` (job `product-update-pr`, a fresh runner; the updater GitHub App's key in that one step's env): the
   pin pull request on `update/product-vX.Y.Z`, the branch the weekly updater uses, so the two never collide.
   An open pull request for the release is **reused**: the updater's `update/product-vX.Y.Z` (brought up to
@@ -38,7 +39,6 @@ Nothing here prints a secret: the App key and tokens come from the environment a
 from __future__ import annotations
 
 import base64
-import hashlib
 import re
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
@@ -46,16 +46,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from mcctl import clientpack, configrepo, gate, ghapp, http, updates
+from mcctl import clientpack, configrepo, fingerprint, gate, ghapp, http, updates
 from mcctl.providers import ProviderError
 
 WORKFLOW = configrepo.WORKFLOW
 SHA = re.compile(r"[0-9a-f]{40}")
-# What `mcctl render` + `mcctl apply` upload for the Worker and the panel, and all else Terraform reads:
-# watchdog/ (worker.js, panel/; not its tests), terraform/, and render.py (the tfvars and staged assets).
-WORKER_INPUTS = ("watchdog", "terraform", "mcctl/render.py")
-WORKER_SKIP_DIRS = ("watchdog/test",)
-SKIP_PARTS = {".terraform", "__pycache__", "node_modules", ".pytest_cache"}
 SHOW_PATHS = 6
 PLACEHOLDER = "<your clone of {repository}>"
 
@@ -69,25 +64,11 @@ class UpdateError(ValueError):
 # --- did the Worker change? ----------------------------------------------------------------------------
 
 
-def worker_inputs(root: Path) -> dict[str, str] | None:
-    """{relative path: sha256} of the Worker's inputs in a product checkout (None: not a product checkout)."""
-    if not (root / "watchdog" / "worker.js").is_file() or not (root / "terraform").is_dir():
-        return None
-    out: dict[str, str] = {}
-    for name in WORKER_INPUTS:
-        base = root / name
-        paths = [base] if base.is_file() else sorted(p for p in base.rglob("*") if p.is_file())
-        for path in paths:
-            rel = path.relative_to(root).as_posix()
-            if SKIP_PARTS & set(rel.split("/")) or any(rel.startswith(d + "/") for d in WORKER_SKIP_DIRS):
-                continue
-            out[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
-    return out
-
-
 def worker_diff(old_root: Path, new_root: Path) -> list[str] | None:
-    """The Worker inputs that differ between two product checkouts (sorted), or None when either isn't one."""
-    old, new = worker_inputs(old_root), worker_inputs(new_root)
+    """The Worker inputs that differ between two product checkouts (sorted), or None when either isn't one.
+    Empty exactly when the two releases' Worker fingerprints are equal (mcctl/fingerprint.py: the same files
+    the panel's Versions row compares), so "no local step needed" here and "Worker unchanged" there agree."""
+    old, new = fingerprint.worker_inputs(old_root), fingerprint.worker_inputs(new_root)
     if old is None or new is None:
         return None
     return sorted(p for p in old.keys() | new.keys() if old.get(p) != new.get(p))
@@ -203,8 +184,8 @@ def run_locally(repository: str, target: str, worker: list[str] | None, *, merge
             "merges after you type the tag); the merge deploys."
         ),
         "",
-        "(The panel's Health > Versions row shows the Worker one version behind until your next "
-        "`mcctl render` + `mcctl apply`; that is only the version stamp.)",
+        "(The panel's Health > Versions row shows the Worker's older version as unchanged in this release, "
+        "with no warning: it compares what the Worker runs, not its version label.)",
     ]
 
 

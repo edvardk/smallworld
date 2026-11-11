@@ -540,6 +540,38 @@ def test_doctor_versions_before_v13(repo) -> None:
     assert got["panel → git"].level == "warn" and "no result yet" in got["panel → git"].detail
 
 
+def test_doctor_versions_compare_worker_fingerprints() -> None:
+    """v1.5.2: with a fingerprint in the Worker's stamp, an older version label on unchanged code is in step
+    (shown neutrally); a different fingerprint is out of date; without one, the pin decides (as before)."""
+    old_sha, new_sha = "a" * 40, "b" * 40
+    pin = configrepo.Pin(configrepo.PRODUCT_REPOSITORY, new_sha, "v1.5.1")
+    fp, other = "f" * 64, "0" * 64
+    prod = {"version": "1.5.1", "commit": new_sha, "worker_fingerprint": fp}
+    stamp = {"version": "1.5.0", "fingerprint": fp, "pin_sha": old_sha, "pin_version": "v1.5.0"}
+    level, detail = doctor.assess_versions(prod, stamp, pin)
+    assert level == "ok", detail
+    assert "Worker v1.5.0 (unchanged in v1.5.1), pin v1.5.1" in detail
+    # the server's report says the release's code changed the Worker
+    level, detail = doctor.assess_versions(prod | {"worker_fingerprint": other}, stamp, pin)
+    assert (
+        level == "warn" and "the Worker is out of date for v1.5.1 (its code or Terraform changed)" in detail
+    )
+    assert "`mcctl rollout`" in detail
+    # an agent from before v1.5.2 (no fingerprint): this mcctl's own, when it is the pinned release
+    old_agent = {"version": "1.5.1", "commit": new_sha}
+    assert doctor.assess_versions(old_agent, stamp, pin, fp)[0] == "ok"
+    assert doctor.assess_versions(old_agent, stamp, pin, other)[0] == "warn"
+    # nothing to compare with, or a Worker applied before v1.5.2: the pin decides, as before
+    level, detail = doctor.assess_versions(old_agent, stamp, pin)
+    assert level == "warn" and "the Worker was applied for aaaaaaaaaaaa, the pin is bbbbbbbbbbbb" in detail
+    level, detail = doctor.assess_versions(prod, stamp | {"fingerprint": ""}, pin, fp)
+    assert level == "warn" and "the Worker was applied for aaaaaaaaaaaa" in detail
+    # a server that isn't on the pin doesn't vouch for the pinned release's fingerprint
+    drifted = prod | {"commit": "c" * 40, "worker_fingerprint": fp}
+    level, detail = doctor.assess_versions(drifted, stamp, pin, other)
+    assert level == "warn" and "out of date" in detail and "server: deployed cccccccccccc" in detail
+
+
 def test_doctor_selftest_assessment() -> None:
     now = NOW
     ms = int(now.timestamp() * 1000)

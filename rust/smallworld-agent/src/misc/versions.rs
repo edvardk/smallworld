@@ -15,6 +15,8 @@ static VERSION_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[0-9A-Za-z.+-]{1,40}$").expect("a constant pattern"));
 static COMMIT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[0-9a-f]{40}$").expect("a constant pattern"));
+static FINGERPRINT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[0-9a-f]{64}$").expect("a constant pattern"));
 
 /// mc_agent.py `read_json_obj(path)`: the file's JSON object through `read_untrusted` (no FIFO, no symlink,
 /// capped), `{}` on any OSError/ValueError or a non-object.
@@ -35,7 +37,7 @@ pub fn read_json_obj(path: &Path) -> Obj {
     }
 }
 
-/// `read_product(path)`: `{version, commit}` or None (no file yet: a box deployed before v1.3, or not by the
+/// `read_product(path)`: `{version, commit[, worker_fingerprint]}` or None (no file yet: a box deployed before v1.3, or not by the
 /// product). A commit that isn't 40 hex digits reads as "".
 pub fn read_product(path: Option<&Path>) -> Option<Obj> {
     let data = read_json_obj(path.unwrap_or(Path::new(paths::PRODUCT_VERSION_FILE)));
@@ -47,9 +49,16 @@ pub fn read_product(path: Option<&Path>) -> Option<Obj> {
         Some(Value::String(c)) if COMMIT_RE.is_match(c) => c.clone(),
         _ => String::new(),
     };
-    json!({"version": version, "commit": commit})
+    let mut out = json!({"version": version, "commit": commit})
         .as_object()
-        .cloned()
+        .cloned()?;
+    // v1.5.2: the Worker fingerprint the release expects, only when the file has a valid one (like Python)
+    if let Some(Value::String(w)) = data.get("worker_fingerprint")
+        && FINGERPRINT_RE.is_match(w)
+    {
+        out.insert("worker_fingerprint".into(), json!(w));
+    }
+    Some(out)
 }
 
 /// `Agent.product_state()`: the installed version (`installed`, read now) and the one this process started
@@ -91,6 +100,31 @@ mod tests {
         );
         std::fs::write(&f, r#"{"version": "1.4.0", "commit": "ABC"}"#).unwrap();
         assert_eq!(read_product(Some(&f)).unwrap()["commit"], json!(""));
+        let fp = "d".repeat(64);
+        std::fs::write(
+            &f,
+            format!(
+                r#"{{"version": "1.5.2", "commit": "{commit}", "worker_fingerprint": "{fp}"}}"#
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            Value::Object(read_product(Some(&f)).unwrap()),
+            json!({"version": "1.5.2", "commit": commit, "worker_fingerprint": fp})
+        );
+        for bad in [r#""""#, r#""DD""#, "64", r#""ddd""#] {
+            std::fs::write(
+                &f,
+                format!(r#"{{"version": "1.5.2", "worker_fingerprint": {bad}}}"#),
+            )
+            .unwrap();
+            assert!(
+                !read_product(Some(&f))
+                    .unwrap()
+                    .contains_key("worker_fingerprint"),
+                "{bad}"
+            );
+        }
         for bad in [
             r#"{"version": "1 4"}"#,
             r#"{"version": 14}"#,

@@ -16,7 +16,7 @@ import yaml
 from conftest import EXAMPLE, REPO, TEST_SHA, V141_CLIENT_LOCK, fake_release, make_config_repo
 from test_updates import FakeGitHub
 
-from mcctl import cli, configrepo, doctor, http, productupdate, updates, upgrade, wfsecrets
+from mcctl import cli, configrepo, doctor, fingerprint, http, productupdate, updates, upgrade, wfsecrets
 
 REUSABLE = REPO / ".github/workflows/server.yml"
 CALLER = REPO / "template/.github/workflows/server.yml"
@@ -86,19 +86,28 @@ def product_tree(root: Path) -> Path:
 
 
 def test_worker_diff_compares_what_terraform_reads(tmp_path: Path) -> None:
+    """v1.5.2: the Worker fingerprint's files (mcctl/fingerprint.py), the ones the panel's Versions row
+    compares: worker.js, the panel's files, terraform/; not render.py (v1.5.1 changed only a comment in it and
+    the summary asked for a local apply) nor tests, caches, or a render-built pack."""
     old, new = product_tree(tmp_path / "old"), product_tree(tmp_path / "new")
     assert productupdate.worker_diff(old, new) == []
     (new / "watchdog/test/worker.test.mjs").write_text("// changed test\n")
     (new / "mcctl/other.py").write_text("# changed, not an input\n")
     (new / "terraform/.terraform").mkdir()
     (new / "terraform/.terraform/cache").write_text("x")
+    (new / "terraform/plan.tfplan").write_text("x")
+    (new / "watchdog/panel/pack").mkdir()
+    (new / "watchdog/panel/pack/a.zip").write_text("x")
+    (old / "mcctl/render.py").write_text("# old render, only a comment changed\n")
     assert productupdate.worker_diff(old, new) == []
+    assert fingerprint.worker_fingerprint(old) == fingerprint.worker_fingerprint(new)
     (new / "watchdog/panel/panel.js").write_text("// new ui\n")
     (new / "terraform/panel.tf").write_text("# new\n")
-    (old / "mcctl/render.py").write_text("# old render\n")
+    (new / "terraform/.terraform.lock.hcl").write_text("# providers\n")
     assert productupdate.worker_diff(old, new) == [
-        "mcctl/render.py", "terraform/panel.tf", "watchdog/panel/panel.js",
+        "terraform/.terraform.lock.hcl", "terraform/panel.tf", "watchdog/panel/panel.js",
     ]  # fmt: skip
+    assert fingerprint.worker_fingerprint(old) != fingerprint.worker_fingerprint(new)
     assert productupdate.worker_diff(old, tmp_path / "missing") is None
     assert [productupdate.worker_state(x) for x in (None, [], ["a"])] == ["unknown", "false", "true"]
     # this checkout is a product checkout: compared with itself, nothing changed
