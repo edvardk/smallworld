@@ -6,6 +6,15 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Fixed
+
+- The Players tab's "N req" badge counted rejected logins for players already whitelisted outside the panel
+  (`players.yml` via Git and a deploy): the agent forgets a rejected login only when the panel whitelists the
+  player, so the badge said "1 req" while the Players page listed nobody (and offered no Dismiss). The Worker now
+  drops rejected entries whose name is on the whitelist (case-insensitive) wherever it serves or counts them: the
+  overview badge, `/api/inventory` and Discord's `/rejected`. The page's "last N" note counts the listed entries.
+  Worker-only (no agent rebuild); it changes the Worker, so run `mcctl render` + `mcctl apply` after updating.
+
 ## [1.5.2] - 2026-11-11
 
 ### Fixed

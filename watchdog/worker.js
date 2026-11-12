@@ -2737,6 +2737,15 @@ async function series(env, now, range) {
   return { range: RANGES[range] ? range : "2h", step_ms: r.step || null, points: bucketed(slim, r.step) };
 }
 
+// v1.5.3: the rejected logins still worth showing. The agent drops an entry only when the panel whitelists the
+// player; one whitelisted any other way (players.yml via Git) stays in its list, so everything that serves or
+// counts the list (overview badge, /api/inventory, Discord) drops names now on the whitelist (case-insensitive).
+function openRejected(inv) {
+  if (!inv) return [];
+  const known = new Set((inv.whitelist || []).map((w) => String((w && w.name) || "").toLowerCase()).filter(Boolean));
+  return (inv.rejected || []).filter((r) => r && !known.has(String(r.name || "").toLowerCase()));
+}
+
 async function kvState(env) {
   const { state } = await loadState(env.DB);
   return state;
@@ -3039,7 +3048,7 @@ async function overview(env, pcfg, now, identity) {
           disabled_plugins: inv.plugins.filter((p) => p.enabled === false).length,
           received: inv.received || null,
           pending: (inv.pending || []).length,
-          rejected: (inv.rejected || []).length,
+          rejected: openRejected(inv).length,
         }
       : null,
     audit,
@@ -3291,7 +3300,7 @@ async function panelApi(request, env, now, url, pcfg, identity, rt) {
   if (route === "GET /api/inventory") {
     const inv = (await kvState(env)).inventory || null;
     const sample = await latestSample(env);
-    return json({ inventory: inv, online: (sample && sample.players_online) || [], sample_ts: sample ? sample.ts : null });
+    return json({ inventory: inv && { ...inv, rejected: openRejected(inv) }, online: (sample && sample.players_online) || [], sample_ts: sample ? sample.ts : null });
   }
   if (route === "GET /api/backups") return json(await backups(env, now));
   if (url.pathname.startsWith("/api/experience")) {
@@ -3816,7 +3825,7 @@ async function discordRead(env, now, cfg, name, sub, opts) {
     }
     case "rejected": {
       const inv = (await kvState(env)).inventory;
-      const rej = (inv && inv.rejected) || [];
+      const rej = openRejected(inv);
       if (!rej.length) return "No rejected logins.";
       return [`**Rejected logins (${rej.length}):**`, ...rej.slice(0, 15).map((r) => `- ${md(r.name)}: ${r.count || 1}×, last ${typeof r.last === "number" ? ago(now - r.last) : "?"}`), "Add one with `/whitelist add name`."].join("\n");
     }

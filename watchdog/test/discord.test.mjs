@@ -333,6 +333,33 @@ test("read commands answer from D1: status, players, backups, whitelist, rejecte
   const rej = (await send(env, interaction("rejected"))).body.data.content;
   assert.match(rej, /xXcreeperXx: 3×, last 23 min ago/);
   assert.match(rej, /Felix\\_2011: 1×, last 3 h ago/);
+  // v1.5.3: a rejected login of a player whitelisted outside the panel (any case) isn't listed any more
+  const post = new Request("https://hb.mc.example.com/ingest/inventory", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.AGENT_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      inventory: {
+        ts: NOW,
+        whitelist: [{ name: "Em_K" }, { name: "FELIX_2011" }],
+        rejected: [
+          { name: "xXcreeperXx", count: 3, last: NOW - 1400000 },
+          { name: "Felix_2011", count: 1, last: NOW - 10800000 },
+        ],
+      },
+    }),
+  });
+  assert.equal((await W.handle(post, env, NOW, rtWith([]))).status, 200);
+  const rej2 = (await send(env, interaction("rejected"))).body.data.content;
+  assert.match(rej2, /^\*\*Rejected logins \(1\):\*\*/);
+  assert.match(rej2, /xXcreeperXx: 3×/);
+  assert.doesNotMatch(rej2, /Felix/i);
+  const post2 = new Request("https://hb.mc.example.com/ingest/inventory", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.AGENT_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ inventory: { ts: NOW, whitelist: [{ name: "xxcreeperxx" }, { name: "felix_2011" }], rejected: [{ name: "xXcreeperXx", count: 3 }, { name: "Felix_2011", count: 1 }] } }),
+  });
+  assert.equal((await W.handle(post2, env, NOW, rtWith([]))).status, 200);
+  assert.equal((await send(env, interaction("rejected"))).body.data.content, "No rejected logins.");
   // a stale server
   const late = discordEnv();
   await seed(late, NOW - 3600000);
