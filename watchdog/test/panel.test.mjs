@@ -329,6 +329,41 @@ test("P9 review: inventory flags are booleans whatever the agent sends", async (
   assert.deepEqual(inv.whitelist[0], { name: "Dora_K", uuid: "9e1d0000-0000-4000-8000-0000000000d4", unmanaged: true });
 });
 
+test("v1.5.3: rejected logins of players whitelisted outside the panel are neither counted nor served", async () => {
+  W.resetIsolate();
+  const env = makePanelEnv();
+  await seed(env, NOW);
+  const whitelist = [
+    { name: "Em_K", uuid: "3f2a0000-0000-4000-8000-000000000c41" },
+    { name: "felix_2011", uuid: "4f2a0000-0000-4000-8000-000000000c42" }, // added through players.yml, other case
+  ];
+  const rejected = [
+    { name: "xXcreeperXx", count: 3, first: NOW - 86400000, last: NOW - 1400000 },
+    { name: "Felix_2011", count: 1, first: NOW - 10800000, last: NOW - 10800000 },
+    { name: "EM_K", count: 2, first: NOW - 7200000, last: NOW - 3600000 },
+  ];
+  const post = new Request("https://hb.mc.example.com/ingest/inventory", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.AGENT_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ inventory: { ts: NOW, whitelist, rejected } }),
+  });
+  assert.equal((await W.handle(post, env, NOW, rt)).status, 200);
+  const token = await good();
+  assert.equal((await call(env, "/api/overview", { token })).body.inventory.rejected, 1); // the "1 req" badge
+  const inv = (await call(env, "/api/inventory", { token })).body.inventory;
+  assert.deepEqual(inv.rejected.map((r) => r.name), ["xXcreeperXx"]);
+  assert.equal(inv.whitelist.length, 2); // the rest of the inventory is untouched
+  // everyone on the list already: no badge, nothing listed
+  const post2 = new Request("https://hb.mc.example.com/ingest/inventory", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.AGENT_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ inventory: { ts: NOW, whitelist: [...whitelist, { name: "XXCREEPERXX" }], rejected } }),
+  });
+  assert.equal((await W.handle(post2, env, NOW, rt)).status, 200);
+  assert.equal((await call(env, "/api/overview", { token })).body.inventory.rejected, 0);
+  assert.deepEqual((await call(env, "/api/inventory", { token })).body.inventory.rejected, []);
+});
+
 test("console: same-origin POSTs only; a command is signed for the agent, audited, and its result recorded", async () => {
   W.resetIsolate();
   const env = makePanelEnv();

@@ -1305,7 +1305,7 @@ V.players = () => {
       </form>
     </section>
     <section class="panel" aria-labelledby="h-req">
-      <header><h2 id="h-req">Rejected logins</h2><span class="note">not whitelisted · last ${esc(inv.rejected.length)}</span></header>
+      <header><h2 id="h-req">Rejected logins</h2><span class="note">not whitelisted · last ${esc(rejected.length)}</span></header>
       <div class="body reqs">${rejected.map((r) => `<div class="player">${headSvg(r.name)}<div class="who"><div><strong>${esc(r.name)}</strong> <span class="tag">${esc(r.count)}×</span></div><div class="note">last ${esc(ago(r.last))}${r.ip ? ` · from ${esc(r.ip)}` : ""}${r.uuid ? "" : " · UUID looked up on approve"}</div></div><button class="btn sm primary" type="button" data-req="ok" data-name="${esc(r.name)}">Whitelist</button><button class="btn sm" type="button" data-req="no" data-name="${esc(r.name)}">Dismiss</button></div>`).join("") || '<span class="muted">Nobody was turned away recently.</span>'}</div>
     </section>
   </div>
