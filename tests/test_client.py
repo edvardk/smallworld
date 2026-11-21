@@ -133,15 +133,16 @@ def test_the_template_in_house_entries_are_what_the_lock_tool_writes() -> None:
 
 
 def test_refresh_inhouse_v141_to_v150(tmp_path: Path) -> None:
-    """The live case: a config repo on v1.4.1's lock (mod 1.0.0) moving to v1.5.0 (mod 1.1.0)."""
+    """The live case: a config repo on v1.4.1's lock (mod 1.0.0) moving to a release with this mod (v1.5.0: 1.1.0)."""
+    mod = str(yaml.safe_load((REPO / "client/mod/build.yml").read_text())["version"])
     old = V141_CLIENT_LOCK.read_text()
     release = fake_release(tmp_path / "v1.5.0")
     entries = clientpack.release_inhouse(clientpack.directory_reader(release))
-    assert list(entries) == ["smallworld"] and entries["smallworld"]["version"] == "1.1.0"
+    assert list(entries) == ["smallworld"] and entries["smallworld"]["version"] == mod
     assert any("pins another build" in e for e in clientpack.lock_errors(yaml.safe_load(old), "26.3", DEF))
     new, slugs = clientpack.refresh_inhouse(old, entries)
     assert slugs == ["smallworld"]
-    assert new == (REPO / "template/client.lock.yml").read_text()  # exactly what v1.5.0 ships
+    assert new == (REPO / "template/client.lock.yml").read_text()  # exactly what the release ships
     assert clientpack.lock_errors(yaml.safe_load(new), "26.3", DEF) == []
     assert clientpack.refresh_inhouse(new, entries) == (new, [])  # idempotent
     assert clientpack.inhouse_change_errors(old, new, entries) == []
@@ -157,7 +158,7 @@ def test_refresh_inhouse_v141_to_v150(tmp_path: Path) -> None:
 
     assert clientpack.refresh_lock_file(cfg, reader) == [] and not called  # no client.lock.yml
     (cfg / "client.lock.yml").write_text(old)
-    assert clientpack.refresh_lock_file(cfg, reader) == ["smallworld 1.0.0 -> 1.1.0"]
+    assert clientpack.refresh_lock_file(cfg, reader) == [f"smallworld 1.0.0 -> {mod}"]
     assert clientpack.refresh_lock_file(cfg, reader) == [] and len(called) == 2
     no_inhouse = yaml.safe_load(old)
     no_inhouse["files"] = [f for f in no_inhouse["files"] if f.get("source") != "inhouse"]
@@ -429,7 +430,7 @@ def test_launcher_zip_is_reproducible_and_installs_like_the_launcher_expects() -
             assert all(n.startswith(root) for n in names[1:])
             mods = {n.removeprefix(root + "mods/") for n in names if n.startswith(root + "mods/")}
             mirrored = {f["filename"] for f in p["files"] if f["mirror"] and f["path"].startswith("mods/")}
-            assert mods == mirrored and "smallworld-1.1.0.jar" in mods
+            assert mods == mirrored and "smallworld-1.2.0.jar" in mods
             assert not any("xaero" in n for n in names)  # All Rights Reserved: never in the zip
             opts = z.read(root + "options.txt").decode()
             assert "key_key.smoothCamera:key.keyboard.unknown" in opts.splitlines()  # F8 unbound

@@ -16,6 +16,7 @@ public final class WireFixtures {
 
     public static void main(String[] args) {
         List<String> cases = new ArrayList<>();
+        notchGeometry();
         String longText = "x".repeat(70);
         for (Wire.Hello h : List.of(
                 new Wire.Hello(1, "1.0.0", "medium", "26.3-0123456789ab", 0),
@@ -168,6 +169,29 @@ public final class WireFixtures {
         return "{\"what\": " + json(sc[0]) + ", \"dimension\": " + json(dimension) + ", \"friends\": "
                 + json(sc[5]) + ", \"focus\": " + json(st.focus() == null ? "" : st.focus()) + ", \"placed\": ["
                 + String.join(", ", placed) + "], \"plain\": " + json(st.plain()) + "}";
+    }
+
+    /** NotchGeometry (no output): every notched MacBook resolution has a strip, nothing else does. */
+    private static void notchGeometry() {
+        int[][] notched = { // w, h, the strip (h - 16:10)
+            {1512, 982, 37}, {1728, 1117, 37}, {1470, 956, 37}, {1710, 1112, 43}, {1800, 1169, 44},
+            {3024, 1964, 74}, {3456, 2234, 74}, {2560, 1664, 64}, {2880, 1864, 64}, {1024, 665, 25}};
+        for (int[] c : notched) {
+            check(NotchGeometry.strip(c[0], c[1]) == c[2], "notch strip " + c[0] + "x" + c[1]);
+        }
+        int[][] plain = { // 16:10, 16:9, 21:9, 3:2, 4:3, 5:4, the 16:10 "below the camera" modes, nonsense
+            {1440, 900}, {2560, 1600}, {1512, 945}, {1920, 1080}, {3440, 1440}, {3000, 2000}, {2256, 1504},
+            {1024, 768}, {1280, 1024}, {0, 0}, {-1, 900}};
+        for (int[] c : plain) {
+            check(NotchGeometry.strip(c[0], c[1]) == 0, "no notch strip " + c[0] + "x" + c[1]);
+        }
+        check(NotchGeometry.guiPx(37, 982, 491) == 19, "37 pt of 982 at GUI scale 4");
+        check(NotchGeometry.guiPx(0, 982, 491) == 0 && NotchGeometry.guiPx(37, 0, 491) == 0, "no strip, no px");
+        check(NotchGeometry.halfWidth(756) == 61 && NotchGeometry.halfWidth(0) == 0, "half width");
+        check(NotchGeometry.override("12") == 12 && NotchGeometry.override(" 0 ") == 0, "override px");
+        for (String auto : new String[] {null, "auto", "", "-1", "65", "1.5", "true"}) {
+            check(NotchGeometry.override(auto) == -1, "override auto " + auto);
+        }
     }
 
     private static void check(boolean ok, String what) {

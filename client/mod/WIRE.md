@@ -25,7 +25,7 @@ decodes the fixtures the Java side prints (`src/test/wire-fixtures.json`, writte
 - `flags` bit 0 (`1`): draw the FPS next to the top HUD bar. Other bits are reserved (ignored).
 - `capabilities` (v1.5, appended to the hello; a 1.0.0 mod's hello ends before it and decodes as 0): bit 0 (`1`):
   the mod can draw the friend compass itself (`smallworld:compass` and `smallworld:friends`). Other bits are
-  reserved. Mod 1.1.0 always sets bit 0.
+  reserved. Mod 1.1.0 and later always set bit 0.
 - **Negative VarInts** (v1.5 coordinates): the same encoding as Java's `int`, two's complement, so a negative
   number takes 5 bytes.
 - `interval_seconds` is clamped by the client to 2..60.
@@ -108,11 +108,35 @@ Both in the instance's `config/` directory, read once at start-up:
 - `smallworld-pack.json`, owned by the pack (the `.mrpack` and the official-launcher zip write it; an update
   replaces it): `{"tier": "medium", "pack": "26.3-0123456789ab"}`. Missing or unreadable: tier `none`, pack
   empty (the mod was installed on its own).
-- `smallworld.json`, owned by the player (created with the defaults if missing): `{"hud": true}`; `false` hides
-  the FPS whatever the server says.
+- `smallworld.json`, owned by the player (created with the defaults if missing):
+  `{"hud": true, "top_inset": "auto"}`; `hud: false` hides the FPS whatever the server says; `top_inset` (mod
+  1.2.0; missing in older files = `"auto"`) is below ("The notch").
 
-The JVM properties `-Dsmallworld.tier`, `-Dsmallworld.pack` and `-Dsmallworld.hud` override both. Only short
+The JVM properties `-Dsmallworld.tier`, `-Dsmallworld.pack`, `-Dsmallworld.hud` and `-Dsmallworld.top_inset`
+override both. Only short
 tokens (`[A-Za-z0-9._+-]{1,64}`) leave the machine; anything else becomes the fallback.
+
+## The notch (mod 1.2.0)
+
+Client only, nothing on the wire. In fullscreen on a MacBook with a camera notch the game covers the whole
+panel, notch strip included, so the top-centre HUD drew under the camera. The mod (`NotchInset`,
+`NotchGeometry`) now:
+
+- moves the elements that would collide with the notch below the strip: vanilla's boss bars (mc-brand's HUD
+  bar is one), the compass and the tab list (Fabric's `replaceElement` on `BOSS_BAR` and `PLAYER_LIST`, a GUI
+  pose translation, no mixin);
+- uses the strip beside the notch for what fits there: the FPS goes right of the notch, centred in the strip's
+  height.
+
+The strip's height: SDL's window safe area (`SDL_GetWindowSafeArea`, filled from `NSScreen.safeAreaInsets` in
+exclusive fullscreen); in a fullscreen Space (the game's default fullscreen on macOS) SDL leaves it empty, so on
+macOS in fullscreen the window's shape decides: a notched MacBook is 16:10 plus the strip (e.g. 1512 x 982 pt:
+945 + 37), an excess of 1.5 to 3.5 % of the width; no other common screen has one. The notch's width is taken
+as 16 % of the screen's (really about 12 %), so the FPS stays clear of it. Windowed, on other Macs and on
+other systems the offset is 0 and the HUD is unchanged.
+
+`top_inset` overrides it: a whole number 0..64 is a fixed shift in GUI px for everything above (`0`: never
+shift; nothing goes beside the notch), anything else is automatic.
 
 ## Server side
 

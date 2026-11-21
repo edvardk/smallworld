@@ -6,6 +6,15 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Fixed
+
+- **The top HUD is no longer hidden by a MacBook's camera notch in fullscreen** (client mod 1.2.0, client/mod/WIRE.md
+  "The notch"). Fullscreen covers the notch strip, so the boss bars (mc-brand's HUD bar), the compass, the FPS
+  and the tab list drew under the camera. On a notched MacBook in fullscreen the mod now moves the boss bars,
+  compass and tab list just below the strip and puts the FPS in the strip, right of the notch. Windowed, on
+  other Macs and on other systems nothing moves. A player can set `"top_inset"` in `config/smallworld.json`
+  (GUI px 0..64, or `"auto"`, the default).
+
 ## [1.5.2] - 2026-11-11
 
 ### Fixed
