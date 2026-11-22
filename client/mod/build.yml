@@ -5,7 +5,7 @@
 # dates and modes, so the same sources give the same bytes anywhere. `check` rebuilds it and compares with
 # dist/ and `jar_sha256` (CI: ci.yml job plugin; tests/test_client_mod.py when the inputs are cached).
 name: smallworld
-version: 1.1.0   # = fabric.mod.json "version"
+version: 1.2.0   # = fabric.mod.json "version"
 release: 25      # javac --release; = the client jar's javaVersion.majorVersion (version JSON)
 jdk:             # = plugin/mc-brand/build.yml jdk (tests/test_client_mod.py)
   version: 25.0.5+8
@@ -34,7 +34,8 @@ fabric_api:
     - fabric-lifecycle-events-v1-
 # Libraries javac needs besides the client jar (piston-meta 26.3.json libraries; their sha1 match it): netty for
 # FriendlyByteBuf's supertypes, gson for the local config files, joml (v1.5) for the GUI pose, jspecify and
-# fastutil (v1.5) for the entity API. Only what javac asks for.
+# fastutil (v1.5) for the entity API, lwjgl + lwjgl-sdl (mod 1.2.0) for the window's safe area. Only what javac
+# asks for.
 libraries:
   - url: https://libraries.minecraft.net/io/netty/netty-buffer/4.2.16.Final/netty-buffer-4.2.16.Final.jar
     sha256: cc36ae9fbd0b03fe755eb4eb4424ca53b59cfd297d7fd47d49e5b1059beded6c
@@ -51,6 +52,11 @@ libraries:
     sha256: 1fad6e6be7557781e4d33729d49ae1cdc8fdda6fe477bb0cc68ce351eafdfbab
   - url: https://libraries.minecraft.net/it/unimi/dsi/fastutil/8.5.18/fastutil-8.5.18.jar
     sha256: 9094ae67d01d0ad246f886f11ad557fc2e79c72cbf3feed83e1512a8ae90a74a
+  # mod 1.2.0: SDL's window flags, size and safe area (NotchInset: the MacBook notch) and LWJGL's MemoryStack
+  - url: https://libraries.minecraft.net/org/lwjgl/lwjgl-sdl/3.4.3/lwjgl-sdl-3.4.3.jar
+    sha256: dcb33abcbd946553176bb668be80d7adc60cb9d919ab5c71fb01fc51cacc4c8f
+  - url: https://libraries.minecraft.net/org/lwjgl/lwjgl/3.4.3/lwjgl-3.4.3.jar
+    sha256: 46eeca5471833c3cf5da3c1da015b41e3bb3eb16dd3da03f366886da10096751
 jar: client/mod/dist/smallworld.jar
-jar_sha256: 8f20a9011908dfbb7e8b95fc42cfc3323aa80ac555a3581aa2a2cace56f330dc
+jar_sha256: c37e44e54c116ac23fc1d31cbb59c275720d4ae01bda6694012ea92e34b2f25c
 fixtures: client/mod/src/test/wire-fixtures.json   # printed by src/test/java/.../WireFixtures.java

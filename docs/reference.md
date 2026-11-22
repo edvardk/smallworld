@@ -125,7 +125,7 @@ product/config-repo split, GitHub settings and releasing. New here? Start with t
   |---|---|---|
   | `config`, `keys/` | never (only `restic key remove`) | **Indefinite**: the repository can't be bricked |
   | `snapshots/` | `forget` | **7 days** (`r2_lock_days`). `backup.py` adds `--keep-within 8d`, so `forget` only touches snapshots older than the lock (1 day clock-skew margin; `pytest` checks the two agree) |
-  | `data/` | `prune` (unused or repacked packs) | **7 days**. restic's prune ignores pack deletions that fail ("keeping too many packs cannot damage the repository", verified in the 0.19.1 source), drops them from the index, and deletes them on a later prune once the lock has expired. `restic check` reports them only as non-critical "additional files" |
+  | `data/` | `prune` (unused or repacked packs) | **7 days**. restic's prune ignores pack deletions that fail ("keeping too many packs cannot damage the repository", verified in the 0.19.1 source), drops them from the index, and deletes them on a later prune once the lock has expired. `restic check` reports them only as non-critical "additional files". `mc-prune` sets `RESTIC_FEATURES=backend-error-redesign=false`: with that beta flag on, restic retries each refused deletion for 15 minutes (R2's "object is locked" isn't a permanent error to it), which held the repository lock for hours; without it, 10 retries (about a minute) |
   | `index/`, `locks/` | every prune / every command | **None**: prune treats a failed index deletion as fatal, and lock files must go. The index can be rebuilt from the packs (`restic repair index`) |
 
   What it buys: a compromised server (or a bad script) can't destroy the repository keys, any snapshot

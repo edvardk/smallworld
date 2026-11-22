@@ -202,8 +202,17 @@ def test_the_mod_draws_with_fabric_hud_api_and_no_mixins() -> None:
         (MOD / "src/main/resources/fabric.mod.json").read_text()
     )
     client = (MOD / "src/main/java/io/github/edvardk/smallworld/client/SmallworldClient.java").read_text()
-    assert 'Identifier.fromNamespaceAndPath(Payloads.NAMESPACE, "compass"), compass::draw)' in client
+    assert (
+        'Identifier.fromNamespaceAndPath(Payloads.NAMESPACE, "compass"), notch.shifted(compass::draw))'
+        in client
+    )
     assert "VanillaHudElements.BOSS_BAR" in client
+    # mod 1.2.0: the top-centre elements move below a MacBook's notch; the FPS places itself (in the strip beside it)
+    for vanilla in ("BOSS_BAR", "PLAYER_LIST"):
+        assert f"HudElementRegistry.replaceElement(VanillaHudElements.{vanilla}, notch::shifted);" in client
+    assert "notch.tick(client);" in client and "notch.ear()" in client
+    notch = (MOD / "src/main/java/io/github/edvardk/smallworld/client/NotchInset.java").read_text()
+    assert "SDL_GetWindowSafeArea" in notch and "SDL_WINDOW_FULLSCREEN" in notch and "popMatrix()" in notch
     hud = (MOD / "src/main/java/io/github/edvardk/smallworld/client/CompassHud.java").read_text()
     assert "CompassStrip.strip(" in hud and "p.exact()" in hud  # the boss bar's layout, drawn sub-pixel
 
@@ -234,6 +243,11 @@ def test_wire_constants_and_doc_agree() -> None:
     ]:  # the doc's worked examples are fixtures
         assert case["hex"] in doc.replace(" ", "")
     assert f"MAX_FRIENDS = {MAX_FRIENDS};" in wire and f"CAP_COMPASS = {CAP_COMPASS};" in wire
+    assert (
+        "top_inset" in doc
+        and '"top_inset"'
+        in (MOD / "src/main/java/io/github/edvardk/smallworld/client/LocalConfig.java").read_text()
+    )
     for name in ("smallworld-pack.json", "smallworld.json"):
         assert name in doc
         assert (

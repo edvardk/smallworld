@@ -17,12 +17,15 @@ import java.util.regex.Pattern;
  *       {@code {"tier": "medium", "pack": "26.3-0123456789ab"}}. Missing or unreadable: tier {@code none}, pack
  *       empty (the mod was installed without the pack).
  *   <li>{@code config/smallworld.json}, owned by the player (created with the defaults if missing):
- *       {@code {"hud": true}}. {@code hud: false} hides the FPS whatever the server says.
+ *       {@code {"hud": true, "top_inset": "auto"}}. {@code hud: false} hides the FPS whatever the server says;
+ *       {@code top_inset} (mod 1.2.0) is how many GUI px the top-centre HUD moves down: {@code "auto"} (or missing, or
+ *       anything but a whole number 0..64) clears a MacBook's notch in fullscreen ({@link NotchInset}).
  * </ul>
  *
- * <p>The JVM properties {@code smallworld.tier}, {@code smallworld.pack} and {@code smallworld.hud} override both.
+ * <p>The JVM properties {@code smallworld.tier}, {@code smallworld.pack}, {@code smallworld.hud} and
+ * {@code smallworld.top_inset} override both.
  */
-record LocalConfig(String tier, String pack, boolean hud) {
+record LocalConfig(String tier, String pack, boolean hud, int topInset) {
     static final String PACK_FILE = "smallworld-pack.json";
     static final String PLAYER_FILE = "smallworld.json";
     private static final Pattern TOKEN = Pattern.compile("[A-Za-z0-9._+-]{1,64}");
@@ -33,7 +36,8 @@ record LocalConfig(String tier, String pack, boolean hud) {
         if (!Files.exists(playerFile)) {
             try {
                 Files.createDirectories(configDir);
-                Files.writeString(playerFile, "{\"hud\": true}\n", StandardCharsets.UTF_8);
+                Files.writeString(
+                        playerFile, "{\"hud\": true, \"top_inset\": \"auto\"}\n", StandardCharsets.UTF_8);
             } catch (IOException e) {
                 // a read-only instance still works with the defaults
             }
@@ -43,7 +47,9 @@ record LocalConfig(String tier, String pack, boolean hud) {
         String version = token(System.getProperty("smallworld.pack", string(pack, "pack")), "");
         String hudProp = System.getProperty("smallworld.hud");
         boolean hud = hudProp != null ? !hudProp.equalsIgnoreCase("false") : bool(player, "hud", true);
-        return new LocalConfig(tier, version, hud);
+        int topInset =
+                NotchGeometry.override(System.getProperty("smallworld.top_inset", string(player, "top_inset")));
+        return new LocalConfig(tier, version, hud, topInset);
     }
 
     private static JsonObject read(Path file) {

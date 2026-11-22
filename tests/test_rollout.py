@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from conftest import REPO, V141_CLIENT_LOCK, Replay, fake_release, make_config_repo
 
 from mcctl import cli, configrepo, init, publish, remote, rollout, schema, updates, upgrade
@@ -233,7 +234,7 @@ def test_a_release_with_a_new_in_house_mod_rolls_out_with_its_lock_entry(env: di
 
     tools = publish.Tools(online=tools.online, product=runner, release=lambda pin: release)
     assert rollout.run(ctx, tools=tools) == 0, out.getvalue()
-    assert locks == [v150] and "smallworld 1.0.0 -> 1.1.0" in out.getvalue()
+    assert locks == [v150] and f"smallworld 1.0.0 -> {_mod_version()}" in out.getvalue()
     assert git(root, "rev-parse", "HEAD") == fake.merged
     assert (root / configrepo.CLIENT_LOCK).read_text() == v150  # merged with the pin, pulled back
     assert product.commands() == ["schema-migrate", "validate", "render", "plan"]
@@ -367,3 +368,8 @@ def test_upgrade_uses_the_updaters_pr_when_its_branch_exists(env: dict[str, Any]
     with pytest.raises(init.StepError) as e:
         upgrade.product_upgrade_pr(ctx, "v0.0.1", "d" * 40, runner=product)
     assert "git push origin --delete update/product-v0.0.1" in e.value.fix
+
+
+def _mod_version() -> str:
+    """The in-house mod this checkout ships (the release the test upgrades to)."""
+    return str(yaml.safe_load((REPO / "client/mod/build.yml").read_text())["version"])

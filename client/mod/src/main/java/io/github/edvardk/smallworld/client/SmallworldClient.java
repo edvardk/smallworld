@@ -27,12 +27,17 @@ import net.minecraft.resources.Identifier;
  * mc-brand 1.5 then stops drawing its boss-bar compass for this player and sends {@code smallworld:compass} (draw
  * on/off and the settings) and {@code smallworld:friends} (positions), and {@link CompassHud} draws the compass
  * every frame. A server that sends neither gets no compass from the mod.
+ *
+ * <p>mod 1.2.0: in fullscreen on a notched MacBook the top-centre HUD (vanilla's boss bars and tab list, the
+ * compass) moves down below the camera and the FPS goes into the strip right of it ({@link NotchInset}); nothing
+ * changes anywhere else.
  */
 public final class SmallworldClient implements ClientModInitializer {
     private static final int TEXT_COLOR = 0xFFE0E0E0; // ARGB: the alpha byte is required
     private static final int BOSS_BAR_HALF_WIDTH = 91;
 
     private final CompassHud compass = new CompassHud();
+    private NotchInset notch;
     private LocalConfig local;
     private String modVersion = "";
 
@@ -47,6 +52,7 @@ public final class SmallworldClient implements ClientModInitializer {
     public void onInitializeClient() {
         FabricLoader loader = FabricLoader.getInstance();
         local = LocalConfig.load(loader.getConfigDir());
+        notch = new NotchInset(local.topInset());
         modVersion = loader.getModContainer(Payloads.NAMESPACE)
                 .map(c -> c.getMetadata().getVersion().getFriendlyString())
                 .orElse("");
@@ -70,10 +76,12 @@ public final class SmallworldClient implements ClientModInitializer {
         });
 
         ClientTickEvents.END_CLIENT_TICK.register(this::tick);
-        HudElementRegistry.attachElementAfter(
-                VanillaHudElements.BOSS_BAR, Identifier.fromNamespaceAndPath(Payloads.NAMESPACE, "fps"), this::draw);
         HudElementRegistry.attachElementAfter(VanillaHudElements.BOSS_BAR,
-                Identifier.fromNamespaceAndPath(Payloads.NAMESPACE, "compass"), compass::draw);
+                Identifier.fromNamespaceAndPath(Payloads.NAMESPACE, "fps"), this::draw);
+        HudElementRegistry.attachElementAfter(VanillaHudElements.BOSS_BAR,
+                Identifier.fromNamespaceAndPath(Payloads.NAMESPACE, "compass"), notch.shifted(compass::draw));
+        HudElementRegistry.replaceElement(VanillaHudElements.BOSS_BAR, notch::shifted);
+        HudElementRegistry.replaceElement(VanillaHudElements.PLAYER_LIST, notch::shifted);
     }
 
     private void reset() {
@@ -104,6 +112,7 @@ public final class SmallworldClient implements ClientModInitializer {
     }
 
     private void tick(Minecraft client) {
+        notch.tick(client);
         if (sync(client) == null) {
             return;
         }
@@ -136,7 +145,14 @@ public final class SmallworldClient implements ClientModInitializer {
         }
         String text = client.getFps() + " fps";
         int width = client.font.width(text);
-        int x = Math.min(graphics.guiWidth() / 2 + BOSS_BAR_HALF_WIDTH + 6, graphics.guiWidth() - width - 2);
-        graphics.text(client.font, text, x, 3, TEXT_COLOR, true);
+        int centre = graphics.guiWidth() / 2;
+        int x = centre + BOSS_BAR_HALF_WIDTH + 6;
+        int y = 3 + notch.px(); // next to the first boss bar's name, below a notch
+        if (notch.ear() && notch.px() >= client.font.lineHeight) {
+            // in the notch strip, right of the notch: centred in the strip's height
+            x = Math.max(x, centre + NotchGeometry.halfWidth(graphics.guiWidth()) + 6);
+            y = (notch.px() - client.font.lineHeight + 1) / 2;
+        }
+        graphics.text(client.font, text, Math.min(x, graphics.guiWidth() - width - 2), y, TEXT_COLOR, true);
     }
 }

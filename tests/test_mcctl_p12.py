@@ -590,7 +590,7 @@ def test_product_upgrade_takes_the_targets_in_house_mod_v141_to_v150(deployed: P
     assert upgrade_mod.product_upgrade(ctx, to, "d" * 40, runner=runner, release=release_root) == 0
     v150 = (REPO / "template/client.lock.yml").read_text()
     assert seen == [v150] and asked == ["d" * 40]
-    assert "smallworld 1.0.0 -> 1.1.0" in out.getvalue()
+    assert f"smallworld 1.0.0 -> {_mod_version()}" in out.getvalue()
     branch = f"update/product-{to}"
     assert git(ctx.root, "show", f"{branch}:{configrepo.CLIENT_LOCK}") == v150
     changed = git(ctx.root, "diff", "--name-only", f"main...{branch}").split()
@@ -786,3 +786,8 @@ def test_cli_wiring(deployed: Path, tmp_path: Path, capsys: pytest.CaptureFixtur
     assert cli.main(["players", "-C", str(ctx.root), "add"]) == 2
     with pytest.raises(SystemExit):
         cli.main(["secrets", "rotate", "-C", str(ctx.root), "github-admin"])  # not a generated secret
+
+
+def _mod_version() -> str:
+    """The in-house mod this checkout ships (the release the test upgrades to)."""
+    return str(yaml.safe_load((REPO / "client/mod/build.yml").read_text())["version"])
