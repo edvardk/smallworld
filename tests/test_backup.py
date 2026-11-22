@@ -3,6 +3,8 @@ import subprocess
 import backup
 import mc_rcon
 import pytest
+import yaml
+from conftest import REPO
 
 
 @pytest.fixture(autouse=True)
@@ -558,3 +560,18 @@ def test_the_e2e_watchdog_mock_takes_notify_pys_https_heartbeat(tmp_path, monkey
         monkeypatch.setenv("HEARTBEAT_TOKEN", check.TOKEN)
         assert notify.heartbeat("backup", "", "backup skipped: nobody played")
     assert mock.hits == [check.Hit("/hb/backup", "backup skipped: nobody played", f"Bearer {check.TOKEN}")]
+
+
+def test_prune_gives_up_quickly_on_locked_packs() -> None:
+    """A pack younger than the bucket lock refuses deletion; restic 0.19.1's beta backend-error-redesign retries
+    each one for 15 minutes (R2's "object is locked" isn't a permanent error to it), so prune held the lock for
+    hours. mc-prune turns the flag off (10 retries, about a minute). restic refuses to start on an unknown flag:
+    after a restic upgrade, check the flag still exists (internal/feature/registry.go) and update the pin here."""
+    unit = (REPO / "ansible/roles/backups/templates/mc-prune.service.j2").read_text()
+    assert "Environment=RESTIC_FEATURES=backend-error-redesign=false" in unit
+    group_vars = yaml.safe_load((REPO / "ansible/group_vars/all/main.yml").read_text())
+    assert group_vars["restic_version"] == "0.19.1"
+    backup_unit = (REPO / "ansible/roles/backups/templates/mc-backup.service.j2").read_text()
+    assert (
+        "RESTIC_FEATURES" not in backup_unit
+    )  # backups delete nothing young: they keep the stuck-request timeout

@@ -8,6 +8,13 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ### Fixed
 
+- **The weekly prune no longer blocks backups for hours.** Packs younger than the R2 bucket lock refuse deletion;
+  prune skips them by design, but restic 0.19.1 retried each refusal for 15 minutes first (its beta
+  `backend-error-redesign` retry doesn't treat R2's "object is locked by the bucket policy" as permanent). After a
+  burst of new data (a new world, pregeneration) prune met dozens of young packs, held the repository lock for
+  hours, and the hourly backups failed waiting for it ("repo already locked"). `mc-prune` now turns that flag off:
+  a locked pack costs about a minute (10 retries) and is deleted by a later prune, as before.
+
 - **The top HUD is no longer hidden by a MacBook's camera notch in fullscreen** (client mod 1.2.0, client/mod/WIRE.md
   "The notch"). Fullscreen covers the notch strip, so the boss bars (mc-brand's HUD bar), the compass, the FPS
   and the tab list drew under the camera. On a notched MacBook in fullscreen the mod now moves the boss bars,

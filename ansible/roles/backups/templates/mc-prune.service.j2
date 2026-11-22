@@ -14,6 +14,13 @@ Group={{ mc_ops_user }}
 SupplementaryGroups=minecraft
 EnvironmentFile={{ mc_etc_dir }}/restic.env
 Environment=RESTIC_CACHE_DIR={{ backups_cache_dir }} PYTHONDONTWRITEBYTECODE=1
+# Packs younger than the bucket lock can't be deleted. restic's default retry (feature flag
+# backend-error-redesign, beta in 0.19.1) retries each refused Remove for up to 15 minutes, because R2's
+# "object is locked" error isn't one it treats as permanent: with a few dozen young packs prune held the
+# repository lock for hours and the hourly backups failed waiting for it. The previous behaviour gives up
+# after 10 retries (about a minute); prune skips the pack either way and deletes it on a later run.
+# tests/test_backup.py ties this to restic_version (an unknown flag stops restic from starting).
+Environment=RESTIC_FEATURES=backend-error-redesign=false
 {% if backups_restic_gomaxprocs %}
 # v1.5 performance.vm small: restic (Go) on {{ backups_restic_gomaxprocs }} core(s), its GC aiming below the memory limit.
 Environment=GOMAXPROCS={{ backups_restic_gomaxprocs }}
