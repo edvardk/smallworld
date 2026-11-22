@@ -24,12 +24,14 @@
   ansible.builtin.command: dpkg-query -W -f=${Version} tailscale
   register: tailscale_installed
   changed_when: false
+  check_mode: false   # a read: runs under `mcctl deploy --check` too (v1.5.4)
   failed_when: false
 
 - name: Check whether we are connected over the tailnet already
   ansible.builtin.command: tailscale status --json
   register: tailscale_pre_status
   changed_when: false
+  check_mode: false   # a read: runs under `mcctl deploy --check` too (v1.5.4)
   failed_when: false
   when: tailscale_installed.stdout != tailscale_version
 
@@ -95,6 +97,7 @@
   ansible.builtin.command: tailscale status --json
   register: tailscale_status
   changed_when: false
+  check_mode: false   # a read: runs under `mcctl deploy --check` too (v1.5.4)
   failed_when: false
   retries: 30
   delay: 2
@@ -140,6 +143,7 @@
   ansible.builtin.command: tailscale status --json
   register: tailscale_up_status
   changed_when: false
+  check_mode: false   # a read: runs under `mcctl deploy --check` too (v1.5.4)
   failed_when: false
   retries: 30
   delay: 2
@@ -153,6 +157,7 @@
   ansible.builtin.command: tailscale debug prefs
   register: tailscale_prefs
   changed_when: false
+  check_mode: false   # a read: runs under `mcctl deploy --check` too (v1.5.4)
 
 - name: Enforce hostname, Tailscale SSH and DNS prefs
   ansible.builtin.command: tailscale set --hostname={{ mc_hostname }} --ssh=true --accept-dns=false
@@ -168,6 +173,7 @@
   loop: [tailscale debug prefs, tailscale status --json]
   register: tailscale_final
   changed_when: false
+  check_mode: false   # a read: runs under `mcctl deploy --check` too (v1.5.4)
 
 - name: Tailscale SSH is on and the node has a tailnet IP
   ansible.builtin.assert:

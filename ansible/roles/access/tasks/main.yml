@@ -112,6 +112,7 @@
   ansible.builtin.command: /usr/sbin/sshd -T -C user=root,host=localhost,addr=127.0.0.1
   register: access_sshd_effective
   changed_when: false
+  check_mode: false   # a read: runs under `mcctl deploy --check` too (v1.5.4)
 
 - name: Root login and passwords are really off
   ansible.builtin.assert:

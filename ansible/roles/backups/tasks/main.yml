@@ -132,17 +132,20 @@
 
 # Credentials reach restic via mc-restic's EnvironmentFile=, never via `environment:` (which
 # Ansible puts on the sudo command line, visible in ps and the journal).
+# --no-lock (v1.5.4): `cat config` only reads the config file (locked forever by the R2 bucket lock); with a lock it
+# needs a shared one, and a running prune holds an exclusive one: rc 11 and the deploy stopped below.
 - name: Check whether the restic repository exists
-  ansible.builtin.command: /usr/local/bin/mc-restic restic cat config
+  ansible.builtin.command: /usr/local/bin/mc-restic restic --no-lock cat config
   register: backups_repo
   changed_when: false
+  check_mode: false   # a read: runs under `mcctl deploy --check` too (v1.5.4)
   failed_when: false
 
 - name: Stop unless the repository exists or is missing (rc 10)
   ansible.builtin.assert:
     that: backups_repo.rc in [0, 10]
     fail_msg: >-
-      `restic cat config` failed with rc={{ backups_repo.rc }}. Only rc 10 (repository does not exist)
+      `restic --no-lock cat config` failed with rc={{ backups_repo.rc }}. Only rc 10 (repository does not exist)
       leads to `restic init`; anything else is a credentials, network or repository problem:
       {{ backups_repo.stderr_lines | last | default('') }}
     quiet: true

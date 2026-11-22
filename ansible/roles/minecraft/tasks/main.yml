@@ -48,9 +48,12 @@
       changed_when: true
 
     - name: Read the pre-upgrade snapshot id
-      ansible.builtin.command: /usr/local/bin/mc-restic restic snapshots --json --latest 1 --host mc-server
+      # --retry-lock (v1.5.4): wait out a prune's exclusive lock like backup.py does, instead of failing
+      ansible.builtin.command: >-
+        /usr/local/bin/mc-restic restic --retry-lock 30m snapshots --json --latest 1 --host mc-server
       register: mc_pre_upgrade_snapshots
       changed_when: false
+      check_mode: false   # a read: runs under `mcctl deploy --check` too (v1.5.4)
 
     - name: Record the pre-upgrade snapshot
       ansible.builtin.copy:

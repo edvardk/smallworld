@@ -14,7 +14,19 @@ import pytest
 import yaml
 from conftest import REPO, TEST_SHA, V141_CLIENT_LOCK, Replay, fake_release
 
-from mcctl import cli, configrepo, init, migrate, migrations, mock, players, restorecmd, rotate, serverops
+from mcctl import (
+    cli,
+    clientpack,
+    configrepo,
+    init,
+    migrate,
+    migrations,
+    mock,
+    players,
+    restorecmd,
+    rotate,
+    serverops,
+)
 from mcctl import upgrade as upgrade_mod
 from mcctl.providers import ProviderError, tailscale
 from mcctl.ui import UI
@@ -786,6 +798,47 @@ def test_cli_wiring(deployed: Path, tmp_path: Path, capsys: pytest.CaptureFixtur
     assert cli.main(["players", "-C", str(ctx.root), "add"]) == 2
     with pytest.raises(SystemExit):
         cli.main(["secrets", "rotate", "-C", str(ctx.root), "github-admin"])  # not a generated secret
+
+
+@pytest.mark.parametrize("checkout", ["target", "pinned"])
+def test_product_upgrade_with_client_enabled_from_either_checkout(
+    deployed: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, checkout: str
+) -> None:
+    """v1.5.4, the live v1.5.2 -> v1.5.3 case (client.enabled, a new in-house jar): from the target's checkout
+    `mcctl upgrade` refused to start (the pinned lock isn't this jar's), from the pinned one it failed after
+    the push, before the pull request (the refreshed lock isn't that jar's). This checkout's jar is never the
+    judge; the target's validate is."""
+    ctx, out = fresh(deployed, tmp_path)
+    ctx.set({"client.enabled": True})
+    git(ctx.root, "add", configrepo.SERVER_YML)
+    _with_v141_client_lock(ctx)  # commits both: the lock pins an older mod than either jar
+    if (
+        checkout == "pinned"
+    ):  # this checkout's jar is the pinned release's: neither the old lock's nor the new
+        real = clientpack.inhouse_jar
+        monkeypatch.setattr(clientpack, "inhouse_jar", lambda entry: (b"pinned release jar", real(entry)[1]))
+    with pytest.raises(configrepo.ConfigError, match="pins another build"):
+        configrepo.load(ctx.root)  # what the upgrade used to check, with this checkout's jar
+    release = fake_release(tmp_path / "release")
+    pin = configrepo.load(ctx.root, inhouse_jar=False).pin
+    major, minor, patch = (int(x) for x in str(pin.version).lstrip("v").split("."))
+    to = f"v{major}.{minor}.{patch + 1}"
+    validated: list[str] = []
+
+    def runner(p: configrepo.Pin, args: list[str]) -> int:
+        if args[0] == "validate":
+            validated.append(p.version or "")
+        return 0
+
+    assert upgrade_mod.product_upgrade(ctx, to, "d" * 40, runner=runner, release=lambda p: release) == 0
+    assert validated == [to]  # the target release judged the change
+    branch = f"update/product-{to}"
+    assert (
+        git(ctx.root, "show", f"{branch}:{configrepo.CLIENT_LOCK}")
+        == (REPO / "template/client.lock.yml").read_text()
+    )
+    gh = [c for c in ctx.deps.tools.calls if c[:2] == ["gh", "pr"]]  # type: ignore[attr-defined]
+    assert gh and gh[0][:3] == ["gh", "pr", "create"], out.getvalue()
 
 
 def _mod_version() -> str:

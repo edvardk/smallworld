@@ -6,6 +6,23 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Fixed
+
+- **`mcctl upgrade` / `mcctl rollout` work when a release ships a new client mod jar.** They validated the config
+  repo against the jar of the checkout they ran from: from the new release's checkout `upgrade` refused to start
+  ("client.lock.yml smallworld: pins another build than the product's client/mod/dist/smallworld.jar"), from the
+  pinned one it pushed the branch and then failed before opening the pull request (live, v1.5.2 -> v1.5.3). The
+  in-house entries are now left to the target release's own `mcctl validate`, which already checked them.
+- **`mcctl deploy --check` gets through a deploy that changes nothing.** Ansible skips commands in check mode, so
+  reads whose output a later check uses came back empty and the dry run failed on a healthy box ("sshd's
+  effective config still allows root or password logins"). Every read-only command now runs in check mode too
+  (`check_mode: false`); tasks with a side effect (Discord, RCON, the maintenance window) and the check of the
+  Tailscale upgrade's result still don't. `tests/test_check_mode.py` keeps it that way.
+- **A running prune no longer fails a deploy.** The backups role's `restic cat config` wanted a shared lock, so a
+  prune's exclusive one made it exit 11 and the deploy stop. It now reads the config file with `--no-lock` (also
+  `mcctl migrate`'s repository check); the pre-upgrade snapshot read waits for the lock (`--retry-lock 30m`), as
+  the backups do.
+
 ## [1.5.3] - 2026-11-22
 
 ### Fixed

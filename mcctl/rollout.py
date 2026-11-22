@@ -122,7 +122,7 @@ def merge(ctx: init.Ctx, pr: upgrade.Upgraded) -> bool:
 def terraform(ctx: init.Ctx, tools: publish.Tools) -> int:
     """The new pin's render and plan; its apply (own typed confirmation) after a yes."""
     ui = ctx.ui
-    repo = ctx.repo()  # the pulled main: the new pin
+    repo = ctx.repo(inhouse_jar=False)  # the pulled main: the new pin (its own render/plan validate it)
     pin, root = repo.pin, str(ctx.root)
     ui.section(f"Terraform with the pinned product {pin.version or pin.sha[:12]}")
     if tools.product(pin, ["render", "-C", root]) != 0:
@@ -147,7 +147,7 @@ def run(
     publish.need_gh(ctx, "rollout follows the pin PR and the deploy run")
     if not dry_run:
         sync(ctx)  # first: the pin and server.yml as on origin/main (a dry run reads them as they are)
-    repo = ctx.repo()
+    repo = ctx.repo(inhouse_jar=False)  # v1.5.4: this checkout's in-house jar may be another release's
     pin, cfg = repo.pin, repo.server
     repository = publish.repository(cfg)
     sha: str | None = None

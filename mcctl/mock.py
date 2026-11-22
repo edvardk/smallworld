@@ -708,7 +708,7 @@ class Tools:
             out += f"{sec}keys\n{json.dumps(self.restic_keys)}\n"
         if f"{sec}journal" in script:
             out += f"{sec}journal\nSTEP 2/6 safety snapshot\nRESTORED\n{sec}result\nsuccess\n"
-        if "restic cat config" in script:
+        if "restic --no-lock cat config" in script:
             out += "REPO_OK\n"
         if script.startswith("mc list"):
             out += "There are 0 of a max of 20 players online:\n"

@@ -38,6 +38,7 @@
   ansible.builtin.command: tailscale debug prefs
   register: hardening_ts_prefs
   changed_when: false
+  check_mode: false   # a read: runs under `mcctl deploy --check` too (v1.5.4)
   failed_when: hardening_ts_prefs.rc != 0 or not (hardening_ts_prefs.stdout | from_json).RunSSH
   when: hardening_disable_sshd | bool
   tags: [tailscale]
