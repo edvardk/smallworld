@@ -6,6 +6,8 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+## [1.5.3] - 2026-11-22
+
 ### Fixed
 
 - **The weekly prune no longer blocks backups for hours.** Packs younger than the R2 bucket lock refuse deletion;
