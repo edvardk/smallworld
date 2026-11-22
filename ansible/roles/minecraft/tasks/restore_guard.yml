@@ -13,6 +13,7 @@
     argv: [flock, --nonblock, --shared, --conflict-exit-code, "75", "{{ mc_state_dir }}/restore.lock", "true"]
   register: mc_restore_lock
   changed_when: false
+  check_mode: false   # a read: runs under `mcctl deploy --check` too (v1.5.4)
   failed_when: mc_restore_lock.rc not in [0, 75]
   when: mc_restore_lockfile.stat.exists
 
@@ -24,6 +25,7 @@
   retries: "{{ [(mc_restore_wait_s | int) // 10, 1] | max }}"
   delay: 10
   changed_when: false
+  check_mode: false   # a read: runs under `mcctl deploy --check` too (v1.5.4)
   failed_when: false
   when: (mc_restore_lock.rc | default(0)) == 75
 

@@ -781,7 +781,10 @@ renders from it with `rendered_at` 0. The Rust renderer must produce the same fi
   (server.yml migrations, `mcctl/migrations.py`) and `validate`, and opens a PR. Only a **pure patch bump** (just
   the `uses:` line changed, plus those in-house entries; `auto_merge: builds+patch`) goes on `update/product-vX.Y.Z` with auto-merge on, where
   `server / gate` checks the release tag and merges it; anything else (minor/major, or server.yml migrated) is on
-  `upgrade/product-vX.Y.Z` and **you merge it**. No downgrades.
+  `upgrade/product-vX.Y.Z` and **you merge it**. No downgrades. v1.5.4: `upgrade` and `rollout` don't compare the
+  in-house entries with the jar of the checkout they run from (it may be the pin's, the target's or neither:
+  `configrepo.load(inhouse_jar=False)`); the target release's `validate` is the judge. Before, a release with a
+  new mod jar couldn't be pinned from either checkout (live, v1.5.2 -> v1.5.3).
 - **Rust toolchain:** set the exact version in `rust/rust-toolchain.toml` (a stable release at least two weeks
   old), then `python scripts/build_rust.py build` and pin the printed sha256s as `mc_smallworld_rcon_sha256` in
   `ansible/group_vars/all/main.yml` (a new compiler changes the binaries); CI's `rust` job checks the rebuild.

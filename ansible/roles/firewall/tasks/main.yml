@@ -2,6 +2,7 @@
   ansible.builtin.command: tailscale status --json
   register: firewall_ts
   changed_when: false
+  check_mode: false   # a read: runs under `mcctl deploy --check` too (v1.5.4)
   failed_when: >-
     firewall_ts.rc != 0 or (firewall_ts.stdout | from_json).BackendState != 'Running'
 

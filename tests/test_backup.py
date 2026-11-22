@@ -575,3 +575,16 @@ def test_prune_gives_up_quickly_on_locked_packs() -> None:
     assert (
         "RESTIC_FEATURES" not in backup_unit
     )  # backups delete nothing young: they keep the stuck-request timeout
+
+
+def test_deploy_reads_of_the_repository_dont_fail_on_a_running_prune() -> None:
+    """v1.5.4: prune holds an exclusive lock; `restic cat config` wanted a shared one and exited 11, which the
+    backups role's assert (rc 0 or 10) turned into a failed deploy. The config file only needs reading."""
+    role = (REPO / "ansible/roles/backups/tasks/main.yml").read_text()
+    assert "mc-restic restic --no-lock cat config" in role and "restic cat config" not in role
+    assert "that: backups_repo.rc in [0, 10]" in role
+    from mcctl import serverops
+
+    assert "restic --no-lock cat config" in serverops.REPO_CHECK  # mcctl migrate's check of the new box
+    upgrade = (REPO / "ansible/roles/minecraft/tasks/main.yml").read_text()
+    assert "restic --retry-lock 30m snapshots --json --latest 1" in upgrade  # waits like backup.py

@@ -125,7 +125,9 @@ def _publish(ctx: init.Ctx, branch: str, title: str, body: str, paths: Sequence[
     ctx.git("add", "--", *paths)
     ctx.git("commit", "-q", "-m", title)
     proc = ctx.git("push", "-q", "-u", "origin", f"{branch}:{branch}", check=False)
-    cfg = ctx.repo().server
+    # Not re-validated: the callers validated the change (a product upgrade with the target release, whose
+    # in-house jar this checkout may not have: v1.5.4); this only needs the repository's name.
+    cfg = ctx.repo(inhouse_jar=False).server
     if proc.returncode != 0:
         # v1.5: the updater (weekly, or the Actions "product-update" run) may have pushed this branch first;
         # its open PR proposes the same pin, so it is the one to use (seen live: the push was rejected).
@@ -211,7 +213,9 @@ def product_upgrade_pr(
 ) -> Upgraded | None:
     """`mcctl upgrade [--to vX.Y.Z]`: the pull request moving the pin, or None for a dry run."""
     ui = ctx.ui
-    repo = ctx.repo()
+    # v1.5.4: this checkout's in-house jar isn't the judge (it may be the pin's, the target's or neither);
+    # the target release's validate below is.
+    repo = ctx.repo(inhouse_jar=False)
     pin = repo.pin
     token = _gh_token(ctx) if (to is None or sha is None) else ""
     if to is None:

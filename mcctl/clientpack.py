@@ -154,9 +154,17 @@ def _inhouse_errors(f: dict[str, Any], d: dict[str, Any]) -> list[str]:
     return []
 
 
-def lock_errors(lock: Any, minecraft_version: str, definition: dict[str, Any] | None = None) -> list[str]:  # noqa: ANN401
+def lock_errors(
+    lock: Any,  # noqa: ANN401
+    minecraft_version: str,
+    definition: dict[str, Any] | None = None,
+    *,
+    inhouse: bool = True,
+) -> list[str]:
     """client.lock.yml must pin the server's Minecraft version and every entry the definition lists (or say
-    it is pending), each with its hashes; a non-redistributable licence is never mirrored."""
+    it is pending), each with its hashes; a non-redistributable licence is never mirrored. `inhouse=False`
+    (v1.5.4) skips comparing in-house entries with this checkout's jar: for whatever moves the pin, where the
+    target release's own validate is the judge (see configrepo.load)."""
     d = definition or load_definition()
     if not isinstance(lock, dict) or not isinstance(lock.get("files"), list):
         return [f"{LOCK_FILE}: expected a mapping with `files:` (regenerate it with the lock tool)"]
@@ -198,7 +206,7 @@ def lock_errors(lock: Any, minecraft_version: str, definition: dict[str, Any] | 
         if not FILENAME.fullmatch(str(f.get("filename", ""))):
             out.append(f"{LOCK_FILE} {name}: filename {f.get('filename')!r}")
         if f.get("source") == "inhouse":
-            out += _inhouse_errors(f, d)
+            out += _inhouse_errors(f, d) if inhouse else []
         elif not str(f.get("url", "")).startswith("https://cdn.modrinth.com/"):
             out.append(f"{LOCK_FILE} {name}: url must be on cdn.modrinth.com")
         if f.get("mirror") and f.get("licence") not in allowed:

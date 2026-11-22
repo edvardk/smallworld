@@ -260,4 +260,5 @@ def key_remove_script(key_id: str) -> str:
     return shlex.join(["sudo", "mc-restic", "restic", "key", "remove", check_snapshot(key_id)])
 
 
-REPO_CHECK = "sudo mc-restic restic cat config >/dev/null && echo REPO_OK"
+# A read: --no-lock (v1.5.4), so a running prune (exclusive lock) doesn't fail it.
+REPO_CHECK = "sudo mc-restic restic --no-lock cat config >/dev/null && echo REPO_OK"

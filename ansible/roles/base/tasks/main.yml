@@ -20,6 +20,7 @@
     - ip -6 route show default
   register: base_ipv6
   changed_when: false
+  check_mode: false   # a read: runs under `mcctl deploy --check` too (v1.5.4)
   when: mc_expect_ipv6 | bool
 
 - name: The host has public IPv6 (mc_expect_ipv6)

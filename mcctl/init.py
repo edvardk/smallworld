@@ -291,9 +291,10 @@ class Ctx:
         names = ", ".join(sorted(values))
         self.ui.ok(f"saved {names} to {self.root / envfile.ENV_FILE} (mode 0600, git-ignored)")
 
-    def repo(self) -> configrepo.ConfigRepo:
+    def repo(self, *, inhouse_jar: bool = True) -> configrepo.ConfigRepo:
+        """The validated config repo (`inhouse_jar`: configrepo.load)."""
         try:
-            return configrepo.load(self.root)
+            return configrepo.load(self.root, inhouse_jar=inhouse_jar)
         except configrepo.ConfigError as e:
             raise StepError("the config repo doesn't validate:\n  " + "\n  ".join(e.errors)) from None
 

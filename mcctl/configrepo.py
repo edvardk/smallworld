@@ -287,8 +287,14 @@ def players_errors(text: str) -> tuple[schema.Players | None, list[str]]:
     return players, []
 
 
-def load(root: Path, *, i_know: bool = False) -> ConfigRepo:
-    """Validate a whole config repo; raises ConfigError listing every problem found."""
+def load(root: Path, *, i_know: bool = False, inhouse_jar: bool = True) -> ConfigRepo:
+    """Validate a whole config repo; raises ConfigError listing every problem found.
+
+    `inhouse_jar=False` (v1.5.4): don't compare client.lock.yml's in-house entries (the Smallworld mod) with
+    the jar of the product checkout running this. For `mcctl upgrade`/`rollout`, which may run a checkout
+    other than the pin: the pinned lock matches the pinned release's jar, the refreshed one the target's, and
+    the target release's own `mcctl validate` checks it (live, v1.5.2 -> v1.5.3: from the new checkout the
+    upgrade refused to start; from the old one it failed after the push, before the pull request)."""
     root = root.resolve()
     errors: list[str] = []
     try:
@@ -318,7 +324,7 @@ def load(root: Path, *, i_know: bool = False) -> ConfigRepo:
             fix = "`mcctl config set client.enabled true` writes it (or `mcctl lock update --client`)"
             errors.append(f"{CLIENT_LOCK}: missing (client.enabled needs it: {fix})")
         elif client_lock is not None:
-            errors += clientpack.lock_errors(client_lock, server.minecraft.version)
+            errors += clientpack.lock_errors(client_lock, server.minecraft.version, inhouse=inhouse_jar)
 
     expiry: list[dict[str, Any]] = []
     if (root / EXPIRY_YML).is_file():
