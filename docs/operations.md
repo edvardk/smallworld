@@ -235,7 +235,7 @@ What a switch (or create) does, step by step in the header banner: in-game count
 online) → stop → **archive the active world** (the final backup and the safety snapshot in one: nothing else
 happens unless it is in restic's list) → fetch the target archive (or nothing, for a new world) → swap the world
 folders as `minecraft` and write the world's `server.properties` keys → start → check that it answers (and has the
-seed you asked for) → set its border → back it up. If anything fails before the swap, the old world starts again
+seed you asked for) → set its border (its own, else `world.border_radius`: since 1.5.4 a world without its own border no longer keeps Minecraft's 60-million-block one until the next deploy; a border that can't be set is a warning in the job report) → back it up. If anything fails before the swap, the old world starts again
 untouched; if the swap itself fails, the server stays stopped and the admin-stopped marker names the archive to
 restore.
 
@@ -283,7 +283,10 @@ when a player joins, the next check pauses it (`chunky pause`); when the server 
 Chunky task at a time:
 
 1. **Bordered pass:** every dimension with a border (`world.border_radius`, or the library world's own), in the
-   order overworld → nether → end, up to its border (`chunky world W`, `chunky worldborder`, `chunky start`).
+   order overworld → nether → end, up to its border (`chunky start W square 0 0 R`, R from `server.yml`, never
+   the live border: a library world created without its own border has the vanilla 60-million-block one until
+   the next deploy sets it). A saved task with another radius (a changed border, or one started by a version
+   before 1.5.4) is cancelled and started again; Chunky skips the chunks that exist.
 2. **Frontier** (v1.4, `world.pregenerate.frontier`, default on): once the bordered passes are done, and for a
    dimension without a border (often the End, or a library world without one), it keeps generating
    `world.pregenerate.margin` blocks (default 1024) beyond the farthest chunk generated so far: a square around
@@ -294,7 +297,8 @@ Chunky task at a time:
    its alert threshold (`monitoring.alerts.disk_pct`). Chunky skips chunks that exist, so a bigger square only
    generates the new ring.
 
-It doesn't run during a maintenance window (deploys, restores), while the server is stopped on purpose, or while
+Nothing runs while the disk is at its alert threshold (`monitoring.alerts.disk_pct`): a running task is paused
+and continues once there is space again. It doesn't run during a maintenance window (deploys, restores), while the server is stopped on purpose, or while
 a backup holds it: `mc-backup` pauses a running task before `save-off` (chunks generated while saving is off pile
 up in memory) and continues it after `save-on`, even when the backup fails; `/var/lib/mc-snapshots/pregen-hold.json`
 tells `mc-health` to leave it alone meanwhile (it expires by itself after 4 hours if a backup is killed). A
@@ -315,7 +319,14 @@ most, and the End, mostly void, little. These are estimates from Minecraft's typ
 structures and later building change them. Frontier expansion in a dimension **without a border** grows the world
 as far as players go, up to `max_radius` (10 000 blocks around 0,0 is about 1500 region files: up to ~10-15 GB of
 overworld-like terrain). **The world border is the real control** of the world's size; `max_radius` is only a
-hard cap. Health's disk alert (`monitoring.alerts.disk_pct`) also stops new frontier rings.
+hard cap. Health's disk alert (`monitoring.alerts.disk_pct`) also pauses pre-generation.
+
+**Chunks outside the border.** Before 1.5.4 a new library world's pass could run far past the border (see the
+bordered pass above) and fill the disk. Those chunks are unreachable behind the border but stay on disk. To free
+the space: stop the server (`mcctl stop`), delete the region files that lie wholly outside the border, in
+`region/`, `entities/` and `poi/` of each dimension (`<level>/dimensions/minecraft/<dimension>/`; a file
+`r.X.Z.mca` covers blocks 512·X to 512·X+511, so for radius 5000 keep X and Z from -10 to 9), then
+`mcctl start`. Back up first, and check the border with `mcctl rcon -C $C worldborder get`.
 
 **Backups.** restic deduplicates, so only the **first backup after a pass** is big (it uploads the new region
 files); after that backups carry only what changed, as before. Expect the R2 bucket to grow by about the world's

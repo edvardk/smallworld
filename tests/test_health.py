@@ -1,5 +1,6 @@
 import json
 import re
+import shutil
 from dataclasses import asdict
 from datetime import date
 from pathlib import Path
@@ -202,6 +203,23 @@ def test_disk_used_pct(tmp_path) -> None:
     pct = health.disk_used_pct(tmp_path)
     assert pct is not None and 0 <= pct <= 100
     assert health.disk_used_pct(tmp_path / "missing") is None
+
+
+def test_disk_used_pct_counts_the_root_reserve_as_full(monkeypatch, tmp_path) -> None:
+    """v1.5.4: % of the space the server can use (as `df`): ext4 keeps 5 % for root, so 95 % of the total
+    used is a full disk for minecraft, not "nothing yet"."""
+    usage = type(shutil.disk_usage(tmp_path))
+    monkeypatch.setattr(health.shutil, "disk_usage", lambda p: usage(total=1000, used=950, free=0))
+    assert health.disk_used_pct(tmp_path) == 100.0
+    monkeypatch.setattr(health.shutil, "disk_usage", lambda p: usage(total=1000, used=450, free=500))
+    assert round(health.disk_used_pct(tmp_path) or 0, 1) == 47.4
+
+
+def test_disk_alert_says_when_the_disk_is_full() -> None:
+    _, _, m = health.evaluate_host(State(), HostStats(disk_pct=100.0), HOST_CFG, DAY)
+    assert len(m) == 1 and "can't save the world" in m[0] and "Nothing yet" not in m[0]
+    _, _, m = health.evaluate_host(State(), HostStats(disk_pct=90.0), HOST_CFG, DAY)
+    assert "Nothing yet" in m[0]
 
 
 def test_old_state_file_still_loads(tmp_path) -> None:
@@ -765,6 +783,73 @@ class FrontierChunky(FakeChunky):
         )
 
 
+def test_pregen_bordered_pass_uses_the_configured_radius_not_the_live_border() -> None:
+    """v1.5.4: a library world created without its own border has the vanilla 60-million-block border until a
+    deploy sets it; `chunky worldborder` then started a task that never ends. With PREGEN_RADII the radius
+    comes from server.yml."""
+    c, worlds, radii = FrontierChunky(), ["world", "world_nether"], {"world": 5000, "world_nether": 1250}
+    st, what = health.pregen_step(State(), worlds, c, radii=radii)
+    assert what == "started (world, radius 5000)" and c.starts == [("world", 5000)]
+    assert "chunky worldborder" not in c.log and st.pregen_radius == 5000
+    st, what = health.pregen_step(st, worlds, c, radii=radii)
+    assert what == "running (world)"
+    c.running = None  # done -> the nether, with its own radius
+    st, what = health.pregen_step(st, worlds, c, radii=radii)
+    assert what == "started (world_nether, radius 1250)" and st.pregen_done == ["world"]
+    assert State(**json.loads(json.dumps(asdict(st)))) == st
+
+
+def test_pregen_replaces_a_task_started_with_another_radius() -> None:
+    """The state of an older version (radius unknown) or a changed border: the saved task is cancelled and the
+    pass starts again with the configured radius, once the server is empty."""
+    c = FrontierChunky()
+    c.running = "world"  # the runaway task (radius 29999984 from the vanilla border)
+    st = State(pregen_current="world", pregen_progress={"world": {"pct": 0.01, "chunks": 9}})
+    c.players = 2
+    st, what = health.pregen_step(st, ["world"], c, radii={"world": 5000})
+    assert c.log[2:4] == ["chunky cancel", "chunky confirm"] and c.running is None
+    assert what == "cancelled world's task (radius unknown, want 5000); waiting for an empty server"
+    assert st.pregen_current is None and "world" not in st.pregen_progress
+    c.players = 0
+    st, what = health.pregen_step(st, ["world"], c, radii={"world": 5000})
+    assert what == "started (world, radius 5000)" and st.pregen_radius == 5000
+    n = len(c.log)
+    st, what = health.pregen_step(st, ["world"], c, radii={"world": 5000})
+    assert what == "running (world)" and "chunky cancel" not in c.log[n:]  # the right radius: kept
+    # a saved task for the world when it starts: confirmed away, not continued
+    c2 = FrontierChunky()
+    c2.stale = "world"
+    _, what = health.pregen_step(State(), ["world"], c2, radii={"world": 5000})
+    assert what == "started (world, radius 5000)" and c2.log[-1] == "chunky confirm"
+    assert c2.starts == [("world", 5000)]
+
+
+def test_pregen_pauses_and_holds_while_the_disk_is_at_its_threshold() -> None:
+    c = FrontierChunky()
+    st, _ = health.pregen_step(State(), ["world"], c, radii={"world": 5000})
+    st, what = health.pregen_step(st, ["world"], c, radii={"world": 5000}, disk_ok=False)
+    assert what == "paused (world: the disk is at its alert threshold)" and c.running is None
+    assert st.pregen_paused and health.pregen_task(st) is None
+    n = len(c.log)
+    st, what = health.pregen_step(st, ["world"], c, radii={"world": 5000}, disk_ok=False)
+    assert what == "held: the disk is at its alert threshold"
+    assert not any(x.startswith(("chunky continue", "chunky start")) for x in c.log[n:])
+    st, what = health.pregen_step(st, ["world"], c, radii={"world": 5000})
+    assert what == "continued (world)" and c.running == "world"
+    # a frontier task too
+    st = State(pregen_done=["world"], pregen_frontier_current="world_the_end", pregen_frontier_target=2032)
+    c.running = "world_the_end"
+    _, what = health.pregen_step(st, ["world"], c, disk_ok=False)
+    assert what == "paused (frontier world_the_end: the disk is at its alert threshold)"
+
+
+def test_pregen_radii_env(monkeypatch) -> None:
+    monkeypatch.setenv("PREGEN_RADII", "world:5000,world_nether:1250,bad;rm:1,world_the_end:,x:0,y:-3")
+    assert health.pregen_radii() == {"world": 5000, "world_nether": 1250}
+    monkeypatch.delenv("PREGEN_RADII")
+    assert health.pregen_radii() == {}
+
+
 END = health.FrontierDim("world_the_end", "the_end", None)
 OVER = health.FrontierDim("world", "overworld", 5000)
 
@@ -1001,6 +1086,23 @@ def test_gc_alerts_once_then_reminds_at_most_every_repeat_hours_then_recovers() 
     st, _, m = health.evaluate(st, True, 20.0, 20.0, gc0, cfg, ctx(t + 1800))
     assert len(m) == 1 and m[0].startswith("\u2705 **The short freezes") and "they went on for 7 h" in m[0]
     assert st.alerts == {}
+
+
+def test_zgc_freeze_is_the_longest_stall_not_the_sum_over_threads() -> None:
+    """v1.5.4: stalls on several threads overlap; their sum ("870186 ms" in a 5-minute check) isn't a freeze."""
+    line = "[2026-11-24T18:00:00.000+0000][{t}s][info][gc       ] Allocation Stall ({th}) {ms}ms\n"
+    stalls = [
+        line.format(t=200 + i, th=th, ms=ms)
+        for i, (th, ms) in enumerate([("Server thread", 40.0), ("Worker-Main-1", 9000.0), ("Netty", 30.0)])
+    ]
+    gc = health.parse_gc(stalls, 0.0, 50)
+    assert gc.freeze_ms() == 9000.0 and sum(gc.stalls) == 9070.0
+    _st, _, msgs = health.evaluate(
+        State(status="ok"), True, 20.0, 20.0, gc, CFG | {"gc_pause_ms": 50}, health.Ctx(now=NOW)
+    )
+    assert "freezes of up to 9000 ms" in msgs[0] and "9070 ms summed over all threads" in msgs[0]
+    small = health.parse_gc(stalls[:1] + stalls[2:], 0.0, 50)  # 40 + 30 ms: neither is a 50 ms freeze
+    assert small.freeze_ms() == 40.0
 
 
 def test_zgc_alerts_on_allocation_stalls_with_heap_advice() -> None:

@@ -639,7 +639,19 @@ def _health_env(borders: dict, plugins: list, **extra: object) -> list[str]:
 def test_health_env_lists_the_pregen_worlds_in_order(borders: dict, plugins: list, want: str) -> None:
     """Chunky pre-generation covers every dimension with a border, overworld -> nether -> end, by Bukkit world
     name (level-name + _nether / _the_end), and is off without Chunky."""
-    assert f"PREGEN_WORLDS={want}" in _health_env(borders, plugins, monitoring_pregen_enabled=True)
+    lines = _health_env(borders, plugins, monitoring_pregen_enabled=True)
+    assert f"PREGEN_WORLDS={want}" in lines
+    # v1.5.4: each with its radius, so Chunky never sizes a pass from the live border
+    radii = ",".join(
+        f"{w}:{borders[d]}"
+        for w, d in zip(
+            ["survival", "survival_nether", "survival_the_end"],
+            ["minecraft:overworld", "minecraft:the_nether", "minecraft:the_end"],
+            strict=True,
+        )
+        if d in borders
+    )
+    assert f"PREGEN_RADII={radii if want else ''}" in lines
 
 
 def test_health_env_frontier_lists_every_dimension_with_its_border() -> None:
