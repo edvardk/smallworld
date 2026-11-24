@@ -552,3 +552,17 @@ def test_status_shows_the_pregen_line() -> None:
     for bad in ("not json", "[1]", '{"line": 3}', '{"line": "  "}'):
         assert remote.parse_pregen(bad) is None, bad
     assert remote.parse_pregen(json.dumps({"line": "done\x1b[31m\n" + "x" * 300})) == "done[31m" + "x" * 192
+
+
+def test_no_subcommand_overwrites_the_command_name() -> None:
+    """args.command is the subcommand's name (the update notice, _NESTED). `mcctl rcon` once kept its console
+    words there too: a list, so `mcctl rcon -C . chunky progress` crashed on a terminal (unhashable type)."""
+    import argparse
+
+    parser = cli.build_parser()
+    sub = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+    for name, sp in sub.choices.items():
+        assert all(a.dest != "command" for a in sp._actions), name
+    for argv in (["rcon", "-C", ".", "chunky", "progress"], ["console", "-C", ".", "list"]):
+        args = parser.parse_args(argv)
+        assert args.command == argv[0] and args.words == argv[3:]

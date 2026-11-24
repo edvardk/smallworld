@@ -15,6 +15,9 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   `PREGEN_RADII` in health.env: `chunky start W square 0 0 R`), and a saved task with another (or an unknown)
   radius is cancelled and started again with the right one, so the first deploy of this release stops a runaway
   task by itself. Chunks it generated outside the border stay on disk: see operations "Pre-generation".
+- **`mcctl rcon` and `mcctl console` work again in a terminal.** Their console words were stored where mcctl keeps
+  the subcommand's name, so the update notice (v1.3) crashed with `TypeError: unhashable type: 'list'` before the
+  command ran. Scripts and CI (no terminal) were unaffected; `MCCTL_NO_UPDATE_NOTICE=1` was the workaround.
 - **A new library world gets the server-wide border at once.** The panel creates worlds without their own
   `border_radius` (= `world.border_radius`), but the switch only set a world's own border, so the new world kept
   Minecraft's 60-million-block border until the next deploy. Deploys now write `world.border_radius` into

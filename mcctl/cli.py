@@ -561,7 +561,7 @@ def _ssh(args: argparse.Namespace, command: str | None, *, batch: bool = True) -
 
 def cmd_rcon(args: argparse.Namespace) -> int:
     try:
-        command = remote.rcon_command(args.command)
+        command = remote.rcon_command(args.words)
     except ValueError as e:
         print(f"mcctl rcon: {e}", file=sys.stderr)
         return 2
@@ -610,7 +610,7 @@ def cmd_restart(args: argparse.Namespace) -> int:
 
 def cmd_console(args: argparse.Namespace) -> int:
     rem = _remote(args)
-    return actions.guarded(rem, lambda: actions.console(rem, args.command))
+    return actions.guarded(rem, lambda: actions.console(rem, args.words))
 
 
 def cmd_worlds(args: argparse.Namespace) -> int:
@@ -1048,6 +1048,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="plain text output, no colours/panels/spinners (anywhere on the command line; also NO_COLOR, "
         "CI, or output that isn't a terminal)",
     )
+    # `command` is the subcommand's name (notice.start, _NESTED): no subparser may reuse the dest (rcon and
+    # console keep their console words in `words`; reusing it crashed the update notice on a terminal).
     sub = p.add_subparsers(dest="command", required=True, metavar="COMMAND")
 
     def with_config(sp: argparse.ArgumentParser) -> None:
@@ -1222,7 +1224,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("rcon", help="run a console command over the tailnet (`mc` on the server)")
     with_config(sp)
-    sp.add_argument("command", nargs=argparse.REMAINDER, help="e.g. list, or whitelist add NAME")
+    sp.add_argument(
+        "words", metavar="command", nargs=argparse.REMAINDER, help="e.g. list, or whitelist add NAME"
+    )
     sp.set_defaults(func=cmd_rcon)
 
     sp = sub.add_parser("ssh", help="Tailscale SSH to the server as the deploy user")
@@ -1261,7 +1265,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("console", help="server console over RCON: a prompt, or one COMMAND (= rcon)")
     with_config(sp)
-    sp.add_argument("command", nargs=argparse.REMAINDER, help="one command (e.g. list); none: a prompt")
+    sp.add_argument(
+        "words", metavar="command", nargs=argparse.REMAINDER, help="one command (e.g. list); none: a prompt"
+    )
     sp.set_defaults(func=cmd_console)
 
     confirm_help = "the typed confirmation (scripts); without it a terminal asks, anything else refuses"
