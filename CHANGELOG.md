@@ -6,6 +6,8 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+## [1.5.4] - 2026-11-24
+
 ### Fixed
 
 - **Pre-generation no longer runs away on a new library world.** A world created from the panel (or `mcctl worlds
