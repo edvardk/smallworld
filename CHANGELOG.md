@@ -6,6 +6,25 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Fixed
+
+- **Pre-generation no longer runs away on a new library world.** A world created from the panel (or `mcctl worlds
+  create`) without its own `border_radius` starts with the vanilla 60-million-block border until the next deploy
+  sets `world.border_radius`; the bordered pass sized its Chunky task from that live border (`chunky worldborder`),
+  so the task never ended and filled the disk. Each bordered pass now takes its radius from `server.yml` (new
+  `PREGEN_RADII` in health.env: `chunky start W square 0 0 R`), and a saved task with another (or an unknown)
+  radius is cancelled and started again with the right one, so the first deploy of this release stops a runaway
+  task by itself. Chunks it generated outside the border stay on disk: see operations "Pre-generation".
+- **Pre-generation pauses while the disk is at its alert threshold** (`monitoring.alerts.disk_pct`). Before, only new
+  frontier rings waited; a running or paused bordered pass went on until the disk was full.
+- **The disk alert measures what the server can use, like `df`.** It was `used / total`, which counts the 5 % ext4
+  keeps for root as free: "96 % used" was already a full disk for the `minecraft` user, while the alert said
+  "Nothing yet". From 99 % it now says the world can't be saved.
+- **ZGC freeze alerts report the longest stall, not the sum over all threads.** Allocation stalls happen on several
+  threads at once (server thread, chunk workers, Netty); their sum gave "freezes" of 15 minutes within a 5-minute
+  check. The alert also fires on a single stall over `GC_PAUSE_ALERT_MS`, no longer on many short ones adding up;
+  the sum is still in the likely cause.
+
 ## [1.5.3] - 2026-11-22
 
 ### Fixed

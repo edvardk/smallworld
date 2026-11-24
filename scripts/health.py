@@ -27,16 +27,22 @@
   days), so health.py only logs the flag.
 - Posts state changes (and resize recommendations) to Discord if a webhook is configured.
 - Chunky pre-generation (PREGEN_WORLDS, e.g. "world,world_nether,world_the_end": the dimensions that have a
-  border, in that order): one world at a time up to its vanilla world border (`chunky world W`, `chunky
-  worldborder`, `chunky start`), and only while nobody is online: a player joins -> `chunky pause`; empty
-  again -> `chunky continue`. A task Chunky has nothing left to continue for is done; then the next world
-  starts. Chunky's own `continue-on-restart: true` resumes a task after a restart (and the next check pauses
-  it if players are on). Progress lives in the state file; the replies matched are Chunky 1.5's lang/en.json
-  strings. v1.4: each check records the running task's percentage from `chunky progress` and writes one line
-  for `mcctl status` to pregen.json next to state.json; one Discord note when every bordered pass is done.
-  While backup.py holds pre-generation (notify.py pregen-hold.json: it paused Chunky for its save-off window
-  and continues it itself) nothing is done. Restarts need nothing: RCON is down (nothing is done) and Chunky's
-  continue-on-restart resumes the task; a check that finds it running with players online pauses it again.
+  border, in that order): one world at a time up to its border, and only while nobody is online: a player
+  joins -> `chunky pause`; empty again -> `chunky continue`. A task Chunky has nothing left to continue for is
+  done; then the next world starts. Chunky's own `continue-on-restart: true` resumes a task after a restart
+  (and the next check pauses it if players are on). Progress lives in the state file; the replies matched are
+  Chunky 1.5's lang/en.json strings. v1.4: each check records the running task's percentage from `chunky
+  progress` and writes one line for `mcctl status` to pregen.json next to state.json; one Discord note when
+  every bordered pass is done. While backup.py holds pre-generation (notify.py pregen-hold.json: it paused
+  Chunky for its save-off window and continues it itself) nothing is done. Restarts need nothing: RCON is down
+  (nothing is done) and Chunky's continue-on-restart resumes the task; a check that finds it running with
+  players online pauses it again.
+  v1.5.4: the radius comes from server.yml (PREGEN_RADII, "world:5000,world_nether:1250": `chunky start W
+  square 0 0 R`), not from the live border (`chunky worldborder`, still the fallback without PREGEN_RADII): a
+  library world created without its own border runs with the vanilla 60-million-block border until the next
+  deploy sets it, and a task started then never ends. A saved bordered task whose radius isn't the
+  configured one (or unknown, from an older version) is cancelled and started again (Chunky skips chunks
+  that exist). Nothing runs while the disk is at DISK_ALERT_PCT: a running task is paused.
 - v1.4 frontier expansion (PREGEN_FRONTIER: every dimension, "world:overworld:5000,world_the_end:the_end:",
   border empty = none; empty = off): once the bordered passes are done, the same idle-only loop keeps
   generating ahead of where players have been. Target radius (square, around 0,0 where the border is centred)
@@ -51,13 +57,15 @@
   alerts.Gate: one message when they start, at most one reminder per REPEAT_HOURS while they persist (with the
   occurrences folded into it), one "recovered" message when they clear; its state is in state.json, so it
   survives restarts. GC: G1 pauses or ZGC allocation stalls longer than GC_PAUSE_ALERT_MS (default 50 ms =
-  one tick's budget); ZGC's own pauses are sub-millisecond.
+  one tick's budget); ZGC's own pauses are sub-millisecond. Stalls happen on several threads at once
+  (server thread, chunk workers, Netty): the freeze is the longest single stall, never their sum (v1.5.4).
 
 Env: WATCHDOG_URL, HEARTBEAT_TOKEN, DISCORD_WEBHOOK_URL, MSPT_ALERT (45), MSPT_ALERT_CHECKS (3),
      HEAP_ALERT_PCT (85), HEAP_ALERT_CHECKS (6), GC_PAUSE_ALERT_MS (50), REPEAT_HOURS (6),
      DISK_ALERT_PCT (85),
      STEAL_ALERT_PCT (10), STEAL_ALERT_CHECKS (3), HEAL_STARTUP_GRACE_S (900), PREGEN_WORLDS (empty = off),
-     PREGEN_FRONTIER (empty = off), PREGEN_MARGIN (1024), PREGEN_MAX_RADIUS (10000),
+     PREGEN_RADII (empty = the live border), PREGEN_FRONTIER (empty = off), PREGEN_MARGIN (1024),
+     PREGEN_MAX_RADIUS (10000),
      STATE_DIRECTORY (set by systemd).
 """
 
@@ -121,6 +129,7 @@ CRASH_LOOP_RESTARTS = 2  # systemd restarted the unit this often since the previ
 WATCHDOG_STALE_S = 900  # the watchdog's cron runs every 5 min; older than this = it stopped
 WATCHDOG_UNREACHABLE_CHECKS = 3  # heartbeats not delivered this many checks in a row -> alert
 DAY_S = 86400
+DISK_FULL_PCT = 99  # disk_used_pct at or above this: nothing more can be written (the alert says so)
 # Default for resize alerts; the deploy sets RESIZE_HINT in health.env from server.yml host.resize_hint.
 RESIZE_HINT = "a host with dedicated cores or more RAM"
 
@@ -169,6 +178,7 @@ class State:
     pregen_current: str | None = None
     pregen_paused: bool = False
     pregen_for: str = ""  # v1.2 world library: the world (name@since) the progress above belongs to
+    pregen_radius: int | None = None  # v1.5.4: the radius pregen_current was started with (None = unknown)
     # v1.4: each bordered pass's last progress ({pct, chunks} from `chunky progress`), frontier expansion: the
     # radius generated around 0,0 per world, and the ring task running now (world, its radius, percent)
     pregen_progress: dict[str, dict[str, float]] = field(default_factory=dict)
@@ -236,8 +246,10 @@ class GcStats:
     stalls: list[float] = field(default_factory=list)  # ZGC allocation stalls (ms) since the last check
 
     def freeze_ms(self) -> float:
-        """The longest time the server stood still: a pause, or (ZGC) all stalls of the check together."""
-        return max(self.max_pause_ms, sum(self.stalls))
+        """The longest time a thread stood still: a pause, or (ZGC) the longest single allocation stall.
+        v1.5.4: not the stalls' sum; they run on several threads at once, so the sum overstated the freeze
+        (alerts of 15-minute "freezes" within a 5-minute check)."""
+        return max(self.max_pause_ms, max(self.stalls, default=0.0))
 
 
 def parse_mspt(text: str) -> float:
@@ -386,7 +398,7 @@ def gc_alert(v: Verdict, gc: GcStats, cfg: dict[str, float], ctx: Ctx) -> str:
     if zgc:
         cause = (
             f"the server ran out of free memory faster than ZGC could free it: {len(gc.stalls)} "
-            f"allocation stall(s), {sum(gc.stalls):.0f} ms in total"
+            f"allocation stall(s), {sum(gc.stalls):.0f} ms summed over all threads"
         )
         fix = (
             "give the JVM more heap if the box has free RAM (`mcctl config set jvm.heap_mb <MB>`, push) or "
@@ -606,11 +618,14 @@ def steal_pct(prev: list[int], cur: list[int]) -> float | None:
 
 
 def disk_used_pct(path: Path) -> float | None:
+    """Used % as `df` shows it: of the space the server can use. v1.5.4: not used/total, which left out the
+    blocks ext4 reserves for root (5 %): 95 % of the total was already a full disk for minecraft."""
     try:
         usage = shutil.disk_usage(path)
     except OSError:
         return None
-    return 100.0 * usage.used / usage.total if usage.total else None
+    usable = usage.used + usage.free
+    return 100.0 * usage.used / usable if usable else None
 
 
 def read_host_stats(server_dir: Path) -> HostStats:
@@ -646,6 +661,13 @@ def evaluate_host(
                 )
             else:
                 details = f"{host.disk_pct:.0f}% used (alert at {cfg['disk_pct']:.0f}%)"
+                impact = (
+                    "The disk is full: the server can't save the world (unsaved chunks pile up in memory) "
+                    "and backups fail. Progress since the last save is at risk."
+                    if host.disk_pct >= DISK_FULL_PCT
+                    else "Nothing yet; a full disk stops saving the world and backups (risk of losing "
+                    "progress)."
+                )
                 if note := reminder_note(v):
                     details += f"; {note}"
                 msgs.append(
@@ -653,9 +675,9 @@ def evaluate_host(
                         Alert(
                             "action",
                             "The server's disk is filling up",
-                            impact="Nothing yet; a full disk stops saving the world and backups (risk of "
-                            "losing progress).",
-                            cause="World growth (new chunks), logs or crash reports.",
+                            impact=impact,
+                            cause="World growth (new chunks: pre-generation pauses at this level), logs or "
+                            "crash reports.",
                             todo="See what is big: `du -sh /opt/minecraft/server/*` on the box; delete "
                             "old logs/crash "
                             "reports, keep the world border (`world.border_radius`), or grow the disk.",
@@ -1131,6 +1153,16 @@ def pregen_worlds() -> list[str]:
     return [w for w in os.environ.get("PREGEN_WORLDS", "").split(",") if re.fullmatch(r"[A-Za-z0-9_.-]+", w)]
 
 
+def pregen_radii() -> dict[str, int]:
+    """v1.5.4 PREGEN_RADII ("world:5000,world_nether:1250"): each bordered world's radius from server.yml."""
+    radii = {}
+    for item in os.environ.get("PREGEN_RADII", "").split(","):
+        world, _, radius = item.partition(":")
+        if re.fullmatch(r"[A-Za-z0-9_.-]+", world) and radius.isdigit() and int(radius) > 0:
+            radii[world] = int(radius)
+    return radii
+
+
 def parse_chunky_progress(text: str) -> dict[str, tuple[float, int]]:
     """`chunky progress` -> {world: (percent, chunks processed)} for every running task."""
     return {
@@ -1291,12 +1323,17 @@ def pregen_step(
     command: Callable[[str], str],
     world_id: str | None = None,
     frontier: Frontier | None = None,
+    radii: dict[str, int] | None = None,
+    disk_ok: bool = True,
 ) -> tuple[State, str]:
     """One check's worth of pre-generation (see the module doc). Returns the new state and what it did.
     v1.2: `world_id` names the active world of the library (name@switched-at, scripts/worlds.py); after a
     switch the folders hold another world, so Chunky's tasks are cancelled and everything starts afresh.
     v1.4: records each task's progress; with `frontier`, once the bordered passes are done, grows the
-    generated area ahead of where players have been (one Chunky task at a time, like the bordered passes)."""
+    generated area ahead of where players have been (one Chunky task at a time, like the bordered passes).
+    v1.5.4: `radii` (world -> radius from server.yml) sizes the bordered passes and replaces a saved task with
+    another radius; with `disk_ok` False a running task is paused and nothing starts or continues."""
+    radii = radii or {}
     new = State(**asdict(state))
     if world_id is not None and world_id != new.pregen_for:
         if new.pregen_for or new.pregen_done or new.pregen_current or new.pregen_frontier_current:
@@ -1304,6 +1341,7 @@ def pregen_step(
             # start` then continued it on the new world's folders)
             cancel_chunky(command)
         new.pregen_done, new.pregen_current, new.pregen_paused = [], None, False
+        new.pregen_radius = None
         new.pregen_progress, new.pregen_frontier = {}, {}
         new.pregen_frontier_current, new.pregen_frontier_target, new.pregen_frontier_pct = None, 0, None
         new.pregen_for = world_id
@@ -1319,6 +1357,16 @@ def pregen_step(
         elif world == new.pregen_frontier_current:
             new.pregen_frontier_pct = pct
     running = CHUNKY_RUNNING in progress
+    restarted = ""
+    want = radii.get(new.pregen_current or "")
+    if want and new.pregen_radius != want:
+        # A task sized by the live border (older versions, or before a deploy set it) or for another radius:
+        # Chunky would go on with it. Cancel it; the bordered pass starts again below with the right radius.
+        cancel_chunky(command)
+        had = new.pregen_radius or "unknown"
+        restarted = f"cancelled {new.pregen_current}'s task (radius {had}, want {want})"
+        new.pregen_progress.pop(new.pregen_current or "", None)
+        new.pregen_current, new.pregen_paused, new.pregen_radius, running = None, False, None, False
     task = new.pregen_current or (
         f"frontier {new.pregen_frontier_current}" if new.pregen_frontier_current else None
     )
@@ -1327,7 +1375,13 @@ def pregen_step(
             command("chunky pause")
             new.pregen_paused = True
             return new, f"paused ({task}: players online)"
-        return new, "waiting for an empty server"
+        return new, _joined(restarted, "waiting for an empty server")
+    if not disk_ok:  # v1.5.4: every new chunk is disk the world needs to save; wait for space
+        if running:
+            command("chunky pause")
+            new.pregen_paused = True
+            return new, _joined(restarted, f"paused ({task}: the disk is at its alert threshold)")
+        return new, _joined(restarted, "held: the disk is at its alert threshold")
     if running:
         new.pregen_paused = False  # e.g. Chunky's continue-on-restart resumed a task paused for players
         return new, f"running ({task})"
@@ -1341,7 +1395,7 @@ def pregen_step(
         done = new.pregen_current
         new.pregen_done.append(done)
         new.pregen_progress[done] = {**new.pregen_progress.get(done, {}), "pct": 100.0}
-        new.pregen_current, new.pregen_paused = None, False
+        new.pregen_current, new.pregen_paused, new.pregen_radius = None, False, None
     elif new.pregen_frontier_current:
         reply = mc_rcon.strip_formatting(command("chunky continue"))
         if CHUNKY_CONTINUING in reply:
@@ -1355,13 +1409,23 @@ def pregen_step(
     todo = [w for w in worlds if w not in new.pregen_done]
     if todo:
         world = todo[0]
+        if radius := radii.get(world):
+            # The border is centred on 0,0 (mc_rcon.worldborder). A saved task for this world asks to
+            # confirm: it is replaced (Chunky skips the chunks that exist).
+            reply = mc_rcon.strip_formatting(command(f"chunky start {world} square 0 0 {radius}"))
+            if CHUNKY_CONFIRM in reply:
+                reply = mc_rcon.strip_formatting(command("chunky confirm"))
+            if CHUNKY_STARTED in reply:
+                new.pregen_current, new.pregen_paused, new.pregen_radius = world, False, radius
+                return new, _joined(restarted, f"started ({world}, radius {radius})")
+            return new, f"unexpected reply to `chunky start {world}`: {reply[:120]}"
         command(f"chunky world {world}")
         command("chunky worldborder")
         reply = mc_rcon.strip_formatting(command("chunky start"))
         if CHUNKY_STARTED in reply or any(a in reply for a in CHUNKY_ALREADY):
             if CHUNKY_STARTED not in reply:
                 command("chunky continue")
-            new.pregen_current, new.pregen_paused = world, False
+            new.pregen_current, new.pregen_paused, new.pregen_radius = world, False, None
             return new, f"started ({world})"
         return new, f"unexpected reply to `chunky start`: {reply[:120]}"
     status = "done" if worlds else ""
@@ -1381,6 +1445,10 @@ def pregen_step(
         new.pregen_frontier_pct, new.pregen_paused = 0.0, False
         return new, f"frontier started ({d.world} to radius {target})"
     return new, f"unexpected reply to frontier `chunky start`: {reply[:120]}"
+
+
+def _joined(*parts: str) -> str:
+    return "; ".join(p for p in parts if p)
 
 
 def all_done(state: State, worlds: list[str]) -> bool:
@@ -1480,7 +1548,9 @@ def run_pregen(state: State, alive: bool | None, disk_ok: bool = True) -> State:
         return state
     try:
         with mc_rcon.connect(None, timeout=10.0) as r:
-            new, what = pregen_step(state, worlds, r.command, active_world_id(), frontier)
+            new, what = pregen_step(
+                state, worlds, r.command, active_world_id(), frontier, pregen_radii(), disk_ok
+            )
     except (OSError, KeyError, ValueError, mc_rcon.RconError) as e:
         print(f"warning: pregen: {type(e).__name__}: {e}", file=sys.stderr)
         return state
@@ -1507,7 +1577,7 @@ def stop_pregen(state: State) -> State:
         return state
     print("pregen: turned off: Chunky's task cancelled")
     new = State(**asdict(state))
-    new.pregen_current, new.pregen_paused = None, False
+    new.pregen_current, new.pregen_paused, new.pregen_radius = None, False, None
     new.pregen_frontier_current, new.pregen_frontier_target, new.pregen_frontier_pct = None, 0, None
     return new
 
