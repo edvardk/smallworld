@@ -960,6 +960,69 @@ def test_schema_world_library_rules() -> None:
                                                  {"server.properties": {"difficulty": "hard"}}))  # fmt: skip
 
 
+def test_a_new_world_without_its_own_border_gets_the_server_wide_one(tmp_path: Path, monkeypatch) -> None:
+    """v1.5.4: the panel creates worlds with border_radius None (= server.yml world.border_radius); verify used
+    to set nothing, so the world kept the vanilla 60-million-block border until the next deploy."""
+    box = Box(tmp_path, monkeypatch)
+    box.archives()
+    (tmp_path / "worlds-library.json").write_text(json.dumps({
+        "active": "main", "library": [],
+        "border_radius": {"minecraft:overworld": 5000, "minecraft:the_nether": 1250},
+    }))  # fmt: skip
+    line = worlds.run_panel(req("create", "forest", seed="123"), box.ops, box.srv)
+    assert line.startswith("WORLD forest active")
+    borders = [e for e in box.events if e.startswith("border ")]
+    assert borders == ["border minecraft:overworld 5000", "border minecraft:the_nether 1250"]
+    assert box.events.index(borders[0]) < box.events.index("backup-now")
+
+
+def test_borders_for_follows_the_deploy() -> None:
+    """Its own borders when it has any (null = no border there), else the server-wide ones (worlds.yml)."""
+    default = {"minecraft:overworld": 5000, "minecraft:the_nether": 1250}
+    assert worlds.borders_for({"border_radius": None}, default) == default
+    own = {"minecraft:overworld": 800, "minecraft:the_nether": None, "minecraft:the_end": None}
+    assert worlds.borders_for({"border_radius": own}, default) == {"minecraft:overworld": 800}
+    assert worlds.borders_for({"border_radius": None}, {}) == {}
+
+
+def test_read_default_border_is_checked(tmp_path: Path) -> None:
+    f = tmp_path / "worlds-library.json"
+    assert worlds.read_default_border(f) == {}  # missing
+    f.write_text(json.dumps({"active": "x", "library": []}))  # written by a deploy before v1.5.4
+    assert worlds.read_default_border(f) == {}
+    f.write_text(json.dumps({"border_radius": {
+        "minecraft:overworld": 5000, "minecraft:the_end": True, "minecraft:the_nether": -1, "evil": 3,
+    }}))  # fmt: skip
+    assert worlds.read_default_border(f) == {"minecraft:overworld": 5000}
+    f.write_text(json.dumps({"border_radius": [1, 2]}))
+    assert worlds.read_default_border(f) == {}
+
+
+def test_a_border_that_cant_be_set_is_a_warning(tmp_path: Path, monkeypatch, capsys) -> None:
+    def broken(d: str, r: int) -> bool:
+        raise worlds.mc_rcon.RconError("no answer")
+
+    monkeypatch.setattr(worlds, "wait_rcon", lambda *a, **k: True)
+    monkeypatch.setattr(worlds.mc_rcon, "worldborder", broken)
+    (tmp_path / "world").mkdir()
+    (tmp_path / "world" / "level.dat").write_bytes(b"")
+    entry = worlds.check_entry({"name": "forest"})
+    worlds.verify(entry, False, tmp_path, "world", {"minecraft:overworld": 5000})
+    out = capsys.readouterr().out
+    assert "WARNING: couldn't set the minecraft:overworld border to radius 5000" in out
+
+
+def test_the_deploy_writes_the_server_wide_border_before_the_running_worlds_replaces_it() -> None:
+    tasks = (REPO / "ansible/roles/minecraft/tasks/worlds.yml").read_text()
+    write = tasks.index("- name: Write worlds-library.json")
+    assert (
+        tasks.index("mc_world_border_default:")
+        < write
+        < tasks.index("- name: Use the running world's border")
+    )
+    assert "combine({'border_radius': mc_world_border_default}) | to_nice_json }}\\n\"" in tasks
+
+
 def test_units_polkit_and_ansible_wiring() -> None:
     rule = (REPO / "ansible/roles/base/templates/50-mc-ops.rules.j2").read_text()
     assert '"mc-world.service": ["start"]' in rule and '"mc-world-apply.service": ["start"]' in rule

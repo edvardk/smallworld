@@ -253,6 +253,30 @@ def read_library(path: Path | None = None) -> dict[str, Any]:
     }
 
 
+def read_default_border(path: Path | None = None) -> dict[str, int]:
+    """server.yml world.border_radius, as the deploy writes it next to the library ({dimension id: radius},
+    dimensions without a border left out); {} when the file is missing or older than v1.5.4. Kept out of
+    read_library, whose result mc-agent (Python and Rust) shares."""
+    data = read_json(path or LIBRARY_FILE, {})
+    raw = data.get("border_radius") if isinstance(data, dict) else None
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        d: v
+        for d, v in raw.items()
+        if d in DIMENSIONS and isinstance(v, int) and not isinstance(v, bool) and 0 < v <= 29999984
+    }
+
+
+def borders_for(entry: dict[str, Any], default: dict[str, int]) -> dict[str, int]:
+    """The borders a world gets, as the deploy decides them (minecraft role, worlds.yml): its own when it has
+    any (a null dimension there has none), else server.yml's world.border_radius."""
+    own = entry.get("border_radius")
+    if own is None:
+        return dict(default)
+    return {d: r for d, r in own.items() if r is not None}
+
+
 def read_json(path: Path, default: Any) -> Any:  # noqa: ANN401 - whatever the file holds
     try:
         return json.loads(path.read_text())
@@ -863,7 +887,7 @@ def run_panel(req: dict[str, Any], ops: Ops, server_dir: Path | None = None) -> 
             how = f" (it moves the pre-26 folders into {level}/dimensions/ first: a 30-second pause)"
         step(6, total, f"starting the server with {name}{how}")
         ops.systemctl("start", UNIT)
-        verify(entry, create, sdir, level)
+        verify(entry, create, sdir, level, read_default_border())
         ops.backup_now()
         step(7, total, f"verified: {name} is running (its first backup is starting)")
     except BaseException as e:
@@ -902,8 +926,13 @@ def run_panel(req: dict[str, Any], ops: Ops, server_dir: Path | None = None) -> 
     return f"WORLD {name} active ({active} archived as {saved[:8]})"
 
 
-def verify(entry: dict[str, Any], create: bool, sdir: Path, level: str) -> None:
-    """The started world answers, is the one we wanted (seed, when we know it) and gets its border."""
+def verify(
+    entry: dict[str, Any], create: bool, sdir: Path, level: str, default_border: dict[str, int] | None = None
+) -> None:
+    """The started world answers, is the one we wanted (seed, when we know it) and gets its border: its own,
+    else server.yml's world.border_radius (v1.5.4: a new world without its own border kept the vanilla one,
+    60 million blocks, until the next deploy). A border that can't be set is a WARNING, not a failure: the
+    switch is done and the next deploy sets it."""
     if not wait_rcon():
         raise WorldError("the server didn't answer RCON within 15 minutes")
     if entry["seed"] and create:
@@ -912,10 +941,15 @@ def verify(entry: dict[str, Any], create: bool, sdir: Path, level: str) -> None:
             raise WorldError(f"the new world's seed is {got}, not {entry['seed']}")
     if not (sdir / level / "level.dat").exists():
         raise WorldError(f"the server runs, but {level}/level.dat is missing")
-    for dim, radius in (entry.get("border_radius") or {}).items():
-        if radius is not None:
-            with contextlib.suppress(OSError, mc_rcon.RconError, KeyError, ValueError):
-                mc_rcon.worldborder(dim, radius)
+    for dim, radius in borders_for(entry, default_border or {}).items():
+        try:
+            mc_rcon.worldborder(dim, radius)
+        except (OSError, mc_rcon.RconError, KeyError, ValueError) as e:
+            print(
+                f"WARNING: couldn't set the {dim} border to radius {radius} ({type(e).__name__}: {e}); "
+                "the next deploy sets it",
+                flush=True,
+            )
 
 
 def delete_world(name: str, active: str, state: dict[str, Any], ops: Ops) -> str:

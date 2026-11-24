@@ -235,7 +235,7 @@ What a switch (or create) does, step by step in the header banner: in-game count
 online) → stop → **archive the active world** (the final backup and the safety snapshot in one: nothing else
 happens unless it is in restic's list) → fetch the target archive (or nothing, for a new world) → swap the world
 folders as `minecraft` and write the world's `server.properties` keys → start → check that it answers (and has the
-seed you asked for) → set its border → back it up. If anything fails before the swap, the old world starts again
+seed you asked for) → set its border (its own, else `world.border_radius`: since 1.5.4 a world without its own border no longer keeps Minecraft's 60-million-block one until the next deploy; a border that can't be set is a warning in the job report) → back it up. If anything fails before the swap, the old world starts again
 untouched; if the swap itself fails, the server stays stopped and the admin-stopped marker names the archive to
 restore.
 

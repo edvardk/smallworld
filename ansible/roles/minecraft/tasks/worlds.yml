@@ -36,10 +36,17 @@
     mc_world_entry: >-
       {{ mc_world_effective.library | selectattr('name', 'equalto', mc_world_running) | first | default(none) }}
 
+# v1.5.4: plus server.yml's world.border_radius, so a world switch gives a world without its own border the
+# server-wide one at once (worlds.py read_default_border). Taken before the task below swaps in the running
+# world's. (The trailing newline keeps Ansible from turning the JSON string back into a dict.)
+- name: Note the server-wide border
+  ansible.builtin.set_fact:
+    mc_world_border_default: "{{ mc_world_border_radius | dict2items | rejectattr('value', 'none') | items2dict }}"
+
 - name: Write worlds-library.json (mc-agent and worlds.py read it)
   ansible.builtin.copy:
     dest: "{{ mc_worlds_library_file }}"
-    content: "{{ mc_world_effective | to_nice_json }}\n"
+    content: "{{ mc_world_effective | combine({'border_radius': mc_world_border_default}) | to_nice_json }}\n"
     owner: root
     group: minecraft
     mode: "0644"

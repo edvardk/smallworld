@@ -15,6 +15,11 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
   `PREGEN_RADII` in health.env: `chunky start W square 0 0 R`), and a saved task with another (or an unknown)
   radius is cancelled and started again with the right one, so the first deploy of this release stops a runaway
   task by itself. Chunks it generated outside the border stay on disk: see operations "Pre-generation".
+- **A new library world gets the server-wide border at once.** The panel creates worlds without their own
+  `border_radius` (= `world.border_radius`), but the switch only set a world's own border, so the new world kept
+  Minecraft's 60-million-block border until the next deploy. Deploys now write `world.border_radius` into
+  worlds-library.json and the switch applies it; a border that can't be set shows as a warning in the job report
+  instead of being silently skipped.
 - **Pre-generation pauses while the disk is at its alert threshold** (`monitoring.alerts.disk_pct`). Before, only new
   frontier rings waited; a running or paused bordered pass went on until the disk was full.
 - **The disk alert measures what the server can use, like `df`.** It was `used / total`, which counts the 5 % ext4
