@@ -159,3 +159,16 @@ def test_a_modified_cache_is_not_used(tmp_path) -> None:
         product.resolve(Pin("o/r", sha, None), {product.ENV_OVERRIDE: str(entry / "src")}).root
         == (entry / "src").resolve()
     )
+
+
+def test_a_moved_venv_is_not_used(tmp_path) -> None:
+    """v1.5.5: caches used to be built aside and renamed; pip's shebangs still named the temporary directory, so
+    ansible-galaxy failed with "No such file or directory". cache_ok rejects such a venv (it is rebuilt)."""
+    from mcctl import product
+
+    entry, sha = pinned_cache(tmp_path)
+    galaxy = entry / "venv" / "bin" / "ansible-galaxy"
+    galaxy.write_text(f"#!{entry}.tmp-123/venv/bin/python3\nimport sys\n")
+    assert not product.scripts_ok(galaxy.parent) and not product.cache_ok(entry, sha)
+    galaxy.write_text(f"#!{entry / 'venv/bin/python'}\nimport sys\n")  # where the cache really is
+    assert product.scripts_ok(galaxy.parent) and product.cache_ok(entry, sha)

@@ -20,8 +20,10 @@ imports the pinned code and nothing else. The child gets MCCTL_PRODUCT_DIR set t
 that has it set and still isn't running that checkout fails hard instead of re-executing (cli._pinned), so
 a re-exec can never loop.
 
-The cache is verified on every use (`.ready` names the commit and the checkout is clean at it), and builds
-are serialised per commit with a lock file, so two mcctl processes never build into each other.
+The cache is verified on every use (`.ready` names the commit, the venv's scripts can start and the checkout
+is clean at it), and builds are serialised per commit with a lock file, so two mcctl processes never build
+into each other. It is built in place, never aside and renamed: pip writes the venv's absolute path into
+every console script (ansible-playbook, ansible-galaxy).
 """
 
 from __future__ import annotations
@@ -104,15 +106,18 @@ def _run(argv: Sequence[str], what: str) -> None:
 
 
 def build(pin: Pin, dest: Path) -> Product:
-    """Fetch the pinned commit and build its venv + collections into dest (atomic: built aside, renamed)."""
+    """Fetch the pinned commit and build its venv + collections into dest. Built in place (the caller holds
+    build_lock): a venv can't be moved, pip writes its absolute path into every console script's shebang
+    (v1.5.5: a cache built aside and renamed had ansible-galaxy/ansible-playbook pointing at the temporary
+    directory, "No such file or directory"). `.ready`, written last, marks it finished; a failed build is
+    removed."""
     git = shutil.which("git")
     if git is None:
         raise ProductError("`git` not found on PATH")
     if problem := python_problem():
         raise ProductError(problem)
-    tmp = dest.with_name(f"{dest.name}.tmp-{os.getpid()}")
-    shutil.rmtree(tmp, ignore_errors=True)
-    src = tmp / "src"
+    shutil.rmtree(dest, ignore_errors=True)
+    src = dest / "src"
     src.mkdir(parents=True)
     url = f"https://github.com/{pin.repository}.git"
     try:
@@ -131,29 +136,21 @@ def build(pin: Pin, dest: Path) -> Product:
                 "cached-checkout layout. Run mcctl from a product checkout at that commit, or set "
                 f"{ENV_OVERRIDE}"
             )
-        _run([sys.executable, "-m", "venv", str(tmp / "venv")], "python -m venv")
+        _run([sys.executable, "-m", "venv", str(dest / "venv")], "python -m venv")
         _run(
-            [str(tmp / "venv/bin/pip"), "install", "-q", "--require-hashes", "--no-deps",
+            [str(dest / "venv/bin/pip"), "install", "-q", "--require-hashes", "--no-deps",
              "-r", str(src / REQUIREMENTS)],
             "pip install (hash-pinned)",
         )  # fmt: skip
         _run(
-            [str(tmp / "venv/bin/ansible-galaxy"), "collection", "install", "-r",
-             str(src / "ansible/requirements.yml"), "-p", str(tmp / "collections")],
+            [str(dest / "venv/bin/ansible-galaxy"), "collection", "install", "-r",
+             str(src / "ansible/requirements.yml"), "-p", str(dest / "collections")],
             "ansible-galaxy collection install",
         )  # fmt: skip
-        (tmp / READY).write_text(pin.sha + "\n")
+        (dest / READY).write_text(pin.sha + "\n")
     except BaseException:
-        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(dest, ignore_errors=True)
         raise
-    shutil.rmtree(dest, ignore_errors=True)
-    try:
-        tmp.rename(dest)
-    except OSError as e:
-        shutil.rmtree(tmp, ignore_errors=True)
-        if cache_ok(dest, pin.sha):  # another process finished the same build first
-            return cached(dest)
-        raise ProductError(f"can't move the built product into {dest}: {e}") from None
     return cached(dest)
 
 
@@ -163,12 +160,40 @@ def cached(dest: Path) -> Product:
 
 
 def cache_ok(dest: Path, sha: str) -> bool:
-    """A finished cache for `sha`: `.ready` names it, the venv exists and src/ is a clean checkout at it."""
+    """A finished cache for `sha`: `.ready` names it, the venv exists, its scripts can start and src/ is a
+    clean checkout at it."""
     try:
         ready = (dest / READY).read_text().strip()
     except OSError:
         return False
-    return ready == sha and (dest / "venv" / "bin" / "python").exists() and checkout_sha(dest / "src") == sha
+    bin_dir = dest / "venv" / "bin"
+    return (
+        ready == sha
+        and (bin_dir / "python").exists()
+        and scripts_ok(bin_dir)
+        and checkout_sha(dest / "src") == sha
+    )
+
+
+def scripts_ok(bin_dir: Path) -> bool:
+    """Every console script in a venv's bin/ names an interpreter that exists. False for a venv that was moved
+    after pip installed into it (a cache built by mcctl before v1.5.5): it is rebuilt."""
+    try:
+        files = [f for f in bin_dir.iterdir() if f.is_file() and not f.is_symlink()]
+    except OSError:
+        return False
+    for f in files:
+        try:
+            with f.open("rb") as fh:
+                first = fh.readline(4096)
+        except OSError:
+            return False
+        if not first.startswith(b"#!/"):
+            continue
+        interpreter = first[2:].split(maxsplit=1)[0].decode("utf-8", "replace")
+        if "/venv/bin/" in interpreter and not Path(interpreter).exists():
+            return False
+    return True
 
 
 @contextlib.contextmanager

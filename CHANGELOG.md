@@ -6,6 +6,14 @@ release by its commit SHA. A breaking `server.yml` schema change needs a major v
 
 ## [Unreleased]
 
+### Fixed
+
+- **`mcctl deploy` (and `plan`, `apply`, `bootstrap`) work when the config repo pins another product version
+  than the checkout you run.** mcctl built that version's cached copy (`~/.cache/mcctl/<sha>`) in a temporary
+  directory and renamed it; pip had written the temporary path into every console script, so the deploy failed
+  with `No such file or directory: .../venv/bin/ansible-galaxy`. The copy is now built in place, and a copy
+  built by an older mcctl is detected and rebuilt on first use.
+
 ## [1.5.4] - 2026-11-24
 
 ### Fixed

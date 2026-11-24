@@ -241,7 +241,7 @@ def test_product_build_steps(tmp_path, monkeypatch) -> None:
 
     def fake_run(argv, what):
         ran.append(list(argv))
-        if argv[1:4] == ["-C", str(tmp_path / f"{TEST_SHA}.tmp-{os.getpid()}" / "src"), "checkout"]:
+        if argv[1:4] == ["-C", str(tmp_path / TEST_SHA / "src"), "checkout"]:  # in place (v1.5.5)
             src = Path(argv[2])
             (src / "requirements").mkdir()
             (src / "requirements/deploy.txt").write_text("")
@@ -258,6 +258,9 @@ def test_product_build_steps(tmp_path, monkeypatch) -> None:
     pip = next(a for a in ran if a[0].endswith("venv/bin/pip"))
     assert "--require-hashes" in pip and "--no-deps" in pip
     assert any(a[0].endswith("venv/bin/ansible-galaxy") for a in ran)
+    # v1.5.5: the venv is made where it stays; pip writes its path into every console script's shebang
+    venv = next(a for a in ran if a[1:3] == ["-m", "venv"])
+    assert venv[3] == str(tmp_path / TEST_SHA / "venv") and not any(".tmp" in x for a in ran for x in a)
 
 
 def test_product_build_refuses_old_layout(tmp_path, monkeypatch) -> None:
